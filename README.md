@@ -2,7 +2,7 @@
 
 Server-side API for IPOVault, an Indian IPO data platform. The backend owns canonical IPO and company data, source evidence, and future automation. The mobile app will consume this API; it is not part of this repository.
 
-**Phase 2** adds PostgreSQL and Prisma. IPO HTTP APIs and discovery are not implemented yet.
+**Phase 3** adds canonical IPO read APIs. Discovery, write APIs, and user features are not implemented yet.
 
 ## Stack
 
@@ -84,8 +84,16 @@ Lint: `npm run lint`
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/v1/health` | Process liveness and PostgreSQL connectivity |
+| `GET` | `/api/v1/ipos` | Paginated canonical IPO list |
+| `GET` | `/api/v1/ipos/:id` | Canonical IPO detail |
 
-Example:
+`GET /api/v1/ipos` query parameters:
+
+- `status`, `marketSegment`, `exchange` — optional exact-match filters
+- `page` — default `1`
+- `limit` — default `20`, maximum `100`
+
+Health example:
 
 ```json
 {
@@ -112,6 +120,7 @@ Every response includes `X-Request-Id`. Errors use:
 
 ## Not in this phase
 
-- IPO, company, source, or discovery APIs
-- Scraping, jobs, Redis, or authentication
+- Discovery, scraping, or source adapters
+- Subscriptions, GMP, allotment, notifications, or analytics
+- User accounts or authentication
 - Redis / workers in Docker Compose

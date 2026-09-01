@@ -5,7 +5,7 @@ import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
 import { PrismaService } from '../../src/database/prisma.service';
 
-const prismaStub = {
+export const prismaStub = {
   $connect: async () => undefined,
   $disconnect: async () => undefined,
   $queryRaw: async () => [{ '?column?': 1 }],
@@ -15,13 +15,14 @@ const prismaStub = {
 
 export async function createTestApp(
   extraControllers: Type<unknown>[] = [],
+  prisma: object = prismaStub,
 ): Promise<INestApplication> {
   const moduleFixture = await Test.createTestingModule({
     imports: [AppModule],
     controllers: extraControllers,
   })
     .overrideProvider(PrismaService)
-    .useValue(prismaStub)
+    .useValue(prisma)
     .compile();
 
   const app = moduleFixture.createNestApplication();
