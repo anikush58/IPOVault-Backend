@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "symbol": "MOCKTECH",
+      "companyName": "Mock Technologies Limited",
+      "series": "EQ",
+      "issueType": "Main Board",
+      "status": "Forthcoming",
+      "cin": "U12345MH2024PLC000001",
+      "issueSize": "1,250.00 Cr",
+      "freshIssue": "1,000.00 Cr",
+      "ofs": "250.00 Cr",
+      "priceBand": "₹120.00 - ₹126.00",
+      "lotSize": "120",
+      "minBidQuantity": "1",
+      "faceValue": "10",
+      "issueOpenDate": "10-Sep-2026",
+      "issueCloseDate": "12-Sep-2026",
+      "listingDate": "18-Sep-2026"
+    }
+  ]
+}
