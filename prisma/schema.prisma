@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MarketSegment {
+  MAINBOARD
+  SME
+}
+
+enum ExchangeListing {
+  NSE
+  BSE
+  BOTH
+}
+
+enum IpoStatus {
+  DRAFT
+  UPCOMING
+  OPEN
+  CLOSED
+  ALLOTMENT_PENDING
+  ALLOTMENT_COMPLETED
+  LISTING_PENDING
+  LISTED
+  WITHDRAWN
+  CANCELLED
+}
+
+enum LifecycleEventType {
+  DRHP
+  RHP
+  ANCHOR
+  OPEN
+  CLOSE
+  BASIS_OF_ALLOTMENT
+  REFUND_INITIATION
+  DEMAT_CREDIT
+  LISTING
+}
+
+enum SourceType {
+  OFFICIAL_FILING
+  EXCHANGE
+  REGISTRAR
+  COMPANY
+  SECONDARY
+  MARKET_SIGNAL
+}
+
+enum SourceHealthStatus {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  FAILING
+  DISABLED
+}
+
+enum DiscoveryStatus {
+  NEW
+  PROCESSING
+  MATCHED
+  CREATED
+  DUPLICATE
+  REJECTED
+  ERROR
+}
+
+enum ProvenanceEntityType {
+  COMPANY
+  IPO
+}
+
+enum IpoChangeType {
+  PRICE_BAND_CHANGED
+  LOT_SIZE_CHANGED
+  OPEN_DATE_CHANGED
+  CLOSE_DATE_CHANGED
+  LISTING_DATE_CHANGED
+  STATUS_CHANGED
+  ISSUE_SIZE_CHANGED
+  FIELD_CHANGED
+}
+
+model Company {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  legalName   String   @map("legal_name")
+  displayName String   @map("display_name")
+  cin         String?  @unique
+  website     String?
+  industry    String?
+  sector      String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipos Ipo[]
+
+  @@map("companies")
+}
+
+model Ipo {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId      String           @map("company_id") @db.Uuid
+  marketSegment  MarketSegment    @map("market_segment")
+  exchange       ExchangeListing
+  status         IpoStatus        @default(DRAFT)
+  symbol         String?
+  issueSize      Decimal?         @map("issue_size") @db.Decimal(20, 2)
+  freshIssueSize Decimal?         @map("fresh_issue_size") @db.Decimal(20, 2)
+  ofsSize        Decimal?         @map("ofs_size") @db.Decimal(20, 2)
+  faceValue      Decimal?         @map("face_value") @db.Decimal(20, 2)
+  priceBandLow   Decimal?         @map("price_band_low") @db.Decimal(20, 2)
+  priceBandHigh  Decimal?         @map("price_band_high") @db.Decimal(20, 2)
+  lotSize        Int?             @map("lot_size")
+  minimumLots    Int?             @map("minimum_lots")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  lifecycleEvents  IpoLifecycleEvent[]
+  sourceIdentities IpoSourceIdentity[]
+  changeEvents     IpoChangeEvent[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([symbol])
+  @@map("ipos")
+}
+
+model IpoLifecycleEvent {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId           String              @map("ipo_id") @db.Uuid
+  eventType       LifecycleEventType  @map("event_type")
+  eventDate       DateTime            @map("event_date") @db.Date
+  sourceId        String?             @map("source_id") @db.Uuid
+  sourceReference String?             @map("source_reference")
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipo    Ipo     @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+  source Source? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@unique([ipoId, eventType])
+  @@index([eventType, eventDate])
+  @@map("ipo_lifecycle_events")
+}
+
+model Source {
+  id                       String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                     String             @unique
+  name                     String
+  sourceType               SourceType         @map("source_type")
+  baseUrl                  String?            @map("base_url")
+  priority                 Int                @default(100)
+  enabled                  Boolean            @default(true)
+  parserType               String?            @map("parser_type")
+  parserVersion            String?            @map("parser_version")
+  rateLimitPolicy          Json?              @map("rate_limit_policy") @db.JsonB
+  authenticationRequired   Boolean            @default(false) @map("authentication_required")
+  healthStatus             SourceHealthStatus @default(UNKNOWN) @map("health_status")
+  lastSuccessAt            DateTime?          @map("last_success_at") @db.Timestamptz(6)
+  lastFailureAt            DateTime?          @map("last_failure_at") @db.Timestamptz(6)
+  lastCheckedAt            DateTime?          @map("last_checked_at") @db.Timestamptz(6)
+  createdAt                DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lifecycleEvents  IpoLifecycleEvent[]
+  sourceIdentities IpoSourceIdentity[]
+  discoveryRecords DiscoveryRecord[]
+  fieldProvenance  FieldProvenance[]
+  changeEvents     IpoChangeEvent[]
+
+  @@index([enabled])
+  @@index([sourceType])
+  @@map("sources")
+}
+
+model IpoSourceIdentity {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId      String   @map("ipo_id") @db.Uuid
+  sourceId   String   @map("source_id") @db.Uuid
+  externalId String?  @map("external_id")
+  symbol     String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipo    Ipo    @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  @@unique([ipoId, sourceId])
+  @@map("ipo_source_identities")
+}
+
+model DiscoveryRecord {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceId        String           @map("source_id") @db.Uuid
+  externalId      String?          @map("external_id")
+  sourceReference String?          @map("source_reference")
+  companyName     String?          @map("company_name")
+  rawPayload      Json             @map("raw_payload") @db.JsonB
+  contentHash     String           @map("content_hash")
+  discoveredAt    DateTime         @map("discovered_at") @db.Timestamptz(6)
+  processedAt     DateTime?        @map("processed_at") @db.Timestamptz(6)
+  status          DiscoveryStatus  @default(NEW)
+  errorMessage    String?          @map("error_message")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([sourceId, externalId])
+  @@index([contentHash])
+  @@map("discovery_records")
+}
+
+model FieldProvenance {
+  id              String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType      ProvenanceEntityType  @map("entity_type")
+  entityId        String                @map("entity_id") @db.Uuid
+  fieldName       String                @map("field_name")
+  value           String
+  sourceId        String                @map("source_id") @db.Uuid
+  sourceReference String?               @map("source_reference")
+  retrievedAt     DateTime              @map("retrieved_at") @db.Timestamptz(6)
+  confidence      Decimal               @default(1.000) @db.Decimal(4, 3)
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  source Source @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, fieldName])
+  @@index([sourceId, retrievedAt])
+  @@map("field_provenance")
+}
+
+model IpoChangeEvent {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId           String        @map("ipo_id") @db.Uuid
+  fieldName       String        @map("field_name")
+  oldValue        String?       @map("old_value")
+  newValue        String?       @map("new_value")
+  sourceId        String?       @map("source_id") @db.Uuid
+  sourceReference String?       @map("source_reference")
+  detectedAt      DateTime      @map("detected_at") @db.Timestamptz(6)
+  changeType      IpoChangeType @map("change_type")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ipo    Ipo     @relation(fields: [ipoId], references: [id], onDelete: Restrict)
+  source Source? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([ipoId, detectedAt])
+  @@map("ipo_change_events")
+}

@@ -95,6 +95,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return ErrorCode.VALIDATION_ERROR;
       case HttpStatus.NOT_FOUND:
         return ErrorCode.NOT_FOUND;
+      case HttpStatus.SERVICE_UNAVAILABLE:
+        return ErrorCode.SERVICE_UNAVAILABLE;
       default:
         if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
           return ErrorCode.INTERNAL_ERROR;
@@ -109,6 +111,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return 'The request is invalid';
       case HttpStatus.NOT_FOUND:
         return 'The requested resource was not found';
+      case HttpStatus.SERVICE_UNAVAILABLE:
+        return 'The service is temporarily unavailable';
       default:
         if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
           return 'An unexpected error occurred';

@@ -3,7 +3,7 @@ import request from 'supertest';
 import { createTestApp } from './create-test-app';
 
 describe('GET /api/v1/health', () => {
-  it('returns the success envelope without claiming database health', async () => {
+  it('returns ok with a database status field', async () => {
     const app = await createTestApp();
 
     const response = await request(app.getHttpServer()).get('/api/v1/health');
@@ -12,10 +12,9 @@ describe('GET /api/v1/health', () => {
     expect(response.body).toEqual({
       data: {
         status: 'ok',
+        database: 'up',
       },
     });
-    expect(response.body.data).not.toHaveProperty('db');
-    expect(response.body.data).not.toHaveProperty('database');
 
     await app.close();
   });

@@ -3,6 +3,15 @@ import { Test } from '@nestjs/testing';
 
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
+import { PrismaService } from '../../src/database/prisma.service';
+
+const prismaStub = {
+  $connect: async () => undefined,
+  $disconnect: async () => undefined,
+  $queryRaw: async () => [{ '?column?': 1 }],
+  onModuleInit: async () => undefined,
+  onModuleDestroy: async () => undefined,
+};
 
 export async function createTestApp(
   extraControllers: Type<unknown>[] = [],
@@ -10,7 +19,10 @@ export async function createTestApp(
   const moduleFixture = await Test.createTestingModule({
     imports: [AppModule],
     controllers: extraControllers,
-  }).compile();
+  })
+    .overrideProvider(PrismaService)
+    .useValue(prismaStub)
+    .compile();
 
   const app = moduleFixture.createNestApplication();
   configureApp(app);
