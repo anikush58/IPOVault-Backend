@@ -5,6 +5,7 @@ import { DiscoveryRecordRepository } from './discovery-record.repository';
 import { DiscoveryService } from './discovery.service';
 import { MatchingService } from './matching.service';
 import { NseSourceAdapter } from './adapters/nse/nse.adapter';
+import { NseDiscoveryFlow } from './nse-discovery.flow';
 
 @Module({
   providers: [
@@ -13,7 +14,8 @@ import { NseSourceAdapter } from './adapters/nse/nse.adapter';
     CanonicalizerService,
     DiscoveryService,
     NseSourceAdapter,
+    NseDiscoveryFlow,
   ],
-  exports: [DiscoveryService, NseSourceAdapter],
+  exports: [DiscoveryService, NseSourceAdapter, NseDiscoveryFlow],
 })
 export class DiscoveryModule {}
