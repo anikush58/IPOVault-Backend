@@ -12,6 +12,7 @@ export type NseParsedPayload = {
     status: string | null;
     symbol: string | null;
     issueSize: number | null;
+    issueSizeShares: number | null;
     freshIssueSize: number | null;
     ofsSize: number | null;
     faceValue: number | null;
@@ -52,21 +53,53 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function unwrapIssue(raw: unknown): Record<string, unknown> {
+function unwrapIssues(raw: unknown): Record<string, unknown>[] {
+  if (Array.isArray(raw)) {
+    if (raw.length === 0) {
+      throw new NseParseError('NSE payload contained no issues');
+    }
+
+    return raw.map((item, index) => {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+        throw new NseParseError(
+          `NSE payload[${index}] must be an issue object`,
+        );
+      }
+
+      return item as Record<string, unknown>;
+    });
+  }
+
   if (raw === null || typeof raw !== 'object') {
-    throw new NseParseError('NSE payload must be an object');
+    throw new NseParseError('NSE payload must be an object or array');
   }
 
   const root = asRecord(raw);
   if (Array.isArray(root.data)) {
-    const first = root.data[0];
-    if (first === null || typeof first !== 'object' || Array.isArray(first)) {
-      throw new NseParseError('NSE payload data[0] must be an issue object');
+    if (root.data.length === 0) {
+      throw new NseParseError('NSE payload contained no issues');
     }
-    return first as Record<string, unknown>;
+
+    return root.data.map((item, index) => {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+        throw new NseParseError(
+          `NSE payload data[${index}] must be an issue object`,
+        );
+      }
+
+      return item as Record<string, unknown>;
+    });
   }
 
-  return root;
+  return [root];
+}
+
+function isUpcomingListIssue(issue: Record<string, unknown>): boolean {
+  return (
+    issue.issueStartDate !== undefined ||
+    issue.issueEndDate !== undefined ||
+    issue.issuePrice !== undefined
+  );
 }
 
 function text(value: unknown): string | null {
@@ -161,6 +194,36 @@ function parseInteger(value: unknown): number | null {
   return numeric;
 }
 
+function parseShareCount(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new NseParseError(`unparseable share count: ${String(value)}`);
+    }
+
+    return value;
+  }
+
+  if (typeof value !== 'string') {
+    throw new NseParseError('share count must be a string or number');
+  }
+
+  const trimmed = value.trim();
+  if (!/^\d+(,\d+)*$/.test(trimmed)) {
+    throw new NseParseError(`unparseable share count: ${value}`);
+  }
+
+  const numeric = Number(trimmed.replace(/,/g, ''));
+  if (!Number.isInteger(numeric) || numeric < 0) {
+    throw new NseParseError(`unparseable share count: ${value}`);
+  }
+
+  return numeric;
+}
+
 function parseDateOnly(value: unknown): string | null {
   if (value === null || value === undefined || value === '') {
     return null;
@@ -189,7 +252,7 @@ function parseDateOnly(value: unknown): string | null {
 
 function parseMarketSegment(value: unknown): 'MAINBOARD' | 'SME' {
   const raw = text(value)?.toLowerCase() ?? '';
-  if (raw.includes('sme')) {
+  if (raw === 'sme' || raw.includes('sme')) {
     return 'SME';
   }
   return 'MAINBOARD';
@@ -217,16 +280,18 @@ function parseStatus(value: unknown): string | null {
   return null;
 }
 
-export function parseNseIpo(raw: unknown): NseParsedPayload {
-  const issue = unwrapIssue(raw);
+function parseNseIssue(issue: Record<string, unknown>): NseParsedPayload {
   const companyName = text(issue.companyName);
 
   if (!companyName) {
     throw new NseParseError('companyName is required');
   }
 
+  const listIssue = isUpcomingListIssue(issue);
   const symbol = text(issue.symbol) ?? text(issue.tradingSymbol);
-  const priceBand = parsePriceBand(issue.priceBand);
+  const priceBand = parsePriceBand(
+    listIssue ? (issue.issuePrice ?? issue.priceBand) : issue.priceBand,
+  );
 
   return {
     company: {
@@ -235,11 +300,16 @@ export function parseNseIpo(raw: unknown): NseParsedPayload {
       cin: text(issue.cin),
     },
     ipo: {
-      marketSegment: parseMarketSegment(issue.issueType ?? issue.category),
+      marketSegment: parseMarketSegment(
+        listIssue
+          ? (issue.series ?? issue.issueType ?? issue.category)
+          : (issue.issueType ?? issue.category),
+      ),
       exchange: 'NSE',
       status: parseStatus(issue.status),
       symbol,
-      issueSize: parseCroresToRupees(issue.issueSize),
+      issueSize: listIssue ? null : parseCroresToRupees(issue.issueSize),
+      issueSizeShares: listIssue ? parseShareCount(issue.issueSize) : null,
       freshIssueSize: parseCroresToRupees(issue.freshIssue),
       ofsSize: parseCroresToRupees(issue.ofs),
       faceValue: parseRupees(issue.faceValue),
@@ -249,8 +319,16 @@ export function parseNseIpo(raw: unknown): NseParsedPayload {
       minimumLots: parseInteger(issue.minBidQuantity),
     },
     lifecycle: {
-      openDate: parseDateOnly(issue.issueOpenDate),
-      closeDate: parseDateOnly(issue.issueCloseDate),
+      openDate: parseDateOnly(
+        listIssue
+          ? (issue.issueStartDate ?? issue.issueOpenDate)
+          : issue.issueOpenDate,
+      ),
+      closeDate: parseDateOnly(
+        listIssue
+          ? (issue.issueEndDate ?? issue.issueCloseDate)
+          : issue.issueCloseDate,
+      ),
       listingDate: parseDateOnly(issue.listingDate),
     },
     source: {
@@ -258,4 +336,17 @@ export function parseNseIpo(raw: unknown): NseParsedPayload {
       reference: symbol ? `nse://ipo/${symbol}` : 'nse://ipo',
     },
   };
+}
+
+export function parseNseIpos(raw: unknown): NseParsedPayload[] {
+  return unwrapIssues(raw).map(parseNseIssue);
+}
+
+export function parseNseIpo(raw: unknown): NseParsedPayload {
+  const [parsed] = parseNseIpos(raw);
+  if (!parsed) {
+    throw new NseParseError('NSE payload contained no issues');
+  }
+
+  return parsed;
 }

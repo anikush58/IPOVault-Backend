@@ -9,5 +9,5 @@ export type ObserveContext = {
 
 export interface SourceAdapter {
   readonly sourceCode: string;
-  observe(raw: unknown, context: ObserveContext): IncomingObservation;
+  observe(raw: unknown, context: ObserveContext): IncomingObservation[];
 }

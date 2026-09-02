@@ -12,11 +12,21 @@ export class NseDiscoveryFlow {
     private readonly discovery: DiscoveryService,
   ) {}
 
-  ingest(
+  async ingest(
     raw: unknown,
     context: ObserveContext,
   ): Promise<DiscoveryProcessResult> {
-    const observation = this.adapter.observe(raw, context);
-    return this.discovery.process(observation);
+    const observations = this.adapter.observe(raw, context);
+    let last: DiscoveryProcessResult | undefined;
+
+    for (const observation of observations) {
+      last = await this.discovery.process(observation);
+    }
+
+    if (!last) {
+      throw new Error('NSE payload contained no issues');
+    }
+
+    return last;
   }
 }
