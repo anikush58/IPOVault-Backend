@@ -190,9 +190,12 @@ describe('database schema', () => {
       },
     });
 
-    await expect(prisma.ipo.delete({ where: { id: ipo.id } })).rejects.toThrow(
-      Prisma.PrismaClientKnownRequestError,
-    );
+    await expect(
+      prisma.ipo.delete({ where: { id: ipo.id } }),
+    ).rejects.toThrow();
+
+    const remaining = await prisma.ipo.findUnique({ where: { id: ipo.id } });
+    expect(remaining).not.toBeNull();
   });
 
   it('serves GET /api/v1/health against a live database', async () => {
