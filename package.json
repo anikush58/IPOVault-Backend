@@ -21,6 +21,7 @@
     "test:integration": "jest --config ./test/jest-integration.json",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
+    "nse:discover": "ts-node -r tsconfig-paths/register src/scripts/nse-discovery.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
