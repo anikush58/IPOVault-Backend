@@ -17,6 +17,7 @@ export const envSchema = z.object({
         value.startsWith('postgresql://') || value.startsWith('postgres://'),
       { message: 'must be a PostgreSQL connection URL' },
     ),
+  NSE_IPO_ENDPOINT: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -4,6 +4,7 @@ import { CanonicalizerService } from './canonicalizer.service';
 import { DiscoveryRecordRepository } from './discovery-record.repository';
 import { DiscoveryService } from './discovery.service';
 import { MatchingService } from './matching.service';
+import { NseHttpClient } from './adapters/nse/nse.fetcher';
 import { NseSourceAdapter } from './adapters/nse/nse.adapter';
 import { NseDiscoveryFlow } from './nse-discovery.flow';
 
@@ -14,8 +15,14 @@ import { NseDiscoveryFlow } from './nse-discovery.flow';
     CanonicalizerService,
     DiscoveryService,
     NseSourceAdapter,
+    NseHttpClient,
     NseDiscoveryFlow,
   ],
-  exports: [DiscoveryService, NseSourceAdapter, NseDiscoveryFlow],
+  exports: [
+    DiscoveryService,
+    NseSourceAdapter,
+    NseHttpClient,
+    NseDiscoveryFlow,
+  ],
 })
 export class DiscoveryModule {}
