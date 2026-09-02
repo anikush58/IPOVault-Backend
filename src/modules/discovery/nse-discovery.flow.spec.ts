@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import { NseFetchError } from './adapters/nse/nse-fetch.error';
+import { NseHttpClient } from './adapters/nse/nse.fetcher';
 import { NseSourceAdapter } from './adapters/nse/nse.adapter';
 import { CanonicalizerService } from './canonicalizer.service';
 import { DiscoveryRecordRepository } from './discovery-record.repository';
@@ -30,9 +32,25 @@ function withPriceBand(raw: unknown, priceBand: string): unknown {
   return clone;
 }
 
-function createFlow() {
+function createFlow(options?: {
+  fetchIpoDocument?: jest.Mock;
+  findSource?: jest.Mock;
+}) {
   const { db, prisma } = createFakePrisma();
-  const prismaService = prisma as unknown as PrismaService;
+  const prismaService = Object.assign(prisma as object, {
+    source: {
+      findUnique:
+        options?.findSource ??
+        jest.fn(async () => ({ id: SOURCE_ID, code: 'nse' })),
+    },
+  }) as unknown as PrismaService;
+  const http = {
+    fetchIpoDocument:
+      options?.fetchIpoDocument ??
+      jest.fn(async () => {
+        throw new Error('live NSE fetch must not run in fixture tests');
+      }),
+  } as unknown as NseHttpClient;
   const canonicalizer = new CanonicalizerService();
   const discovery = new DiscoveryService(
     prismaService,
@@ -40,9 +58,10 @@ function createFlow() {
     new MatchingService(prismaService),
     canonicalizer,
   );
-  const flow = new NseDiscoveryFlow(new NseSourceAdapter(), discovery);
+  const adapter = new NseSourceAdapter();
+  const flow = new NseDiscoveryFlow(adapter, discovery, http, prismaService);
 
-  return { db, flow, canonicalizer };
+  return { db, flow, canonicalizer, adapter, discovery, http };
 }
 
 describe('NSE fixture → DiscoveryService.process', () => {
@@ -119,5 +138,114 @@ describe('NSE fixture → DiscoveryService.process', () => {
     expect(rollbackDb.provenance).toHaveLength(0);
     expect(rollbackDb.discovery).toHaveLength(1);
     expect(rollbackDb.discovery[0].status).toBe('ERROR');
+  });
+});
+
+const upcomingIssues = [
+  {
+    companyName: 'Deepa Jewellers Limited',
+    symbol: 'DEEPA',
+    series: 'EQ',
+    status: 'Active',
+    issueStartDate: '01-Sep-2026',
+    issueEndDate: '03-Sep-2026',
+    issuePrice: 'Rs.168 to Rs.177',
+    issueSize: '18520085',
+  },
+  {
+    companyName: 'Qualiance International Limited',
+    symbol: 'QUALIANCE',
+    series: 'SME',
+    status: 'Forthcoming',
+    issueStartDate: '04-Sep-2026',
+    issueEndDate: '08-Sep-2026',
+    issuePrice: 'Rs.120 to Rs.127',
+    issueSize: '3552000',
+  },
+];
+
+describe('NSE live ingestLive()', () => {
+  it('passes the fetched body to the adapter and processes each issue', async () => {
+    const fetchIpoDocument = jest.fn().mockResolvedValue({
+      status: 200,
+      body: upcomingIssues,
+    });
+    const { flow, adapter, discovery } = createFlow({ fetchIpoDocument });
+    const observe = jest.spyOn(adapter, 'observe');
+    const process = jest.spyOn(discovery, 'process');
+
+    const results = await flow.ingestLive(DISCOVERED_AT);
+
+    expect(fetchIpoDocument).toHaveBeenCalledTimes(1);
+    expect(observe).toHaveBeenCalledWith(upcomingIssues, {
+      sourceId: SOURCE_ID,
+      discoveredAt: DISCOVERED_AT,
+    });
+    expect(process).toHaveBeenCalledTimes(2);
+    expect(results).toHaveLength(2);
+    expect(results.map((result) => result.outcome)).toEqual([
+      'CREATED',
+      'CREATED',
+    ]);
+  });
+
+  it('fails clearly when the NSE source is missing and does not fetch or process', async () => {
+    const fetchIpoDocument = jest.fn();
+    const findSource = jest.fn().mockResolvedValue(null);
+    const { flow, db, discovery } = createFlow({
+      fetchIpoDocument,
+      findSource,
+    });
+    const process = jest.spyOn(discovery, 'process');
+
+    await expect(flow.ingestLive()).rejects.toThrow(
+      /Seed a sources row with code "nse"/,
+    );
+    expect(fetchIpoDocument).not.toHaveBeenCalled();
+    expect(process).not.toHaveBeenCalled();
+    expect(db.companies).toHaveLength(0);
+    expect(db.ipos).toHaveLength(0);
+  });
+
+  it('propagates fetch errors without canonicalization', async () => {
+    const fetchIpoDocument = jest
+      .fn()
+      .mockRejectedValue(
+        new NseFetchError('NSE request failed with status 403'),
+      );
+    const { flow, db, discovery } = createFlow({ fetchIpoDocument });
+    const process = jest.spyOn(discovery, 'process');
+
+    await expect(flow.ingestLive()).rejects.toThrow(NseFetchError);
+    expect(process).not.toHaveBeenCalled();
+    expect(db.companies).toHaveLength(0);
+    expect(db.ipos).toHaveLength(0);
+    expect(db.discovery).toHaveLength(0);
+    expect(db.changes).toHaveLength(0);
+    expect(db.provenance).toHaveLength(0);
+  });
+
+  it('does not bypass DiscoveryService.process for live ingestion', async () => {
+    const fetchIpoDocument = jest.fn().mockResolvedValue({
+      status: 200,
+      body: [upcomingIssues[0]],
+    });
+    const { flow, discovery } = createFlow({ fetchIpoDocument });
+    const process = jest.spyOn(discovery, 'process').mockResolvedValue({
+      outcome: 'CREATED',
+      discoveryRecordId: 'rec-1',
+      ipoId: 'ipo-1',
+    });
+
+    const results = await flow.ingestLive(DISCOVERED_AT);
+
+    expect(process).toHaveBeenCalledTimes(1);
+    expect(results).toEqual([
+      {
+        outcome: 'CREATED',
+        discoveryRecordId: 'rec-1',
+        ipoId: 'ipo-1',
+      },
+    ]);
   });
 });
