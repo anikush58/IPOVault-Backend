@@ -128,7 +128,8 @@ Example policy:
 | IPO type | Official filing/exchange |
 | Price band | Official issue document/exchange |
 | Lot size | Official issue document/exchange |
-| Issue size | Official issue document/exchange |
+| Issue amount (INR) | Official issue document/exchange |
+| Issue share counts | Official issue document/exchange (not NSE list-feed `issueSize`) |
 | IPO open date | Official issue document/exchange |
 | IPO close date | Official issue document/exchange |
 | Listing date | Exchange |

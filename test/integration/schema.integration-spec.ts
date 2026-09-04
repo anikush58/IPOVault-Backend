@@ -64,12 +64,46 @@ describe('database schema', () => {
 
     expect(result.company.cin).toBe('U12345MH2024PLC000001');
     expect(result.ipo.issueSize?.toFixed(2)).toBe('12500000000.00');
+    expect(result.ipo.issueShareCount).toBeNull();
+    expect(result.ipo.freshIssueShareCount).toBeNull();
+    expect(result.ipo.ofsShareCount).toBeNull();
     expect(
       result.openEvent.eventDate.toISOString().startsWith('2026-09-10'),
     ).toBe(true);
     expect(
       (result.company as unknown as { isin?: string }).isin,
     ).toBeUndefined();
+  });
+
+  it('stores share counts independently of INR issue amounts and does not infer equality', async () => {
+    const company = await prisma.company.create({
+      data: {
+        legalName: 'Share Count Limited',
+        displayName: 'Share Count',
+      },
+    });
+
+    const ipo = await prisma.ipo.create({
+      data: {
+        companyId: company.id,
+        marketSegment: 'MAINBOARD',
+        exchange: 'NSE',
+        issueSize: new Prisma.Decimal('12500000000.00'),
+        issueShareCount: new Prisma.Decimal('18520085'),
+        freshIssueShareCount: new Prisma.Decimal('10000000'),
+        ofsShareCount: new Prisma.Decimal('8520085'),
+      },
+    });
+
+    expect(ipo.issueSize?.toFixed(2)).toBe('12500000000.00');
+    expect(ipo.issueShareCount?.toFixed(0)).toBe('18520085');
+    expect(ipo.freshIssueShareCount?.toFixed(0)).toBe('10000000');
+    expect(ipo.ofsShareCount?.toFixed(0)).toBe('8520085');
+    expect(
+      ipo.freshIssueShareCount
+        ?.plus(ipo.ofsShareCount ?? 0)
+        .equals(ipo.issueShareCount ?? 0),
+    ).toBe(true);
   });
 
   it('rejects a second lifecycle date for the same IPO event type', async () => {

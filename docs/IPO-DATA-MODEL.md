@@ -27,7 +27,7 @@ The database should be the canonical source for the application. External websit
 6. Duplicate sources must map to one canonical IPO where they represent the same event.
 7. Historical values must not be silently destroyed.
 8. Source failures must never erase valid existing data.
-9. Dates and monetary values must use strongly typed database fields.
+9. Dates, INR amounts, and share quantities must use strongly typed database fields. Never store share counts in INR amount columns, or rupee amounts in share-count columns.
 10. Exchange/source identifiers must be stored separately from internal IDs.
 
 ---
@@ -66,7 +66,7 @@ Represents the legal/business entity.
 | legal_name | text | Canonical legal name |
 | display_name | text | User-facing name |
 | cin | text nullable | Strong identity key where available |
-| isin | text nullable | Security identifier where applicable |
+| isin | — | Deferred to a future instrument/security model. Not a `companies` column. |
 | website | text nullable | Official company website |
 | industry | text nullable | Canonical industry |
 | sector | text nullable | Canonical sector |
@@ -101,18 +101,25 @@ Represents one IPO event.
 | exchange | enum/set | NSE / BSE / BOTH |
 | status | enum | See lifecycle states |
 | symbol | text nullable | Exchange symbol |
-| issue_size | decimal nullable | Total issue size |
-| fresh_issue_size | decimal nullable | Fresh issue |
-| ofs_size | decimal nullable | Offer for sale |
-| face_value | decimal nullable | Face value per share |
-| price_band_low | decimal nullable | Lower band |
-| price_band_high | decimal nullable | Upper band |
-| lot_size | integer nullable | Shares per lot |
+| issue_size | decimal(20,2) nullable | **INR** total issue amount. Not share count. |
+| fresh_issue_size | decimal(20,2) nullable | **INR** fresh issue amount. Not share count. |
+| ofs_size | decimal(20,2) nullable | **INR** offer-for-sale amount. Not share count. |
+| issue_share_count | decimal(20,0) nullable | Total equity **shares** offered. Not rupees. |
+| fresh_issue_share_count | decimal(20,0) nullable | Fresh-issue **shares**. Not rupees. |
+| ofs_share_count | decimal(20,0) nullable | OFS **shares**. Not rupees. |
+| face_value | decimal(20,2) nullable | Face value per share (**INR**) |
+| price_band_low | decimal(20,2) nullable | Lower band (**INR**) |
+| price_band_high | decimal(20,2) nullable | Upper band (**INR**) |
+| lot_size | integer nullable | Shares per lot (market lot) |
 | minimum_lots | integer nullable | Minimum application lots |
 | created_at | timestamp | |
 | updated_at | timestamp | |
 
-Monetary values should be stored numerically, not as formatted strings such as `₹1,250 Cr`.
+INR amounts and share counts are different dimensions. Do not populate `issue_size` / `fresh_issue_size` / `ofs_size` from a source field that is a share count (including NSE discovery `issueSize` on the live list feed).
+
+Monetary values should be stored numerically, not as formatted strings such as `₹1,250 Cr`. Share counts should be stored as whole numbers, not as formatted strings such as `1.85 crore shares`.
+
+Share-count invariant: when `issue_share_count`, `fresh_issue_share_count`, and `ofs_share_count` are all present, `fresh_issue_share_count + ofs_share_count` should equal `issue_share_count`. A mismatch must be flagged for review. Never auto-correct any of the three values to force equality. Do not encode this as a database CHECK that rejects the row.
 
 ---
 
@@ -297,6 +304,19 @@ confidence: 1.0
 
 Provenance is evidence, not merely a display feature.
 
+Canonical IPO amount and share fields must use these `field_name` values (snake_case, matching the database columns):
+
+```text
+issue_size                 → INR total issue amount
+fresh_issue_size           → INR fresh issue amount
+ofs_size                   → INR OFS amount
+issue_share_count          → total shares offered
+fresh_issue_share_count    → fresh-issue shares
+ofs_share_count            → OFS shares
+```
+
+Never record a share-count observation under `issue_size`, or an INR amount under `issue_share_count`.
+
 ---
 
 ## 10. IPO Change Events
@@ -320,13 +340,15 @@ created_at
 
 Examples:
 
-```text PRICE_BAND_CHANGED
+```text
+PRICE_BAND_CHANGED
 LOT_SIZE_CHANGED
 OPEN_DATE_CHANGED
 CLOSE_DATE_CHANGED
 LISTING_DATE_CHANGED
 STATUS_CHANGED
-ISSUE_SIZE_CHANGED
+ISSUE_SIZE_CHANGED          → INR amount columns (issue_size / fresh_issue_size / ofs_size)
+FIELD_CHANGED               → including share-count columns until a dedicated type exists
 ```
 
 These records become inputs for the notification system.

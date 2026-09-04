@@ -108,11 +108,14 @@ model Ipo {
   marketSegment  MarketSegment    @map("market_segment")
   exchange       ExchangeListing
   status         IpoStatus        @default(DRAFT)
-  symbol         String?
-  issueSize      Decimal?         @map("issue_size") @db.Decimal(20, 2)
-  freshIssueSize Decimal?         @map("fresh_issue_size") @db.Decimal(20, 2)
-  ofsSize        Decimal?         @map("ofs_size") @db.Decimal(20, 2)
-  faceValue      Decimal?         @map("face_value") @db.Decimal(20, 2)
+  symbol               String?
+  issueSize            Decimal?         @map("issue_size") @db.Decimal(20, 2)
+  freshIssueSize       Decimal?         @map("fresh_issue_size") @db.Decimal(20, 2)
+  ofsSize              Decimal?         @map("ofs_size") @db.Decimal(20, 2)
+  issueShareCount      Decimal?         @map("issue_share_count") @db.Decimal(20, 0)
+  freshIssueShareCount Decimal?         @map("fresh_issue_share_count") @db.Decimal(20, 0)
+  ofsShareCount        Decimal?         @map("ofs_share_count") @db.Decimal(20, 0)
+  faceValue            Decimal?         @map("face_value") @db.Decimal(20, 2)
   priceBandLow   Decimal?         @map("price_band_low") @db.Decimal(20, 2)
   priceBandHigh  Decimal?         @map("price_band_high") @db.Decimal(20, 2)
   lotSize        Int?             @map("lot_size")

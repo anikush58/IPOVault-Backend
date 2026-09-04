@@ -190,10 +190,13 @@ as the primary value.
 Prefer:
 
 ```text
-126
-12500000000
+126                 (INR price)
+12500000000         (INR amount, not shares)
+18520085            (share count, not rupees)
 0.12
 ```
+
+Never serialize a share count as an INR amount (or the reverse) just to fill a field.
 
 Formatting belongs to the API/UI layer.
 
@@ -256,12 +259,22 @@ Do not infer lot size from minimum investment if the official value is unavailab
 
 # 14. Issue Size Rule
 
-Keep separate:
+Keep **INR amounts** and **share counts** as separate dimensions. Never treat one as the other.
+
+### INR amounts (canonical columns)
 
 ```text
-total issue size
-fresh issue size
-OFS size
+issue_size            → total issue amount (INR)
+fresh_issue_size      → fresh issue amount (INR)
+ofs_size              → OFS amount (INR)
+```
+
+### Share counts (canonical columns)
+
+```text
+issue_share_count            → total equity shares offered
+fresh_issue_share_count      → fresh-issue shares
+ofs_share_count              → OFS shares
 ```
 
 Do not assume:
@@ -277,6 +290,18 @@ total = OFS
 ```
 
 unless supported by source data.
+
+A source field named `issueSize` is not automatically an INR amount. NSE live list discovery currently reports share count in that field; that evidence must not populate `issue_size`.
+
+Share-count invariant: when total, fresh, and OFS share counts are all known:
+
+```text
+fresh_issue_share_count + ofs_share_count = issue_share_count
+```
+
+If they disagree, flag the IPO for review. Do not rewrite any of the three values to make the equation hold.
+
+The same non-assumption applies to INR amounts: do not infer a missing amount from shares × price band unless the result is stored as derived data (Rule 15), never as a source-reported canonical amount.
 
 ---
 
