@@ -22,9 +22,18 @@ export type DiscoveredIpoAttributes = {
   exchange: ExchangeListing;
   status: IpoStatus | null;
   symbol: string | null;
+  /** INR total issue amount. Never a share count. */
   issueSize: string | null;
+  /** INR fresh issue amount. Never a share count. */
   freshIssueSize: string | null;
+  /** INR OFS amount. Never a share count. */
   ofsSize: string | null;
+  /** Total equity shares offered. Never an INR amount. */
+  issueShareCount: string | null;
+  /** Fresh-issue shares. Never an INR amount. */
+  freshIssueShareCount: string | null;
+  /** OFS shares. Never an INR amount. */
+  ofsShareCount: string | null;
   faceValue: string | null;
   priceBandLow: string | null;
   priceBandHigh: string | null;

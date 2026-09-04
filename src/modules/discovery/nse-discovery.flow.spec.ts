@@ -170,7 +170,7 @@ describe('NSE live ingestLive()', () => {
       status: 200,
       body: upcomingIssues,
     });
-    const { flow, adapter, discovery } = createFlow({ fetchIpoDocument });
+    const { db, flow, adapter, discovery } = createFlow({ fetchIpoDocument });
     const observe = jest.spyOn(adapter, 'observe');
     const process = jest.spyOn(discovery, 'process');
 
@@ -187,6 +187,10 @@ describe('NSE live ingestLive()', () => {
       'CREATED',
       'CREATED',
     ]);
+    expect(db.ipos[0].issueSize ?? null).toBeNull();
+    expect(db.ipos[0].issueShareCount ?? null).toBeNull();
+    expect(db.ipos[1].issueSize ?? null).toBeNull();
+    expect(db.ipos[1].issueShareCount ?? null).toBeNull();
   });
 
   it('fails clearly when the NSE source is missing and does not fetch or process', async () => {

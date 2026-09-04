@@ -160,6 +160,11 @@ All adapters should converge to a common structure.
     "marketSegment": "MAINBOARD",
     "exchange": "NSE",
     "issueSize": 12500000000,
+    "freshIssueSize": 10000000000,
+    "ofsSize": 2500000000,
+    "issueShareCount": 18520085,
+    "freshIssueShareCount": null,
+    "ofsShareCount": null,
     "priceBandLow": 120,
     "priceBandHigh": 126,
     "lotSize": 120
@@ -174,6 +179,28 @@ All adapters should converge to a common structure.
   }
 }
 ```
+
+`issueSize` / `freshIssueSize` / `ofsSize` are **INR amounts**. `issueShareCount` / `freshIssueShareCount` / `ofsShareCount` are **share quantities**. Adapters must not map a share-count source field onto the INR amount fields.
+
+Canonicalization uses an explicit issue-structure fact contract:
+
+```text
+dimension: SHARES | INR
+fields:
+  issue_size / fresh_issue_size / ofs_size           → INR
+  issue_share_count / fresh_issue_share_count /
+  ofs_share_count                                    → SHARES
+```
+
+A fact whose dimension does not match the target field is ignored for canonical writes and is not stored as provenance for that field.
+
+NSE list-feed `issueSizeShares` is raw evidence only. It is not a `DiscoveredIpo` field and must not populate canonical share-count or INR amount columns until a later enrichment adapter opts in.
+
+Issue-structure writes are field-specific. `OFFICIAL_FILING` outranks `EXCHANGE` for these six fields. `COMPANY`, `REGISTRAR`, `SECONDARY`, and `MARKET_SIGNAL` cannot set them. A lower-authority observation is retained as provenance when the dimension is valid, but it does not overwrite a higher-authority canonical value. Equal-authority refreshes may update the canonical value and emit change events.
+
+Null / omitted facts never clear an existing canonical value.
+
+Do not derive INR amounts from shares × price. Do not rewrite share counts to force `fresh + OFS = total`; a mismatch is review-only.
 
 The exact implementation language/type should follow the project's existing backend stack.
 
@@ -263,6 +290,13 @@ Price band
 
 Lot size
 → official issue documents / exchange
+
+Issue amount (INR)
+→ official issue documents / exchange
+
+Issue share counts
+→ official issue documents / exchange
+(NSE discovery list `issueSize` is share evidence, not canonical INR `issueSize`)
 
 Allotment information
 → registrar / exchange

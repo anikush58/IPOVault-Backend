@@ -54,6 +54,9 @@ describe('DiscoveryService', () => {
     expect(db.discovery[0].rawPayload).toEqual(payload);
     expect(db.companies).toHaveLength(1);
     expect(db.ipos).toHaveLength(1);
+    expect(db.ipos[0].issueShareCount ?? null).toBeNull();
+    expect(db.ipos[0].freshIssueShareCount ?? null).toBeNull();
+    expect(db.ipos[0].ofsShareCount ?? null).toBeNull();
     expect(db.identities).toHaveLength(1);
     expect(db.identities[0].externalId).toBe('MOCK-IPO-001');
     expect(result.ipoId).toBe(db.ipos[0].id);

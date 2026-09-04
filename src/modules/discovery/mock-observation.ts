@@ -18,6 +18,9 @@ export type MockObservationPayload = {
     issueSize: number | null;
     freshIssueSize: number | null;
     ofsSize: number | null;
+    issueShareCount: number | null;
+    freshIssueShareCount: number | null;
+    ofsShareCount: number | null;
     faceValue: number | null;
     priceBandLow: number | null;
     priceBandHigh: number | null;
@@ -58,6 +61,9 @@ export function mockObservationPayload(
       issueSize: 12500000000,
       freshIssueSize: 10000000000,
       ofsSize: 2500000000,
+      issueShareCount: null,
+      freshIssueShareCount: null,
+      ofsShareCount: null,
       faceValue: 10,
       priceBandLow: 120,
       priceBandHigh: 126,

@@ -12,6 +12,7 @@ export type FakeDb = {
   discovery: Row[];
   provenance: Row[];
   changes: Row[];
+  sources: Row[];
 };
 
 function cloneRows(rows: Row[]): Row[] {
@@ -65,9 +66,18 @@ type FakePrismaClient = {
   };
   fieldProvenance: {
     create: (args: { data: Row }) => Promise<Row>;
+    findFirst: (args: {
+      where: Row;
+      orderBy?: { retrievedAt?: 'asc' | 'desc' };
+    }) => Promise<Row | null>;
   };
   ipoChangeEvent: {
     create: (args: { data: Row }) => Promise<Row>;
+  };
+  source: {
+    findUnique: (args: {
+      where: { id?: string; code?: string };
+    }) => Promise<Row | null>;
   };
   $transaction: <T>(fn: (tx: FakePrismaClient) => Promise<T>) => Promise<T>;
 };
@@ -81,6 +91,7 @@ export function createFakePrisma() {
     discovery: [],
     provenance: [],
     changes: [],
+    sources: [],
   };
 
   const prisma: FakePrismaClient = {
@@ -197,6 +208,30 @@ export function createFakePrisma() {
       },
     },
     fieldProvenance: {
+      findFirst: async ({
+        where,
+        orderBy,
+      }: {
+        where: Row;
+        orderBy?: { retrievedAt?: 'asc' | 'desc' };
+      }) => {
+        const rows = db.provenance.filter((row) => matches(row, where));
+        if (orderBy?.retrievedAt === 'desc') {
+          rows.sort(
+            (left, right) =>
+              new Date(String(right.retrievedAt)).getTime() -
+              new Date(String(left.retrievedAt)).getTime(),
+          );
+        }
+        if (orderBy?.retrievedAt === 'asc') {
+          rows.sort(
+            (left, right) =>
+              new Date(String(left.retrievedAt)).getTime() -
+              new Date(String(right.retrievedAt)).getTime(),
+          );
+        }
+        return rows[0] ?? null;
+      },
       create: async ({ data }: { data: Row }) => {
         const row = { id: randomUUID(), ...data };
         db.provenance.push(row);
@@ -210,6 +245,21 @@ export function createFakePrisma() {
         return row;
       },
     },
+    source: {
+      findUnique: async ({
+        where,
+      }: {
+        where: { id?: string; code?: string };
+      }) => {
+        if (where.id) {
+          return db.sources.find((row) => row.id === where.id) ?? null;
+        }
+        if (where.code) {
+          return db.sources.find((row) => row.code === where.code) ?? null;
+        }
+        return null;
+      },
+    },
     $transaction: async <T>(
       fn: (tx: FakePrismaClient) => Promise<T>,
     ): Promise<T> => {
@@ -220,6 +270,7 @@ export function createFakePrisma() {
         lifecycle: cloneRows(db.lifecycle).map(reviveRow),
         provenance: cloneRows(db.provenance).map(reviveRow),
         changes: cloneRows(db.changes).map(reviveRow),
+        sources: cloneRows(db.sources).map(reviveRow),
       };
 
       try {
@@ -231,6 +282,7 @@ export function createFakePrisma() {
         db.lifecycle = snapshot.lifecycle;
         db.provenance = snapshot.provenance;
         db.changes = snapshot.changes;
+        db.sources = snapshot.sources;
         throw error;
       }
     },
@@ -245,6 +297,9 @@ function reviveIpo(row: Row): Row {
     'issueSize',
     'freshIssueSize',
     'ofsSize',
+    'issueShareCount',
+    'freshIssueShareCount',
+    'ofsShareCount',
     'faceValue',
     'priceBandLow',
     'priceBandHigh',

@@ -4,6 +4,7 @@ import {
   LifecycleEventType,
   Prisma,
   ProvenanceEntityType,
+  SourceType,
 } from '@prisma/client';
 
 import {
@@ -11,6 +12,14 @@ import {
   DiscoveredLifecycle,
   MatchDecision,
 } from './discovery.types';
+import {
+  applyIssueStructureFacts,
+  emptyIssueStructure,
+  factsFromDiscoveredIpo,
+  issueStructureFactMatchesField,
+  type IssueStructureField,
+  type IssueStructureValues,
+} from './issue-structure';
 
 type Tx = Prisma.TransactionClient;
 
@@ -108,13 +117,13 @@ export class CanonicalizerService {
         },
       });
       companyId = company.id;
-      const ipo = await this.createIpo(tx, companyId, discovered);
+      const ipo = await this.createIpo(tx, companyId, discovered, sourceId);
       ipoId = ipo.id;
       created = true;
     } else if (match.decision === 'MATCH_COMPANY') {
       companyId = match.companyId;
       await this.updateCompany(tx, companyId, discovered);
-      const ipo = await this.createIpo(tx, companyId, discovered);
+      const ipo = await this.createIpo(tx, companyId, discovered, sourceId);
       ipoId = ipo.id;
       created = true;
     } else {
@@ -154,11 +163,67 @@ export class CanonicalizerService {
     return { created, ipoId, companyId };
   }
 
+  private async resolveSourceType(
+    tx: Tx,
+    sourceId: string,
+  ): Promise<SourceType> {
+    const source = await tx.source.findUnique({ where: { id: sourceId } });
+    return source?.sourceType ?? 'EXCHANGE';
+  }
+
+  private async issueStructureAuthority(
+    tx: Tx,
+    ipoId: string,
+  ): Promise<Partial<Record<IssueStructureField, SourceType>>> {
+    const fields = [
+      'issue_size',
+      'fresh_issue_size',
+      'ofs_size',
+      'issue_share_count',
+      'fresh_issue_share_count',
+      'ofs_share_count',
+    ] as const satisfies readonly IssueStructureField[];
+    const authority: Partial<Record<IssueStructureField, SourceType>> = {};
+
+    for (const fieldName of fields) {
+      const row = await tx.fieldProvenance.findFirst({
+        where: {
+          entityType: 'IPO',
+          entityId: ipoId,
+          fieldName,
+        },
+        orderBy: { retrievedAt: 'desc' },
+      });
+
+      if (!row) {
+        continue;
+      }
+
+      const source = await tx.source.findUnique({
+        where: { id: row.sourceId },
+      });
+      if (source?.sourceType) {
+        authority[fieldName] = source.sourceType;
+      }
+    }
+
+    return authority;
+  }
+
   private async createIpo(
     tx: Tx,
     companyId: string,
     discovered: DiscoveredIpo,
+    sourceId: string,
   ) {
+    const incomingSourceType = await this.resolveSourceType(tx, sourceId);
+    const applied = applyIssueStructureFacts({
+      current: emptyIssueStructure(),
+      facts: factsFromDiscoveredIpo(discovered.ipo),
+      incomingSourceType,
+      currentAuthority: {},
+    });
+
     return tx.ipo.create({
       data: {
         companyId,
@@ -166,9 +231,12 @@ export class CanonicalizerService {
         exchange: discovered.ipo.exchange,
         status: discovered.ipo.status ?? 'DRAFT',
         symbol: discovered.ipo.symbol,
-        issueSize: toDecimal(discovered.ipo.issueSize),
-        freshIssueSize: toDecimal(discovered.ipo.freshIssueSize),
-        ofsSize: toDecimal(discovered.ipo.ofsSize),
+        issueSize: applied.next.issueSize,
+        freshIssueSize: applied.next.freshIssueSize,
+        ofsSize: applied.next.ofsSize,
+        issueShareCount: applied.next.issueShareCount,
+        freshIssueShareCount: applied.next.freshIssueShareCount,
+        ofsShareCount: applied.next.ofsShareCount,
         faceValue: toDecimal(discovered.ipo.faceValue),
         priceBandLow: toDecimal(discovered.ipo.priceBandLow),
         priceBandHigh: toDecimal(discovered.ipo.priceBandHigh),
@@ -214,17 +282,26 @@ export class CanonicalizerService {
       return;
     }
 
+    const incomingSourceType = await this.resolveSourceType(tx, sourceId);
+    const currentAuthority = await this.issueStructureAuthority(tx, ipoId);
+    const applied = applyIssueStructureFacts({
+      current: issueStructureFromIpo(ipo),
+      facts: factsFromDiscoveredIpo(discovered.ipo),
+      incomingSourceType,
+      currentAuthority,
+    });
+
     const next = {
       marketSegment: discovered.ipo.marketSegment,
       exchange: discovered.ipo.exchange,
       status: discovered.ipo.status ?? ipo.status,
       symbol: discovered.ipo.symbol ?? ipo.symbol,
-      issueSize: coalesceDecimal(ipo.issueSize, discovered.ipo.issueSize),
-      freshIssueSize: coalesceDecimal(
-        ipo.freshIssueSize,
-        discovered.ipo.freshIssueSize,
-      ),
-      ofsSize: coalesceDecimal(ipo.ofsSize, discovered.ipo.ofsSize),
+      issueSize: applied.next.issueSize,
+      freshIssueSize: applied.next.freshIssueSize,
+      ofsSize: applied.next.ofsSize,
+      issueShareCount: applied.next.issueShareCount,
+      freshIssueShareCount: applied.next.freshIssueShareCount,
+      ofsShareCount: applied.next.ofsShareCount,
       faceValue: coalesceDecimal(ipo.faceValue, discovered.ipo.faceValue),
       priceBandLow: coalesceDecimal(
         ipo.priceBandLow,
@@ -241,6 +318,11 @@ export class CanonicalizerService {
     const before = {
       status: ipo.status,
       issueSize: ipo.issueSize,
+      freshIssueSize: ipo.freshIssueSize,
+      ofsSize: ipo.ofsSize,
+      issueShareCount: ipo.issueShareCount,
+      freshIssueShareCount: ipo.freshIssueShareCount,
+      ofsShareCount: ipo.ofsShareCount,
       lotSize: ipo.lotSize,
       priceBandLow: ipo.priceBandLow,
       priceBandHigh: ipo.priceBandHigh,
@@ -268,6 +350,11 @@ export class CanonicalizerService {
     before: {
       status: string;
       issueSize: Prisma.Decimal | null;
+      freshIssueSize: Prisma.Decimal | null;
+      ofsSize: Prisma.Decimal | null;
+      issueShareCount: Prisma.Decimal | null;
+      freshIssueShareCount: Prisma.Decimal | null;
+      ofsShareCount: Prisma.Decimal | null;
       lotSize: number | null;
       priceBandLow: Prisma.Decimal | null;
       priceBandHigh: Prisma.Decimal | null;
@@ -275,6 +362,11 @@ export class CanonicalizerService {
     after: {
       status: string;
       issueSize: Prisma.Decimal | null;
+      freshIssueSize: Prisma.Decimal | null;
+      ofsSize: Prisma.Decimal | null;
+      issueShareCount: Prisma.Decimal | null;
+      freshIssueShareCount: Prisma.Decimal | null;
+      ofsShareCount: Prisma.Decimal | null;
       lotSize: number | null;
       priceBandLow: Prisma.Decimal | null;
       priceBandHigh: Prisma.Decimal | null;
@@ -302,9 +394,56 @@ export class CanonicalizerService {
     if (decimalChanged(before.issueSize, after.issueSize)) {
       changes.push({
         fieldName: 'issue_size',
-        oldValue: decimalText(before.issueSize),
-        newValue: decimalText(after.issueSize),
+        oldValue: decimalText(before.issueSize, 2),
+        newValue: decimalText(after.issueSize, 2),
         changeType: 'ISSUE_SIZE_CHANGED',
+      });
+    }
+
+    if (decimalChanged(before.freshIssueSize, after.freshIssueSize)) {
+      changes.push({
+        fieldName: 'fresh_issue_size',
+        oldValue: decimalText(before.freshIssueSize, 2),
+        newValue: decimalText(after.freshIssueSize, 2),
+        changeType: 'ISSUE_SIZE_CHANGED',
+      });
+    }
+
+    if (decimalChanged(before.ofsSize, after.ofsSize)) {
+      changes.push({
+        fieldName: 'ofs_size',
+        oldValue: decimalText(before.ofsSize, 2),
+        newValue: decimalText(after.ofsSize, 2),
+        changeType: 'ISSUE_SIZE_CHANGED',
+      });
+    }
+
+    if (decimalChanged(before.issueShareCount, after.issueShareCount)) {
+      changes.push({
+        fieldName: 'issue_share_count',
+        oldValue: decimalText(before.issueShareCount, 0),
+        newValue: decimalText(after.issueShareCount, 0),
+        changeType: 'FIELD_CHANGED',
+      });
+    }
+
+    if (
+      decimalChanged(before.freshIssueShareCount, after.freshIssueShareCount)
+    ) {
+      changes.push({
+        fieldName: 'fresh_issue_share_count',
+        oldValue: decimalText(before.freshIssueShareCount, 0),
+        newValue: decimalText(after.freshIssueShareCount, 0),
+        changeType: 'FIELD_CHANGED',
+      });
+    }
+
+    if (decimalChanged(before.ofsShareCount, after.ofsShareCount)) {
+      changes.push({
+        fieldName: 'ofs_share_count',
+        oldValue: decimalText(before.ofsShareCount, 0),
+        newValue: decimalText(after.ofsShareCount, 0),
+        changeType: 'FIELD_CHANGED',
       });
     }
 
@@ -320,8 +459,8 @@ export class CanonicalizerService {
     if (decimalChanged(before.priceBandLow, after.priceBandLow)) {
       changes.push({
         fieldName: 'price_band_low',
-        oldValue: decimalText(before.priceBandLow),
-        newValue: decimalText(after.priceBandLow),
+        oldValue: decimalText(before.priceBandLow, 2),
+        newValue: decimalText(after.priceBandLow, 2),
         changeType: 'PRICE_BAND_CHANGED',
       });
     }
@@ -329,8 +468,8 @@ export class CanonicalizerService {
     if (decimalChanged(before.priceBandHigh, after.priceBandHigh)) {
       changes.push({
         fieldName: 'price_band_high',
-        oldValue: decimalText(before.priceBandHigh),
-        newValue: decimalText(after.priceBandHigh),
+        oldValue: decimalText(before.priceBandHigh, 2),
+        newValue: decimalText(after.priceBandHigh, 2),
         changeType: 'PRICE_BAND_CHANGED',
       });
     }
@@ -482,7 +621,9 @@ export class CanonicalizerService {
       ['exchange', discovered.ipo.exchange],
       ['status', discovered.ipo.status],
       ['symbol', discovered.ipo.symbol],
-      ['issue_size', discovered.ipo.issueSize],
+      ...factsFromDiscoveredIpo(discovered.ipo)
+        .filter(issueStructureFactMatchesField)
+        .map((fact): [string, string | null] => [fact.field, fact.value]),
       ['price_band_low', discovered.ipo.priceBandLow],
       ['price_band_high', discovered.ipo.priceBandHigh],
       [
@@ -530,6 +671,24 @@ export class CanonicalizerService {
   }
 }
 
+function issueStructureFromIpo(ipo: {
+  issueSize: Prisma.Decimal | null;
+  freshIssueSize: Prisma.Decimal | null;
+  ofsSize: Prisma.Decimal | null;
+  issueShareCount: Prisma.Decimal | null;
+  freshIssueShareCount: Prisma.Decimal | null;
+  ofsShareCount: Prisma.Decimal | null;
+}): IssueStructureValues {
+  return {
+    issueSize: ipo.issueSize ?? null,
+    freshIssueSize: ipo.freshIssueSize ?? null,
+    ofsSize: ipo.ofsSize ?? null,
+    issueShareCount: ipo.issueShareCount ?? null,
+    freshIssueShareCount: ipo.freshIssueShareCount ?? null,
+    ofsShareCount: ipo.ofsShareCount ?? null,
+  };
+}
+
 function toDecimal(value: string | null): Prisma.Decimal | null {
   return value === null ? null : new Prisma.Decimal(value);
 }
@@ -560,6 +719,9 @@ function decimalChanged(
   return !new Prisma.Decimal(current).eq(new Prisma.Decimal(next));
 }
 
-function decimalText(value: Prisma.Decimal | null): string | null {
-  return value === null ? null : new Prisma.Decimal(value).toFixed(2);
+function decimalText(
+  value: Prisma.Decimal | null,
+  scale: number,
+): string | null {
+  return value === null ? null : new Prisma.Decimal(value).toFixed(scale);
 }

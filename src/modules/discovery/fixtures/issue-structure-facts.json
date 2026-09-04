@@ -1,0 +1,52 @@
+{
+  "inrTotal": {
+    "field": "issue_size",
+    "dimension": "INR",
+    "value": "12500000000.00"
+  },
+  "inrFresh": {
+    "field": "fresh_issue_size",
+    "dimension": "INR",
+    "value": "10000000000.00"
+  },
+  "inrOfs": {
+    "field": "ofs_size",
+    "dimension": "INR",
+    "value": "2500000000.00"
+  },
+  "sharesTotal": {
+    "field": "issue_share_count",
+    "dimension": "SHARES",
+    "value": "18520085"
+  },
+  "sharesFresh": {
+    "field": "fresh_issue_share_count",
+    "dimension": "SHARES",
+    "value": "10000000"
+  },
+  "sharesOfs": {
+    "field": "ofs_share_count",
+    "dimension": "SHARES",
+    "value": "8520085"
+  },
+  "sharesMislabeledAsInr": {
+    "field": "issue_size",
+    "dimension": "SHARES",
+    "value": "18520085"
+  },
+  "inrMislabeledAsShares": {
+    "field": "issue_share_count",
+    "dimension": "INR",
+    "value": "12500000000.00"
+  },
+  "sharesMismatchFresh": {
+    "field": "fresh_issue_share_count",
+    "dimension": "SHARES",
+    "value": "10000000"
+  },
+  "sharesMismatchOfs": {
+    "field": "ofs_share_count",
+    "dimension": "SHARES",
+    "value": "1000000"
+  }
+}

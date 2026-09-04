@@ -36,6 +36,15 @@ function decimalString(value: unknown): string | null {
   return number.toFixed(2);
 }
 
+function shareCountString(value: unknown): string | null {
+  const number = integer(value);
+  if (number === null || number < 0) {
+    return null;
+  }
+
+  return String(number);
+}
+
 function integer(value: unknown): number | null {
   if (value === null || value === undefined || value === '') {
     return null;
@@ -126,6 +135,9 @@ export function normalizeDiscoveredIpo(payload: unknown): DiscoveredIpo {
       issueSize: decimalString(ipo.issueSize),
       freshIssueSize: decimalString(ipo.freshIssueSize),
       ofsSize: decimalString(ipo.ofsSize),
+      issueShareCount: shareCountString(ipo.issueShareCount),
+      freshIssueShareCount: shareCountString(ipo.freshIssueShareCount),
+      ofsShareCount: shareCountString(ipo.ofsShareCount),
       faceValue: decimalString(ipo.faceValue),
       priceBandLow: decimalString(ipo.priceBandLow),
       priceBandHigh: decimalString(ipo.priceBandHigh),

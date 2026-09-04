@@ -275,6 +275,9 @@ describe('NSE upcoming-issues adapter', () => {
 
     const discovered = normalizeDiscoveredIpo(observations[0].rawPayload);
     expect(discovered.ipo.issueSize).toBeNull();
+    expect(discovered.ipo.issueShareCount).toBeNull();
+    expect(discovered.ipo.freshIssueShareCount).toBeNull();
+    expect(discovered.ipo.ofsShareCount).toBeNull();
     expect(discovered.ipo.priceBandLow).toBe('168.00');
     expect(discovered.lifecycle.openDate).toBe('2026-09-01');
   });
