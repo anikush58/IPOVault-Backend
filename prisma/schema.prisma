@@ -127,6 +127,8 @@ model Ipo {
   lifecycleEvents  IpoLifecycleEvent[]
   sourceIdentities IpoSourceIdentity[]
   changeEvents     IpoChangeEvent[]
+  allotmentCheckLogs AllotmentCheckLog[]
+  allotmentCheckJobs AllotmentCheckJob[]
 
   @@index([companyId])
   @@index([status])
@@ -176,6 +178,7 @@ model Source {
   discoveryRecords DiscoveryRecord[]
   fieldProvenance  FieldProvenance[]
   changeEvents     IpoChangeEvent[]
+  allotmentCheckLogs AllotmentCheckLog[]
 
   @@index([enabled])
   @@index([sourceType])
@@ -257,4 +260,118 @@ model IpoChangeEvent {
 
   @@index([ipoId, detectedAt])
   @@map("ipo_change_events")
+}
+
+enum AllotmentIdentifierType {
+  PAN
+  APPLICATION_NUMBER
+  DP_CLIENT_ID
+}
+
+enum AllotmentResultStatus {
+  ALLOTTED
+  PARTIALLY_ALLOTTED
+  NOT_ALLOTTED
+  NOT_YET_AVAILABLE
+  APPLICATION_NOT_FOUND
+  INVALID_IDENTIFIER
+  IPO_NOT_FOUND
+  REGISTRAR_UNRESOLVED
+  REGISTRAR_UNSUPPORTED
+  UNSUPPORTED_IDENTIFIER
+  SOURCE_UNAVAILABLE
+  SOURCE_RESPONSE_INVALID
+  CAPTCHA_REQUIRED
+  RATE_LIMITED
+  CONFLICTING_RESULTS
+  TEMPORARY_ERROR
+  UNKNOWN
+}
+
+model AllotmentCheckLog {
+  id             String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId          String                  @map("ipo_id") @db.Uuid
+  sourceId       String?                 @map("source_id") @db.Uuid
+  identifierType AllotmentIdentifierType @map("identifier_type")
+  identifierHash String                  @map("identifier_hash")
+  maskedId       String                  @map("masked_id")
+  status         AllotmentResultStatus
+  sharesApplied  Int?                    @map("shares_applied")
+  sharesAllotted Int?                    @map("shares_allotted")
+  latencyMs      Int?                    @map("latency_ms")
+  errorMessage   String?                 @map("error_message")
+  checkedAt      DateTime                @default(now()) @map("checked_at") @db.Timestamptz(6)
+
+  ipo    Ipo     @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+  source Source? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([ipoId, identifierHash])
+  @@index([checkedAt])
+  @@map("allotment_check_logs")
+}
+
+enum AllotmentJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+  CANCELLED
+}
+
+model AllotmentCheckJob {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String?            @map("user_id")
+  ipoId            String             @map("ipo_id") @db.Uuid
+  status           AllotmentJobStatus @default(QUEUED)
+  totalChecks      Int                @default(0) @map("total_checks")
+  processedChecks  Int                @default(0) @map("processed_checks")
+  successfulChecks Int                @default(0) @map("successful_checks")
+  failedChecks     Int                @default(0) @map("failed_checks")
+  errorMessage     String?            @map("error_message")
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipo   Ipo                     @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+  items AllotmentCheckJobItem[]
+
+  @@index([userId])
+  @@index([ipoId])
+  @@index([status])
+  @@map("allotment_check_jobs")
+}
+
+model AllotmentCheckJobItem {
+  id             String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  jobId          String                  @map("job_id") @db.Uuid
+  identifierType AllotmentIdentifierType @map("identifier_type")
+  identifierHash String                  @map("identifier_hash")
+  maskedId       String                  @map("masked_id")
+  status         AllotmentResultStatus   @default(UNKNOWN)
+  sharesApplied  Int?                    @map("shares_applied")
+  sharesAllotted Int?                    @map("shares_allotted")
+  latencyMs      Int?                    @map("latency_ms")
+  errorMessage   String?                 @map("error_message")
+  checkedAt      DateTime?               @map("checked_at") @db.Timestamptz(6)
+
+  job AllotmentCheckJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([identifierHash])
+  @@map("allotment_check_job_items")
+}
+
+model UserSavedPan {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id")
+  panEncrypted String   @map("pan_encrypted")
+  panMasked    String   @map("pan_masked")
+  panHash      String   @map("pan_hash")
+  name         String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([panHash])
+  @@map("user_saved_pans")
 }

@@ -13,6 +13,7 @@ import { CompaniesModule } from './modules/companies/companies.module';
 import { DiscoveryModule } from './modules/discovery/discovery.module';
 import { IposModule } from './modules/ipos/ipos.module';
 import { SourcesModule } from './modules/sources/sources.module';
+import { AllotmentModule } from './modules/allotment/allotment.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { SourcesModule } from './modules/sources/sources.module';
     IposModule,
     SourcesModule,
     DiscoveryModule,
+    AllotmentModule,
     HealthModule,
   ],
   providers: [

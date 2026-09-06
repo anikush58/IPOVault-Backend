@@ -1,0 +1,77 @@
+import { RegistrarResolver } from './registrar.resolver';
+import { PrismaService } from '../../database/prisma.service';
+import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
+import { KfinRegistrarAdapter } from './adapters/kfin-registrar.adapter';
+
+describe('RegistrarResolver tests', () => {
+  let resolver: RegistrarResolver;
+  let prismaService: jest.Mocked<PrismaService>;
+  let registry: jest.Mocked<RegistrarAdapterRegistry>;
+
+  const mockKfinAdapter = new KfinRegistrarAdapter();
+
+  beforeEach(() => {
+    prismaService = {
+      ipoSourceIdentity: {
+        findFirst: jest.fn(),
+      },
+    } as unknown as jest.Mocked<PrismaService>;
+
+    registry = {
+      get: jest.fn(),
+    } as unknown as jest.Mocked<RegistrarAdapterRegistry>;
+
+    resolver = new RegistrarResolver(prismaService, registry);
+  });
+
+  it('9. should resolve correct IPO -> client_id mapping from database', async () => {
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue({
+      externalId: '40580036070',
+      source: {
+        code: 'KFINTECH',
+      },
+    });
+
+    (registry.get as jest.Mock).mockReturnValue(mockKfinAdapter);
+
+    const resolved = await resolver.resolveAdapter('ipo-111');
+
+    expect(resolved).toBeDefined();
+    expect(resolved?.adapter).toBe(mockKfinAdapter);
+    expect(resolved?.registrarIpoCode).toBe('40580036070');
+  });
+
+  it('10. should handle multiple IPOs with different client IDs dynamically', async () => {
+    // IPO A -> KFin client_id 40580036070
+    (
+      prismaService.ipoSourceIdentity.findFirst as jest.Mock
+    ).mockResolvedValueOnce({
+      externalId: '40580036070',
+      source: { code: 'KFINTECH' },
+    });
+    (registry.get as jest.Mock).mockReturnValue(mockKfinAdapter);
+
+    const resolvedA = await resolver.resolveAdapter('ipo-A');
+    expect(resolvedA?.registrarIpoCode).toBe('40580036070');
+
+    // IPO B -> KFin client_id 99990001111
+    (
+      prismaService.ipoSourceIdentity.findFirst as jest.Mock
+    ).mockResolvedValueOnce({
+      externalId: '99990001111',
+      source: { code: 'KFINTECH' },
+    });
+
+    const resolvedB = await resolver.resolveAdapter('ipo-B');
+    expect(resolvedB?.registrarIpoCode).toBe('99990001111');
+  });
+
+  it('should return undefined and log warning when no source identity is registered (NO guessing)', async () => {
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue(
+      null,
+    );
+
+    const resolved = await resolver.resolveAdapter('unmapped-ipo');
+    expect(resolved).toBeUndefined();
+  });
+});
