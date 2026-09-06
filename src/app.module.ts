@@ -14,6 +14,7 @@ import { DiscoveryModule } from './modules/discovery/discovery.module';
 import { IposModule } from './modules/ipos/ipos.module';
 import { SourcesModule } from './modules/sources/sources.module';
 import { AllotmentModule } from './modules/allotment/allotment.module';
+import { UserModule } from './modules/user/user.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AllotmentModule } from './modules/allotment/allotment.module';
     SourcesModule,
     DiscoveryModule,
     AllotmentModule,
+    UserModule,
     HealthModule,
   ],
   providers: [
