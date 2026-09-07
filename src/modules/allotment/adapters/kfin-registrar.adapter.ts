@@ -163,8 +163,14 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       };
     }
 
-    // Handle array or single object structure
-    const targetObj = Array.isArray(raw) ? raw[0] : raw;
+    // Handle array, wrapper object with data property, or single object structure
+    const targetObj = Array.isArray(raw)
+      ? raw[0]
+      : Array.isArray((raw as Record<string, unknown>).data)
+        ? (
+            (raw as Record<string, unknown>).data as Record<string, unknown>[]
+          )[0]
+        : raw;
 
     if (!targetObj) {
       return {
@@ -196,9 +202,9 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     }
 
     const applied = Number(
-      targetObj.All_Shares ??
-        targetObj.App_Shares ??
+      targetObj.App_Shares ??
         targetObj.applied_qty ??
+        targetObj.All_Shares ??
         0,
     );
     const allotted = Number(

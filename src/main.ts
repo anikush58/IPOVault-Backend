@@ -10,7 +10,8 @@ async function bootstrap(): Promise<void> {
 
   configureApp(app);
 
-  await app.listen(env.PORT);
+  await app.listen(env.PORT, '0.0.0.0');
+  console.log(`Backend server running on http://0.0.0.0:${env.PORT}`);
 }
 
 void bootstrap();
