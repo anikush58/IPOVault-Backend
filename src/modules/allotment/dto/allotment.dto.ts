@@ -39,7 +39,7 @@ export const checkAllotmentBodySchema = z
 export type CheckAllotmentBodyDto = z.infer<typeof checkAllotmentBodySchema>;
 
 export const createAllotmentJobBodySchema = z.object({
-  ipoId: z.string().uuid({ message: 'ipoId must be a valid UUID' }),
+  ipoId: z.string().trim().min(1, { message: 'ipoId must not be empty' }),
   identifierType: allotmentIdentifierTypeSchema
     .optional()
     .default(AllotmentIdentifierType.PAN),

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { Prisma } from '@prisma/client';
 import { IRegistrarAdapter } from './allotment.types';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 
@@ -25,25 +26,35 @@ export class RegistrarResolver {
     ipoId: string,
     requestedCode?: string,
   ): Promise<ResolvedRegistrar | undefined> {
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        ipoId.trim(),
+      );
+
+    const orConditions: Prisma.IpoSourceIdentityWhereInput[] = [
+      { ipo: { symbol: { equals: ipoId, mode: 'insensitive' } } },
+      {
+        ipo: {
+          company: {
+            displayName: { contains: ipoId, mode: 'insensitive' },
+          },
+        },
+      },
+      {
+        ipo: {
+          company: { legalName: { contains: ipoId, mode: 'insensitive' } },
+        },
+      },
+    ];
+
+    if (isUuid) {
+      orConditions.unshift({ ipoId });
+    }
+
     // 1. Check direct match or flexible symbol/company name match in database
     const sourceIdentity = await this.prisma.ipoSourceIdentity.findFirst({
       where: {
-        OR: [
-          { ipoId },
-          { ipo: { symbol: { equals: ipoId, mode: 'insensitive' } } },
-          {
-            ipo: {
-              company: {
-                displayName: { contains: ipoId, mode: 'insensitive' },
-              },
-            },
-          },
-          {
-            ipo: {
-              company: { legalName: { contains: ipoId, mode: 'insensitive' } },
-            },
-          },
-        ],
+        OR: orConditions,
         source: {
           sourceType: 'REGISTRAR',
           ...(requestedCode ? { code: requestedCode } : {}),

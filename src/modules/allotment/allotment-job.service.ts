@@ -109,10 +109,12 @@ export class AllotmentJobService {
       );
     }
 
-    // Create persistent job record bound to userId
+    const resolvedIpoId = String(ipo.id);
+
+    // Create persistent job record bound to userId and resolved ipoId
     const job = await this.prisma.allotmentCheckJob.create({
       data: {
-        ipoId,
+        ipoId: resolvedIpoId,
         userId: userId || null,
         status: AllotmentJobStatus.QUEUED,
         totalChecks: targetValues.length,
