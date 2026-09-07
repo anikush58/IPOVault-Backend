@@ -69,6 +69,14 @@ export class AllotmentJobService {
 
     const resolved = await this.resolver.resolveAdapter(ipoId);
 
+    if (!resolved || !resolved.adapter) {
+      throw new AppException(
+        ErrorCode.REGISTRAR_UNSUPPORTED,
+        `Automated checking is not supported for IPO '${ipoId}'. Registrar adapter is missing or unsupported.`,
+        400,
+      );
+    }
+
     // Create persistent job record bound to userId
     const job = await this.prisma.allotmentCheckJob.create({
       data: {

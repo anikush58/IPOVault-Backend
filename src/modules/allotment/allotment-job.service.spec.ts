@@ -288,4 +288,16 @@ describe('AllotmentJobService Bulk Orchestration & Security Tests', () => {
       }),
     );
   });
+
+  it('16. should reject job creation with REGISTRAR_UNSUPPORTED when registrar resolver returns undefined', async () => {
+    prismaMock.ipo.findUnique.mockResolvedValue({ id: 'unsupported-ipo' });
+    resolverMock.resolveAdapter.mockResolvedValueOnce(undefined);
+
+    await expect(
+      jobService.createJob(
+        { ipoId: 'unsupported-ipo', identifierValues: ['ABCDE1234F'] },
+        'user-A',
+      ),
+    ).rejects.toThrow(AppException);
+  });
 });
