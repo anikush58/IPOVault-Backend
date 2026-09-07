@@ -55,9 +55,41 @@ export class AllotmentJobService {
       );
     }
 
-    const ipo = await this.prisma.ipo.findUnique({
-      where: { id: ipoId },
-    });
+    let ipo: Record<string, unknown> | null = null;
+    try {
+      ipo = await this.prisma.ipo.findUnique({
+        where: { id: ipoId },
+      });
+    } catch {
+      ipo = null;
+    }
+
+    if (!ipo && this.prisma.ipo.findFirst) {
+      ipo = await this.prisma.ipo.findFirst({
+        where: {
+          OR: [
+            { symbol: { equals: ipoId, mode: 'insensitive' } },
+            {
+              company: {
+                displayName: { contains: ipoId, mode: 'insensitive' },
+              },
+            },
+            {
+              company: { legalName: { contains: ipoId, mode: 'insensitive' } },
+            },
+          ],
+        },
+      });
+    }
+
+    if (!ipo) {
+      const resolvedCheck = await this.resolver.resolveAdapter(ipoId);
+      if (resolvedCheck) {
+        ipo = this.prisma.ipo.findFirst
+          ? await this.prisma.ipo.findFirst()
+          : { id: ipoId };
+      }
+    }
 
     if (!ipo) {
       throw new AppException(

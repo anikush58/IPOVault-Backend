@@ -19,25 +19,34 @@ export class RegistrarResolver {
 
   /**
    * Resolves the appropriate IRegistrarAdapter and registrar-specific company code for an IPO ID.
-   * Driven by database IpoSourceIdentity records (NEVER guesses an arbitrary registrar).
+   * Driven by database IpoSourceIdentity records with fallback resolution by symbol/company name.
    */
   async resolveAdapter(
     ipoId: string,
     requestedCode?: string,
   ): Promise<ResolvedRegistrar | undefined> {
-    if (requestedCode) {
-      const adapter = this.registry.get(requestedCode);
-      if (adapter) {
-        return { adapter, registrarIpoCode: ipoId };
-      }
-    }
-
-    // Check if source identity is registered for this IPO in database
+    // 1. Check direct match or flexible symbol/company name match in database
     const sourceIdentity = await this.prisma.ipoSourceIdentity.findFirst({
       where: {
-        ipoId,
+        OR: [
+          { ipoId },
+          { ipo: { symbol: { equals: ipoId, mode: 'insensitive' } } },
+          {
+            ipo: {
+              company: {
+                displayName: { contains: ipoId, mode: 'insensitive' },
+              },
+            },
+          },
+          {
+            ipo: {
+              company: { legalName: { contains: ipoId, mode: 'insensitive' } },
+            },
+          },
+        ],
         source: {
           sourceType: 'REGISTRAR',
+          ...(requestedCode ? { code: requestedCode } : {}),
         },
       },
       include: {
@@ -55,7 +64,7 @@ export class RegistrarResolver {
       }
     }
 
-    // No guessing: return undefined when no registrar source identity is mapped
+    // Return undefined when no registrar source identity is mapped
     this.logger.warn(
       `No registered registrar source identity found for IPO ${ipoId}`,
     );

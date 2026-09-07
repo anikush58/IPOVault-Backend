@@ -11,7 +11,7 @@ import { RegistrarResolver } from './registrar.resolver';
 describe('AllotmentJobService Bulk Orchestration & Security Tests', () => {
   let jobService: AllotmentJobService;
   let prismaMock: {
-    ipo: { findUnique: jest.Mock };
+    ipo: { findUnique: jest.Mock; findFirst: jest.Mock };
     allotmentCheckJob: {
       create: jest.Mock;
       findUnique: jest.Mock;
@@ -27,6 +27,7 @@ describe('AllotmentJobService Bulk Orchestration & Security Tests', () => {
     prismaMock = {
       ipo: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
       },
       allotmentCheckJob: {
         create: jest.fn(),
