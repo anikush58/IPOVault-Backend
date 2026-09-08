@@ -7,6 +7,7 @@ import { hashPayload } from '../../hash-payload';
 import { SEBI_SOURCE_CODE } from '../source-adapter';
 import { SebiSourceAdapter } from './sebi.adapter';
 import { isOfficialSebiUrl, SebiHttpClient } from './sebi.fetcher';
+import { parseSebiPdfBuffer } from './sebi-pdf.parser';
 import { SebiFilingMetadata } from './sebi.types';
 
 export type SebiIngestionResult = {
@@ -113,8 +114,31 @@ export class SebiDiscoveryFlow {
           await this.recordsRepository.mark(
             record.id,
             DiscoveryStatus.NEW,
-            null,
+            undefined,
           );
+
+          if (
+            downloadResult.documentBuffer &&
+            downloadResult.contentType.toLowerCase().includes('pdf')
+          ) {
+            try {
+              const pdfObs = await parseSebiPdfBuffer(
+                downloadResult.documentBuffer,
+                { externalId: obs.externalId || '', sourceUrl: docUrl },
+              );
+              this.logger.log(
+                `Parsed SEBI PDF observation for filing ${obs.externalId}: CIN=${pdfObs.cin.value || 'UNRESOLVED'}, LegalName=${pdfObs.legalName.value || 'UNRESOLVED'}`,
+              );
+            } catch (parseErr: unknown) {
+              const parseMsg =
+                parseErr instanceof Error
+                  ? parseErr.message
+                  : String(parseErr);
+              this.logger.warn(
+                `SEBI PDF parsing failed for filing ${obs.externalId}: ${parseMsg}`,
+              );
+            }
+          }
 
           this.logger.log(
             `Downloaded SEBI document for filing ${obs.externalId}: ${downloadResult.contentLength} bytes (${downloadResult.contentType})`,

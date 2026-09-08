@@ -35,3 +35,44 @@ export type SebiFetchOptions = {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 };
+
+export type SebiFieldEvidence = {
+  rawTextSnippet: string;
+  pageNumber?: number;
+  sectionName?: string;
+};
+
+export type SebiFieldStatus = 'EXTRACTED' | 'UNRESOLVED' | 'MISMATCH_WARNING';
+
+export type SebiExtractedField<T> = {
+  value: T | null;
+  status: SebiFieldStatus;
+  evidence?: SebiFieldEvidence;
+  warning?: string;
+};
+
+export type SebiPdfIssueObservation = {
+  externalId: string;
+  sourceUrl?: string | null;
+  extractedAt: string;
+
+  // IDENTITY
+  legalName: SebiExtractedField<string>;
+  cin: SebiExtractedField<string>;
+
+  // PRICING
+  faceValue: SebiExtractedField<number>;
+
+  // ISSUE STRUCTURE - SHARES
+  issueShareCount: SebiExtractedField<number>;
+  freshIssueShareCount: SebiExtractedField<number>;
+  ofsShareCount: SebiExtractedField<number>;
+
+  // ISSUE STRUCTURE - INR AMOUNTS
+  issueSize: SebiExtractedField<number>;
+  freshIssueSize: SebiExtractedField<number>;
+  ofsSize: SebiExtractedField<number>;
+
+  // OVERALL VALIDATION
+  warnings: string[];
+};
