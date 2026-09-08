@@ -37,10 +37,15 @@ type FakePrismaClient = {
   company: {
     findFirst: (args: { where: Row }) => Promise<Row | null>;
     findUnique: (args: { where: { id: string } }) => Promise<Row | null>;
+    findMany: (args?: { include?: Row; where?: Row }) => Promise<Row[]>;
     create: (args: { data: Row }) => Promise<Row>;
     update: (args: { where: { id: string }; data: Row }) => Promise<Row>;
   };
   ipo: {
+    findFirst: (args: {
+      where: Row;
+      include?: { company: boolean };
+    }) => Promise<Row | null>;
     findUnique: (args: { where: { id: string } }) => Promise<Row | null>;
     count: (args: { where: { companyId: string } }) => Promise<number>;
     create: (args: { data: Row }) => Promise<Row>;
@@ -78,6 +83,7 @@ type FakePrismaClient = {
     findUnique: (args: {
       where: { id?: string; code?: string };
     }) => Promise<Row | null>;
+    update: (args: { where: { id: string }; data: Row }) => Promise<Row>;
   };
   $transaction: <T>(fn: (tx: FakePrismaClient) => Promise<T>) => Promise<T>;
 };
@@ -100,6 +106,17 @@ export function createFakePrisma() {
         db.companies.find((row) => matches(row, where)) ?? null,
       findUnique: async ({ where }: { where: { id: string } }) =>
         db.companies.find((row) => row.id === where.id) ?? null,
+      findMany: async ({ include }: { include?: Row } = {}) => {
+        return db.companies.map((c) => {
+          if (include?.ipos) {
+            return {
+              ...c,
+              ipos: db.ipos.filter((i) => i.companyId === c.id),
+            };
+          }
+          return c;
+        });
+      },
       create: async ({ data }: { data: Row }) => {
         const row = { id: randomUUID(), ...data };
         db.companies.push(row);
@@ -115,6 +132,25 @@ export function createFakePrisma() {
       },
     },
     ipo: {
+      findFirst: async ({
+        where,
+        include,
+      }: {
+        where: Row;
+        include?: { company: boolean };
+      }) => {
+        const row = db.ipos.find((item) => matches(item, where));
+        if (!row) {
+          return null;
+        }
+        if (include?.company) {
+          return {
+            ...row,
+            company: db.companies.find((c) => c.id === row.companyId),
+          };
+        }
+        return row;
+      },
       findUnique: async ({ where }: { where: { id: string } }) =>
         db.ipos.find((row) => row.id === where.id) ?? null,
       count: async ({ where }: { where: { companyId: string } }) =>
@@ -258,6 +294,14 @@ export function createFakePrisma() {
           return db.sources.find((row) => row.code === where.code) ?? null;
         }
         return null;
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Row }) => {
+        const row = db.sources.find((item) => item.id === where.id);
+        if (!row) {
+          throw new Error('source not found');
+        }
+        Object.assign(row, data);
+        return row;
       },
     },
     $transaction: async <T>(

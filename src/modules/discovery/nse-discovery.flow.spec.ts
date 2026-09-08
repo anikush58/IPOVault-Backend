@@ -37,13 +37,18 @@ function createFlow(options?: {
   findSource?: jest.Mock;
 }) {
   const { db, prisma } = createFakePrisma();
-  const prismaService = Object.assign(prisma as object, {
-    source: {
-      findUnique:
-        options?.findSource ??
-        jest.fn(async () => ({ id: SOURCE_ID, code: 'nse' })),
-    },
-  }) as unknown as PrismaService;
+
+  db.sources.push({
+    id: SOURCE_ID,
+    code: 'nse',
+    healthStatus: 'UNKNOWN',
+  });
+
+  if (options?.findSource) {
+    prisma.source.findUnique = options.findSource;
+  }
+
+  const prismaService = prisma as unknown as PrismaService;
   const http = {
     fetchIpoDocument:
       options?.fetchIpoDocument ??
@@ -251,5 +256,41 @@ describe('NSE live ingestLive()', () => {
         ipoId: 'ipo-1',
       },
     ]);
+  });
+
+  it('updates source health to HEALTHY and updates timestamps on successful live ingest', async () => {
+    const fetchIpoDocument = jest.fn().mockResolvedValue({
+      status: 200,
+      body: [upcomingIssues[0]],
+    });
+    const { flow, db } = createFlow({ fetchIpoDocument });
+
+    await flow.ingestLive(DISCOVERED_AT);
+
+    const updatedSource = db.sources.find((s) => s.id === SOURCE_ID);
+    expect(updatedSource).toBeDefined();
+    expect(updatedSource?.healthStatus).toBe('HEALTHY');
+    expect(updatedSource?.lastCheckedAt).toBeDefined();
+    expect(updatedSource?.lastSuccessAt).toBeDefined();
+  });
+
+  it('updates source health to FAILING on fetch error without erasing canonical data', async () => {
+    const fetchIpoDocument = jest
+      .fn()
+      .mockRejectedValue(new NseFetchError('NSE network failure'));
+    const { flow, db } = createFlow({ fetchIpoDocument });
+
+    db.ipos.push({ id: 'existing-ipo-1', symbol: 'EXISTING' });
+
+    await expect(flow.ingestLive()).rejects.toThrow(NseFetchError);
+
+    const updatedSource = db.sources.find((s) => s.id === SOURCE_ID);
+    expect(updatedSource).toBeDefined();
+    expect(updatedSource?.healthStatus).toBe('FAILING');
+    expect(updatedSource?.lastFailureAt).toBeDefined();
+
+    // Existing canonical data remains completely untouched
+    expect(db.ipos).toHaveLength(1);
+    expect(db.ipos[0].id).toBe('existing-ipo-1');
   });
 });

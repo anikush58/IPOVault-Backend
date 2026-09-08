@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { SourceHealthStatus } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import { ObserveContext, NSE_SOURCE_CODE } from './adapters/source-adapter';
@@ -47,17 +48,53 @@ export class NseDiscoveryFlow {
       );
     }
 
-    const document = await this.http.fetchIpoDocument();
-    const observations = this.adapter.observe(document.body, {
-      sourceId: source.id,
-      discoveredAt,
-    });
+    const now = new Date();
 
-    const results: DiscoveryProcessResult[] = [];
-    for (const observation of observations) {
-      results.push(await this.discovery.process(observation));
+    try {
+      const document = await this.http.fetchIpoDocument();
+      const observations = this.adapter.observe(document.body, {
+        sourceId: source.id,
+        discoveredAt,
+      });
+
+      const results: DiscoveryProcessResult[] = [];
+      let hasProcessingError = false;
+
+      for (const observation of observations) {
+        const result = await this.discovery.process(observation);
+        results.push(result);
+        if (result.outcome === 'ERROR') {
+          hasProcessingError = true;
+        }
+      }
+
+      await this.prisma.source.update({
+        where: { id: source.id },
+        data: {
+          lastCheckedAt: now,
+          lastSuccessAt: now,
+          ...(hasProcessingError
+            ? {
+                lastFailureAt: now,
+                healthStatus: SourceHealthStatus.DEGRADED,
+              }
+            : {
+                healthStatus: SourceHealthStatus.HEALTHY,
+              }),
+        },
+      });
+
+      return results;
+    } catch (error) {
+      await this.prisma.source.update({
+        where: { id: source.id },
+        data: {
+          lastCheckedAt: now,
+          lastFailureAt: now,
+          healthStatus: SourceHealthStatus.FAILING,
+        },
+      });
+      throw error;
     }
-
-    return results;
   }
 }

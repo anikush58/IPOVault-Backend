@@ -40,6 +40,21 @@ export class IpoRepository {
     });
   }
 
+  async findTimelineEvents(ipoId: string) {
+    return this.prisma.ipoLifecycleEvent.findMany({
+      where: { ipoId },
+      orderBy: { eventDate: 'asc' },
+    });
+  }
+
+  async findSources(ipoId: string) {
+    return this.prisma.ipoSourceIdentity.findMany({
+      where: { ipoId },
+      include: { source: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   private where(query: IpoListQuery): Prisma.IpoWhereInput {
     return {
       ...(query.status ? { status: query.status } : {}),
