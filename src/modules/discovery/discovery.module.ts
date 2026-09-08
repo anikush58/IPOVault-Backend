@@ -7,6 +7,9 @@ import { MatchingService } from './matching.service';
 import { NseHttpClient } from './adapters/nse/nse.fetcher';
 import { NseSourceAdapter } from './adapters/nse/nse.adapter';
 import { NseDiscoveryFlow } from './nse-discovery.flow';
+import { SebiHttpClient } from './adapters/sebi/sebi.fetcher';
+import { SebiSourceAdapter } from './adapters/sebi/sebi.adapter';
+import { SebiDiscoveryFlow } from './adapters/sebi/sebi-discovery.flow';
 
 @Module({
   providers: [
@@ -17,12 +20,18 @@ import { NseDiscoveryFlow } from './nse-discovery.flow';
     NseSourceAdapter,
     NseHttpClient,
     NseDiscoveryFlow,
+    SebiSourceAdapter,
+    SebiHttpClient,
+    SebiDiscoveryFlow,
   ],
   exports: [
     DiscoveryService,
     NseSourceAdapter,
     NseHttpClient,
     NseDiscoveryFlow,
+    SebiSourceAdapter,
+    SebiHttpClient,
+    SebiDiscoveryFlow,
   ],
 })
 export class DiscoveryModule {}
