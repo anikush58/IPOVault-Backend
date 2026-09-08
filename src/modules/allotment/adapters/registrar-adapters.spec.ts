@@ -124,6 +124,7 @@ describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {
   };
 
   beforeEach(() => {
+    jest.restoreAllMocks();
     adapter = new MufgIntimeRegistrarAdapter();
   });
 
@@ -230,5 +231,126 @@ describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {
 
     const result = await adapter.checkAllotment(mockRequest);
     expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+  });
+
+  it('9. should return REGISTRAR_UNRESOLVED if missing client_id (registrarIpoCode)', async () => {
+    const invalidRequest = {
+      ipoId: '22222222-2222-2222-2222-222222222222',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'XYZAB5678C',
+    };
+
+    const result = await adapter.checkAllotment(invalidRequest);
+    expect(result.status).toBe(AllotmentStatus.REGISTRAR_UNRESOLVED);
+  });
+
+  it('10. should handle APPLICATION_NUMBER query correctly', async () => {
+    const appRequest = {
+      ipoId: '22222222-2222-2222-2222-222222222222',
+      registrarIpoCode: 'MUFG_IPO_001',
+      identifierType: AllotmentIdentifierType.APPLICATION_NUMBER,
+      identifierValue: '12345678',
+    };
+
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'SUCCESS',
+          applied_shares: 100,
+          allotted_shares: 100,
+          name: 'TEST USER',
+        }),
+      } as Response),
+    );
+
+    const result = await adapter.checkAllotment(appRequest);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(fetchSpy).toHaveBeenCalled();
+    const lastCall = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1];
+    const fetchBody = JSON.parse(
+      (lastCall[1] as RequestInit).body as string,
+    );
+    expect(fetchBody.searchtype).toBe('APP');
+    expect(fetchBody.searchValue).toBe('12345678');
+  });
+
+  it('11. should handle DP_CLIENT_ID query correctly', async () => {
+    const dpidRequest = {
+      ipoId: '22222222-2222-2222-2222-222222222222',
+      registrarIpoCode: 'MUFG_IPO_001',
+      identifierType: AllotmentIdentifierType.DP_CLIENT_ID,
+      identifierValue: '1201090012345678',
+    };
+
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'SUCCESS',
+          applied_shares: 50,
+          allotted_shares: 0,
+          name: 'TEST USER',
+        }),
+      } as Response),
+    );
+
+    const result = await adapter.checkAllotment(dpidRequest);
+    expect(result.status).toBe(AllotmentStatus.NOT_ALLOTTED);
+    const lastCall = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1];
+    const fetchBody = JSON.parse(
+      (lastCall[1] as RequestInit).body as string,
+    );
+    expect(fetchBody.searchtype).toBe('DPID');
+    expect(fetchBody.searchValue).toBe('1201090012345678');
+  });
+
+  it('12. should normalize INVALID_IDENTIFIER response', () => {
+    const fixture = {
+      status: 'INVALID_IDENTIFIER',
+      message: 'Invalid PAN format provided',
+    };
+
+    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
+    expect(result.status).toBe(AllotmentStatus.INVALID_IDENTIFIER);
+  });
+
+  it('13. should normalize TEMPORARY_ERROR response', () => {
+    const fixture = {
+      status: 'TEMPORARY_ERROR',
+      message: 'Service temporarily unavailable, try again later',
+    };
+
+    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
+    expect(result.status).toBe(AllotmentStatus.TEMPORARY_ERROR);
+  });
+
+  it('14. should handle JSON parse errors gracefully as SOURCE_RESPONSE_INVALID', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: async () => '<html><body>Error</body></html>',
+        json: async () => {
+          throw new SyntaxError('Unexpected token <');
+        },
+      } as unknown as Response),
+    );
+
+    const result = await adapter.checkAllotment(mockRequest);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
+  });
+
+  it('15. should NEVER convert unrecognized response into NOT_ALLOTTED', () => {
+    const fixture = {
+      status: 'UNKNOWN_CODE',
+      random_field: 'something',
+    };
+
+    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
+    expect(result.status).not.toBe(AllotmentStatus.NOT_ALLOTTED);
   });
 });
