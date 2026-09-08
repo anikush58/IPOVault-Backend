@@ -72,6 +72,18 @@ export class SourceIdentitySyncService {
     let unresolvedCount = 0;
 
     for (const issue of discoveredIssues) {
+      if (!issue.externalId?.trim() || !issue.externalName?.trim()) {
+        unresolvedCount++;
+        syncRecords.push({
+          status: SourceIdentitySyncStatus.UNRESOLVED,
+          registrarCode: adapter.registrarCode,
+          externalId: issue.externalId || '',
+          externalName: issue.externalName || '',
+          reason: 'Malformed or empty externalId or externalName',
+        });
+        continue;
+      }
+
       const matchResult = this.findMatchingCanonicalIpo(issue, canonicalIpos);
 
       if (
@@ -91,10 +103,18 @@ export class SourceIdentitySyncService {
       }
 
       const ipo = matchResult.ipo;
-      const existingIdentity = ipo.sourceIdentities[0];
 
-      if (existingIdentity) {
-        if (existingIdentity.externalId === issue.externalId) {
+      // Check if externalId is already mapped to any canonical IPO
+      const existingMappingByExternalId =
+        await this.prisma.ipoSourceIdentity.findFirst({
+          where: {
+            sourceId: source.id,
+            externalId: issue.externalId,
+          },
+        });
+
+      if (existingMappingByExternalId) {
+        if (existingMappingByExternalId.ipoId === ipo.id) {
           noChangeCount++;
           syncRecords.push({
             status: SourceIdentitySyncStatus.NO_CHANGE,
@@ -103,33 +123,49 @@ export class SourceIdentitySyncService {
             externalName: issue.externalName,
             ipoId: ipo.id,
             companyName: ipo.company.displayName,
-            previousExternalId: existingIdentity.externalId,
+            previousExternalId: issue.externalId,
             newExternalId: issue.externalId,
           });
         } else {
-          // Detect STALE identity and UPDATE to verified current externalId
-          const previousExternalId = existingIdentity.externalId ?? undefined;
-          await this.prisma.ipoSourceIdentity.update({
-            where: { id: existingIdentity.id },
-            data: { externalId: issue.externalId },
-          });
-
-          changedCount++;
-          this.logger.warn(
-            `EXTERNAL_ID_CHANGED for IPO ${ipo.company.displayName} (${ipo.id}): ${previousExternalId} -> ${issue.externalId}`,
-          );
-
+          unresolvedCount++;
           syncRecords.push({
-            status: SourceIdentitySyncStatus.EXTERNAL_ID_CHANGED,
+            status: SourceIdentitySyncStatus.UNRESOLVED,
             registrarCode: adapter.registrarCode,
             externalId: issue.externalId,
             externalName: issue.externalName,
-            ipoId: ipo.id,
-            companyName: ipo.company.displayName,
-            previousExternalId,
-            newExternalId: issue.externalId,
+            reason: `Conflict: externalId '${issue.externalId}' is already mapped to a different canonical IPO (${existingMappingByExternalId.ipoId})`,
           });
         }
+        continue;
+      }
+
+      const existingIdentityOnIpo = ipo.sourceIdentities.find(
+        (identity) => !identity.sourceId || identity.sourceId === source.id,
+      );
+
+      if (existingIdentityOnIpo) {
+        // Update stale identity on matched IPO
+        const previousExternalId = existingIdentityOnIpo.externalId ?? undefined;
+        await this.prisma.ipoSourceIdentity.update({
+          where: { id: existingIdentityOnIpo.id },
+          data: { externalId: issue.externalId },
+        });
+
+        changedCount++;
+        this.logger.warn(
+          `EXTERNAL_ID_CHANGED for IPO ${ipo.company.displayName} (${ipo.id}): ${previousExternalId} -> ${issue.externalId}`,
+        );
+
+        syncRecords.push({
+          status: SourceIdentitySyncStatus.EXTERNAL_ID_CHANGED,
+          registrarCode: adapter.registrarCode,
+          externalId: issue.externalId,
+          externalName: issue.externalName,
+          ipoId: ipo.id,
+          companyName: ipo.company.displayName,
+          previousExternalId,
+          newExternalId: issue.externalId,
+        });
       } else {
         // Create new IpoSourceIdentity
         await this.prisma.ipoSourceIdentity.create({
@@ -174,7 +210,7 @@ export class SourceIdentitySyncService {
       id: string;
       symbol: string | null;
       company: { displayName: string; legalName: string };
-      sourceIdentities: Array<{ id: string; externalId: string | null }>;
+      sourceIdentities: Array<{ id: string; externalId: string | null; sourceId?: string }>;
     }>,
   ): {
     status: SourceIdentitySyncStatus;
