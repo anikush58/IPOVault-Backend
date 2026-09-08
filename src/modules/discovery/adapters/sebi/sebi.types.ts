@@ -62,16 +62,23 @@ export type SebiPdfIssueObservation = {
 
   // PRICING
   faceValue: SebiExtractedField<number>;
+  priceBandLow: SebiExtractedField<number>;
+  priceBandHigh: SebiExtractedField<number>;
 
   // ISSUE STRUCTURE - SHARES
   issueShareCount: SebiExtractedField<number>;
   freshIssueShareCount: SebiExtractedField<number>;
   ofsShareCount: SebiExtractedField<number>;
+  lotSize: SebiExtractedField<number>;
 
   // ISSUE STRUCTURE - INR AMOUNTS
   issueSize: SebiExtractedField<number>;
   freshIssueSize: SebiExtractedField<number>;
   ofsSize: SebiExtractedField<number>;
+
+  // DATES
+  issueOpenDate: SebiExtractedField<string>;
+  issueCloseDate: SebiExtractedField<string>;
 
   // OVERALL VALIDATION
   warnings: string[];

@@ -57,6 +57,65 @@ export function parseMagnitudeMultiplier(unitStr: string): number | null {
 }
 
 /**
+ * Helper to convert date strings to ISO YYYY-MM-DD.
+ * e.g., "TUESDAY, SEPTEMBER 15, 2026", "15-09-2026", "15/09/2026"
+ */
+export function parseDateToIso(dateStr: string): string | null {
+  if (!dateStr || isPlaceholder(dateStr)) return null;
+
+  const monthMap: Record<string, string> = {
+    jan: '01', january: '01',
+    feb: '02', february: '02',
+    mar: '03', march: '03',
+    apr: '04', april: '04',
+    may: '05',
+    jun: '06', june: '06',
+    jul: '07', july: '07',
+    aug: '08', august: '08',
+    sep: '09', september: '09',
+    oct: '10', october: '10',
+    nov: '11', november: '11',
+    dec: '12', december: '12',
+  };
+
+  const cleaned = dateStr.replace(/^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s*/i, '').trim();
+
+  // Pattern 1: SEPTEMBER 15, 2026 or 15TH SEPTEMBER 2026
+  const monthNameMatch = /([a-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i.exec(cleaned);
+  if (monthNameMatch && monthNameMatch[1] && monthNameMatch[2] && monthNameMatch[3]) {
+    const monthKey = monthNameMatch[1].toLowerCase();
+    const m = monthMap[monthKey];
+    if (m) {
+      const day = monthNameMatch[2].padStart(2, '0');
+      const year = monthNameMatch[3];
+      return `${year}-${m}-${day}`;
+    }
+  }
+
+  const dayMonthMatch = /(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9}),?\s+(\d{4})/i.exec(cleaned);
+  if (dayMonthMatch && dayMonthMatch[1] && dayMonthMatch[2] && dayMonthMatch[3]) {
+    const monthKey = dayMonthMatch[2].toLowerCase();
+    const m = monthMap[monthKey];
+    if (m) {
+      const day = dayMonthMatch[1].padStart(2, '0');
+      const year = dayMonthMatch[3];
+      return `${year}-${m}-${day}`;
+    }
+  }
+
+  // Pattern 2: 15-09-2026 or 15/09/2026
+  const numericMatch = /(\d{1,2})[-/](\d{1,2})[-/](\d{4})/.exec(cleaned);
+  if (numericMatch && numericMatch[1] && numericMatch[2] && numericMatch[3]) {
+    const day = numericMatch[1].padStart(2, '0');
+    const month = numericMatch[2].padStart(2, '0');
+    const year = numericMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  return null;
+}
+
+/**
  * Extracts CIN deterministically from PDF text.
  */
 export function extractCin(text: string): SebiExtractedField<string> {
@@ -149,7 +208,7 @@ export function extractLegalName(text: string): SebiExtractedField<string> {
 
   // Cover header search: "NAME OF THE ISSUER COMPANY" or "[Company Name] Limited"
   const coverNameMatch =
-    /\b([A-Z0-9\s().&-]+?\b(?:LIMITED|PRIVATE LIMITED))\b(?=\s*[\r\n]+(?:\(|OUR COMPANY|REGISTERED OFFICE|CIN:))/i.exec(
+    /\b([A-Z0-9\s().&-]+?\b(?:LIMITED|PRIVATE LIMITED))\b(?=[\s\r\n]+(?:\(|OUR COMPANY|REGISTERED OFFICE|CIN:))/i.exec(
       headerSection,
     );
 
@@ -232,6 +291,253 @@ export function extractFaceValue(text: string): SebiExtractedField<number> {
 }
 
 /**
+ * Extracts priceBandLow and priceBandHigh deterministically.
+ */
+export function extractPriceBand(text: string): {
+  low: SebiExtractedField<number>;
+  high: SebiExtractedField<number>;
+} {
+  const normalizedText = normalizePdfText(text);
+
+  const unresolvedPair = (warningMsg: string) => ({
+    low: { value: null, status: 'UNRESOLVED' as const, warning: warningMsg },
+    high: { value: null, status: 'UNRESOLVED' as const, warning: warningMsg },
+  });
+
+  // Range pattern 1: Price Band: ₹ 175 to ₹ 185 per Equity Share / Price Band of Rs. 175 to Rs. 185
+  const rangeRegex =
+    /\b(?:price\s+band|price\s+range)\s*(?:of|:)?\s*[\s\r\n]*(?:₹|Rs\.?|INR)?[\s\r\n]*([\[\]●•\d,.]+)\s*(?:to|-|and)\s*(?:₹|Rs\.?|INR)?[\s\r\n]*([\[\]●•\d,.]+)\s*(?:per|\/-|each)?/gi;
+
+  let match = rangeRegex.exec(normalizedText);
+
+  // Pattern 2: Floor Price of ₹ 175 ... Cap Price of ₹ 185
+  if (!match) {
+    const floorCapRegex =
+      /\bfloor\s+price\s+(?:of|:)?\s*[\s\r\n]*(?:₹|Rs\.?|INR)?[\s\r\n]*([\[\]●•\d,.]+)(?:(?!\bcap\s+price\b)[\s\S])*?\bcap\s+price\s+(?:of|:)?\s*[\s\r\n]*(?:₹|Rs\.?|INR)?[\s\r\n]*([\[\]●•\d,.]+)/i;
+    match = floorCapRegex.exec(normalizedText);
+  }
+
+  // Pattern 3: Fixed Price Issue e.g. "Offer Price of ₹ 180 per Equity Share" or "Issue Price: Rs. 180 per Equity Share"
+  if (!match) {
+    const fixedPriceRegex =
+      /\b(?:fixed\s+price|offer\s+price|issue\s+price)\s*(?:of|:)?\s*[\s\r\n]*(?:₹|Rs\.?|INR)?[\s\r\n]*([\[\]●•\d,.]+)\s*(?:per|\/-|each)?/i;
+    const fixedMatch = fixedPriceRegex.exec(normalizedText);
+    if (fixedMatch && fixedMatch[1]) {
+      const raw = fixedMatch[1].trim();
+      if (isPlaceholder(raw)) {
+        return unresolvedPair('Fixed issue price is an unfinalized placeholder');
+      }
+      const val = parseFloat(raw.replace(/,/g, ''));
+      if (!isNaN(val) && val > 0) {
+        return {
+          low: {
+            value: val,
+            status: 'EXTRACTED',
+            evidence: { rawTextSnippet: fixedMatch[0] },
+          },
+          high: {
+            value: val,
+            status: 'EXTRACTED',
+            evidence: { rawTextSnippet: fixedMatch[0] },
+          },
+        };
+      }
+    }
+  }
+
+  // Check for isolated Floor Price or isolated Cap Price
+  if (!match) {
+    const hasIsolatedFloor = /\bfloor\s+price\b/i.test(normalizedText);
+    const hasIsolatedCap = /\bcap\s+price\b/i.test(normalizedText);
+    if (hasIsolatedFloor || hasIsolatedCap) {
+      return unresolvedPair('Isolated floor/cap price endpoint without complete range');
+    }
+    return unresolvedPair('Price band range not found');
+  }
+
+  const rawLow = match[1] ? match[1].trim() : '';
+  const rawHigh = match[2] ? match[2].trim() : '';
+
+  if (isPlaceholder(rawLow) || isPlaceholder(rawHigh)) {
+    return unresolvedPair('Price band endpoint is an unfinalized placeholder');
+  }
+
+  const lowVal = parseFloat(rawLow.replace(/,/g, ''));
+  const highVal = parseFloat(rawHigh.replace(/,/g, ''));
+
+  if (isNaN(lowVal) || isNaN(highVal) || lowVal <= 0 || highVal <= 0) {
+    return unresolvedPair(`Invalid numeric price band range '${rawLow} - ${rawHigh}'`);
+  }
+
+  if (lowVal > highVal) {
+    return unresolvedPair(`Invalid price band: floor price (${lowVal}) > cap price (${highVal})`);
+  }
+
+  return {
+    low: {
+      value: lowVal,
+      status: 'EXTRACTED',
+      evidence: { rawTextSnippet: match[0] },
+    },
+    high: {
+      value: highVal,
+      status: 'EXTRACTED',
+      evidence: { rawTextSnippet: match[0] },
+    },
+  };
+}
+
+/**
+ * Extracts lotSize deterministically (shares per market/bid lot).
+ */
+export function extractLotSize(text: string): SebiExtractedField<number> {
+  const normalizedText = normalizePdfText(text);
+
+  const lotRegex =
+    /\b(?:bid\s+lot|market\s+lot|minimum\s+bid\s+quantity)\s*(?:of|:|-)?\s*([\[\]●•\d,.]+)\s*(?:equity\s+shares)?/gi;
+
+  const candidateLots: number[] = [];
+  const evidenceList: string[] = [];
+
+  let match: RegExpExecArray | null;
+
+  while ((match = lotRegex.exec(normalizedText)) !== null) {
+    const rawVal = match[1] ? match[1].trim() : '';
+
+    if (isPlaceholder(rawVal)) {
+      return {
+        value: null,
+        status: 'UNRESOLVED',
+        warning: 'Lot size is an unfinalized placeholder',
+        evidence: { rawTextSnippet: match[0] },
+      };
+    }
+
+    const val = parseInt(rawVal.replace(/,/g, ''), 10);
+
+    const isOneLotPhrase = /1\s+(?:market\s+)?lot\b/i.test(match[0]);
+    if (!isNaN(val) && val > 1 && !isOneLotPhrase) {
+      candidateLots.push(val);
+      evidenceList.push(match[0]);
+    }
+  }
+
+  const uniqueLots = Array.from(new Set(candidateLots));
+
+  if (uniqueLots.length === 0) {
+    return {
+      value: null,
+      status: 'UNRESOLVED',
+      warning: 'Lot size not found',
+    };
+  }
+
+  if (uniqueLots.length > 1) {
+    return {
+      value: null,
+      status: 'UNRESOLVED',
+      warning: `Multiple ambiguous lot sizes found: ${uniqueLots.join(', ')}`,
+      evidence: { rawTextSnippet: evidenceList.join(' | ') },
+    };
+  }
+
+  return {
+    value: uniqueLots[0]!,
+    status: 'EXTRACTED',
+    evidence: { rawTextSnippet: evidenceList[0] || String(uniqueLots[0]) },
+  };
+}
+
+/**
+ * Extracts issueOpenDate deterministically.
+ */
+export function extractIssueOpenDate(text: string): SebiExtractedField<string> {
+  const normalizedText = normalizePdfText(text);
+
+  const openRegex =
+    /\b(?:bid\/offer|issue|offer)\s+opens\s+on\s*[:|-]?\s*([a-z0-9\s,/.\-]+?)(?=\s*(?:and\s+closes|bid\/offer\s+closes|issue\s+closes|closing|\n|\.|$))/gi;
+
+  let match: RegExpExecArray | null;
+
+  while ((match = openRegex.exec(normalizedText)) !== null) {
+    // Ensure this match line/phrase is NOT for anchor investors
+    if (/anchor\s+investor/i.test(match[0])) {
+      continue;
+    }
+
+    const rawDate = match[1] ? match[1].trim() : '';
+
+    if (isPlaceholder(rawDate)) {
+      return {
+        value: null,
+        status: 'UNRESOLVED',
+        warning: 'Issue open date is an unfinalized placeholder',
+        evidence: { rawTextSnippet: match[0] },
+      };
+    }
+
+    const isoDate = parseDateToIso(rawDate);
+    if (isoDate) {
+      return {
+        value: isoDate,
+        status: 'EXTRACTED',
+        evidence: { rawTextSnippet: match[0] },
+      };
+    }
+  }
+
+  return {
+    value: null,
+    status: 'UNRESOLVED',
+    warning: 'Issue open date not found',
+  };
+}
+
+/**
+ * Extracts issueCloseDate deterministically.
+ */
+export function extractIssueCloseDate(text: string): SebiExtractedField<string> {
+  const normalizedText = normalizePdfText(text);
+
+  const closeRegex =
+    /\b(?:bid\/offer|issue|offer)\s+closes\s+on\s*[:|-]?\s*([a-z0-9\s,/.\-]+?)(?=\s*(?:and\s+|\n|\.|$))/gi;
+
+  let match: RegExpExecArray | null;
+
+  while ((match = closeRegex.exec(normalizedText)) !== null) {
+    if (/anchor\s+investor|allotment|refund|listing/i.test(match[0])) {
+      continue;
+    }
+
+    const rawDate = match[1] ? match[1].trim() : '';
+
+    if (isPlaceholder(rawDate)) {
+      return {
+        value: null,
+        status: 'UNRESOLVED',
+        warning: 'Issue close date is an unfinalized placeholder',
+        evidence: { rawTextSnippet: match[0] },
+      };
+    }
+
+    const isoDate = parseDateToIso(rawDate);
+    if (isoDate) {
+      return {
+        value: isoDate,
+        status: 'EXTRACTED',
+        evidence: { rawTextSnippet: match[0] },
+      };
+    }
+  }
+
+  return {
+    value: null,
+    status: 'UNRESOLVED',
+    warning: 'Issue close date not found',
+  };
+}
+
+/**
  * Helper to locate the "DETAILS OF THE OFFER" section text.
  */
 export function getOfferDetailsSection(text: string): string {
@@ -280,7 +586,6 @@ export function extractShareCount(
   let match = categoryPattern.exec(sectionText);
 
   if (!match && category === 'TOTAL') {
-    // Fallback pattern for total offer: "OFFER OF UP TO X EQUITY SHARES" when not preceded by FRESH or OFS
     categoryPattern =
       /\boffer\s+of\s+up\s+to\s+([\[\]●•\s\d,]+)\s+equity\s+shares/i;
     match = categoryPattern.exec(sectionText);
@@ -348,7 +653,6 @@ export function extractInrAmount(
 
   let match = categoryRegex.exec(sectionText);
 
-  // Fallback pattern if aggregating phrase format differs slightly
   if (!match) {
     if (category === 'FRESH') {
       categoryRegex =
@@ -438,6 +742,9 @@ export function parseSebiExtractedText(
   const legalName = extractLegalName(text);
   const faceValue = extractFaceValue(text);
 
+  const priceBand = extractPriceBand(text);
+  const lotSize = extractLotSize(text);
+
   const freshIssueShareCount = extractShareCount(text, 'FRESH');
   const ofsShareCount = extractShareCount(text, 'OFS');
   const issueShareCount = extractShareCount(text, 'TOTAL');
@@ -445,6 +752,9 @@ export function parseSebiExtractedText(
   const freshIssueSize = extractInrAmount(text, 'FRESH');
   const ofsSize = extractInrAmount(text, 'OFS');
   const issueSize = extractInrAmount(text, 'TOTAL');
+
+  const issueOpenDate = extractIssueOpenDate(text);
+  const issueCloseDate = extractIssueCloseDate(text);
 
   const warnings: string[] = [];
 
@@ -485,12 +795,17 @@ export function parseSebiExtractedText(
     legalName,
     cin,
     faceValue,
+    priceBandLow: priceBand.low,
+    priceBandHigh: priceBand.high,
     issueShareCount,
     freshIssueShareCount,
     ofsShareCount,
+    lotSize,
     issueSize,
     freshIssueSize,
     ofsSize,
+    issueOpenDate,
+    issueCloseDate,
     warnings,
   };
 }

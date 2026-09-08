@@ -2,13 +2,18 @@ import {
   extractCin,
   extractFaceValue,
   extractInrAmount,
+  extractIssueCloseDate,
+  extractIssueOpenDate,
   extractLegalName,
+  extractLotSize,
+  extractPriceBand,
   extractShareCount,
+  parseDateToIso,
   parseSebiExtractedText,
   parseSebiPdfBuffer,
 } from './sebi-pdf.parser';
 
-describe('SEBI PDF Issue Structure Parser — Phase 2A (A-AB Coverage)', () => {
+describe('SEBI PDF Issue Structure & Terms Parser (Phase 2A & Phase 2B)', () => {
   // Sample Real Extracted SEBI Document Text (Jindal Supreme (India) Limited RHP Fixture)
   const jindalRhpFixture = `
     JINDAL SUPREME (INDIA) LIMITED
@@ -30,298 +35,342 @@ describe('SEBI PDF Issue Structure Parser — Phase 2A (A-AB Coverage)', () => {
     INITIAL PUBLIC OFFER OF UP TO 10,000,000 EQUITY SHARES OF FACE VALUE OF Rs. 5 EACH AGGREGATING UP TO Rs. 185.00 CRORE. THE OFFER COMPRISES A FRESH ISSUE OF UP TO 6,000,000 EQUITY SHARES AGGREGATING UP TO Rs. 111.00 CRORE AND AN OFFER FOR SALE OF UP TO 4,000,000 EQUITY SHARES AGGREGATING UP TO Rs. 74.00 CRORE.
   `;
 
-  // A. PDF text extraction succeeds
-  it('A. PDF text extraction succeeds from PDF text and buffer boundary', async () => {
-    const text = 'JINDAL SUPREME (INDIA) LIMITED\nCIN: U27109HR1974PLC007126';
-    const obs = parseSebiExtractedText(text, { externalId: '104328' });
-    expect(obs.externalId).toBe('104328');
-    expect(obs.cin.value).toBe('U27109HR1974PLC007126');
+  // Sample Real Finalized Terms & Dates Document Fixture (Price Band Advertisement / Notice)
+  const finalizedTermsFixture = `
+    BAAZAR STYLE RETAIL LIMITED
+    CIN: U18101WB2013PLC194148
 
-    // Test buffer rejection for empty buffer via parseSebiPdfBuffer
-    await expect(
-      parseSebiPdfBuffer(Buffer.from(''), { externalId: '104328' }),
-    ).rejects.toThrow('PDF buffer is empty or invalid');
+    ISSUE DETAILS
+    PRICE BAND: ₹ 175 TO ₹ 185 PER EQUITY SHARE OF FACE VALUE OF ₹ 5 EACH.
+    BID LOT: 80 EQUITY SHARES AND IN MULTIPLES OF 80 EQUITY SHARES THEREAFTER.
+    MINIMUM APPLICATION AMOUNT: ₹ 14,800.
+    EMPLOYEE DISCOUNT: ₹ 15 PER EQUITY SHARE.
+
+    BID/OFFER OPENS ON: TUESDAY, SEPTEMBER 15, 2026
+    BID/OFFER CLOSES ON: THURSDAY, SEPTEMBER 17, 2026
+    ANCHOR INVESTOR BIDDING DATE: MONDAY, SEPTEMBER 14, 2026
+    BASIS OF ALLOTMENT: TUESDAY, SEPTEMBER 22, 2026
+    LISTING DATE: THURSDAY, SEPTEMBER 24, 2026
+  `;
+
+  // Phase 2A Baseline Tests (A-AB)
+  describe('Phase 2A Baseline Coverage', () => {
+    it('A. PDF text extraction succeeds from PDF text and buffer boundary', async () => {
+      const text = 'JINDAL SUPREME (INDIA) LIMITED\nCIN: U27109HR1974PLC007126';
+      const obs = parseSebiExtractedText(text, { externalId: '104328' });
+      expect(obs.externalId).toBe('104328');
+      expect(obs.cin.value).toBe('U27109HR1974PLC007126');
+
+      await expect(
+        parseSebiPdfBuffer(Buffer.from(''), { externalId: '104328' }),
+      ).rejects.toThrow('PDF buffer is empty or invalid');
+    });
+
+    it('B. extracts CIN accurately and normalizes uppercase & whitespace', () => {
+      const text = 'CIN:\n U27109\nHR1974\nPLC007126\n';
+      const field = extractCin(text);
+      expect(field.status).toBe('EXTRACTED');
+      expect(field.value).toBe('U27109HR1974PLC007126');
+    });
+
+    it('C. extracts legalName without stripping legally meaningful words', () => {
+      const field = extractLegalName(jindalRhpFixture);
+      expect(field.status).toBe('EXTRACTED');
+      expect(field.value).toBe('JINDAL SUPREME (INDIA) LIMITED');
+    });
+
+    it('D. extracts stated faceValue in INR', () => {
+      const field = extractFaceValue(jindalRhpFixture);
+      expect(field.status).toBe('EXTRACTED');
+      expect(field.value).toBe(10);
+
+      const tempsensField = extractFaceValue(tempsensFixture);
+      expect(tempsensField.status).toBe('EXTRACTED');
+      expect(tempsensField.value).toBe(5);
+
+      const shareField = extractShareCount(jindalRhpFixture, 'FRESH');
+      expect(shareField.value).toBe(18_500_000);
+
+      const inrField = extractInrAmount(jindalRhpFixture, 'FRESH');
+      expect(inrField.value).toBe(1_850_000_000);
+    });
   });
 
-  // B. CIN extraction
-  it('B. extracts CIN accurately and normalizes uppercase & whitespace', () => {
-    const text = 'CIN:\n U27109\nHR1974\nPLC007126\n';
-    const field = extractCin(text);
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe('U27109HR1974PLC007126');
+  // Phase 2B PRICE BAND Tests (1-14)
+  describe('Phase 2B Price Band Extraction', () => {
+    it('1. extracts standard ₹ price band range', () => {
+      const pb = extractPriceBand('Price Band: ₹ 175 to ₹ 185 per Equity Share');
+      expect(pb.low.status).toBe('EXTRACTED');
+      expect(pb.low.value).toBe(175);
+      expect(pb.high.status).toBe('EXTRACTED');
+      expect(pb.high.value).toBe(185);
+    });
+
+    it('2. extracts Rs. price band range', () => {
+      const pb = extractPriceBand('Price Band of Rs. 175 to Rs. 185 per Equity Share');
+      expect(pb.low.value).toBe(175);
+      expect(pb.high.value).toBe(185);
+    });
+
+    it('3. extracts INR price band range', () => {
+      const pb = extractPriceBand('Price Band of INR 175.50 to INR 185.00');
+      expect(pb.low.value).toBe(175.5);
+      expect(pb.high.value).toBe(185);
+    });
+
+    it('4. extracts Floor Price and Cap Price wording', () => {
+      const pb = extractPriceBand(
+        'Floor Price of ₹ 175 per Equity Share and Cap Price of ₹ 185 per Equity Share',
+      );
+      expect(pb.low.value).toBe(175);
+      expect(pb.high.value).toBe(185);
+    });
+
+    it('5. handles fixed explicit issue price (low == high)', () => {
+      const pb = extractPriceBand('Offer Price of ₹ 180 per Equity Share');
+      expect(pb.low.value).toBe(180);
+      expect(pb.high.value).toBe(180);
+    });
+
+    it('6. face value must not become price band', () => {
+      const text = 'Face Value of ₹ 10 each';
+      const pb = extractPriceBand(text);
+      expect(pb.low.status).toBe('UNRESOLVED');
+      expect(pb.high.status).toBe('UNRESOLVED');
+    });
+
+    it('7. application amount must not become price band', () => {
+      const text = 'Minimum Application Amount: ₹ 14,800';
+      const pb = extractPriceBand(text);
+      expect(pb.low.status).toBe('UNRESOLVED');
+    });
+
+    it('8. employee discount must not become price band', () => {
+      const text = 'Employee Discount: ₹ 15 per Equity Share';
+      const pb = extractPriceBand(text);
+      expect(pb.low.status).toBe('UNRESOLVED');
+    });
+
+    it('9. single endpoint without range → unresolved', () => {
+      const text = 'Floor Price of ₹ 175 per Equity Share';
+      const pb = extractPriceBand(text);
+      expect(pb.low.status).toBe('UNRESOLVED');
+      expect(pb.high.status).toBe('UNRESOLVED');
+    });
+
+    it('10. placeholder → unresolved', () => {
+      const text = 'Price Band: ₹ [●] to ₹ [●] per Equity Share';
+      const pb = extractPriceBand(text);
+      expect(pb.low.status).toBe('UNRESOLVED');
+      expect(pb.high.status).toBe('UNRESOLVED');
+    });
+
+    it('11. invalid range low > high → unresolved', () => {
+      const text = 'Price Band: ₹ 185 to ₹ 175 per Equity Share';
+      const pb = extractPriceBand(text);
+      expect(pb.low.status).toBe('UNRESOLVED');
+      expect(pb.high.status).toBe('UNRESOLVED');
+    });
+
+    it('12. decimal price support', () => {
+      const pb = extractPriceBand('Price Band: ₹ 175.50 to ₹ 185.75 per Equity Share');
+      expect(pb.low.value).toBe(175.5);
+      expect(pb.high.value).toBe(185.75);
+    });
+
+    it('13. irrelevant monetary values surrounding valid issue terms do not corrupt price band', () => {
+      const pb = extractPriceBand(finalizedTermsFixture);
+      expect(pb.low.value).toBe(175);
+      expect(pb.high.value).toBe(185);
+    });
+
+    it('14. fixed price placeholder → unresolved', () => {
+      const pb = extractPriceBand('Issue Price: Rs. [●] per Equity Share');
+      expect(pb.low.status).toBe('UNRESOLVED');
+      expect(pb.high.status).toBe('UNRESOLVED');
+    });
   });
 
-  // C. legalName extraction
-  it('C. extracts legalName without stripping legally meaningful words', () => {
-    const field = extractLegalName(jindalRhpFixture);
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe('JINDAL SUPREME (INDIA) LIMITED');
+  // Phase 2B LOT SIZE Tests (15-24)
+  describe('Phase 2B Lot Size Extraction', () => {
+    it('15. extracts Bid Lot share count', () => {
+      const lot = extractLotSize('Bid Lot: 80 Equity Shares and in multiples of 80 thereafter');
+      expect(lot.status).toBe('EXTRACTED');
+      expect(lot.value).toBe(80);
+    });
+
+    it('16. extracts Market Lot share count', () => {
+      const lot = extractLotSize('Market Lot: 80 Equity Shares');
+      expect(lot.status).toBe('EXTRACTED');
+      expect(lot.value).toBe(80);
+    });
+
+    it('17. extracts Minimum Bid Quantity share count', () => {
+      const lot = extractLotSize('Minimum Bid Quantity: 80 Equity Shares');
+      expect(lot.status).toBe('EXTRACTED');
+      expect(lot.value).toBe(80);
+    });
+
+    it('18. INR application amount must not become lotSize', () => {
+      const lot = extractLotSize('Minimum Application Amount: ₹ 14,800');
+      expect(lot.status).toBe('UNRESOLVED');
+    });
+
+    it('19. "1 lot" phrase must not become lotSize', () => {
+      const lot = extractLotSize('Application of 1 lot');
+      expect(lot.status).toBe('UNRESOLVED');
+    });
+
+    it('20. anchor investor quantity must not become lotSize', () => {
+      const lot = extractLotSize('Anchor Investor Portion: 5,000,000 Equity Shares');
+      expect(lot.status).toBe('UNRESOLVED');
+    });
+
+    it('21. placeholder → unresolved', () => {
+      const lot = extractLotSize('Bid Lot: [●] Equity Shares');
+      expect(lot.status).toBe('UNRESOLVED');
+      expect(lot.value).toBeNull();
+    });
+
+    it('22. ambiguous multiple candidate lot sizes → unresolved', () => {
+      const lot = extractLotSize('Bid Lot: 80 Equity Shares\nMarket Lot: 100 Equity Shares');
+      expect(lot.status).toBe('UNRESOLVED');
+    });
+
+    it('23. extracts lotSize from full finalized terms fixture', () => {
+      const lot = extractLotSize(finalizedTermsFixture);
+      expect(lot.status).toBe('EXTRACTED');
+      expect(lot.value).toBe(80);
+    });
   });
 
-  // D. faceValue extraction
-  it('D. extracts stated faceValue in INR', () => {
-    const field = extractFaceValue(jindalRhpFixture);
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(10);
+  // Phase 2B DATES Tests (25-35)
+  describe('Phase 2B Issue Dates Extraction', () => {
+    it('25. extracts standard issue open date from text', () => {
+      const open = extractIssueOpenDate('BID/OFFER OPENS ON: TUESDAY, SEPTEMBER 15, 2026');
+      expect(open.status).toBe('EXTRACTED');
+      expect(open.value).toBe('2026-09-15');
+    });
 
-    const tempsensField = extractFaceValue(tempsensFixture);
-    expect(tempsensField.status).toBe('EXTRACTED');
-    expect(tempsensField.value).toBe(5);
+    it('26. extracts standard issue close date from text', () => {
+      const close = extractIssueCloseDate('BID/OFFER CLOSES ON: THURSDAY, SEPTEMBER 17, 2026');
+      expect(close.status).toBe('EXTRACTED');
+      expect(close.value).toBe('2026-09-17');
+    });
+
+    it('27. handles numeric date format DD-MM-YYYY', () => {
+      const open = extractIssueOpenDate('ISSUE OPENS ON: 15-09-2026');
+      expect(open.value).toBe('2026-09-15');
+
+      const close = extractIssueCloseDate('ISSUE CLOSES ON: 17-09-2026');
+      expect(close.value).toBe('2026-09-17');
+    });
+
+    it('28. parses date strings to ISO YYYY-MM-DD via parseDateToIso', () => {
+      expect(parseDateToIso('SEPTEMBER 15, 2026')).toBe('2026-09-15');
+      expect(parseDateToIso('15TH SEPTEMBER 2026')).toBe('2026-09-15');
+      expect(parseDateToIso('15/09/2026')).toBe('2026-09-15');
+      expect(parseDateToIso('[●]')).toBeNull();
+    });
+
+    it('29. anchor date must not become issueOpenDate', () => {
+      const text = 'ANCHOR INVESTOR BIDDING DATE: MONDAY, SEPTEMBER 14, 2026';
+      const open = extractIssueOpenDate(text);
+      expect(open.status).toBe('UNRESOLVED');
+    });
+
+    it('30. listing date must not become issueCloseDate', () => {
+      const text = 'LISTING DATE: THURSDAY, SEPTEMBER 24, 2026';
+      const close = extractIssueCloseDate(text);
+      expect(close.status).toBe('UNRESOLVED');
+    });
+
+    it('31. allotment date must not become issueCloseDate', () => {
+      const text = 'BASIS OF ALLOTMENT: TUESDAY, SEPTEMBER 22, 2026';
+      const close = extractIssueCloseDate(text);
+      expect(close.status).toBe('UNRESOLVED');
+    });
+
+    it('32. refund date must not become issueCloseDate', () => {
+      const text = 'INITIATION OF REFUNDS: WEDNESDAY, SEPTEMBER 23, 2026';
+      const close = extractIssueCloseDate(text);
+      expect(close.status).toBe('UNRESOLVED');
+    });
+
+    it('33. placeholder date → unresolved', () => {
+      const open = extractIssueOpenDate('ISSUE OPENS ON: [●]');
+      expect(open.status).toBe('UNRESOLVED');
+
+      const close = extractIssueCloseDate('ISSUE CLOSES ON: [●]');
+      expect(close.status).toBe('UNRESOLVED');
+    });
+
+    it('34. extracts issue open and close dates from full finalized terms fixture', () => {
+      const open = extractIssueOpenDate(finalizedTermsFixture);
+      expect(open.value).toBe('2026-09-15');
+
+      const close = extractIssueCloseDate(finalizedTermsFixture);
+      expect(close.value).toBe('2026-09-17');
+    });
+
+    it('35. invalid date string → unresolved', () => {
+      const open = extractIssueOpenDate('ISSUE OPENS ON: INVALID_DATE_STRING');
+      expect(open.status).toBe('UNRESOLVED');
+    });
   });
 
-  // E. freshIssueShareCount extraction
-  it('E. extracts freshIssueShareCount from explicitly tagged equity shares', () => {
-    const field = extractShareCount(jindalRhpFixture, 'FRESH');
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(18_500_000);
-  });
+  // GENERAL Tests (36-39)
+  describe('Phase 2B General Safety & Integration', () => {
+    it('36. deterministic repeated parsing produces identical observation', () => {
+      const obs1 = parseSebiExtractedText(finalizedTermsFixture, { externalId: '194148' });
+      const obs2 = parseSebiExtractedText(finalizedTermsFixture, { externalId: '194148' });
 
-  // F. ofsShareCount extraction
-  it('F. extracts ofsShareCount from explicitly tagged equity shares', () => {
-    const field = extractShareCount(jindalRhpFixture, 'OFS');
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(5_000_000);
-  });
+      expect(obs1.priceBandLow).toEqual(obs2.priceBandLow);
+      expect(obs1.priceBandHigh).toEqual(obs2.priceBandHigh);
+      expect(obs1.lotSize).toEqual(obs2.lotSize);
+      expect(obs1.issueOpenDate).toEqual(obs2.issueOpenDate);
+      expect(obs1.issueCloseDate).toEqual(obs2.issueCloseDate);
+    });
 
-  // G. issueShareCount extraction
-  it('G. extracts total issueShareCount', () => {
-    const field = extractShareCount(jindalRhpFixture, 'TOTAL');
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(23_500_000);
-  });
+    it('37. no arithmetic inference: lot size and price band are never inferred from each other', () => {
+      const partialFixture = 'PRICE BAND: ₹ 100 TO ₹ 110 PER EQUITY SHARE';
+      const obs = parseSebiExtractedText(partialFixture, { externalId: '123456' });
 
-  // H. freshIssueSize INR extraction
-  it('H. extracts freshIssueSize in INR with magnitude multiplier', () => {
-    const field = extractInrAmount(jindalRhpFixture, 'FRESH');
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(1_850_000_000); // 1,850.00 million
-  });
+      expect(obs.priceBandLow.value).toBe(100);
+      expect(obs.priceBandHigh.value).toBe(110);
+      expect(obs.lotSize.value).toBeNull();
+      expect(obs.issueOpenDate.value).toBeNull();
+    });
 
-  // I. ofsSize INR extraction
-  it('I. extracts ofsSize in INR with magnitude multiplier', () => {
-    const field = extractInrAmount(jindalRhpFixture, 'OFS');
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(500_000_000); // 500.00 million
-  });
+    it('38. no cross-field contamination', () => {
+      const obs = parseSebiExtractedText(finalizedTermsFixture, { externalId: '194148' });
 
-  // J. issueSize INR extraction
-  it('J. extracts total issueSize in INR', () => {
-    const field = extractInrAmount(jindalRhpFixture, 'TOTAL');
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(2_350_000_000); // 2,350.00 million
-  });
+      // Assert price band values are in INR
+      expect(obs.priceBandLow.value).toBe(175);
+      expect(obs.priceBandHigh.value).toBe(185);
 
-  // K. million multiplier
-  it('K. handles million magnitude multiplier (1 million = 1,000,000 INR)', () => {
-    const fixture =
-      'DETAILS OF THE OFFER\nINITIAL PUBLIC OFFER AGGREGATING UP TO ₹ 10.5 MILLION';
-    const field = extractInrAmount(fixture, 'TOTAL');
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(10_500_000);
-  });
+      // Assert lot size is shares
+      expect(obs.lotSize.value).toBe(80);
 
-  // L. lakh/lakhs multiplier
-  it('L. handles lakh/lakhs magnitude multiplier (1 lakh = 100,000 INR)', () => {
-    const fixture =
-      'DETAILS OF THE OFFER\nINITIAL PUBLIC OFFER AGGREGATING UP TO Rs. 50.00 LAKHS';
-    const field = extractInrAmount(fixture, 'TOTAL');
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(5_000_000);
-  });
+      // Assert open and close dates are YYYY-MM-DD
+      expect(obs.issueOpenDate.value).toBe('2026-09-15');
+      expect(obs.issueCloseDate.value).toBe('2026-09-17');
+    });
 
-  // M. crore/crores multiplier
-  it('M. handles crore/crores magnitude multiplier (1 crore = 10,000,000 INR)', () => {
-    const field = extractInrAmount(tempsensFixture, 'TOTAL');
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe(1_850_000_000); // 185.00 crore
-  });
+    it('39. partial extraction works when only some fields are present', () => {
+      const partialFixture = `
+        BAAZAR STYLE RETAIL LIMITED
+        CIN: U18101WB2013PLC194148
+        PRICE BAND: ₹ 175 TO ₹ 185 PER EQUITY SHARE
+      `;
+      const obs = parseSebiExtractedText(partialFixture, { externalId: '194148' });
 
-  // N. comma-separated numbers
-  it('N. handles comma-separated numbers in share counts and amounts', () => {
-    const fixture =
-      'DETAILS OF THE OFFER\nINITIAL PUBLIC OFFER OF UP TO 12,345,678 EQUITY SHARES AGGREGATING UP TO ₹ 1,234.56 LAKHS';
-    const countField = extractShareCount(fixture, 'TOTAL');
-    expect(countField.value).toBe(12_345_678);
-
-    const inrField = extractInrAmount(fixture, 'TOTAL');
-    expect(inrField.value).toBe(123_456_000);
-  });
-
-  // O. whitespace/newline artifacts
-  it('O. tolerates whitespace and newline extraction artifacts', () => {
-    const fixture = `
-      DETAILS OF THE OFFER
-      INITIAL PUBLIC OFFER OF UP TO
-      18,500,000
-      EQUITY SHARES
-      AGGREGATING UP TO
-      ₹ 1,850.00
-      MILLION
-    `;
-    const countField = extractShareCount(fixture, 'TOTAL');
-    expect(countField.value).toBe(18_500_000);
-
-    const inrField = extractInrAmount(fixture, 'TOTAL');
-    expect(inrField.value).toBe(1_850_000_000);
-  });
-
-  // P. placeholder `[●]`
-  it('P. handles placeholder glyph `[●]` without converting to zero or NaN', () => {
-    const fixture = `
-      DETAILS OF THE OFFER
-      INITIAL PUBLIC OFFER OF UP TO [●] EQUITY SHARES AGGREGATING UP TO ₹ [●] MILLION
-    `;
-    const countField = extractShareCount(fixture, 'TOTAL');
-    expect(countField.status).toBe('UNRESOLVED');
-    expect(countField.value).toBeNull();
-
-    const inrField = extractInrAmount(fixture, 'TOTAL');
-    expect(inrField.status).toBe('UNRESOLVED');
-    expect(inrField.value).toBeNull();
-  });
-
-  // Q. placeholder `[•]`
-  it('Q. handles placeholder glyph `[•]` without converting to zero or NaN', () => {
-    const fixture = `
-      DETAILS OF THE OFFER
-      FRESH ISSUE OF UP TO [•] EQUITY SHARES
-    `;
-    const countField = extractShareCount(fixture, 'FRESH');
-    expect(countField.status).toBe('UNRESOLVED');
-    expect(countField.value).toBeNull();
-  });
-
-  // R. placeholder `[]`
-  it('R. handles empty placeholder bracket `[]` as unresolved', () => {
-    const fixture = `
-      DETAILS OF THE OFFER
-      OFFER FOR SALE OF UP TO [] EQUITY SHARES
-    `;
-    const countField = extractShareCount(fixture, 'OFS');
-    expect(countField.status).toBe('UNRESOLVED');
-    expect(countField.value).toBeNull();
-  });
-
-  // S. INR/share separation
-  it('S. strictly keeps INR amounts and share counts separate', () => {
-    const obs = parseSebiExtractedText(jindalRhpFixture, { externalId: '104328' });
-
-    // Verify share counts are numbers of shares, NOT INR amounts
-    expect(obs.issueShareCount.value).toBe(23_500_000);
-    expect(obs.freshIssueShareCount.value).toBe(18_500_000);
-    expect(obs.ofsShareCount.value).toBe(5_000_000);
-
-    // Verify INR amounts are in INR, NOT share counts
-    expect(obs.issueSize.value).toBe(2_350_000_000);
-    expect(obs.freshIssueSize.value).toBe(1_850_000_000);
-    expect(obs.ofsSize.value).toBe(500_000_000);
-
-    // Assert absolute non-overlap
-    expect(obs.issueSize.value).not.toBe(obs.issueShareCount.value);
-  });
-
-  // T. multiple issuer/company names without selecting a wrong company
-  it('T. avoids selecting selling shareholder or promoter company as issuer', () => {
-    const multiCompanyFixture = `
-      ABC TECHNOLOGIES LIMITED
-      OUR COMPANY WAS INCORPORATED AS 'ABC TECHNOLOGIES LIMITED' ON JAN 1, 2010.
-      CIN: U31402GJ1990PLC149769
-      PROMOTER GROUP NAME: XYZ HOLDINGS PRIVATE LIMITED
-      SELLING SHAREHOLDER NAME: PQR INVESTMENTS LIMITED
-    `;
-    const field = extractLegalName(multiCompanyFixture);
-    expect(field.status).toBe('EXTRACTED');
-    expect(field.value).toBe('ABC TECHNOLOGIES LIMITED');
-    expect(field.value).not.toContain('XYZ HOLDINGS');
-    expect(field.value).not.toContain('PQR INVESTMENTS');
-  });
-
-  // U. multiple valid CINs -> unresolved
-  it('U. returns unresolved status when multiple distinct valid CINs are present', () => {
-    const multiCinFixture = `
-      ISSUER CIN: U27109HR1974PLC007126
-      PROMOTER CIN: U31402GJ1990PLC149769
-    `;
-    const field = extractCin(multiCinFixture);
-    expect(field.status).toBe('UNRESOLVED');
-    expect(field.value).toBeNull();
-    expect(field.warning).toContain('Multiple distinct CINs');
-  });
-
-  // V. missing CIN -> unresolved
-  it('V. returns unresolved status when CIN is missing', () => {
-    const noCinFixture = 'COMPANY NAME: ABC LIMITED';
-    const field = extractCin(noCinFixture);
-    expect(field.status).toBe('UNRESOLVED');
-    expect(field.value).toBeNull();
-  });
-
-  // W. ambiguous issue table -> unresolved/review
-  it('W. returns unresolved status when issue section is missing or ambiguous', () => {
-    const ambiguousFixture = 'GENERAL ANNOUNCEMENT REGARDING ANNUAL MEETING';
-    const obs = parseSebiExtractedText(ambiguousFixture, { externalId: '999999' });
-    expect(obs.issueShareCount.status).toBe('UNRESOLVED');
-    expect(obs.issueSize.status).toBe('UNRESOLVED');
-  });
-
-  // X. fresh + OFS + total mismatch -> warning/review, no correction
-  it('X. emits warning on mismatch without altering extracted raw values', () => {
-    const mismatchFixture = `
-      CIN: U27109HR1974PLC007126
-      DETAILS OF THE OFFER
-      INITIAL PUBLIC OFFER OF UP TO 30,000,000 EQUITY SHARES AGGREGATING UP TO ₹ 3,000.00 MILLION.
-      THE OFFER COMPRISES A FRESH ISSUE OF UP TO 18,500,000 EQUITY SHARES AGGREGATING UP TO ₹ 1,850.00 MILLION
-      AND AN OFFER FOR SALE OF UP TO 5,000,000 EQUITY SHARES AGGREGATING UP TO ₹ 500.00 MILLION.
-    `;
-    const obs = parseSebiExtractedText(mismatchFixture, { externalId: '104328' });
-
-    // Extracted raw values MUST be preserved intact (18.5M + 5M != 30M)
-    expect(obs.freshIssueShareCount.value).toBe(18_500_000);
-    expect(obs.ofsShareCount.value).toBe(5_000_000);
-    expect(obs.issueShareCount.value).toBe(30_000_000);
-
-    // Mismatch warning must be flagged
-    expect(obs.issueShareCount.status).toBe('MISMATCH_WARNING');
-    expect(obs.warnings.length).toBeGreaterThan(0);
-    expect(obs.warnings[0]).toContain('Share count discrepancy');
-  });
-
-  // Y. parser does not call Prisma
-  it('Y. parser function is pure and does not invoke Prisma', () => {
-    const obs = parseSebiExtractedText(jindalRhpFixture, { externalId: '104328' });
-    expect(obs).toBeDefined();
-    // Verify object structure returned directly without DB side-effects
-    expect(obs.externalId).toBe('104328');
-  });
-
-  // Z. parser does not create Company
-  it('Z. parser returns observation object without creating canonical Company entity', () => {
-    const obs = parseSebiExtractedText(jindalRhpFixture, { externalId: '104328' });
-    expect(obs.legalName.value).toBe('JINDAL SUPREME (INDIA) LIMITED');
-    expect((obs as Record<string, unknown>).companyId).toBeUndefined();
-  });
-
-  // AA. parser does not create IPO
-  it('AA. parser returns observation object without creating canonical IPO entity', () => {
-    const obs = parseSebiExtractedText(jindalRhpFixture, { externalId: '104328' });
-    expect(obs.issueSize.value).toBe(2_350_000_000);
-    expect((obs as Record<string, unknown>).ipoId).toBeUndefined();
-  });
-
-  // AB. repeated parsing produces deterministic identical output
-  it('AB. produces identical output on repeated runs', () => {
-    const obs1 = parseSebiExtractedText(jindalRhpFixture, { externalId: '104328' });
-    const obs2 = parseSebiExtractedText(jindalRhpFixture, { externalId: '104328' });
-
-    // Compare values (excluding extractedAt timestamp)
-    expect(obs1.legalName).toEqual(obs2.legalName);
-    expect(obs1.cin).toEqual(obs2.cin);
-    expect(obs1.faceValue).toEqual(obs2.faceValue);
-    expect(obs1.issueShareCount).toEqual(obs2.issueShareCount);
-    expect(obs1.freshIssueShareCount).toEqual(obs2.freshIssueShareCount);
-    expect(obs1.ofsShareCount).toEqual(obs2.ofsShareCount);
-    expect(obs1.issueSize).toEqual(obs2.issueSize);
-    expect(obs1.freshIssueSize).toEqual(obs2.freshIssueSize);
-    expect(obs1.ofsSize).toEqual(obs2.ofsSize);
+      expect(obs.cin.value).toBe('U18101WB2013PLC194148');
+      expect(obs.legalName.value).toBe('BAAZAR STYLE RETAIL LIMITED');
+      expect(obs.priceBandLow.value).toBe(175);
+      expect(obs.priceBandHigh.value).toBe(185);
+      expect(obs.lotSize.value).toBeNull();
+      expect(obs.issueOpenDate.value).toBeNull();
+    });
   });
 });
