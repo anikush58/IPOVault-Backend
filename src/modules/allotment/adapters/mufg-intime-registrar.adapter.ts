@@ -79,6 +79,14 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
       body: JSON.stringify(payload),
     });
 
+    if (response.status === 404) {
+      return { status: 'NOT_FOUND' };
+    }
+
+    if (response.status === 429) {
+      return { status: 'RATE_LIMITED' };
+    }
+
     if (!response.ok) {
       throw new Error(`MUFG Intime returned HTTP ${response.status}`);
     }
@@ -116,6 +124,15 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
             ? { captchaImageUrl: String(raw.captchaUrl) }
             : undefined,
         },
+      };
+    }
+
+    if (statusStr === 'RATE_LIMITED') {
+      return {
+        status: AllotmentStatus.RATE_LIMITED,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage: 'MUFG Intime rate limit exceeded',
       };
     }
 
