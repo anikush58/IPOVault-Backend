@@ -127,7 +127,7 @@ export class SebiDiscoveryFlow {
                 { externalId: obs.externalId || '', sourceUrl: docUrl },
               );
               this.logger.log(
-                `Parsed SEBI PDF observation for filing ${obs.externalId}: CIN=${pdfObs.cin.value || 'UNRESOLVED'}, LegalName=${pdfObs.legalName.value || 'UNRESOLVED'}`,
+                `Parsed SEBI PDF observation for filing ${obs.externalId}: CIN=${pdfObs.cin.value || 'UNRESOLVED'}, LegalName=${pdfObs.legalName.value || 'UNRESOLVED'}, PriceBand=${pdfObs.priceBandLow.value}-${pdfObs.priceBandHigh.value}, LotSize=${pdfObs.lotSize.value}, OpenDate=${pdfObs.issueOpenDate.value}, CloseDate=${pdfObs.issueCloseDate.value}`,
               );
             } catch (parseErr: unknown) {
               const parseMsg =
