@@ -82,3 +82,33 @@ export type IpoResponseDto = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type IpoLifecycleEventDetailDto = {
+  id: string;
+  eventType: string;
+  eventDate: string;
+  sourceId: string | null;
+  sourceReference: string | null;
+  createdAt: string;
+};
+
+export type IpoTimelineResponseDto = {
+  ipoId: string;
+  events: IpoLifecycleEventDetailDto[];
+};
+
+export type IpoSourceIdentityDto = {
+  id: string;
+  sourceId: string;
+  sourceCode: string;
+  sourceName: string;
+  sourceType: string;
+  externalId: string | null;
+  symbol: string | null;
+  createdAt: string;
+};
+
+export type IpoSourcesResponseDto = {
+  ipoId: string;
+  sources: IpoSourceIdentityDto[];
+};

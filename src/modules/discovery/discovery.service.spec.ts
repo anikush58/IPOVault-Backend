@@ -152,9 +152,22 @@ describe('DiscoveryService', () => {
 
   it('rejects an insufficient-confidence match without writing canonical data', async () => {
     const { db, service } = createPipeline();
+    db.companies.push({
+      id: 'existing-comp-1',
+      legalName: 'Existing Company Ltd',
+      displayName: 'Existing Company',
+      normalizedName: 'EXISTING COMPANY LTD',
+      cin: null,
+    });
+    db.ipos.push({
+      id: 'existing-ipo-1',
+      companyId: 'existing-comp-1',
+      symbol: 'MOCK',
+    });
     const payload = mockObservationPayload({
       company: { cin: null, legalName: 'Some Similar Name Ltd' },
       source: { externalId: null, reference: 'mock://weak' },
+      ipo: { symbol: 'MOCK' },
     });
 
     const result = await service.process(observation(payload));
@@ -162,8 +175,8 @@ describe('DiscoveryService', () => {
     expect(result.outcome).toBe('REJECTED');
     expect(db.discovery).toHaveLength(1);
     expect(db.discovery[0].status).toBe('REJECTED');
-    expect(db.companies).toHaveLength(0);
-    expect(db.ipos).toHaveLength(0);
+    expect(db.companies).toHaveLength(1);
+    expect(db.ipos).toHaveLength(1);
   });
 
   it('rolls back canonical writes when the transaction fails', async () => {
