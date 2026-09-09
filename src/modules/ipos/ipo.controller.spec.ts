@@ -9,6 +9,7 @@ import { DiscoveryRefreshService } from '../discovery/discovery-refresh.service'
 import { DiscoveryRefreshExecutionService } from '../discovery/discovery-refresh-execution.service';
 import { DiscoveryRefreshVerificationService } from '../discovery/discovery-refresh-verification.service';
 import { DiscoverySmartRefreshService } from '../discovery/discovery-smart-refresh.service';
+import { DiscoveryCoverageService } from '../discovery/discovery-coverage.service';
 
 describe('IpoController API Endpoints', () => {
   let controller: IpoController;
@@ -185,6 +186,19 @@ describe('IpoController API Endpoints', () => {
             }),
           },
         },
+        {
+          provide: DiscoveryCoverageService,
+          useValue: {
+            evaluateCoverage: jest.fn().mockResolvedValue({
+              ipoId: '11111111-1111-1111-1111-111111111111',
+              overallStatus: 'COVERED',
+              summary: { totalFields: 15, covered: 15, missing: 0, stale: 0, conflict: 0, notExpected: 0, unknown: 0 },
+              fields: [],
+              refreshRecommendations: [],
+              evaluatedAt: new Date('2026-09-10T12:00:00.000Z'),
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -312,5 +326,15 @@ describe('IpoController API Endpoints', () => {
     expect(result.sourceCode).toBe('sebi');
     expect(result.finalOutcome).toBe('REFRESHED_AND_VERIFIED');
     expect(result.summaryMessage).toBeDefined();
+  });
+
+  it('14. GET /ipos/:id/coverage - returns data coverage analysis report', async () => {
+    const result = await controller.getCoverage({
+      id: '11111111-1111-1111-1111-111111111111',
+    });
+    expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.overallStatus).toBe('COVERED');
+    expect(result.summary).toBeDefined();
+    expect(result.fields).toBeDefined();
   });
 });

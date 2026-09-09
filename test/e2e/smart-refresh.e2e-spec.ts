@@ -459,4 +459,23 @@ describe('POST /api/v1/ipos/:id/smart-refresh (E2E Hardening)', () => {
 
     await app.close();
   });
+
+  it('13. GET /api/v1/ipos/:id/coverage - returns deterministic IPO data coverage report', async () => {
+    const app = await createTestApp([], createPrismaStubWithIpo(targetId));
+
+    const response = await request(app.getHttpServer()).get(
+      `/api/v1/ipos/${targetId}/coverage`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-request-id']).toBeDefined();
+    expect(response.body.data).toBeDefined();
+    expect(response.body.data.ipoId).toBe(targetId);
+    expect(response.body.data.overallStatus).toBeDefined();
+    expect(response.body.data.summary).toBeDefined();
+    expect(response.body.data.fields).toBeInstanceOf(Array);
+    expect(response.body.data.refreshRecommendations).toBeInstanceOf(Array);
+
+    await app.close();
+  });
 });

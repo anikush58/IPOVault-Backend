@@ -141,6 +141,20 @@ export class IpoController {
     return this.ipos.smartRefresh(params.id, body.source);
   }
 
+  /**
+   * GET /ipos/:id/coverage
+   *
+   * Phase 19 — Smart IPO Data Coverage & Source Reconciliation Intelligence.
+   * Deterministic, read-only analysis of field-level data completeness, provenances,
+   * cross-source reconciliation outcomes, and refresh recommendations.
+   */
+  @Get(':id/coverage')
+  getCoverage(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+  ) {
+    return this.ipos.getCoverage(params.id);
+  }
+
   @Get(':id')
   getById(@Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam) {
     return this.ipos.getById(params.id);
