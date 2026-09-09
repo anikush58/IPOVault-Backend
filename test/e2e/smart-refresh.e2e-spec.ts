@@ -498,4 +498,22 @@ describe('POST /api/v1/ipos/:id/smart-refresh (E2E Hardening)', () => {
 
     await app.close();
   });
+
+  it('15. GET /api/v1/ipos/:id - includes consumer-facing dataReadiness summary', async () => {
+    const app = await createTestApp([], createPrismaStubWithIpo(targetId));
+
+    const response = await request(app.getHttpServer()).get(
+      `/api/v1/ipos/${targetId}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toBeDefined();
+    expect(response.body.data.id).toBe(targetId);
+    expect(response.body.data.dataReadiness).toBeDefined();
+    expect(response.body.data.dataReadiness.status).toBeDefined();
+    expect(typeof response.body.data.dataReadiness.isReady).toBe('boolean');
+    expect(response.body.data.dataReadiness.summary).toBeDefined();
+
+    await app.close();
+  });
 });

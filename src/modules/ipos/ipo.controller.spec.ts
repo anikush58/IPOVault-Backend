@@ -366,4 +366,14 @@ describe('IpoController API Endpoints', () => {
     expect(result.blockers).toEqual([]);
     expect(result.warnings).toEqual([]);
   });
+
+  it('16. GET /ipos/:id - returns IPO detail with dataReadiness summary attached', async () => {
+    const result = await controller.getById({
+      id: '11111111-1111-1111-1111-111111111111',
+    });
+    expect(result.id).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.dataReadiness).toBeDefined();
+    expect(result.dataReadiness?.status).toBe('READY');
+    expect(result.dataReadiness?.isReady).toBe(true);
+  });
 });

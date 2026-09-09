@@ -127,4 +127,28 @@ describe('toIpoResponseDto', () => {
     expect(dto.symbol).toBeNull();
     expect(dto.lifecycle.openDate).toBeNull();
   });
+
+  it('maps Quality Gate reports cleanly to IpoDataReadinessDto', () => {
+    const { toIpoDataReadinessDto } = require('./ipo.mapper');
+    const mockReport = {
+      ipoId: '11111111-1111-4111-8111-111111111111',
+      status: 'PASS',
+      summary: { totalChecks: 15, passed: 15, warnings: 0, blockers: 0 },
+      blockers: [],
+      warnings: [],
+      fields: [],
+      qualityFindings: [],
+      coverageSummary: { totalFields: 15, covered: 15, missing: 0, stale: 0, conflict: 0, notExpected: 0, unknown: 0 },
+      refreshRecommendations: [],
+      evaluatedAt: new Date('2026-09-01T12:00:00.000Z'),
+    };
+
+    const readiness = toIpoDataReadinessDto(mockReport);
+    expect(readiness.status).toBe('READY');
+    expect(readiness.isReady).toBe(true);
+    expect(readiness.missingFieldCount).toBe(0);
+    expect(readiness.staleFieldCount).toBe(0);
+    expect(readiness.conflictFieldCount).toBe(0);
+    expect(readiness.refreshRecommended).toBe(false);
+  });
 });

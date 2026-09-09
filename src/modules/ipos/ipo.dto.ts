@@ -113,6 +113,22 @@ export type IpoLifecycleDto = {
   listingDate: string | null;
 };
 
+export type DataReadinessStatus =
+  | 'READY'
+  | 'READY_WITH_WARNINGS'
+  | 'NEEDS_REVIEW'
+  | 'INCOMPLETE';
+
+export type IpoDataReadinessDto = {
+  status: DataReadinessStatus;
+  isReady: boolean;
+  summary: string;
+  missingFieldCount: number;
+  staleFieldCount: number;
+  conflictFieldCount: number;
+  refreshRecommended: boolean;
+};
+
 export type IpoResponseDto = {
   id: string;
   company: CompanySummaryDto;
@@ -129,6 +145,7 @@ export type IpoResponseDto = {
   lotSize: number | null;
   minimumLots: number | null;
   lifecycle: IpoLifecycleDto;
+  dataReadiness?: IpoDataReadinessDto;
   createdAt: string;
   updatedAt: string;
 };

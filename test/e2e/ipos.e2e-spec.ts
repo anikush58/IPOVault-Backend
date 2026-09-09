@@ -136,6 +136,22 @@ function createIpoPrismaStub(rows: IpoWithRelations[]) {
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
         rows.find((item) => item.id === id) ?? null,
     },
+    discoveryRecord: {
+      findMany: async () => [],
+    },
+    source: {
+      findMany: async () => [],
+      findUnique: async () => null,
+    },
+    sourceIdentity: {
+      findMany: async () => [],
+    },
+    ipoChangeEvent: {
+      findMany: async () => [],
+    },
+    ipoLifecycleEvent: {
+      findMany: async () => [],
+    },
   };
 }
 

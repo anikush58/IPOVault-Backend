@@ -14,6 +14,7 @@ import {
 } from './ipo.dto';
 import {
   toDateOnly,
+  toIpoDataReadinessDto,
   toIpoResponseDto,
 } from './ipo.mapper';
 import { PrismaService } from '../../database/prisma.service';
@@ -57,7 +58,7 @@ export class IpoService {
     ]);
 
     return {
-      data: rows.map(toIpoResponseDto),
+      data: rows.map((ipo) => toIpoResponseDto(ipo)),
       meta: paginationMeta(query.page, query.limit, total),
     };
   }
@@ -69,7 +70,18 @@ export class IpoService {
       throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
     }
 
-    return toIpoResponseDto(ipo);
+    try {
+      const qualitySvc =
+        this.qualityGateService ?? new DiscoveryQualityGateService();
+      const qualityReport = await qualitySvc.evaluateQualityGate(this.prisma, id);
+      const dataReadiness = toIpoDataReadinessDto(qualityReport);
+      return toIpoResponseDto(ipo, dataReadiness);
+    } catch (err) {
+      if (err instanceof AppException && err.httpStatus === 404) {
+        throw err;
+      }
+      return toIpoResponseDto(ipo);
+    }
   }
 
   async getTimeline(id: string): Promise<IpoTimelineResponseDto> {
