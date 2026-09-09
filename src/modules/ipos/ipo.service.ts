@@ -16,11 +16,17 @@ import {
   toDateOnly,
   toIpoResponseDto,
 } from './ipo.mapper';
+import { PrismaService } from '../../database/prisma.service';
+import { ReconciliationService } from '../discovery/reconciliation.service';
 import { IpoRepository } from './ipo.repository';
 
 @Injectable()
 export class IpoService {
-  constructor(private readonly ipos: IpoRepository) {}
+  constructor(
+    private readonly ipos: IpoRepository,
+    private readonly prisma: PrismaService,
+    private readonly reconciliation: ReconciliationService,
+  ) {}
 
   async list(query: IpoListQuery): Promise<{
     data: IpoResponseDto[];
@@ -92,5 +98,15 @@ export class IpoService {
         createdAt: i.createdAt.toISOString(),
       })),
     };
+  }
+
+  async getReconciliation(id: string) {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo) {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    return this.reconciliation.reconcileIpo(this.prisma, id);
   }
 }

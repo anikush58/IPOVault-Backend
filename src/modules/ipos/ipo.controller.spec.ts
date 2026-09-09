@@ -3,6 +3,8 @@ import { IpoController } from './ipo.controller';
 import { IpoService } from './ipo.service';
 import { IpoRepository } from './ipo.repository';
 import { AppException } from '../../common/errors/app.exception';
+import { PrismaService } from '../../database/prisma.service';
+import { ReconciliationService } from '../discovery/reconciliation.service';
 
 describe('IpoController API Endpoints', () => {
   let controller: IpoController;
@@ -99,6 +101,24 @@ describe('IpoController API Endpoints', () => {
             ]),
           },
         },
+        {
+          provide: PrismaService,
+          useValue: {},
+        },
+        {
+          provide: ReconciliationService,
+          useValue: {
+            reconcileIpo: jest.fn().mockResolvedValue({
+              ipoId: '11111111-1111-1111-1111-111111111111',
+              hasCrossSourceConflict: false,
+              canonicalValues: {},
+              sebiActiveObservation: {},
+              exchangeActiveObservation: {},
+              fieldComparisons: [],
+              provenanceReport: { ipoId: '11111111-1111-1111-1111-111111111111', hasAnyConflict: false, conflicts: [] },
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -164,7 +184,15 @@ describe('IpoController API Endpoints', () => {
     expect(result.sources[0].externalId).toBe('EXT-123');
   });
 
-  it('8. GET /ipos/:id - 404 behavior for unknown IPO ID', async () => {
+  it('8. GET /ipos/:id/reconciliation - returns reconciliation analysis summary', async () => {
+    const result = await controller.getReconciliation({
+      id: '11111111-1111-1111-1111-111111111111',
+    });
+    expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.hasCrossSourceConflict).toBe(false);
+  });
+
+  it('9. GET /ipos/:id - 404 behavior for unknown IPO ID', async () => {
     await expect(
       controller.getById({ id: '99999999-9999-9999-9999-999999999999' }),
     ).rejects.toThrow(AppException);

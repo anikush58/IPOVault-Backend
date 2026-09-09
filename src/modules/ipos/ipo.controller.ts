@@ -58,6 +58,13 @@ export class IpoController {
     return this.ipos.getSources(params.id);
   }
 
+  @Get(':id/reconciliation')
+  getReconciliation(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+  ) {
+    return this.ipos.getReconciliation(params.id);
+  }
+
   @Get(':id')
   getById(@Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam) {
     return this.ipos.getById(params.id);
