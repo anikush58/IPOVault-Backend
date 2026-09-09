@@ -375,5 +375,165 @@ describe('ReconciliationService (Phase 10 Data Quality Intelligence)', () => {
       expect(summary1).toEqual(summary2);
       expect(db.ipo.findUnique).toHaveBeenCalledTimes(4);
     });
+
+    describe('Phase 11 Hardening & False Positive Protection', () => {
+      it('does NOT trigger INCOMPLETE_ISSUE_STRUCTURE for a valid Fresh-only IPO', async () => {
+        const mockIpo = {
+          id: 'ipo-fresh-only',
+          marketSegment: 'MAINBOARD',
+          exchange: 'NSE',
+          status: 'UPCOMING',
+          symbol: 'FRESHONLY',
+          issueSize: { toFixed: () => '300.00' },
+          freshIssueSize: { toFixed: () => '300.00' },
+          ofsSize: null, // Legitimate fresh-only structure
+          issueShareCount: { toString: () => '3000000' },
+          freshIssueShareCount: { toString: () => '3000000' },
+          ofsShareCount: null,
+          priceBandLow: null,
+          priceBandHigh: null,
+          lotSize: null,
+          lifecycleEvents: [],
+        };
+
+        const db = {
+          ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+          fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+        } as any;
+
+        const summary = await service.reconcileIpo(db, 'ipo-fresh-only');
+        const structureFindings = summary.qualitySummary.findings.filter(
+          (f) => f.code === 'INCOMPLETE_ISSUE_STRUCTURE',
+        );
+        expect(structureFindings).toHaveLength(0);
+      });
+
+      it('does NOT trigger INCOMPLETE_ISSUE_STRUCTURE for a valid OFS-only IPO', async () => {
+        const mockIpo = {
+          id: 'ipo-ofs-only',
+          marketSegment: 'MAINBOARD',
+          exchange: 'NSE',
+          status: 'UPCOMING',
+          symbol: 'OFSONLY',
+          issueSize: { toFixed: () => '200.00' },
+          freshIssueSize: null,
+          ofsSize: { toFixed: () => '200.00' }, // Legitimate OFS-only structure
+          issueShareCount: { toString: () => '2000000' },
+          freshIssueShareCount: null,
+          ofsShareCount: { toString: () => '2000000' },
+          priceBandLow: null,
+          priceBandHigh: null,
+          lotSize: null,
+          lifecycleEvents: [],
+        };
+
+        const db = {
+          ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+          fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+        } as any;
+
+        const summary = await service.reconcileIpo(db, 'ipo-ofs-only');
+        const structureFindings = summary.qualitySummary.findings.filter(
+          (f) => f.code === 'INCOMPLETE_ISSUE_STRUCTURE',
+        );
+        expect(structureFindings).toHaveLength(0);
+      });
+
+      it('does NOT trigger INVALID_ISSUE_DATE_RANGE for same-day open and close dates', async () => {
+        const mockIpo = {
+          id: 'ipo-sameday-dates',
+          marketSegment: 'MAINBOARD',
+          exchange: 'NSE',
+          status: 'OPEN',
+          symbol: 'SAMEDAY',
+          priceBandLow: { toFixed: () => '100.00' },
+          priceBandHigh: { toFixed: () => '105.00' },
+          lotSize: 100,
+          issueSize: null,
+          freshIssueSize: null,
+          ofsSize: null,
+          issueShareCount: null,
+          freshIssueShareCount: null,
+          ofsShareCount: null,
+          lifecycleEvents: [
+            { eventType: 'OPEN', eventDate: new Date('2026-01-15T00:00:00Z') },
+            { eventType: 'CLOSE', eventDate: new Date('2026-01-15T00:00:00Z') },
+          ],
+        };
+
+        const db = {
+          ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+          fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+        } as any;
+
+        const summary = await service.reconcileIpo(db, 'ipo-sameday-dates');
+        const dateFinding = summary.qualitySummary.findings.find(
+          (f) => f.code === 'INVALID_ISSUE_DATE_RANGE',
+        );
+        expect(dateFinding).toBeUndefined();
+      });
+
+      it('does NOT trigger INCOMPLETE_TERMS for early UPCOMING IPO missing price band/lot size', async () => {
+        const mockIpo = {
+          id: 'ipo-upcoming-early',
+          marketSegment: 'MAINBOARD',
+          exchange: 'NSE',
+          status: 'UPCOMING',
+          symbol: 'EARLY',
+          priceBandLow: null,
+          priceBandHigh: null,
+          lotSize: null,
+          issueSize: null,
+          freshIssueSize: null,
+          ofsSize: null,
+          issueShareCount: null,
+          freshIssueShareCount: null,
+          ofsShareCount: null,
+          lifecycleEvents: [],
+        };
+
+        const db = {
+          ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+          fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+        } as any;
+
+        const summary = await service.reconcileIpo(db, 'ipo-upcoming-early');
+        const termsFindings = summary.qualitySummary.findings.filter(
+          (f) => f.code === 'INCOMPLETE_TERMS',
+        );
+        expect(termsFindings).toHaveLength(0);
+      });
+
+      it('does NOT trigger NON_POSITIVE_LOT_SIZE when lotSize is null', async () => {
+        const mockIpo = {
+          id: 'ipo-null-lot',
+          marketSegment: 'MAINBOARD',
+          exchange: 'NSE',
+          status: 'UPCOMING',
+          symbol: 'NULLLOT',
+          lotSize: null,
+          priceBandLow: null,
+          priceBandHigh: null,
+          issueSize: null,
+          freshIssueSize: null,
+          ofsSize: null,
+          issueShareCount: null,
+          freshIssueShareCount: null,
+          ofsShareCount: null,
+          lifecycleEvents: [],
+        };
+
+        const db = {
+          ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+          fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+        } as any;
+
+        const summary = await service.reconcileIpo(db, 'ipo-null-lot');
+        const lotFinding = summary.qualitySummary.findings.find(
+          (f) => f.code === 'NON_POSITIVE_LOT_SIZE',
+        );
+        expect(lotFinding).toBeUndefined();
+      });
+    });
   });
 });
