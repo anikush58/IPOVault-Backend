@@ -6,6 +6,7 @@ import { AppException } from '../../common/errors/app.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { ReconciliationService } from '../discovery/reconciliation.service';
 import { DiscoveryRefreshService } from '../discovery/discovery-refresh.service';
+import { DiscoveryRefreshExecutionService } from '../discovery/discovery-refresh-execution.service';
 
 describe('IpoController API Endpoints', () => {
   let controller: IpoController;
@@ -131,6 +132,21 @@ describe('IpoController API Endpoints', () => {
             }),
           },
         },
+        {
+          provide: DiscoveryRefreshExecutionService,
+          useValue: {
+            execute: jest.fn().mockResolvedValue({
+              ipoId: '11111111-1111-1111-1111-111111111111',
+              sourceCode: 'sebi',
+              status: 'SKIPPED',
+              startedAt: new Date('2026-09-10T12:00:00.000Z'),
+              completedAt: new Date('2026-09-10T12:00:00.000Z'),
+              outcome: 'SKIPPED',
+              message: 'Refresh action skipped',
+              reasons: ['NO_REFRESH_REQUIRED'],
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -217,5 +233,15 @@ describe('IpoController API Endpoints', () => {
     expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
     expect(result.hasRecommendedActions).toBe(false);
     expect(result.actions).toEqual([]);
+  });
+
+  it('11. POST /ipos/:id/refresh - executes controlled refresh for given source', async () => {
+    const result = await controller.executeRefresh(
+      { id: '11111111-1111-1111-1111-111111111111' },
+      { source: 'sebi' },
+    );
+    expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.sourceCode).toBe('sebi');
+    expect(result.status).toBe('SKIPPED');
   });
 });

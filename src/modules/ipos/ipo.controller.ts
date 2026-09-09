@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
@@ -6,6 +6,8 @@ import {
   ipoIdParamSchema,
   IpoListQuery,
   ipoListQuerySchema,
+  RefreshIpoDto,
+  refreshIpoSchema,
 } from './ipo.dto';
 import { IpoService } from './ipo.service';
 
@@ -70,6 +72,15 @@ export class IpoController {
     @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
   ) {
     return this.ipos.getRefreshPlan(params.id);
+  }
+
+  @Post(':id/refresh')
+  @HttpCode(200)
+  executeRefresh(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+    @Body(new ZodValidationPipe(refreshIpoSchema)) body: RefreshIpoDto,
+  ) {
+    return this.ipos.executeRefresh(params.id, body.source);
   }
 
   @Get(':id')

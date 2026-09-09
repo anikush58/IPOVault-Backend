@@ -38,8 +38,16 @@ export const ipoIdParamSchema = z.object({
   id: z.string().uuid(),
 });
 
+export const refreshIpoSchema = z.object({
+  source: z.preprocess(
+    (v) => (typeof v === 'string' ? v : undefined),
+    z.string().min(1),
+  ),
+});
+
 export type IpoListQuery = z.infer<typeof ipoListQuerySchema>;
 export type IpoIdParam = z.infer<typeof ipoIdParamSchema>;
+export type RefreshIpoDto = z.infer<typeof refreshIpoSchema>;
 
 export type CompanySummaryDto = {
   id: string;

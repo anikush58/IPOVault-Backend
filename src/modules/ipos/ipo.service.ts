@@ -19,6 +19,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { ReconciliationService } from '../discovery/reconciliation.service';
 import { DiscoveryRefreshService } from '../discovery/discovery-refresh.service';
+import { DiscoveryRefreshExecutionService } from '../discovery/discovery-refresh-execution.service';
 import { IpoRepository } from './ipo.repository';
 
 @Injectable()
@@ -28,6 +29,7 @@ export class IpoService {
     private readonly prisma: PrismaService,
     private readonly reconciliation: ReconciliationService,
     private readonly refresh: DiscoveryRefreshService,
+    private readonly execution: DiscoveryRefreshExecutionService,
   ) {}
 
   async list(query: IpoListQuery): Promise<{
@@ -120,5 +122,15 @@ export class IpoService {
     }
 
     return this.refresh.generatePlan(this.prisma, id);
+  }
+
+  async executeRefresh(id: string, sourceCode: string) {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo) {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    return this.execution.execute(this.prisma, { ipoId: id, sourceCode });
   }
 }
