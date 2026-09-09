@@ -11,11 +11,14 @@ import { SebiHttpClient } from './adapters/sebi/sebi.fetcher';
 import { SebiSourceAdapter } from './adapters/sebi/sebi.adapter';
 import { SebiDiscoveryFlow } from './adapters/sebi/sebi-discovery.flow';
 
+import { ReconciliationService } from './reconciliation.service';
+
 @Module({
   providers: [
     DiscoveryRecordRepository,
     MatchingService,
     CanonicalizerService,
+    ReconciliationService,
     DiscoveryService,
     NseSourceAdapter,
     NseHttpClient,
@@ -26,6 +29,7 @@ import { SebiDiscoveryFlow } from './adapters/sebi/sebi-discovery.flow';
   ],
   exports: [
     DiscoveryService,
+    ReconciliationService,
     NseSourceAdapter,
     NseHttpClient,
     NseDiscoveryFlow,
