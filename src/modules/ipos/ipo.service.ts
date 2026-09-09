@@ -29,6 +29,7 @@ import {
 } from '../discovery/discovery-refresh-verification.service';
 import { DiscoverySmartRefreshService } from '../discovery/discovery-smart-refresh.service';
 import { DiscoveryCoverageService } from '../discovery/discovery-coverage.service';
+import { DiscoveryQualityGateService } from '../discovery/discovery-quality-gate.service';
 import { IpoRepository } from './ipo.repository';
 
 @Injectable()
@@ -42,6 +43,7 @@ export class IpoService {
     private readonly verification: DiscoveryRefreshVerificationService,
     private readonly smartRefreshService: DiscoverySmartRefreshService,
     private readonly coverageService?: DiscoveryCoverageService,
+    private readonly qualityGateService?: DiscoveryQualityGateService,
   ) {}
 
   async list(query: IpoListQuery): Promise<{
@@ -192,5 +194,16 @@ export class IpoService {
 
     const svc = this.coverageService ?? new DiscoveryCoverageService();
     return svc.evaluateCoverage(this.prisma, id);
+  }
+
+  async getQuality(id: string) {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo) {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    const svc = this.qualityGateService ?? new DiscoveryQualityGateService();
+    return svc.evaluateQualityGate(this.prisma, id);
   }
 }

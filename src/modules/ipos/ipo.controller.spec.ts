@@ -10,6 +10,7 @@ import { DiscoveryRefreshExecutionService } from '../discovery/discovery-refresh
 import { DiscoveryRefreshVerificationService } from '../discovery/discovery-refresh-verification.service';
 import { DiscoverySmartRefreshService } from '../discovery/discovery-smart-refresh.service';
 import { DiscoveryCoverageService } from '../discovery/discovery-coverage.service';
+import { DiscoveryQualityGateService } from '../discovery/discovery-quality-gate.service';
 
 describe('IpoController API Endpoints', () => {
   let controller: IpoController;
@@ -199,6 +200,23 @@ describe('IpoController API Endpoints', () => {
             }),
           },
         },
+        {
+          provide: DiscoveryQualityGateService,
+          useValue: {
+            evaluateQualityGate: jest.fn().mockResolvedValue({
+              ipoId: '11111111-1111-1111-1111-111111111111',
+              status: 'PASS',
+              summary: { totalChecks: 15, passed: 15, warnings: 0, blockers: 0 },
+              blockers: [],
+              warnings: [],
+              fields: [],
+              qualityFindings: [],
+              coverageSummary: { totalFields: 15, covered: 15, missing: 0, stale: 0, conflict: 0, notExpected: 0, unknown: 0 },
+              refreshRecommendations: [],
+              evaluatedAt: new Date('2026-09-10T12:00:00.000Z'),
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -336,5 +354,16 @@ describe('IpoController API Endpoints', () => {
     expect(result.overallStatus).toBe('COVERED');
     expect(result.summary).toBeDefined();
     expect(result.fields).toBeDefined();
+  });
+
+  it('15. GET /ipos/:id/quality - returns canonical quality gate report', async () => {
+    const result = await controller.getQuality({
+      id: '11111111-1111-1111-1111-111111111111',
+    });
+    expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.status).toBe('PASS');
+    expect(result.summary).toBeDefined();
+    expect(result.blockers).toEqual([]);
+    expect(result.warnings).toEqual([]);
   });
 });

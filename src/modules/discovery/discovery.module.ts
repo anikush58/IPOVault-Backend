@@ -18,6 +18,7 @@ import { DiscoveryRefreshExecutionService } from './discovery-refresh-execution.
 import { DiscoveryRefreshVerificationService } from './discovery-refresh-verification.service';
 import { DiscoverySmartRefreshService } from './discovery-smart-refresh.service';
 import { DiscoveryCoverageService } from './discovery-coverage.service';
+import { DiscoveryQualityGateService } from './discovery-quality-gate.service';
 
 @Module({
   providers: [
@@ -30,6 +31,7 @@ import { DiscoveryCoverageService } from './discovery-coverage.service';
     DiscoveryRefreshVerificationService,
     DiscoverySmartRefreshService,
     DiscoveryCoverageService,
+    DiscoveryQualityGateService,
     ReconciliationService,
     DiscoveryService,
     NseSourceAdapter,
@@ -47,6 +49,7 @@ import { DiscoveryCoverageService } from './discovery-coverage.service';
     DiscoveryRefreshVerificationService,
     DiscoverySmartRefreshService,
     DiscoveryCoverageService,
+    DiscoveryQualityGateService,
     ReconciliationService,
     NseSourceAdapter,
     NseHttpClient,

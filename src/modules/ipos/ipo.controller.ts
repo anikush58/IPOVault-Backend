@@ -155,6 +155,21 @@ export class IpoController {
     return this.ipos.getCoverage(params.id);
   }
 
+  /**
+   * GET /ipos/:id/quality
+   *
+   * Phase 20 — IPO Data Completeness & Canonical Quality Gate.
+   * Read-only production-quality assessment for an IPO canonical record.
+   * Combines Quality Engine, Reconciliation, Freshness, Coverage, and Lifecycle
+   * semantics into a single deterministic quality gate report.
+   */
+  @Get(':id/quality')
+  getQuality(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+  ) {
+    return this.ipos.getQuality(params.id);
+  }
+
   @Get(':id')
   getById(@Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam) {
     return this.ipos.getById(params.id);

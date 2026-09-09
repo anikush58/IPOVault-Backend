@@ -478,4 +478,24 @@ describe('POST /api/v1/ipos/:id/smart-refresh (E2E Hardening)', () => {
 
     await app.close();
   });
+
+  it('14. GET /api/v1/ipos/:id/quality - returns deterministic IPO quality gate report', async () => {
+    const app = await createTestApp([], createPrismaStubWithIpo(targetId));
+
+    const response = await request(app.getHttpServer()).get(
+      `/api/v1/ipos/${targetId}/quality`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-request-id']).toBeDefined();
+    expect(response.body.data).toBeDefined();
+    expect(response.body.data.ipoId).toBe(targetId);
+    expect(response.body.data.status).toBeDefined();
+    expect(response.body.data.summary).toBeDefined();
+    expect(response.body.data.blockers).toBeInstanceOf(Array);
+    expect(response.body.data.warnings).toBeInstanceOf(Array);
+    expect(response.body.data.fields).toBeInstanceOf(Array);
+
+    await app.close();
+  });
 });
