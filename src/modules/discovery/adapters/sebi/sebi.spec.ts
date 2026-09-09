@@ -3,6 +3,7 @@ import { DiscoveryStatus } from '@prisma/client';
 
 import { Env } from '../../../../config/env';
 import { PrismaService } from '../../../../database/prisma.service';
+import { DiscoveryService } from '../../discovery.service';
 import { DiscoveryRecordRepository } from '../../discovery-record.repository';
 import { SebiSourceAdapter } from './sebi.adapter';
 import { SebiDiscoveryFlow } from './sebi-discovery.flow';
@@ -239,11 +240,16 @@ describe('SEBI Official Filing Ingestion Foundation', () => {
       mockClient = new SebiHttpClient(mockConfig);
       const mockAdapter = new SebiSourceAdapter();
 
+      const mockDiscoveryService = {
+        process: jest.fn().mockResolvedValue({ outcome: 'CREATED', discoveryRecordId: 'rec-1', ipoId: 'ipo-1' }),
+      };
+
       flow = new SebiDiscoveryFlow(
         mockPrisma as unknown as PrismaService,
         mockRecordsRepo as unknown as DiscoveryRecordRepository,
         mockClient,
         mockAdapter,
+        mockDiscoveryService as unknown as DiscoveryService,
       );
     });
 

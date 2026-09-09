@@ -7,6 +7,119 @@ import {
   SourceAdapter,
 } from '../source-adapter';
 import { parseSebiListingHtml } from './sebi.parser';
+import { SebiFilingMetadata, SebiPdfIssueObservation } from './sebi.types';
+
+export function sebiFilingMetadataToRawPayload(
+  filing: SebiFilingMetadata,
+): Record<string, unknown> {
+  return {
+    company: {
+      legalName: filing.companyName,
+      displayName: filing.companyName,
+      cin: null,
+    },
+    ipo: {
+      marketSegment: 'MAINBOARD',
+      exchange: 'BOTH',
+      status: 'DRAFT',
+      symbol: null,
+      issueSize: null,
+      freshIssueSize: null,
+      ofsSize: null,
+      issueShareCount: null,
+      freshIssueShareCount: null,
+      ofsShareCount: null,
+      faceValue: null,
+      priceBandLow: null,
+      priceBandHigh: null,
+      lotSize: null,
+      minimumLots: null,
+    },
+    lifecycle: {
+      drhpDate: filing.filingType === 'DRHP' ? filing.filingDate : null,
+      rhpDate: filing.filingType === 'RHP' ? filing.filingDate : null,
+      anchorDate: null,
+      openDate: null,
+      closeDate: null,
+      basisOfAllotmentDate: null,
+      refundInitiationDate: null,
+      dematCreditDate: null,
+      listingDate: null,
+    },
+    source: {
+      externalId: filing.externalId,
+      reference: filing.detailUrl,
+    },
+  };
+}
+
+export function sebiPdfObservationToRawPayload(
+  pdfObs: SebiPdfIssueObservation,
+  fallbackCompanyName?: string,
+  filingDate?: string,
+): Record<string, unknown> {
+  const legalName = pdfObs.legalName.value || fallbackCompanyName || '';
+  return {
+    company: {
+      legalName,
+      displayName: legalName || null,
+      cin: pdfObs.cin.value || null,
+    },
+    ipo: {
+      marketSegment: 'MAINBOARD',
+      exchange: 'BOTH',
+      status: 'DRAFT',
+      symbol: null,
+      issueSize:
+        pdfObs.issueSize.value !== null ? String(pdfObs.issueSize.value) : null,
+      freshIssueSize:
+        pdfObs.freshIssueSize.value !== null
+          ? String(pdfObs.freshIssueSize.value)
+          : null,
+      ofsSize:
+        pdfObs.ofsSize.value !== null ? String(pdfObs.ofsSize.value) : null,
+      issueShareCount:
+        pdfObs.issueShareCount.value !== null
+          ? String(pdfObs.issueShareCount.value)
+          : null,
+      freshIssueShareCount:
+        pdfObs.freshIssueShareCount.value !== null
+          ? String(pdfObs.freshIssueShareCount.value)
+          : null,
+      ofsShareCount:
+        pdfObs.ofsShareCount.value !== null
+          ? String(pdfObs.ofsShareCount.value)
+          : null,
+      faceValue:
+        pdfObs.faceValue.value !== null ? String(pdfObs.faceValue.value) : null,
+      priceBandLow:
+        pdfObs.priceBandLow.value !== null
+          ? String(pdfObs.priceBandLow.value)
+          : null,
+      priceBandHigh:
+        pdfObs.priceBandHigh.value !== null
+          ? String(pdfObs.priceBandHigh.value)
+          : null,
+      lotSize: pdfObs.lotSize.value !== null ? pdfObs.lotSize.value : null,
+      minimumLots: null,
+    },
+    lifecycle: {
+      drhpDate: filingDate || null,
+      rhpDate: null,
+      anchorDate: null,
+      openDate: pdfObs.issueOpenDate.value || null,
+      closeDate: pdfObs.issueCloseDate.value || null,
+      basisOfAllotmentDate: null,
+      refundInitiationDate: null,
+      dematCreditDate: null,
+      listingDate: null,
+    },
+    source: {
+      externalId: pdfObs.externalId || null,
+      reference: pdfObs.sourceUrl || null,
+    },
+  };
+}
 
 @Injectable()
 export class SebiSourceAdapter implements SourceAdapter {
@@ -39,7 +152,7 @@ export class SebiSourceAdapter implements SourceAdapter {
       externalId: parsed.externalId,
       sourceReference: parsed.detailUrl,
       companyName: parsed.companyName,
-      rawPayload: parsed,
+      rawPayload: sebiFilingMetadataToRawPayload(parsed),
       discoveredAt: context.discoveredAt,
     }));
   }
