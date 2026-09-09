@@ -46,6 +46,18 @@ export const refreshIpoSchema = z.object({
 });
 
 /**
+ * Request body for POST /ipos/:id/smart-refresh.
+ * Single endpoint that orchestrates Plan -> Execute -> Verify -> Result.
+ */
+export const smartRefreshIpoSchema = z.object({
+  source: z.preprocess(
+    (v) => (typeof v === 'string' ? v : undefined),
+    z.string().min(1),
+  ),
+});
+export type SmartRefreshIpoDto = z.infer<typeof smartRefreshIpoSchema>;
+
+/**
  * Request body for POST /ipos/:id/refresh-verification.
  * Callers supply the Phase 14 execution outcome so the verifier can evaluate
  * whether the requested IPO was actually observed without re-running the refresh.

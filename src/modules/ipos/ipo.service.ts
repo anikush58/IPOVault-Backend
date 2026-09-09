@@ -27,6 +27,7 @@ import {
   DiscoveryRefreshVerificationService,
   RefreshVerificationRequest,
 } from '../discovery/discovery-refresh-verification.service';
+import { DiscoverySmartRefreshService } from '../discovery/discovery-smart-refresh.service';
 import { IpoRepository } from './ipo.repository';
 
 @Injectable()
@@ -38,6 +39,7 @@ export class IpoService {
     private readonly refresh: DiscoveryRefreshService,
     private readonly execution: DiscoveryRefreshExecutionService,
     private readonly verification: DiscoveryRefreshVerificationService,
+    private readonly smartRefreshService: DiscoverySmartRefreshService,
   ) {}
 
   async list(query: IpoListQuery): Promise<{
@@ -164,5 +166,18 @@ export class IpoService {
     };
 
     return this.verification.verify(this.prisma, req);
+  }
+
+  async smartRefresh(id: string, sourceCode: string) {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo) {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    const svc =
+      this.smartRefreshService ?? new DiscoverySmartRefreshService();
+
+    return svc.smartRefresh(this.prisma, { ipoId: id, sourceCode });
   }
 }

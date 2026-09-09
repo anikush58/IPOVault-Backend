@@ -8,6 +8,8 @@ import {
   ipoListQuerySchema,
   RefreshIpoDto,
   refreshIpoSchema,
+  SmartRefreshIpoDto,
+  smartRefreshIpoSchema,
   VerifyRefreshDto,
   verifyRefreshSchema,
 } from './ipo.dto';
@@ -118,6 +120,25 @@ export class IpoController {
       body.refreshStartedAt,
       body.refreshCompletedAt,
     );
+  }
+
+  /**
+   * POST /ipos/:id/smart-refresh
+   *
+   * Phase 16 — Smart IPO Refresh Workflow Orchestration.
+   * Synchronous, single-request workflow that orchestrates:
+   *  1. Phase 13 Refresh Plan generation
+   *  2. Phase 14 Controlled Execution (only if RECOMMENDED by plan)
+   *  3. Phase 15 Post-Refresh Verification & Reconciliation (if execution COMPLETED)
+   *  4. Combined SmartRefreshResult with clear final outcome status.
+   */
+  @Post(':id/smart-refresh')
+  @HttpCode(200)
+  smartRefresh(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+    @Body(new ZodValidationPipe(smartRefreshIpoSchema)) body: SmartRefreshIpoDto,
+  ) {
+    return this.ipos.smartRefresh(params.id, body.source);
   }
 
   @Get(':id')

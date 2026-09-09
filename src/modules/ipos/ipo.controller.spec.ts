@@ -8,6 +8,7 @@ import { ReconciliationService } from '../discovery/reconciliation.service';
 import { DiscoveryRefreshService } from '../discovery/discovery-refresh.service';
 import { DiscoveryRefreshExecutionService } from '../discovery/discovery-refresh-execution.service';
 import { DiscoveryRefreshVerificationService } from '../discovery/discovery-refresh-verification.service';
+import { DiscoverySmartRefreshService } from '../discovery/discovery-smart-refresh.service';
 
 describe('IpoController API Endpoints', () => {
   let controller: IpoController;
@@ -171,6 +172,19 @@ describe('IpoController API Endpoints', () => {
             }),
           },
         },
+        {
+          provide: DiscoverySmartRefreshService,
+          useValue: {
+            smartRefresh: jest.fn().mockResolvedValue({
+              ipoId: '11111111-1111-1111-1111-111111111111',
+              sourceCode: 'sebi',
+              generatedAt: new Date('2026-09-10T12:00:00.000Z'),
+              finalOutcome: 'REFRESHED_AND_VERIFIED',
+              summaryMessage: "Successfully refreshed 'sebi'.",
+              initialRefreshPlan: { ipoId: '11111111-1111-1111-1111-111111111111', overallStatus: 'STALE', actions: [] },
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -287,5 +301,16 @@ describe('IpoController API Endpoints', () => {
     expect(result.verdict.adequacy).toBe('REFRESH_DID_NOT_HELP');
     expect(result.postRefreshPlan).toBeDefined();
     expect(result.qualitySummary).toBeDefined();
+  });
+
+  it('13. POST /ipos/:id/smart-refresh - executes full smart refresh workflow', async () => {
+    const result = await controller.smartRefresh(
+      { id: '11111111-1111-1111-1111-111111111111' },
+      { source: 'sebi' },
+    );
+    expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.sourceCode).toBe('sebi');
+    expect(result.finalOutcome).toBe('REFRESHED_AND_VERIFIED');
+    expect(result.summaryMessage).toBeDefined();
   });
 });
