@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { toIpoResponseDto } from './ipo.mapper';
+import { toIpoDataReadinessDto, toIpoResponseDto } from './ipo.mapper';
 import { IpoWithRelations } from './ipo.types';
 
 function buildIpo(
@@ -128,11 +128,9 @@ describe('toIpoResponseDto', () => {
     expect(dto.lifecycle.openDate).toBeNull();
   });
 
-  it('maps Quality Gate reports cleanly to IpoDataReadinessDto', () => {
-    const { toIpoDataReadinessDto } = require('./ipo.mapper');
-    const mockReport = {
+  describe('toIpoDataReadinessDto contract tests', () => {
+    const baseReport = {
       ipoId: '11111111-1111-4111-8111-111111111111',
-      status: 'PASS',
       summary: { totalChecks: 15, passed: 15, warnings: 0, blockers: 0 },
       blockers: [],
       warnings: [],
@@ -143,12 +141,107 @@ describe('toIpoResponseDto', () => {
       evaluatedAt: new Date('2026-09-01T12:00:00.000Z'),
     };
 
-    const readiness = toIpoDataReadinessDto(mockReport);
-    expect(readiness.status).toBe('READY');
-    expect(readiness.isReady).toBe(true);
-    expect(readiness.missingFieldCount).toBe(0);
-    expect(readiness.staleFieldCount).toBe(0);
-    expect(readiness.conflictFieldCount).toBe(0);
-    expect(readiness.refreshRecommended).toBe(false);
+    it('1. maps PASS status to READY with isReady = true', () => {
+      const report = { ...baseReport, status: 'PASS' as const };
+      const dto = toIpoDataReadinessDto(report);
+
+      expect(dto.status).toBe('READY');
+      expect(dto.isReady).toBe(true);
+      expect(dto.summary).toBe('IPO data is complete, fresh, and ready for production consumption.');
+    });
+
+    it('2. maps PASS_WITH_WARNINGS status to READY_WITH_WARNINGS with isReady = true', () => {
+      const report = { ...baseReport, status: 'PASS_WITH_WARNINGS' as const };
+      const dto = toIpoDataReadinessDto(report);
+
+      expect(dto.status).toBe('READY_WITH_WARNINGS');
+      expect(dto.isReady).toBe(true);
+      expect(dto.summary).toBe('IPO data is ready for consumption with minor non-blocking warnings.');
+    });
+
+    it('3. maps NEEDS_REVIEW status to NEEDS_REVIEW with isReady = false', () => {
+      const report = { ...baseReport, status: 'NEEDS_REVIEW' as const };
+      const dto = toIpoDataReadinessDto(report);
+
+      expect(dto.status).toBe('NEEDS_REVIEW');
+      expect(dto.isReady).toBe(false);
+      expect(dto.summary).toBe('IPO data requires review due to source conflicts or stale authoritative data.');
+    });
+
+    it('4. maps INCOMPLETE status to INCOMPLETE with isReady = false', () => {
+      const report = { ...baseReport, status: 'INCOMPLETE' as const };
+      const dto = toIpoDataReadinessDto(report);
+
+      expect(dto.status).toBe('INCOMPLETE');
+      expect(dto.isReady).toBe(false);
+      expect(dto.summary).toBe('IPO data is incomplete and missing required terms or lifecycle information.');
+    });
+
+    it('5. enforces status and isReady strict consistency', () => {
+      const statuses = ['PASS', 'PASS_WITH_WARNINGS', 'NEEDS_REVIEW', 'INCOMPLETE'] as const;
+      for (const s of statuses) {
+        const dto = toIpoDataReadinessDto({ ...baseReport, status: s });
+        if (dto.status === 'READY' || dto.status === 'READY_WITH_WARNINGS') {
+          expect(dto.isReady).toBe(true);
+        } else {
+          expect(dto.isReady).toBe(false);
+        }
+      }
+    });
+
+    it('6 & 7. correctly serializes count fields and booleans', () => {
+      const report = {
+        ...baseReport,
+        status: 'NEEDS_REVIEW' as const,
+        coverageSummary: {
+          totalFields: 15,
+          covered: 10,
+          missing: 2,
+          unknown: 1,
+          stale: 3,
+          conflict: 1,
+          notExpected: 0,
+        },
+        refreshRecommendations: [
+          {
+            sourceCode: 'sebi',
+            reason: 'Stale observation',
+            targetFields: ['priceBandHigh'],
+          },
+        ],
+      };
+
+      const dto = toIpoDataReadinessDto(report);
+
+      expect(dto.missingFieldCount).toBe(3); // 2 missing + 1 unknown
+      expect(typeof dto.missingFieldCount).toBe('number');
+      expect(dto.staleFieldCount).toBe(3);
+      expect(typeof dto.staleFieldCount).toBe('number');
+      expect(dto.conflictFieldCount).toBe(1);
+      expect(typeof dto.conflictFieldCount).toBe('number');
+      expect(dto.refreshRecommended).toBe(true);
+      expect(typeof dto.refreshRecommended).toBe('boolean');
+      expect(typeof dto.isReady).toBe('boolean');
+    });
+
+    it('8. generates deterministic, clean summary message without internal sensitive details', () => {
+      const dto = toIpoDataReadinessDto({ ...baseReport, status: 'PASS' });
+      expect(dto.summary).not.toContain('SELECT');
+      expect(dto.summary).not.toContain('prisma');
+      expect(dto.summary).not.toContain('11111111');
+      expect(dto.summary).not.toContain('Error');
+    });
+
+    it('9. propagates refreshRecommended boolean based on recommendations length', () => {
+      const dtoNoRec = toIpoDataReadinessDto({ ...baseReport, status: 'PASS', refreshRecommendations: [] });
+      expect(dtoNoRec.refreshRecommended).toBe(false);
+
+      const dtoWithRec = toIpoDataReadinessDto({
+        ...baseReport,
+        status: 'PASS',
+        refreshRecommendations: [{ sourceCode: 'bse', reason: 'Missing fields', targetFields: [] }],
+      });
+      expect(dtoWithRec.refreshRecommended).toBe(true);
+    });
   });
 });

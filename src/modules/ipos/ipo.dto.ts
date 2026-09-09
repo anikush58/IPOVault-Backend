@@ -113,19 +113,38 @@ export type IpoLifecycleDto = {
   listingDate: string | null;
 };
 
+/**
+ * Consumer-facing IPO Data Readiness Status.
+ * - READY: Canonical data is complete, fresh, and safe for production consumption.
+ * - READY_WITH_WARNINGS: Canonical data is usable for display with minor non-blocking warnings.
+ * - NEEDS_REVIEW: Important quality, freshness, or source conflict concern requires review.
+ * - INCOMPLETE: Critical required terms or lifecycle data are missing/invalid.
+ */
 export type DataReadinessStatus =
   | 'READY'
   | 'READY_WITH_WARNINGS'
   | 'NEEDS_REVIEW'
   | 'INCOMPLETE';
 
+/**
+ * Consumer-facing data-readiness summary attached to GET /api/v1/ipos/:id.
+ * Allows mobile and API consumers to make deterministic display decisions
+ * without analyzing complex internal provenance, freshness, or quality gate structures.
+ */
 export type IpoDataReadinessDto = {
+  /** Overall readiness status derived from Quality Gate assessment */
   status: DataReadinessStatus;
+  /** High-level boolean flag: true if status is READY or READY_WITH_WARNINGS, false if NEEDS_REVIEW or INCOMPLETE */
   isReady: boolean;
+  /** Human-readable deterministic summary message safe for mobile display */
   summary: string;
+  /** Total number of missing or unknown fields */
   missingFieldCount: number;
+  /** Total number of stale field observations */
   staleFieldCount: number;
+  /** Total number of unresolved cross-source field conflicts */
   conflictFieldCount: number;
+  /** Informational flag: true if discovery refresh is recommended by Freshness Intelligence */
   refreshRecommended: boolean;
 };
 

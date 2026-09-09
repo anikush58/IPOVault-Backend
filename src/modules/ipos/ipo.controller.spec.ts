@@ -15,6 +15,7 @@ import { DiscoveryQualityGateService } from '../discovery/discovery-quality-gate
 describe('IpoController API Endpoints', () => {
   let controller: IpoController;
   let service: IpoService;
+  let qualityGateService: DiscoveryQualityGateService;
 
   const mockIpoRecord = {
     id: '11111111-1111-1111-1111-111111111111',
@@ -222,6 +223,7 @@ describe('IpoController API Endpoints', () => {
 
     controller = module.get<IpoController>(IpoController);
     service = module.get<IpoService>(IpoService);
+    qualityGateService = module.get<DiscoveryQualityGateService>(DiscoveryQualityGateService);
   });
 
   it('1. GET /ipos - returns paginated list of IPOs', async () => {
@@ -375,5 +377,21 @@ describe('IpoController API Endpoints', () => {
     expect(result.dataReadiness).toBeDefined();
     expect(result.dataReadiness?.status).toBe('READY');
     expect(result.dataReadiness?.isReady).toBe(true);
+  });
+
+  it('17. Quality Gate failure in getById does not corrupt canonical data or throw 500', async () => {
+    jest.spyOn(qualityGateService, 'evaluateQualityGate').mockRejectedValueOnce(new Error('DB failure'));
+
+    const result = await controller.getById({
+      id: '11111111-1111-1111-1111-111111111111',
+    });
+    expect(result.id).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.dataReadiness).toBeUndefined();
+  });
+
+  it('18. GET /ipos list endpoint items do NOT contain dataReadiness (no N+1 evaluation)', async () => {
+    const result = await controller.list({ page: 1, limit: 10 });
+    expect(result.data[0].id).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.data[0].dataReadiness).toBeUndefined();
   });
 });
