@@ -57,7 +57,7 @@ describe('SEBI production discovery runner & orchestration (Phase 4 & Phase 6)',
     expect(mockApp.get).toHaveBeenCalledWith(SebiDiscoveryFlow);
     expect(mockApp.get).toHaveBeenCalledWith(ConfigService);
     expect(mockConfig.get).toHaveBeenCalledWith('SEBI_INTER_REQUEST_DELAY_MS', { infer: true });
-    expect(mockRun).toHaveBeenCalledWith(1, undefined, true, true, 250);
+    expect(mockRun).toHaveBeenCalledWith(1, 250, undefined, true, true, 250);
     expect(mockWrite).toHaveBeenCalledWith(formatSebiLiveIngestSummary(sampleResult));
     expect(result).toEqual(sampleResult);
   });

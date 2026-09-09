@@ -159,6 +159,7 @@ export function normalizeDiscoveredIpo(payload: unknown): DiscoveredIpo {
     source: {
       externalId: text(source.externalId),
       reference: text(source.reference),
+      filingType: text(source.filingType),
     },
   };
 }

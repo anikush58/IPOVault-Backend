@@ -291,6 +291,8 @@ export class CanonicalizerService {
       currentAuthority,
     });
 
+    const isIncomingPreliminaryDrhp = discovered.source.filingType === 'DRHP';
+
     const next = {
       marketSegment: discovered.ipo.marketSegment,
       exchange: discovered.ipo.exchange,
@@ -303,15 +305,18 @@ export class CanonicalizerService {
       freshIssueShareCount: applied.next.freshIssueShareCount,
       ofsShareCount: applied.next.ofsShareCount,
       faceValue: coalesceDecimal(ipo.faceValue, discovered.ipo.faceValue),
-      priceBandLow: coalesceDecimal(
-        ipo.priceBandLow,
-        discovered.ipo.priceBandLow,
-      ),
-      priceBandHigh: coalesceDecimal(
-        ipo.priceBandHigh,
-        discovered.ipo.priceBandHigh,
-      ),
-      lotSize: discovered.ipo.lotSize ?? ipo.lotSize,
+      priceBandLow:
+        isIncomingPreliminaryDrhp && ipo.priceBandLow !== null
+          ? ipo.priceBandLow
+          : coalesceDecimal(ipo.priceBandLow, discovered.ipo.priceBandLow),
+      priceBandHigh:
+        isIncomingPreliminaryDrhp && ipo.priceBandHigh !== null
+          ? ipo.priceBandHigh
+          : coalesceDecimal(ipo.priceBandHigh, discovered.ipo.priceBandHigh),
+      lotSize:
+        isIncomingPreliminaryDrhp && ipo.lotSize !== null
+          ? ipo.lotSize
+          : (discovered.ipo.lotSize ?? ipo.lotSize),
       minimumLots: discovered.ipo.minimumLots ?? ipo.minimumLots,
     };
 

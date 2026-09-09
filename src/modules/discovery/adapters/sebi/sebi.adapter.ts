@@ -49,6 +49,8 @@ export function sebiFilingMetadataToRawPayload(
     source: {
       externalId: filing.externalId,
       reference: filing.detailUrl,
+      filingType: filing.filingType,
+      relationship: filing.filingRelationship,
     },
   };
 }
@@ -57,6 +59,7 @@ export function sebiPdfObservationToRawPayload(
   pdfObs: SebiPdfIssueObservation,
   fallbackCompanyName?: string,
   filingDate?: string,
+  filingType?: string,
 ): Record<string, unknown> {
   const legalName = pdfObs.legalName.value || fallbackCompanyName || '';
   return {
@@ -117,6 +120,7 @@ export function sebiPdfObservationToRawPayload(
     source: {
       externalId: pdfObs.externalId || null,
       reference: pdfObs.sourceUrl || null,
+      filingType: filingType || null,
     },
   };
 }

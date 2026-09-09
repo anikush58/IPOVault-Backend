@@ -36,13 +36,34 @@ export class SebiDiscoveryFlow {
   ) {}
 
   async run(
-    page = 1,
-    fetchImpl?: typeof fetch,
-    downloadDocument = false,
-    processCanonicalization = true,
-    interRequestDelayMs = 0,
+    p1 = 1,
+    p2?: number | typeof fetch,
+    p3?: typeof fetch | boolean,
+    p4?: boolean,
+    p5?: boolean | number,
+    p6 = 0,
   ): Promise<SebiIngestionResult> {
-    this.logger.log(`Starting SEBI official filing discovery flow (page ${page})...`);
+    let actualStartPage = typeof p1 === 'number' && p1 > 0 ? p1 : 1;
+    let actualMaxPages = 1;
+    let actualFetchImpl: typeof fetch | undefined = undefined;
+    let actualDownloadDocument = false;
+    let actualProcessCanonicalization = true;
+    let actualInterRequestDelayMs = 0;
+
+    if (typeof p2 === 'function') {
+      actualMaxPages = 1;
+      actualFetchImpl = p2;
+      actualDownloadDocument = typeof p3 === 'boolean' ? p3 : false;
+      actualProcessCanonicalization = typeof p4 === 'boolean' ? p4 : true;
+      actualInterRequestDelayMs = typeof p5 === 'number' ? p5 : 0;
+    } else {
+      actualMaxPages = typeof p2 === 'number' && p2 > 0 ? p2 : 1;
+      actualFetchImpl = typeof p3 === 'function' ? p3 : undefined;
+      actualDownloadDocument = typeof p4 === 'boolean' ? p4 : false;
+      actualProcessCanonicalization = typeof p5 === 'boolean' ? p5 : true;
+      actualInterRequestDelayMs = typeof p6 === 'number' ? p6 : 0;
+    }
+
     const now = new Date();
 
     // Ensure SEBI source exists in DB
@@ -63,25 +84,65 @@ export class SebiDiscoveryFlow {
       });
     }
 
-    try {
+    let totalDiscovered = 0;
+    let duplicateCount = 0;
+    let createdRecordsCount = 0;
+    let downloadedDocumentsCount = 0;
+    let skippedDocumentsCount = 0;
+    let failedDownloadsCount = 0;
+    let canonicalCreatedCount = 0;
+    let canonicalMatchedCount = 0;
+    let pageFetchFailures = 0;
+    let successfulPagesCount = 0;
+
+    const endPage = actualStartPage + actualMaxPages - 1;
+
+    for (let page = actualStartPage; page <= endPage; page++) {
+      this.logger.log(
+        `Starting SEBI official filing discovery flow (page ${page} of ${endPage})...`,
+      );
+
+      let doc;
+      try {
+        doc = await this.client.fetchListing(page, actualFetchImpl);
+        successfulPagesCount++;
+      } catch (err: unknown) {
+        pageFetchFailures++;
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Failed to fetch SEBI listing page ${page}: ${msg}`);
+
+        if (actualMaxPages === 1) {
+          await this.prisma.source.update({
+            where: { id: source.id },
+            data: {
+              lastCheckedAt: now,
+              lastFailureAt: now,
+              healthStatus: SourceHealthStatus.FAILING,
+            },
+          });
+          throw err;
+        }
+        continue;
+      }
+
       const discoveredAt = new Date();
-      const doc = await this.client.fetchListing(page, fetchImpl);
       const observations = this.adapter.observe(doc, {
         sourceId: source.id,
         discoveredAt,
       });
 
       this.logger.log(
-        `Discovered ${observations.length} filing observations from SEBI listing response`,
+        `Discovered ${observations.length} filing observations from SEBI listing response (page ${page})`,
       );
 
-      let duplicateCount = 0;
-      let createdRecordsCount = 0;
-      let downloadedDocumentsCount = 0;
-      let skippedDocumentsCount = 0;
-      let failedDownloadsCount = 0;
-      let canonicalCreatedCount = 0;
-      let canonicalMatchedCount = 0;
+      if (observations.length === 0 && actualMaxPages > 1) {
+        this.logger.log(
+          `No filings found on SEBI listing page ${page}. Stopping multi-page traversal.`,
+        );
+        break;
+      }
+
+      totalDiscovered += observations.length;
 
       for (const obs of observations) {
         const contentHash = hashPayload(obs.rawPayload);
@@ -101,13 +162,15 @@ export class SebiDiscoveryFlow {
         }
 
         const payload = obs.rawPayload as unknown as Record<string, any>;
-        const metadata = (payload.source ? payload : obs.rawPayload) as unknown as SebiFilingMetadata;
+        const metadata = (
+          payload.source ? payload : obs.rawPayload
+        ) as unknown as SebiFilingMetadata;
         const docUrl =
           metadata.documentUrl ||
           metadata.detailUrl ||
           (payload.source as Record<string, any> | undefined)?.reference;
 
-        if (downloadDocument && docUrl) {
+        if (actualDownloadDocument && docUrl) {
           if (!isOfficialSebiUrl(docUrl)) {
             this.logger.warn(
               `Rejecting document download from non-SEBI URL '${docUrl}' for filing ${obs.externalId}`,
@@ -122,11 +185,12 @@ export class SebiDiscoveryFlow {
           }
 
           // Pre-download check: Skip PDF download if a processed PDF observation already exists for this filing
-          const existingProcessed = await this.recordsRepository.findProcessedRecord(
-            source.id,
-            obs.externalId,
-            docUrl,
-          );
+          const existingProcessed =
+            await this.recordsRepository.findProcessedRecord(
+              source.id,
+              obs.externalId,
+              docUrl,
+            );
 
           if (existingProcessed) {
             this.logger.log(
@@ -136,16 +200,16 @@ export class SebiDiscoveryFlow {
             continue;
           }
 
-          if (downloadedDocumentsCount > 0 && interRequestDelayMs > 0) {
+          if (downloadedDocumentsCount > 0 && actualInterRequestDelayMs > 0) {
             await new Promise((resolve) =>
-              setTimeout(resolve, interRequestDelayMs),
+              setTimeout(resolve, actualInterRequestDelayMs),
             );
           }
 
           try {
             const downloadResult = await this.client.downloadDocument(
               docUrl,
-              fetchImpl,
+              actualFetchImpl,
             );
 
             downloadedDocumentsCount++;
@@ -168,11 +232,12 @@ export class SebiDiscoveryFlow {
                   `Parsed SEBI PDF observation for filing ${obs.externalId}: CIN=${pdfObs.cin.value || 'UNRESOLVED'}, LegalName=${pdfObs.legalName.value || 'UNRESOLVED'}, PriceBand=${pdfObs.priceBandLow.value}-${pdfObs.priceBandHigh.value}, LotSize=${pdfObs.lotSize.value}, OpenDate=${pdfObs.issueOpenDate.value}, CloseDate=${pdfObs.issueCloseDate.value}`,
                 );
 
-                if (processCanonicalization) {
+                if (actualProcessCanonicalization) {
                   const pdfPayload = sebiPdfObservationToRawPayload(
                     pdfObs,
                     obs.companyName || undefined,
                     metadata.filingDate,
+                    metadata.filingType,
                   );
 
                   const pdfObservation: IncomingObservation = {
@@ -232,35 +297,9 @@ export class SebiDiscoveryFlow {
           }
         }
       }
+    }
 
-      const hasFailures = failedDownloadsCount > 0;
-      await this.prisma.source.update({
-        where: { id: source.id },
-        data: {
-          lastCheckedAt: now,
-          lastSuccessAt: now,
-          ...(hasFailures
-            ? {
-                lastFailureAt: now,
-                healthStatus: SourceHealthStatus.DEGRADED,
-              }
-            : {
-                healthStatus: SourceHealthStatus.HEALTHY,
-              }),
-        },
-      });
-
-      return {
-        totalDiscovered: observations.length,
-        duplicateCount,
-        createdRecordsCount,
-        downloadedDocumentsCount,
-        skippedDocumentsCount,
-        failedDownloadsCount,
-        canonicalCreatedCount,
-        canonicalMatchedCount,
-      };
-    } catch (error) {
+    if (successfulPagesCount === 0 && actualMaxPages > 0) {
       await this.prisma.source.update({
         where: { id: source.id },
         data: {
@@ -269,7 +308,37 @@ export class SebiDiscoveryFlow {
           healthStatus: SourceHealthStatus.FAILING,
         },
       });
-      throw error;
+      throw new Error(
+        `All ${actualMaxPages} SEBI listing page requests failed`,
+      );
     }
+
+    const hasFailures = failedDownloadsCount > 0 || pageFetchFailures > 0;
+    await this.prisma.source.update({
+      where: { id: source.id },
+      data: {
+        lastCheckedAt: now,
+        lastSuccessAt: now,
+        ...(hasFailures
+          ? {
+              lastFailureAt: now,
+              healthStatus: SourceHealthStatus.DEGRADED,
+            }
+          : {
+              healthStatus: SourceHealthStatus.HEALTHY,
+            }),
+      },
+    });
+
+    return {
+      totalDiscovered,
+      duplicateCount,
+      createdRecordsCount,
+      downloadedDocumentsCount,
+      skippedDocumentsCount,
+      failedDownloadsCount,
+      canonicalCreatedCount,
+      canonicalMatchedCount,
+    };
   }
 }

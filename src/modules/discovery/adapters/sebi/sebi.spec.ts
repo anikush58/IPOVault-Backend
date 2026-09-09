@@ -18,6 +18,7 @@ import {
 import {
   classifySebiFilingType,
   extractCompanyNameFromTitle,
+  inferSebiFilingRelationship,
   parseSebiListingHtml,
   SebiParseError,
 } from './sebi.parser';
@@ -95,14 +96,33 @@ describe('SEBI Official Filing Ingestion Foundation', () => {
       expect(prasol.documentUrl).toBeUndefined();
     });
 
-    it('classifies filing types accurately', () => {
+    it('classifies filing types accurately (Phase 7A)', () => {
       expect(classifySebiFilingType('ABC Limited - DRHP')).toBe('DRHP');
       expect(classifySebiFilingType('XYZ Corp - RHP')).toBe('RHP');
       expect(classifySebiFilingType('PQR Ltd - Prospectus')).toBe('PROSPECTUS');
       expect(classifySebiFilingType('LMN Ltd - Abridged Prospectus')).toBe('ABRIDGED_PROSPECTUS');
       expect(classifySebiFilingType('EFG Ltd - Addendum')).toBe('ADDENDUM');
       expect(classifySebiFilingType('HIJ Ltd - Corrigendum')).toBe('CORRIGENDUM');
-      expect(classifySebiFilingType('NOP Ltd - General Announcement')).toBe('UNKNOWN');
+      expect(classifySebiFilingType('Jindal Ltd - Price Band Advertisement')).toBe('PRICE_BAND_ADVERTISEMENT');
+      expect(classifySebiFilingType('NOP Ltd - General Announcement')).toBe('OTHER');
+    });
+
+    it('infers filing relationships deterministically (Phase 7A)', () => {
+      const rhpRel = inferSebiFilingRelationship('RHP', 'Jindal Supreme (India) Limited');
+      expect(rhpRel.parentFilingType).toBe('DRHP');
+      expect(rhpRel.relationshipType).toBe('SUPERSEDES_DRHP');
+
+      const pbRel = inferSebiFilingRelationship('PRICE_BAND_ADVERTISEMENT', 'Jindal Supreme Limited');
+      expect(pbRel.parentFilingType).toBe('RHP');
+      expect(pbRel.relationshipType).toBe('AMENDS_RHP');
+
+      const addRel = inferSebiFilingRelationship('ADDENDUM', 'Prasol Chemicals Limited');
+      expect(addRel.parentFilingType).toBe('RHP');
+      expect(addRel.relationshipType).toBe('SUPPLEMENTS_RHP');
+
+      const otherRel = inferSebiFilingRelationship('OTHER', 'General Announcement');
+      expect(otherRel.parentFilingType).toBeNull();
+      expect(otherRel.relationshipType).toBe('UNRESOLVED');
     });
 
     it('extracts clean company name from filing title', () => {
@@ -465,6 +485,58 @@ describe('SEBI Official Filing Ingestion Foundation', () => {
       expect(delayCalls.length).toBe(0);
 
       setTimeoutSpy.mockRestore();
+    });
+
+    it('22 (Phase 7A). executes multi-page discovery, aggregates statistics, and stops on empty page', async () => {
+      const mockFetch = jest.fn().mockImplementation((_url, opts) => {
+        const bodyStr = String(opts?.body || '');
+        if (bodyStr.includes('nextValue=1')) {
+          return Promise.resolve({
+            status: 200,
+            text: () => Promise.resolve(mockSebiListingHtml),
+          });
+        }
+        if (bodyStr.includes('nextValue=2')) {
+          return Promise.resolve({
+            status: 200,
+            text: () => Promise.resolve('<table class="table"><tr><th>Date</th></tr></table>'),
+          });
+        }
+        return Promise.resolve({
+          status: 200,
+          text: () => Promise.resolve(mockSebiListingHtml),
+        });
+      });
+
+      const result = await flow.run(1, 3, mockFetch as unknown as typeof fetch);
+
+      expect(result.totalDiscovered).toBe(2);
+      expect(result.createdRecordsCount).toBe(2);
+    });
+
+    it('23 (Phase 7A). isolates page failure in multi-page flow and updates health status to DEGRADED', async () => {
+      const mockFetch = jest.fn().mockImplementation((_url, opts) => {
+        const bodyStr = String(opts?.body || '');
+        if (bodyStr.includes('nextValue=1')) {
+          return Promise.resolve({
+            status: 200,
+            text: () => Promise.resolve(mockSebiListingHtml),
+          });
+        }
+        return Promise.reject(new Error('Network error on page 2'));
+      });
+
+      const result = await flow.run(1, 2, mockFetch as unknown as typeof fetch);
+
+      expect(result.totalDiscovered).toBe(2);
+      expect(mockPrisma.source.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sebi-source-id' },
+          data: expect.objectContaining({
+            healthStatus: 'DEGRADED',
+          }),
+        }),
+      );
     });
   });
 });

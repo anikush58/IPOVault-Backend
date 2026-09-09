@@ -1,4 +1,8 @@
-import { SebiFilingMetadata, SebiFilingType } from './sebi.types';
+import {
+  SebiFilingMetadata,
+  SebiFilingRelationship,
+  SebiFilingType,
+} from './sebi.types';
 
 export class SebiParseError extends Error {
   constructor(message: string) {
@@ -10,6 +14,14 @@ export class SebiParseError extends Error {
 export function classifySebiFilingType(title: string): SebiFilingType {
   const upper = title.toUpperCase();
 
+  if (
+    upper.includes('PRICE BAND ADVERTISEMENT') ||
+    upper.includes('PRICE BAND AD') ||
+    upper.includes('PRICE BAND ANNOUNCEMENT') ||
+    upper.includes('PRICE BAND NOTICE')
+  ) {
+    return 'PRICE_BAND_ADVERTISEMENT';
+  }
   if (upper.includes('ABRIDGED PROSPECTUS')) return 'ABRIDGED_PROSPECTUS';
   if (upper.includes('ADDENDUM')) return 'ADDENDUM';
   if (upper.includes('CORRIGENDUM')) return 'CORRIGENDUM';
@@ -17,7 +29,48 @@ export function classifySebiFilingType(title: string): SebiFilingType {
   if (upper.includes('RHP') || upper.includes('RED HERRING')) return 'RHP';
   if (upper.includes('PROSPECTUS')) return 'PROSPECTUS';
 
-  return 'UNKNOWN';
+  return 'OTHER';
+}
+
+export function inferSebiFilingRelationship(
+  filingType: SebiFilingType,
+  companyName: string,
+): SebiFilingRelationship {
+  const targetCompanyKey = companyName
+    .toUpperCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[^A-Z0-9]/g, '');
+
+  if (filingType === 'RHP' || filingType === 'ABRIDGED_PROSPECTUS') {
+    return {
+      parentFilingType: 'DRHP',
+      relationshipType: 'SUPERSEDES_DRHP',
+      targetCompanyKey,
+    };
+  }
+
+  if (filingType === 'PRICE_BAND_ADVERTISEMENT') {
+    return {
+      parentFilingType: 'RHP',
+      relationshipType: 'AMENDS_RHP',
+      targetCompanyKey,
+    };
+  }
+
+  if (filingType === 'ADDENDUM' || filingType === 'CORRIGENDUM') {
+    return {
+      parentFilingType: 'RHP',
+      relationshipType: 'SUPPLEMENTS_RHP',
+      targetCompanyKey,
+    };
+  }
+
+  return {
+    parentFilingType: null,
+    relationshipType: 'UNRESOLVED',
+    targetCompanyKey,
+  };
 }
 
 export function parseSebiDate(dateStr: string): string {
@@ -52,7 +105,10 @@ export function extractCompanyNameFromTitle(title: string): string {
   // Removes filing suffixes like "- RHP", "- DRHP", "- Corrigendum", "Abridged Prospectus", etc.
   let cleaned = title
     .replace(/<[^>]+>/g, ' ') // Strip HTML tags
-    .replace(/\s*[-–—]\s*(RHP|DRHP|Prospectus|Addendum|Corrigendum|Abridged Prospectus).*/gi, '')
+    .replace(
+      /\s*[-–—]\s*(RHP|DRHP|Prospectus|Addendum|Corrigendum|Abridged Prospectus|Price Band Advertisement).*/gi,
+      '',
+    )
     .replace(/\s*\(India\)\s*/gi, ' India ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -103,6 +159,10 @@ export function parseSebiListingHtml(htmlText: string): SebiFilingMetadata[] {
     const companyName = extractCompanyNameFromTitle(titleText);
     const filingType = classifySebiFilingType(titleText);
     const filingDate = parseSebiDate(rawDate);
+    const filingRelationship = inferSebiFilingRelationship(
+      filingType,
+      companyName,
+    );
 
     filings.push({
       externalId,
@@ -112,6 +172,7 @@ export function parseSebiListingHtml(htmlText: string): SebiFilingMetadata[] {
       filingDate,
       detailUrl,
       documentUrl,
+      filingRelationship,
     });
   }
 

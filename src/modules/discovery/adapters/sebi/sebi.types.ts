@@ -3,9 +3,23 @@ export type SebiFilingType =
   | 'RHP'
   | 'PROSPECTUS'
   | 'ABRIDGED_PROSPECTUS'
+  | 'PRICE_BAND_ADVERTISEMENT'
   | 'ADDENDUM'
   | 'CORRIGENDUM'
+  | 'OTHER'
   | 'UNKNOWN';
+
+export type SebiFilingRelationshipType =
+  | 'SUPERSEDES_DRHP'
+  | 'AMENDS_RHP'
+  | 'SUPPLEMENTS_RHP'
+  | 'UNRESOLVED';
+
+export type SebiFilingRelationship = {
+  parentFilingType: SebiFilingType | null;
+  relationshipType: SebiFilingRelationshipType;
+  targetCompanyKey: string;
+};
 
 export type SebiFilingMetadata = {
   externalId: string;
@@ -15,6 +29,7 @@ export type SebiFilingMetadata = {
   filingDate: string; // ISO date string (YYYY-MM-DD)
   detailUrl: string;
   documentUrl?: string; // Direct PDF URL if available
+  filingRelationship?: SebiFilingRelationship;
 };
 
 export type SebiHttpDocument = {

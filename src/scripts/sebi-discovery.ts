@@ -28,18 +28,44 @@ export function formatSebiLiveIngestSummary(
 
 export async function runSebiLiveIngest(
   app: { get: (token: any) => any },
-  page = 1,
-  downloadDocument = true,
-  write: (line: string) => void = console.log,
+  startPageOrNum?: number,
+  maxPagesOrDownload?: number | boolean,
+  downloadDocumentOrWrite?: boolean | ((line: string) => void),
+  writeParam: (line: string) => void = console.log,
 ): Promise<SebiIngestionResult> {
   const flow = app.get(SebiDiscoveryFlow) as SebiDiscoveryFlow;
   const config = app.get(ConfigService) as ConfigService<Env, true>;
+
+  let actualStartPage =
+    typeof startPageOrNum === 'number' ? startPageOrNum : undefined;
+  let actualMaxPages: number | undefined = undefined;
+  let actualDownloadDocument = true;
+  let write = writeParam;
+
+  if (typeof maxPagesOrDownload === 'boolean') {
+    actualDownloadDocument = maxPagesOrDownload;
+    if (typeof downloadDocumentOrWrite === 'function') {
+      write = downloadDocumentOrWrite;
+    }
+  } else if (typeof maxPagesOrDownload === 'number') {
+    actualMaxPages = maxPagesOrDownload;
+    if (typeof downloadDocumentOrWrite === 'boolean') {
+      actualDownloadDocument = downloadDocumentOrWrite;
+    }
+  }
+
+  const effectiveStartPage =
+    actualStartPage ?? config?.get('SEBI_START_PAGE', { infer: true }) ?? 1;
+  const effectiveMaxPages =
+    actualMaxPages ?? config?.get('SEBI_MAX_PAGES', { infer: true }) ?? 1;
   const interRequestDelayMs =
     config?.get('SEBI_INTER_REQUEST_DELAY_MS', { infer: true }) ?? 0;
+
   const result = await flow.run(
-    page,
+    effectiveStartPage,
+    effectiveMaxPages,
     undefined,
-    downloadDocument,
+    actualDownloadDocument,
     true,
     interRequestDelayMs,
   );

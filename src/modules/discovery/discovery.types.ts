@@ -60,6 +60,7 @@ export type DiscoveredIpo = {
   source: {
     externalId: string | null;
     reference: string | null;
+    filingType?: string | null;
   };
 };
 

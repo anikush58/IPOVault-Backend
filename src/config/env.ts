@@ -21,6 +21,8 @@ export const envSchema = z.object({
   SEBI_IPO_ENDPOINT: z.string().url().optional(),
   SEBI_MAX_PDF_SIZE_BYTES: z.coerce.number().int().positive().default(50_000_000),
   SEBI_INTER_REQUEST_DELAY_MS: z.coerce.number().int().min(0).default(0),
+  SEBI_START_PAGE: z.coerce.number().int().positive().default(1),
+  SEBI_MAX_PAGES: z.coerce.number().int().positive().default(1),
 });
 
 export type Env = z.infer<typeof envSchema>;
