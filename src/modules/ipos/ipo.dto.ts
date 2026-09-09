@@ -40,7 +40,7 @@ export const ipoIdParamSchema = z.object({
 
 export const refreshIpoSchema = z.object({
   source: z.preprocess(
-    (v) => (typeof v === 'string' ? v : undefined),
+    (v) => (typeof v === 'string' ? v.trim() : undefined),
     z.string().min(1),
   ),
 });
@@ -51,7 +51,7 @@ export const refreshIpoSchema = z.object({
  */
 export const smartRefreshIpoSchema = z.object({
   source: z.preprocess(
-    (v) => (typeof v === 'string' ? v : undefined),
+    (v) => (typeof v === 'string' ? v.trim() : undefined),
     z.string().min(1),
   ),
 });
@@ -64,7 +64,7 @@ export type SmartRefreshIpoDto = z.infer<typeof smartRefreshIpoSchema>;
  */
 export const verifyRefreshSchema = z.object({
   source: z.preprocess(
-    (v) => (typeof v === 'string' ? v : undefined),
+    (v) => (typeof v === 'string' ? v.trim() : undefined),
     z.string().min(1),
   ),
   /**

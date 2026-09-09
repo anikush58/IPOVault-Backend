@@ -102,6 +102,10 @@ export class DiscoverySmartRefreshService {
 
     const actionStatus = plannedAction?.status ?? 'BLOCKED';
 
+    this.logger.log(
+      `Generated Phase 13 Refresh Plan for IPO ${ipoId}, source '${normalizedSourceCode}': actionStatus='${actionStatus}'`,
+    );
+
     // 4. Short-circuit if planned action is SKIPPED or BLOCKED
     if (actionStatus === 'SKIPPED') {
       this.logger.log(
@@ -133,12 +137,19 @@ export class DiscoverySmartRefreshService {
     }
 
     // 5. Execute Phase 14 Controlled Refresh
+    this.logger.log(
+      `Executing Phase 14 Controlled Refresh for IPO ${ipoId}, source '${normalizedSourceCode}'...`,
+    );
     const execSvc =
       this.executionService ?? new DiscoveryRefreshExecutionService();
     const execution = await execSvc.execute(db, {
       ipoId,
       sourceCode: normalizedSourceCode,
     });
+
+    this.logger.log(
+      `Phase 14 Execution completed for IPO ${ipoId}, source '${normalizedSourceCode}': executionStatus='${execution.status}'`,
+    );
 
     // 6. Handle non-COMPLETED execution outcomes
     if (execution.status === 'SKIPPED') {
@@ -178,6 +189,9 @@ export class DiscoverySmartRefreshService {
     }
 
     // 7. Execution COMPLETED -> Invoke Phase 15 Verification
+    this.logger.log(
+      `Invoking Phase 15 Post-Refresh Verification for IPO ${ipoId}, source '${normalizedSourceCode}'...`,
+    );
     const verifySvc =
       this.verificationService ?? new DiscoveryRefreshVerificationService();
 
@@ -191,6 +205,10 @@ export class DiscoverySmartRefreshService {
         refreshCompletedAt: execution.completedAt,
         ttlConfig,
       });
+
+      this.logger.log(
+        `Phase 15 Verification completed for IPO ${ipoId}, source '${normalizedSourceCode}': observationStatus='${verification.observationStatus}'`,
+      );
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       this.logger.error(
