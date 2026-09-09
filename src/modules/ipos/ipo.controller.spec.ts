@@ -5,6 +5,7 @@ import { IpoRepository } from './ipo.repository';
 import { AppException } from '../../common/errors/app.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { ReconciliationService } from '../discovery/reconciliation.service';
+import { DiscoveryRefreshService } from '../discovery/discovery-refresh.service';
 
 describe('IpoController API Endpoints', () => {
   let controller: IpoController;
@@ -119,6 +120,17 @@ describe('IpoController API Endpoints', () => {
             }),
           },
         },
+        {
+          provide: DiscoveryRefreshService,
+          useValue: {
+            generatePlan: jest.fn().mockResolvedValue({
+              ipoId: '11111111-1111-1111-1111-111111111111',
+              generatedAt: new Date('2026-09-10T12:00:00.000Z'),
+              hasRecommendedActions: false,
+              actions: [],
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -196,5 +208,14 @@ describe('IpoController API Endpoints', () => {
     await expect(
       controller.getById({ id: '99999999-9999-9999-9999-999999999999' }),
     ).rejects.toThrow(AppException);
+  });
+
+  it('10. GET /ipos/:id/refresh-plan - returns refresh plan', async () => {
+    const result = await controller.getRefreshPlan({
+      id: '11111111-1111-1111-1111-111111111111',
+    });
+    expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.hasRecommendedActions).toBe(false);
+    expect(result.actions).toEqual([]);
   });
 });

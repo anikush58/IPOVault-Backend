@@ -13,6 +13,7 @@ import { SebiDiscoveryFlow } from './adapters/sebi/sebi-discovery.flow';
 
 import { ReconciliationService } from './reconciliation.service';
 import { DiscoveryFreshnessService } from './discovery-freshness.service';
+import { DiscoveryRefreshService } from './discovery-refresh.service';
 
 @Module({
   providers: [
@@ -20,6 +21,7 @@ import { DiscoveryFreshnessService } from './discovery-freshness.service';
     MatchingService,
     CanonicalizerService,
     DiscoveryFreshnessService,
+    DiscoveryRefreshService,
     ReconciliationService,
     DiscoveryService,
     NseSourceAdapter,
@@ -32,12 +34,11 @@ import { DiscoveryFreshnessService } from './discovery-freshness.service';
   exports: [
     DiscoveryService,
     DiscoveryFreshnessService,
+    DiscoveryRefreshService,
     ReconciliationService,
     NseSourceAdapter,
     NseHttpClient,
     NseDiscoveryFlow,
-    SebiSourceAdapter,
-    SebiHttpClient,
     SebiSourceAdapter,
     SebiHttpClient,
     SebiDiscoveryFlow,

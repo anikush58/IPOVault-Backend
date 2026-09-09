@@ -65,6 +65,13 @@ export class IpoController {
     return this.ipos.getReconciliation(params.id);
   }
 
+  @Get(':id/refresh-plan')
+  getRefreshPlan(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+  ) {
+    return this.ipos.getRefreshPlan(params.id);
+  }
+
   @Get(':id')
   getById(@Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam) {
     return this.ipos.getById(params.id);

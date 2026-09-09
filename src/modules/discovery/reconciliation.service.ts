@@ -260,8 +260,8 @@ export class ReconciliationService {
       const list = groupedByField.get(prov.fieldName) ?? [];
       list.push({
         sourceId: prov.sourceId,
-        sourceCode: prov.source.code,
-        sourceType: prov.source.sourceType,
+        sourceCode: prov.source?.code ?? 'UNKNOWN',
+        sourceType: prov.source?.sourceType ?? SourceType.OFFICIAL_FILING,
         sourceReference: prov.sourceReference,
         value: prov.value,
         retrievedAt: prov.retrievedAt,

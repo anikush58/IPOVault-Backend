@@ -18,6 +18,7 @@ import {
 } from './ipo.mapper';
 import { PrismaService } from '../../database/prisma.service';
 import { ReconciliationService } from '../discovery/reconciliation.service';
+import { DiscoveryRefreshService } from '../discovery/discovery-refresh.service';
 import { IpoRepository } from './ipo.repository';
 
 @Injectable()
@@ -26,6 +27,7 @@ export class IpoService {
     private readonly ipos: IpoRepository,
     private readonly prisma: PrismaService,
     private readonly reconciliation: ReconciliationService,
+    private readonly refresh: DiscoveryRefreshService,
   ) {}
 
   async list(query: IpoListQuery): Promise<{
@@ -108,5 +110,15 @@ export class IpoService {
     }
 
     return this.reconciliation.reconcileIpo(this.prisma, id);
+  }
+
+  async getRefreshPlan(id: string) {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo) {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    return this.refresh.generatePlan(this.prisma, id);
   }
 }
