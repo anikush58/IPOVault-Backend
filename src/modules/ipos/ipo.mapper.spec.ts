@@ -244,4 +244,68 @@ describe('toIpoResponseDto', () => {
       expect(dtoWithRec.refreshRecommended).toBe(true);
     });
   });
+
+  describe('toIpoChangesResponseDto', () => {
+    it('maps change events cleanly into public DTO shape without exposing secrets', () => {
+      const { toIpoChangesResponseDto } = require('./ipo.mapper');
+      const mockEvents = [
+        {
+          id: 'change-1',
+          ipoId: '11111111-1111-4111-8111-111111111111',
+          fieldName: 'price_band_high',
+          oldValue: '175.00',
+          newValue: '180.00',
+          changeType: 'PRICE_BAND_CHANGED',
+          sourceId: 'src-1',
+          sourceReference: 'ref-123',
+          detectedAt: new Date('2026-09-10T10:30:00.000Z'),
+          createdAt: new Date('2026-09-10T10:30:00.000Z'),
+          source: {
+            id: 'src-1',
+            code: 'SEBI',
+            name: 'Securities and Exchange Board of India',
+            sourceType: 'OFFICIAL_FILING',
+          },
+        },
+        {
+          id: 'change-2',
+          ipoId: '11111111-1111-4111-8111-111111111111',
+          fieldName: 'lot_size',
+          oldValue: null,
+          newValue: '100',
+          changeType: 'LOT_SIZE_CHANGED',
+          sourceId: null,
+          sourceReference: null,
+          detectedAt: new Date('2026-09-05T08:00:00.000Z'),
+          createdAt: new Date('2026-09-05T08:00:00.000Z'),
+          source: null,
+        },
+      ];
+
+      const res = toIpoChangesResponseDto('11111111-1111-4111-8111-111111111111', mockEvents);
+
+      expect(res.ipoId).toBe('11111111-1111-4111-8111-111111111111');
+      expect(res.changes).toHaveLength(2);
+
+      expect(res.changes[0]).toEqual({
+        id: 'change-1',
+        fieldName: 'price_band_high',
+        oldValue: '175.00',
+        newValue: '180.00',
+        changeType: 'PRICE_BAND_CHANGED',
+        source: {
+          id: 'src-1',
+          code: 'SEBI',
+          name: 'Securities and Exchange Board of India',
+          sourceType: 'OFFICIAL_FILING',
+        },
+        sourceReference: 'ref-123',
+        detectedAt: '2026-09-10T10:30:00.000Z',
+        createdAt: '2026-09-10T10:30:00.000Z',
+      });
+
+      expect(res.changes[1].oldValue).toBeNull();
+      expect(res.changes[1].source).toBeNull();
+    });
+  });
 });

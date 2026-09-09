@@ -7,6 +7,8 @@ import {
   paginationOffset,
 } from '../../common/pagination/pagination';
 import {
+  IpoChangesQuery,
+  IpoChangesResponseDto,
   IpoListQuery,
   IpoResponseDto,
   IpoSourcesResponseDto,
@@ -14,6 +16,7 @@ import {
 } from './ipo.dto';
 import {
   toDateOnly,
+  toIpoChangesResponseDto,
   toIpoDataReadinessDto,
   toIpoResponseDto,
 } from './ipo.mapper';
@@ -128,6 +131,20 @@ export class IpoService {
         createdAt: i.createdAt.toISOString(),
       })),
     };
+  }
+
+  async getChanges(
+    id: string,
+    query?: IpoChangesQuery,
+  ): Promise<IpoChangesResponseDto> {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo) {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    const events = await this.ipos.findChangeEvents(id, query);
+    return toIpoChangesResponseDto(id, events);
   }
 
   async getReconciliation(id: string) {

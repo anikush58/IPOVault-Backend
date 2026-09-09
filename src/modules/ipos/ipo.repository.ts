@@ -55,6 +55,23 @@ export class IpoRepository {
     });
   }
 
+  async findChangeEvents(
+    ipoId: string,
+    query?: { field?: string; source?: string },
+  ) {
+    const where: Prisma.IpoChangeEventWhereInput = {
+      ipoId,
+      ...(query?.field ? { fieldName: query.field } : {}),
+      ...(query?.source ? { source: { code: query.source } } : {}),
+    };
+
+    return this.prisma.ipoChangeEvent.findMany({
+      where,
+      include: { source: true },
+      orderBy: [{ detectedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+    });
+  }
+
   private where(query: IpoListQuery): Prisma.IpoWhereInput {
     return {
       ...(query.status ? { status: query.status } : {}),

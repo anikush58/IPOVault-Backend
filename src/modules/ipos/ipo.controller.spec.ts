@@ -16,6 +16,7 @@ describe('IpoController API Endpoints', () => {
   let controller: IpoController;
   let service: IpoService;
   let qualityGateService: DiscoveryQualityGateService;
+  let reconciliationService: ReconciliationService;
 
   const mockIpoRecord = {
     id: '11111111-1111-1111-1111-111111111111',
@@ -106,6 +107,56 @@ describe('IpoController API Endpoints', () => {
                 },
               },
             ]),
+            findChangeEvents: jest.fn().mockImplementation((id: string, query?: { field?: string; source?: string }) => {
+              if (id !== '11111111-1111-1111-1111-111111111111') return Promise.resolve([]);
+              const events = [
+                {
+                  id: 'chg-2',
+                  ipoId: id,
+                  fieldName: 'price_band_high',
+                  oldValue: '175.00',
+                  newValue: '180.00',
+                  changeType: 'PRICE_BAND_CHANGED',
+                  sourceId: 'src-1',
+                  sourceReference: 'ref-2',
+                  detectedAt: new Date('2026-09-10T12:00:00.000Z'),
+                  createdAt: new Date('2026-09-10T12:00:00.000Z'),
+                  source: {
+                    id: 'src-1',
+                    code: 'NSE',
+                    name: 'National Stock Exchange',
+                    sourceType: 'EXCHANGE',
+                  },
+                },
+                {
+                  id: 'chg-1',
+                  ipoId: id,
+                  fieldName: 'lot_size',
+                  oldValue: null,
+                  newValue: '100',
+                  changeType: 'LOT_SIZE_CHANGED',
+                  sourceId: 'src-2',
+                  sourceReference: 'ref-1',
+                  detectedAt: new Date('2026-09-05T10:00:00.000Z'),
+                  createdAt: new Date('2026-09-05T10:00:00.000Z'),
+                  source: {
+                    id: 'src-2',
+                    code: 'SEBI',
+                    name: 'Securities and Exchange Board of India',
+                    sourceType: 'OFFICIAL_FILING',
+                  },
+                },
+              ];
+              let res = events;
+              if (query?.field) {
+                res = res.filter((e) => e.fieldName === query.field);
+              }
+              if (query?.source) {
+                const sCode = query.source.toLowerCase();
+                res = res.filter((e) => e.source?.code.toLowerCase() === sCode);
+              }
+              return Promise.resolve(res);
+            }),
           },
         },
         {
@@ -224,6 +275,7 @@ describe('IpoController API Endpoints', () => {
     controller = module.get<IpoController>(IpoController);
     service = module.get<IpoService>(IpoService);
     qualityGateService = module.get<DiscoveryQualityGateService>(DiscoveryQualityGateService);
+    reconciliationService = module.get<ReconciliationService>(ReconciliationService);
   });
 
   it('1. GET /ipos - returns paginated list of IPOs', async () => {
@@ -393,5 +445,62 @@ describe('IpoController API Endpoints', () => {
     const result = await controller.list({ page: 1, limit: 10 });
     expect(result.data[0].id).toBe('11111111-1111-1111-1111-111111111111');
     expect(result.data[0].dataReadiness).toBeUndefined();
+  });
+
+  it('19. GET /ipos/:id/changes - returns persisted change events ordered by detectedAt desc with mapped source metadata', async () => {
+    const result = await controller.getChanges(
+      { id: '11111111-1111-1111-1111-111111111111' },
+      {},
+    );
+    expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.changes).toHaveLength(2);
+
+    expect(result.changes[0].id).toBe('chg-2');
+    expect(result.changes[0].fieldName).toBe('price_band_high');
+    expect(result.changes[0].oldValue).toBe('175.00');
+    expect(result.changes[0].newValue).toBe('180.00');
+    expect(result.changes[0].source?.code).toBe('NSE');
+
+    expect(result.changes[1].id).toBe('chg-1');
+    expect(result.changes[1].oldValue).toBeNull();
+    expect(result.changes[1].source?.code).toBe('SEBI');
+  });
+
+  it('20. GET /ipos/:id/changes - supports field name and source code filtering', async () => {
+    const fieldFiltered = await controller.getChanges(
+      { id: '11111111-1111-1111-1111-111111111111' },
+      { field: 'lot_size' },
+    );
+    expect(fieldFiltered.changes).toHaveLength(1);
+    expect(fieldFiltered.changes[0].fieldName).toBe('lot_size');
+
+    const sourceFiltered = await controller.getChanges(
+      { id: '11111111-1111-1111-1111-111111111111' },
+      { source: 'sebi' },
+    );
+    expect(sourceFiltered.changes).toHaveLength(1);
+    expect(sourceFiltered.changes[0].source?.code).toBe('SEBI');
+  });
+
+  it('21. GET /ipos/:id/changes - 404 behavior for unknown IPO ID', async () => {
+    await expect(
+      controller.getChanges(
+        { id: '99999999-9999-9999-9999-999999999999' },
+        {},
+      ),
+    ).rejects.toThrow(AppException);
+  });
+
+  it('22. GET /ipos/:id/changes - does not invoke Quality Gate, Coverage, or Reconciliation', async () => {
+    const qgSpy = jest.spyOn(qualityGateService, 'evaluateQualityGate');
+    const recSpy = jest.spyOn(reconciliationService, 'reconcileIpo');
+
+    await controller.getChanges(
+      { id: '11111111-1111-1111-1111-111111111111' },
+      {},
+    );
+
+    expect(qgSpy).not.toHaveBeenCalled();
+    expect(recSpy).not.toHaveBeenCalled();
   });
 });

@@ -147,7 +147,34 @@ function createIpoPrismaStub(rows: IpoWithRelations[]) {
       findMany: async () => [],
     },
     ipoChangeEvent: {
-      findMany: async () => [],
+      findMany: async ({ where = {} }: any) => {
+        if (where.ipoId === '11111111-1111-4111-8111-111111111111') {
+          const events = [
+            {
+              id: 'chg-1',
+              ipoId: '11111111-1111-4111-8111-111111111111',
+              fieldName: 'price_band_high',
+              oldValue: '175.00',
+              newValue: '180.00',
+              changeType: 'PRICE_BAND_CHANGED',
+              sourceId: 'src-1',
+              sourceReference: 'ref-1',
+              detectedAt: new Date('2026-09-10T12:00:00.000Z'),
+              createdAt: new Date('2026-09-10T12:00:00.000Z'),
+              source: {
+                id: 'src-1',
+                code: 'sebi',
+                name: 'SEBI',
+                sourceType: 'OFFICIAL_FILING',
+              },
+            },
+          ];
+          if (where.fieldName && events[0].fieldName !== where.fieldName) return [];
+          if (where.source?.code && events[0].source.code !== where.source.code) return [];
+          return events;
+        }
+        return [];
+      },
     },
     ipoLifecycleEvent: {
       findMany: async () => [],
@@ -282,6 +309,81 @@ describe('IPO read API', () => {
     expect(limit.status).toBe(400);
     expect(id.status).toBe(400);
     expect(id.body.error.code).toBe('VALIDATION_ERROR');
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/:id/changes - returns persisted change history with envelope', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/11111111-1111-4111-8111-111111111111/changes',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.ipoId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(response.body.data.changes).toHaveLength(1);
+    expect(response.body.data.changes[0]).toEqual({
+      id: 'chg-1',
+      fieldName: 'price_band_high',
+      oldValue: '175.00',
+      newValue: '180.00',
+      changeType: 'PRICE_BAND_CHANGED',
+      source: {
+        id: 'src-1',
+        code: 'sebi',
+        name: 'SEBI',
+        sourceType: 'OFFICIAL_FILING',
+      },
+      sourceReference: 'ref-1',
+      detectedAt: '2026-09-10T12:00:00.000Z',
+      createdAt: '2026-09-10T12:00:00.000Z',
+    });
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/:id/changes - returns empty changes array for valid IPO with no history', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/22222222-2222-4222-8222-222222222222/changes',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.ipoId).toBe('22222222-2222-4222-8222-222222222222');
+    expect(response.body.data.changes).toEqual([]);
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/:id/changes - returns 404 for unknown IPO ID', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/99999999-9999-4999-8999-999999999999/changes',
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('IPO_NOT_FOUND');
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/:id/changes - filters by field and source query params', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const matchFilter = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/11111111-1111-4111-8111-111111111111/changes?field=price_band_high&source=sebi',
+    );
+    expect(matchFilter.status).toBe(200);
+    expect(matchFilter.body.data.changes).toHaveLength(1);
+
+    const noMatchFilter = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/11111111-1111-4111-8111-111111111111/changes?field=lot_size',
+    );
+    expect(noMatchFilter.status).toBe(200);
+    expect(noMatchFilter.body.data.changes).toEqual([]);
 
     await app.close();
   });

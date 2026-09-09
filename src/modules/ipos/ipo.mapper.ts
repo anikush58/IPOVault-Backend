@@ -2,6 +2,7 @@ import { LifecycleEventType, Prisma } from '@prisma/client';
 
 import {
   DataReadinessStatus,
+  IpoChangesResponseDto,
   IpoDataReadinessDto,
   IpoLifecycleDto,
   IpoResponseDto,
@@ -127,5 +128,36 @@ export function toIpoResponseDto(
     ...(dataReadiness ? { dataReadiness } : {}),
     createdAt: ipo.createdAt.toISOString(),
     updatedAt: ipo.updatedAt.toISOString(),
+  };
+}
+
+export type IpoChangeEventWithSource = Prisma.IpoChangeEventGetPayload<{
+  include: { source: true };
+}>;
+
+export function toIpoChangesResponseDto(
+  ipoId: string,
+  events: IpoChangeEventWithSource[],
+): IpoChangesResponseDto {
+  return {
+    ipoId,
+    changes: events.map((e) => ({
+      id: e.id,
+      fieldName: e.fieldName,
+      oldValue: e.oldValue,
+      newValue: e.newValue,
+      changeType: e.changeType,
+      source: e.source
+        ? {
+            id: e.source.id,
+            code: e.source.code,
+            name: e.source.name,
+            sourceType: e.source.sourceType,
+          }
+        : null,
+      sourceReference: e.sourceReference,
+      detectedAt: e.detectedAt.toISOString(),
+      createdAt: e.createdAt.toISOString(),
+    })),
   };
 }

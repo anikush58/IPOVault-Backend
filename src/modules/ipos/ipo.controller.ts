@@ -2,6 +2,8 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/com
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
+  IpoChangesQuery,
+  ipoChangesQuerySchema,
   IpoIdParam,
   ipoIdParamSchema,
   IpoListQuery,
@@ -62,6 +64,22 @@ export class IpoController {
     @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
   ) {
     return this.ipos.getSources(params.id);
+  }
+
+  /**
+   * GET /ipos/:id/changes
+   *
+   * Phase 23 — IPO Change History & Data Audit API.
+   * Read-only endpoint returning deterministic, historical canonical field change events.
+   * Supports optional query filtering by exact field name (?field=price_band_low)
+   * and/or source code (?source=sebi).
+   */
+  @Get(':id/changes')
+  getChanges(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+    @Query(new ZodValidationPipe(ipoChangesQuerySchema)) query: IpoChangesQuery,
+  ) {
+    return this.ipos.getChanges(params.id, query);
   }
 
   @Get(':id/reconciliation')
