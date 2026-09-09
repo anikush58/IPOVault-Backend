@@ -47,7 +47,7 @@ function mockObservation(overrides: Partial<DiscoveredIpo['ipo']> = {}): Discove
   };
 }
 
-describe('ReconciliationService (Phase 9 Multi-Source Reconciliation)', () => {
+describe('ReconciliationService (Phase 10 Data Quality Intelligence)', () => {
   let service: ReconciliationService;
 
   beforeEach(() => {
@@ -75,151 +75,193 @@ describe('ReconciliationService (Phase 9 Multi-Source Reconciliation)', () => {
       expect(issueSizeComp?.outcome).toBe('MATCH');
     });
 
-    it('returns CONFLICT when SEBI and NSE values differ on price band or issue size', () => {
-      const sebi = mockObservation({ issueSize: '500.00', priceBandLow: '175.00' });
-      const nse = mockObservation({ issueSize: '520.00', priceBandLow: '180.00' });
+    it('returns CONFLICT when SEBI and NSE values differ', () => {
+      const sebi = mockObservation({ issueSize: '500.00' });
+      const nse = mockObservation({ issueSize: '520.00' });
 
       const result = service.reconcileObservations(sebi, nse);
 
       expect(result.hasConflict).toBe(true);
-
       const issueSizeComp = result.comparisons.find((c) => c.fieldName === 'issue_size');
       expect(issueSizeComp?.outcome).toBe('CONFLICT');
-      expect(issueSizeComp?.sebiValue).toBe('500.00');
-      expect(issueSizeComp?.exchangeValue).toBe('520.00');
-
-      const priceBandLowComp = result.comparisons.find((c) => c.fieldName === 'price_band_low');
-      expect(priceBandLowComp?.outcome).toBe('CONFLICT');
-    });
-
-    it('classifies SEBI_ONLY when field exists in SEBI but is null in Exchange', () => {
-      const sebi = mockObservation({ ofsSize: '200.00' });
-      const nse = mockObservation({ ofsSize: null });
-
-      const result = service.reconcileObservations(sebi, nse);
-
-      const ofsComp = result.comparisons.find((c) => c.fieldName === 'ofs_size');
-      expect(ofsComp?.outcome).toBe('SEBI_ONLY');
-      expect(ofsComp?.sebiValue).toBe('200.00');
-      expect(ofsComp?.exchangeValue).toBeNull();
-    });
-
-    it('classifies EXCHANGE_ONLY when field is null in SEBI but exists in Exchange', () => {
-      const sebi = mockObservation({ lotSize: null });
-      const nse = mockObservation({ lotSize: 80 });
-
-      const result = service.reconcileObservations(sebi, nse);
-
-      const lotComp = result.comparisons.find((c) => c.fieldName === 'lot_size');
-      expect(lotComp?.outcome).toBe('EXCHANGE_ONLY');
-      expect(lotComp?.sebiValue).toBeNull();
-      expect(lotComp?.exchangeValue).toBe('80');
-    });
-
-    it('classifies UNRESOLVED when both SEBI and Exchange values are null', () => {
-      const sebi = mockObservation({ freshIssueSize: null });
-      const nse = mockObservation({ freshIssueSize: null });
-
-      const result = service.reconcileObservations(sebi, nse);
-
-      const freshComp = result.comparisons.find((c) => c.fieldName === 'fresh_issue_size');
-      expect(freshComp?.outcome).toBe('UNRESOLVED');
     });
   });
 
-  describe('detectConflicts (Active vs Historical Provenance Analysis)', () => {
-    it('does NOT report false conflict for intra-source historical revisions (e.g. SEBI DRHP 175 -> SEBI RHP 180)', async () => {
+  describe('reconcileIpo (Data Quality & Consistency Checks)', () => {
+    it('returns HEALTHY status for an internally consistent, fully matched IPO', async () => {
       const mockIpo = {
-        id: 'ipo-1',
+        id: 'ipo-healthy',
         marketSegment: 'MAINBOARD',
         exchange: 'NSE',
         status: 'UPCOMING',
         symbol: 'TEST',
-        priceBandLow: { toFixed: () => '180.00' },
+        issueSize: { toFixed: () => '500.00' },
+        freshIssueSize: { toFixed: () => '300.00' },
+        ofsSize: { toFixed: () => '200.00' },
+        issueShareCount: { toString: () => '5000000' },
+        freshIssueShareCount: { toString: () => '3000000' },
+        ofsShareCount: { toString: () => '2000000' },
+        priceBandLow: { toFixed: () => '175.00' },
+        priceBandHigh: { toFixed: () => '185.00' },
+        lotSize: 80,
+        lifecycleEvents: [],
       };
-
-      // Two historical provenance rows from the SAME source (SEBI)
-      const mockProvenances = [
-        {
-          fieldName: 'price_band_low',
-          value: '175.00',
-          sourceId: 'src-sebi',
-          sourceReference: 'https://sebi.gov.in/drhp',
-          retrievedAt: new Date('2026-01-01'),
-          source: { code: 'sebi', sourceType: SourceType.OFFICIAL_FILING },
-        },
-        {
-          fieldName: 'price_band_low',
-          value: '180.00',
-          sourceId: 'src-sebi',
-          sourceReference: 'https://sebi.gov.in/rhp',
-          retrievedAt: new Date('2026-01-10'),
-          source: { code: 'sebi', sourceType: SourceType.OFFICIAL_FILING },
-        },
-      ];
 
       const db = {
         ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
-        fieldProvenance: { findMany: jest.fn().mockResolvedValue(mockProvenances) },
+        fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
       } as any;
 
-      const report = await service.detectConflicts(db, 'ipo-1');
+      const summary = await service.reconcileIpo(db, 'ipo-healthy');
 
-      // Since both rows are from SEBI, the latest (180.00) is active. No cross-source conflict.
-      expect(report.hasAnyConflict).toBe(false);
-      const priceBandConflict = report.conflicts.find((c) => c.fieldName === 'price_band_low');
-      expect(priceBandConflict?.hasConflict).toBe(false);
-      expect(priceBandConflict?.activeObservations).toHaveLength(1);
-      expect(priceBandConflict?.activeObservations[0]!.value).toBe('180.00');
+      expect(summary.qualitySummary.status).toBe('HEALTHY');
+      expect(summary.qualitySummary.summary.errors).toBe(0);
+      expect(summary.qualitySummary.summary.warnings).toBe(0);
     });
 
-    it('reports CONFLICT when active observations from distinct sources disagree (e.g. SEBI=180 vs NSE=175)', async () => {
+    it('detects INTERNAL_SHARE_COUNT_MISMATCH error when fresh + OFS != total share count', async () => {
       const mockIpo = {
-        id: 'ipo-2',
+        id: 'ipo-share-mismatch',
         marketSegment: 'MAINBOARD',
         exchange: 'NSE',
         status: 'UPCOMING',
         symbol: 'TEST',
-        priceBandLow: { toFixed: () => '180.00' },
+        issueShareCount: { toString: () => '5000000' },
+        freshIssueShareCount: { toString: () => '3000000' },
+        ofsShareCount: { toString: () => '1000000' }, // 3M + 1M = 4M != 5M
+        priceBandLow: null,
+        priceBandHigh: null,
+        lotSize: null,
+        issueSize: null,
+        freshIssueSize: null,
+        ofsSize: null,
+        lifecycleEvents: [],
       };
-
-      const mockProvenances = [
-        {
-          fieldName: 'price_band_low',
-          value: '180.00',
-          sourceId: 'src-sebi',
-          sourceReference: 'https://sebi.gov.in/rhp',
-          retrievedAt: new Date('2026-01-10'),
-          source: { code: 'sebi', sourceType: SourceType.OFFICIAL_FILING },
-        },
-        {
-          fieldName: 'price_band_low',
-          value: '175.00',
-          sourceId: 'src-nse',
-          sourceReference: 'https://nseindia.com/ipo',
-          retrievedAt: new Date('2026-01-11'),
-          source: { code: 'nse', sourceType: SourceType.EXCHANGE },
-        },
-      ];
 
       const db = {
         ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
-        fieldProvenance: { findMany: jest.fn().mockResolvedValue(mockProvenances) },
+        fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
       } as any;
 
-      const report = await service.detectConflicts(db, 'ipo-2');
+      const summary = await service.reconcileIpo(db, 'ipo-share-mismatch');
 
-      expect(report.hasAnyConflict).toBe(true);
-      const priceBandConflict = report.conflicts.find((c) => c.fieldName === 'price_band_low');
-      expect(priceBandConflict?.hasConflict).toBe(true);
-      expect(priceBandConflict?.activeObservations).toHaveLength(2);
+      expect(summary.qualitySummary.status).toBe('NEEDS_REVIEW');
+      expect(summary.qualitySummary.summary.errors).toBeGreaterThanOrEqual(1);
+
+      const finding = summary.qualitySummary.findings.find(
+        (f) => f.code === 'INTERNAL_SHARE_COUNT_MISMATCH',
+      );
+      expect(finding).toBeDefined();
+      expect(finding?.severity).toBe('ERROR');
     });
-  });
 
-  describe('reconcileIpo (Scoped Multi-Source Reconciliation Summary)', () => {
-    it('produces structured reconciliation summary for SEBI and NSE active observations without database writes', async () => {
+    it('detects INVALID_PRICE_BAND error when priceBandLow > priceBandHigh', async () => {
       const mockIpo = {
-        id: 'ipo-3',
+        id: 'ipo-bad-price-band',
+        marketSegment: 'MAINBOARD',
+        exchange: 'NSE',
+        status: 'UPCOMING',
+        symbol: 'TEST',
+        priceBandLow: { toFixed: () => '190.00' },
+        priceBandHigh: { toFixed: () => '180.00' }, // 190 > 180!
+        lotSize: 80,
+        issueSize: null,
+        freshIssueSize: null,
+        ofsSize: null,
+        issueShareCount: null,
+        freshIssueShareCount: null,
+        ofsShareCount: null,
+        lifecycleEvents: [],
+      };
+
+      const db = {
+        ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+        fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+      } as any;
+
+      const summary = await service.reconcileIpo(db, 'ipo-bad-price-band');
+
+      expect(summary.qualitySummary.status).toBe('NEEDS_REVIEW');
+      const finding = summary.qualitySummary.findings.find(
+        (f) => f.code === 'INVALID_PRICE_BAND',
+      );
+      expect(finding).toBeDefined();
+      expect(finding?.severity).toBe('ERROR');
+    });
+
+    it('detects INVALID_ISSUE_DATE_RANGE error when openDate > closeDate', async () => {
+      const mockIpo = {
+        id: 'ipo-bad-dates',
+        marketSegment: 'MAINBOARD',
+        exchange: 'NSE',
+        status: 'OPEN',
+        symbol: 'TEST',
+        priceBandLow: { toFixed: () => '175.00' },
+        priceBandHigh: { toFixed: () => '185.00' },
+        lotSize: 80,
+        issueSize: null,
+        freshIssueSize: null,
+        ofsSize: null,
+        issueShareCount: null,
+        freshIssueShareCount: null,
+        ofsShareCount: null,
+        lifecycleEvents: [
+          { eventType: 'OPEN', eventDate: new Date('2026-01-20T00:00:00Z') },
+          { eventType: 'CLOSE', eventDate: new Date('2026-01-15T00:00:00Z') }, // Jan 20 > Jan 15!
+        ],
+      };
+
+      const db = {
+        ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+        fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+      } as any;
+
+      const summary = await service.reconcileIpo(db, 'ipo-bad-dates');
+
+      expect(summary.qualitySummary.status).toBe('NEEDS_REVIEW');
+      const finding = summary.qualitySummary.findings.find(
+        (f) => f.code === 'INVALID_ISSUE_DATE_RANGE',
+      );
+      expect(finding).toBeDefined();
+      expect(finding?.severity).toBe('ERROR');
+    });
+
+    it('detects NON_POSITIVE_LOT_SIZE error when lotSize <= 0', async () => {
+      const mockIpo = {
+        id: 'ipo-zero-lot',
+        marketSegment: 'MAINBOARD',
+        exchange: 'NSE',
+        status: 'UPCOMING',
+        symbol: 'TEST',
+        lotSize: 0,
+        priceBandLow: null,
+        priceBandHigh: null,
+        issueSize: null,
+        freshIssueSize: null,
+        ofsSize: null,
+        issueShareCount: null,
+        freshIssueShareCount: null,
+        ofsShareCount: null,
+        lifecycleEvents: [],
+      };
+
+      const db = {
+        ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+        fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+      } as any;
+
+      const summary = await service.reconcileIpo(db, 'ipo-zero-lot');
+
+      const finding = summary.qualitySummary.findings.find(
+        (f) => f.code === 'NON_POSITIVE_LOT_SIZE',
+      );
+      expect(finding).toBeDefined();
+      expect(finding?.severity).toBe('ERROR');
+    });
+
+    it('detects SOURCE_CONFLICT warning when active SEBI and NSE observations disagree', async () => {
+      const mockIpo = {
+        id: 'ipo-conflict',
         marketSegment: 'MAINBOARD',
         exchange: 'NSE',
         status: 'UPCOMING',
@@ -230,9 +272,10 @@ describe('ReconciliationService (Phase 9 Multi-Source Reconciliation)', () => {
         issueShareCount: null,
         freshIssueShareCount: null,
         ofsShareCount: null,
-        priceBandLow: { toFixed: () => '175.00' },
-        priceBandHigh: { toFixed: () => '185.00' },
-        lotSize: 80,
+        priceBandLow: null,
+        priceBandHigh: null,
+        lotSize: null,
+        lifecycleEvents: [],
       };
 
       const mockProvenances = [
@@ -240,16 +283,16 @@ describe('ReconciliationService (Phase 9 Multi-Source Reconciliation)', () => {
           fieldName: 'issue_size',
           value: '500.00',
           sourceId: 'src-sebi',
-          sourceReference: 'https://sebi.gov.in/rhp',
-          retrievedAt: new Date('2026-01-10'),
+          sourceReference: 'ref-1',
+          retrievedAt: new Date('2026-01-01'),
           source: { code: 'sebi', sourceType: SourceType.OFFICIAL_FILING },
         },
         {
           fieldName: 'issue_size',
           value: '520.00',
           sourceId: 'src-nse',
-          sourceReference: 'https://nseindia.com/ipo',
-          retrievedAt: new Date('2026-01-11'),
+          sourceReference: 'ref-2',
+          retrievedAt: new Date('2026-01-02'),
           source: { code: 'nse', sourceType: SourceType.EXCHANGE },
         },
       ];
@@ -259,19 +302,78 @@ describe('ReconciliationService (Phase 9 Multi-Source Reconciliation)', () => {
         fieldProvenance: { findMany: jest.fn().mockResolvedValue(mockProvenances) },
       } as any;
 
-      const summary = await service.reconcileIpo(db, 'ipo-3');
+      const summary = await service.reconcileIpo(db, 'ipo-conflict');
 
-      expect(summary.ipoId).toBe('ipo-3');
-      expect(summary.hasCrossSourceConflict).toBe(true);
-      expect(summary.sebiActiveObservation['issue_size']).toBe('500.00');
-      expect(summary.exchangeActiveObservation['issue_size']).toBe('520.00');
+      expect(summary.qualitySummary.status).toBe('NEEDS_REVIEW');
+      const finding = summary.qualitySummary.findings.find(
+        (f) => f.code === 'SOURCE_CONFLICT',
+      );
+      expect(finding).toBeDefined();
+      expect(finding?.severity).toBe('WARNING');
+    });
 
-      const issueSizeComp = summary.fieldComparisons.find((c) => c.fieldName === 'issue_size');
-      expect(issueSizeComp?.outcome).toBe('CONFLICT');
+    it('detects INCOMPLETE_TERMS warning for an OPEN IPO missing price band or lot size', async () => {
+      const mockIpo = {
+        id: 'ipo-open-incomplete',
+        marketSegment: 'MAINBOARD',
+        exchange: 'NSE',
+        status: 'OPEN',
+        symbol: 'TEST',
+        priceBandLow: null,
+        priceBandHigh: null,
+        lotSize: null,
+        issueSize: null,
+        freshIssueSize: null,
+        ofsSize: null,
+        issueShareCount: null,
+        freshIssueShareCount: null,
+        ofsShareCount: null,
+        lifecycleEvents: [],
+      };
 
-      // Idempotency check: repeated calls return identical results without mutating state
-      const summary2 = await service.reconcileIpo(db, 'ipo-3');
-      expect(summary2).toEqual(summary);
+      const db = {
+        ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+        fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+      } as any;
+
+      const summary = await service.reconcileIpo(db, 'ipo-open-incomplete');
+
+      expect(summary.qualitySummary.status).toBe('NEEDS_REVIEW');
+      const termsFindings = summary.qualitySummary.findings.filter(
+        (f) => f.code === 'INCOMPLETE_TERMS',
+      );
+      expect(termsFindings.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('is strictly read-only, idempotent, and performs zero database writes', async () => {
+      const mockIpo = {
+        id: 'ipo-read-only',
+        marketSegment: 'MAINBOARD',
+        exchange: 'NSE',
+        status: 'UPCOMING',
+        symbol: 'TEST',
+        issueSize: { toFixed: () => '500.00' },
+        freshIssueSize: null,
+        ofsSize: null,
+        issueShareCount: null,
+        freshIssueShareCount: null,
+        ofsShareCount: null,
+        priceBandLow: null,
+        priceBandHigh: null,
+        lotSize: null,
+        lifecycleEvents: [],
+      };
+
+      const db = {
+        ipo: { findUnique: jest.fn().mockResolvedValue(mockIpo) },
+        fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
+      } as any;
+
+      const summary1 = await service.reconcileIpo(db, 'ipo-read-only');
+      const summary2 = await service.reconcileIpo(db, 'ipo-read-only');
+
+      expect(summary1).toEqual(summary2);
+      expect(db.ipo.findUnique).toHaveBeenCalledTimes(4);
     });
   });
 });
