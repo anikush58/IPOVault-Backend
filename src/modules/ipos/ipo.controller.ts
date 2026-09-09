@@ -8,6 +8,8 @@ import {
   ipoListQuerySchema,
   RefreshIpoDto,
   refreshIpoSchema,
+  VerifyRefreshDto,
+  verifyRefreshSchema,
 } from './ipo.dto';
 import { IpoService } from './ipo.service';
 
@@ -81,6 +83,33 @@ export class IpoController {
     @Body(new ZodValidationPipe(refreshIpoSchema)) body: RefreshIpoDto,
   ) {
     return this.ipos.executeRefresh(params.id, body.source);
+  }
+
+  /**
+   * POST /ipos/:id/refresh-verification
+   *
+   * Phase 15 — post-refresh verification.
+   * Accepts the execution context (sourceCode, refreshCompleted, timestamps)
+   * and returns a deterministic, read-only verification report:
+   * what changed, what quality/conflict issues remain, and whether another
+   * refresh is still needed.
+   *
+   * This endpoint does NOT execute a refresh — it only evaluates the result
+   * of a previously-executed refresh.
+   */
+  @Post(':id/refresh-verification')
+  @HttpCode(200)
+  verifyRefresh(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+    @Body(new ZodValidationPipe(verifyRefreshSchema)) body: VerifyRefreshDto,
+  ) {
+    return this.ipos.verifyRefresh(
+      params.id,
+      body.source,
+      body.refreshCompleted,
+      body.refreshStartedAt,
+      body.refreshCompletedAt,
+    );
   }
 
   @Get(':id')

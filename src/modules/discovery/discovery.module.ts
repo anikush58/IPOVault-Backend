@@ -15,6 +15,7 @@ import { ReconciliationService } from './reconciliation.service';
 import { DiscoveryFreshnessService } from './discovery-freshness.service';
 import { DiscoveryRefreshService } from './discovery-refresh.service';
 import { DiscoveryRefreshExecutionService } from './discovery-refresh-execution.service';
+import { DiscoveryRefreshVerificationService } from './discovery-refresh-verification.service';
 
 @Module({
   providers: [
@@ -24,6 +25,7 @@ import { DiscoveryRefreshExecutionService } from './discovery-refresh-execution.
     DiscoveryFreshnessService,
     DiscoveryRefreshService,
     DiscoveryRefreshExecutionService,
+    DiscoveryRefreshVerificationService,
     ReconciliationService,
     DiscoveryService,
     NseSourceAdapter,
@@ -38,6 +40,7 @@ import { DiscoveryRefreshExecutionService } from './discovery-refresh-execution.
     DiscoveryFreshnessService,
     DiscoveryRefreshService,
     DiscoveryRefreshExecutionService,
+    DiscoveryRefreshVerificationService,
     ReconciliationService,
     NseSourceAdapter,
     NseHttpClient,

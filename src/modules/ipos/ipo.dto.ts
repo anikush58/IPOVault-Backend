@@ -45,9 +45,34 @@ export const refreshIpoSchema = z.object({
   ),
 });
 
+/**
+ * Query parameters for POST /ipos/:id/refresh-verification.
+ * Callers supply the execution outcome so the service can verify whether
+ * a refresh was actually completed without re-running it.
+ */
+export const verifyRefreshSchema = z.object({
+  source: z.preprocess(
+    (v) => (typeof v === 'string' ? v : undefined),
+    z.string().min(1),
+  ),
+  refreshCompleted: z.preprocess(
+    (v) => (v === 'true' || v === true ? true : v === 'false' || v === false ? false : undefined),
+    z.boolean(),
+  ),
+  refreshStartedAt: z.preprocess(
+    (v) => (typeof v === 'string' ? new Date(v) : v),
+    z.date(),
+  ),
+  refreshCompletedAt: z.preprocess(
+    (v) => (typeof v === 'string' ? new Date(v) : v),
+    z.date(),
+  ),
+});
+
 export type IpoListQuery = z.infer<typeof ipoListQuerySchema>;
 export type IpoIdParam = z.infer<typeof ipoIdParamSchema>;
 export type RefreshIpoDto = z.infer<typeof refreshIpoSchema>;
+export type VerifyRefreshDto = z.infer<typeof verifyRefreshSchema>;
 
 export type CompanySummaryDto = {
   id: string;

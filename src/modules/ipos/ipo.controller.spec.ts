@@ -7,6 +7,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { ReconciliationService } from '../discovery/reconciliation.service';
 import { DiscoveryRefreshService } from '../discovery/discovery-refresh.service';
 import { DiscoveryRefreshExecutionService } from '../discovery/discovery-refresh-execution.service';
+import { DiscoveryRefreshVerificationService } from '../discovery/discovery-refresh-verification.service';
 
 describe('IpoController API Endpoints', () => {
   let controller: IpoController;
@@ -147,6 +148,29 @@ describe('IpoController API Endpoints', () => {
             }),
           },
         },
+        {
+          provide: DiscoveryRefreshVerificationService,
+          useValue: {
+            verify: jest.fn().mockResolvedValue({
+              ipoId: '11111111-1111-1111-1111-111111111111',
+              sourceCode: 'sebi',
+              refreshCompleted: true,
+              refreshStartedAt: new Date('2026-09-10T11:59:00.000Z'),
+              refreshCompletedAt: new Date('2026-09-10T12:00:00.000Z'),
+              snapshotBefore: { bySource: {}, capturedAt: new Date('2026-09-10T11:59:00.000Z') },
+              snapshotAfter: { bySource: {}, capturedAt: new Date('2026-09-10T12:00:00.000Z') },
+              newProvenanceRecorded: false,
+              fieldChanges: [],
+              changedFieldCount: 0,
+              qualitySummary: { status: 'HEALTHY', findings: [], summary: { errors: 0, warnings: 0, info: 0 } },
+              freshnessSummary: { ipoId: '11111111-1111-1111-1111-111111111111', overallStatus: 'UNKNOWN', highestPriority: 'NONE', sourceDecisions: [], evaluatedAt: new Date() },
+              reconciliationSummary: { ipoId: '11111111-1111-1111-1111-111111111111', hasCrossSourceConflict: false, canonicalValues: {}, sebiActiveObservation: {}, exchangeActiveObservation: {}, fieldComparisons: [], provenanceReport: { ipoId: '11111111-1111-1111-1111-111111111111', hasAnyConflict: false, conflicts: [] } },
+              postRefreshPlan: { ipoId: '11111111-1111-1111-1111-111111111111', overallStatus: 'UNKNOWN', highestPriority: 'NONE', hasRecommendedActions: false, generatedAt: new Date(), actions: [] },
+              verdict: { adequacy: 'REFRESH_DID_NOT_HELP', reasons: ['NO_NEW_PROVENANCE_RECORDED'], furtherRefreshRecommended: false },
+              verifiedAt: new Date('2026-09-10T12:00:01.000Z'),
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -243,5 +267,25 @@ describe('IpoController API Endpoints', () => {
     expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
     expect(result.sourceCode).toBe('sebi');
     expect(result.status).toBe('SKIPPED');
+  });
+
+  it('12. POST /ipos/:id/refresh-verification - returns post-refresh verification report', async () => {
+    const now = new Date('2026-09-10T12:00:00.000Z');
+    const result = await controller.verifyRefresh(
+      { id: '11111111-1111-1111-1111-111111111111' },
+      {
+        source: 'sebi',
+        refreshCompleted: true,
+        refreshStartedAt: new Date('2026-09-10T11:59:00.000Z'),
+        refreshCompletedAt: now,
+      },
+    );
+    expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.sourceCode).toBe('sebi');
+    expect(result.refreshCompleted).toBe(true);
+    expect(result.verdict).toBeDefined();
+    expect(result.verdict.adequacy).toBe('REFRESH_DID_NOT_HELP');
+    expect(result.postRefreshPlan).toBeDefined();
+    expect(result.qualitySummary).toBeDefined();
   });
 });
