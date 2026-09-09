@@ -73,6 +73,11 @@ export type QualitySummary = {
   };
 };
 
+import {
+  DiscoveryFreshnessService,
+  IpoFreshnessSummary,
+} from './discovery-freshness.service';
+
 export type IpoReconciliationSummary = {
   ipoId: string;
   hasCrossSourceConflict: boolean;
@@ -82,6 +87,7 @@ export type IpoReconciliationSummary = {
   fieldComparisons: FieldComparison[];
   provenanceReport: IpoReconciliationReport;
   qualitySummary: QualitySummary;
+  freshnessSummary?: IpoFreshnessSummary;
 };
 
 function parseNumeric(val: unknown): number | null {
@@ -128,6 +134,10 @@ function classifyOutcome(
 
 @Injectable()
 export class ReconciliationService {
+  constructor(
+    private readonly freshnessService?: DiscoveryFreshnessService,
+  ) {}
+
   /**
    * Pure deterministic comparison of two normalized observations (e.g. SEBI vs EXCHANGE).
    * Side-effect free, read-only analysis.
@@ -336,6 +346,7 @@ export class ReconciliationService {
   async reconcileIpo(
     db: DatabaseClient,
     ipoId: string,
+    now: Date = new Date(),
   ): Promise<IpoReconciliationSummary> {
     const ipo = await db.ipo.findUnique({
       where: { id: ipoId },
@@ -662,6 +673,16 @@ export class ReconciliationService {
       },
     };
 
+    const freshnessService =
+      this.freshnessService ?? new DiscoveryFreshnessService();
+    const freshnessSummary = await freshnessService.evaluateFreshness(
+      db,
+      ipoId,
+      qualitySummary,
+      undefined,
+      now,
+    );
+
     return {
       ipoId,
       hasCrossSourceConflict,
@@ -671,6 +692,7 @@ export class ReconciliationService {
       fieldComparisons,
       provenanceReport: report,
       qualitySummary,
+      freshnessSummary,
     };
   }
 }

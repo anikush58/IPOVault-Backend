@@ -369,11 +369,12 @@ describe('ReconciliationService (Phase 10 Data Quality Intelligence)', () => {
         fieldProvenance: { findMany: jest.fn().mockResolvedValue([]) },
       } as any;
 
-      const summary1 = await service.reconcileIpo(db, 'ipo-read-only');
-      const summary2 = await service.reconcileIpo(db, 'ipo-read-only');
+      const fixedDate = new Date('2026-09-09T12:00:00.000Z');
+      const summary1 = await service.reconcileIpo(db, 'ipo-read-only', fixedDate);
+      const summary2 = await service.reconcileIpo(db, 'ipo-read-only', fixedDate);
 
       expect(summary1).toEqual(summary2);
-      expect(db.ipo.findUnique).toHaveBeenCalledTimes(4);
+      expect(db.ipo.findUnique).toHaveBeenCalledTimes(6);
     });
 
     describe('Phase 11 Hardening & False Positive Protection', () => {
