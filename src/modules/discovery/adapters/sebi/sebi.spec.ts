@@ -213,6 +213,7 @@ describe('SEBI Official Filing Ingestion Foundation', () => {
             code: 'sebi',
           }),
           create: jest.fn(),
+          update: jest.fn().mockResolvedValue({}),
         },
         company: {
           create: jest.fn(),
@@ -224,6 +225,7 @@ describe('SEBI Official Filing Ingestion Foundation', () => {
 
       mockRecordsRepo = {
         findDuplicate: jest.fn().mockResolvedValue(null),
+        findProcessedRecord: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockImplementation((obs) =>
           Promise.resolve({
             id: `record-${obs.externalId}`,
@@ -285,6 +287,39 @@ describe('SEBI Official Filing Ingestion Foundation', () => {
       // Verify NO canonical creation
       expect(mockPrisma.company.create).not.toHaveBeenCalled();
       expect(mockPrisma.ipo.create).not.toHaveBeenCalled();
+    });
+
+    it('14 (Phase 4). updates source health to HEALTHY on successful ingestion run', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        status: 200,
+        text: () => Promise.resolve(mockSebiListingHtml),
+      });
+
+      await flow.run(1, mockFetch as unknown as typeof fetch);
+
+      expect(mockPrisma.source.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sebi-source-id' },
+          data: expect.objectContaining({
+            healthStatus: 'HEALTHY',
+          }),
+        }),
+      );
+    });
+
+    it('15 (Phase 4). skips downloading PDF when pre-download check finds already-processed record', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        status: 200,
+        text: () => Promise.resolve(mockSebiListingHtml),
+      });
+
+      mockRecordsRepo.findProcessedRecord.mockResolvedValue({ id: 'processed-rec-1' });
+
+      const result = await flow.run(1, mockFetch as unknown as typeof fetch, true);
+
+      expect(result.downloadedDocumentsCount).toBe(0);
+      expect(result.skippedDocumentsCount).toBe(2);
+      expect(mockRecordsRepo.findProcessedRecord).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -21,6 +21,29 @@ export class DiscoveryRecordRepository {
     });
   }
 
+  async findProcessedRecord(
+    sourceId: string,
+    externalId: string | null,
+    sourceReference?: string | null,
+  ) {
+    if (!externalId) {
+      return null;
+    }
+    return this.prisma.discoveryRecord.findFirst({
+      where: {
+        sourceId,
+        externalId,
+        ...(sourceReference ? { sourceReference } : {}),
+        status: {
+          in: [
+            DiscoveryStatus.CREATED,
+            DiscoveryStatus.MATCHED,
+          ],
+        },
+      },
+    });
+  }
+
   async create(input: IncomingObservation, contentHash: string) {
     return this.prisma.discoveryRecord.create({
       data: {
