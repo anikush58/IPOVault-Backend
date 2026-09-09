@@ -353,4 +353,90 @@ describe('DiscoverySmartRefreshService (Phase 16 Workflow)', () => {
     expect(mockExecutionService.execute).toHaveBeenCalledTimes(1);
     expect(mockVerificationService.verify).toHaveBeenCalledTimes(1);
   });
+
+  // =========================================================================
+  // 5. Phase 18 Operational Readiness & Safeguard Tests
+  // =========================================================================
+
+  it('15. Sequential Smart Refresh: second request short-circuits to REFRESH_SKIPPED when data becomes fresh', async () => {
+    const db = makeDb();
+    // First request: RECOMMENDED -> Execution COMPLETED -> Verified
+    mockPlanService.generatePlan
+      .mockResolvedValueOnce(makeRefreshPlan('sebi', 'RECOMMENDED'))
+      .mockResolvedValueOnce(makeRefreshPlan('sebi', 'SKIPPED')); // Second call yields SKIPPED
+
+    mockExecutionService.execute.mockResolvedValueOnce(makeExecutionResult('sebi', 'COMPLETED'));
+    mockVerificationService.verify.mockResolvedValueOnce(
+      makeVerificationReport('sebi', 'OBSERVED_AND_UPDATED', false),
+    );
+
+    const firstResult = await service.smartRefresh(db as any, { ipoId: 'ipo-a', sourceCode: 'sebi' });
+    expect(firstResult.finalOutcome).toBe('REFRESHED_AND_VERIFIED');
+
+    // Second sequential request: plan now yields SKIPPED
+    const secondResult = await service.smartRefresh(db as any, { ipoId: 'ipo-a', sourceCode: 'sebi' });
+    expect(secondResult.finalOutcome).toBe('REFRESH_SKIPPED');
+    expect(mockExecutionService.execute).toHaveBeenCalledTimes(1); // Executed only once!
+  });
+
+  it('16. Timestamp window boundary: verification receives exact execution.startedAt and execution.completedAt timestamps', async () => {
+    const db = makeDb();
+    const startTime = new Date('2026-09-10T10:00:00.000Z');
+    const endTime = new Date('2026-09-10T10:00:05.000Z');
+
+    mockPlanService.generatePlan.mockResolvedValue(makeRefreshPlan('sebi', 'RECOMMENDED'));
+    mockExecutionService.execute.mockResolvedValue({
+      ...makeExecutionResult('sebi', 'COMPLETED'),
+      startedAt: startTime,
+      completedAt: endTime,
+    });
+    mockVerificationService.verify.mockResolvedValue(
+      makeVerificationReport('sebi', 'OBSERVED_AND_UPDATED', false),
+    );
+
+    await service.smartRefresh(db as any, { ipoId: 'ipo-a', sourceCode: 'sebi' });
+
+    expect(mockVerificationService.verify).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        refreshStartedAt: startTime,
+        refreshCompletedAt: endTime,
+      }),
+    );
+  });
+
+  it('17. Non-destructive failure: FAILED execution retains initial plan and error status without modifying IPO', async () => {
+    const db = makeDb();
+    const initialPlan = makeRefreshPlan('sebi', 'RECOMMENDED');
+    mockPlanService.generatePlan.mockResolvedValue(initialPlan);
+    mockExecutionService.execute.mockResolvedValue(makeExecutionResult('sebi', 'FAILED'));
+
+    const res = await service.smartRefresh(db as any, { ipoId: 'ipo-a', sourceCode: 'sebi' });
+
+    expect(res.finalOutcome).toBe('REFRESH_FAILED');
+    expect(res.initialRefreshPlan).toEqual(initialPlan);
+    expect(mockVerificationService.verify).not.toHaveBeenCalled();
+  });
+
+  it('18. Diagnostic response completeness: SmartRefreshResult returns complete diagnostic envelope', async () => {
+    const db = makeDb();
+    const plan = makeRefreshPlan('sebi', 'RECOMMENDED');
+    const exec = makeExecutionResult('sebi', 'COMPLETED');
+    const report = makeVerificationReport('sebi', 'OBSERVED_AND_UPDATED', false);
+
+    mockPlanService.generatePlan.mockResolvedValue(plan);
+    mockExecutionService.execute.mockResolvedValue(exec);
+    mockVerificationService.verify.mockResolvedValue(report);
+
+    const res = await service.smartRefresh(db as any, { ipoId: 'ipo-a', sourceCode: 'sebi' });
+
+    expect(res.ipoId).toBe('ipo-a');
+    expect(res.sourceCode).toBe('sebi');
+    expect(res.generatedAt).toBeDefined();
+    expect(res.finalOutcome).toBe('REFRESHED_AND_VERIFIED');
+    expect(res.summaryMessage).toBeDefined();
+    expect(res.initialRefreshPlan).toBe(plan);
+    expect(res.execution).toBe(exec);
+    expect(res.verification).toBe(report);
+  });
 });
