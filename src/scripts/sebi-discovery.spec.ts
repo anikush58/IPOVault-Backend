@@ -1,7 +1,9 @@
+import { ConfigService } from '@nestjs/config';
+
 import { SebiDiscoveryFlow, SebiIngestionResult } from '../modules/discovery/adapters/sebi/sebi-discovery.flow';
 import { formatSebiLiveIngestSummary, runSebiLiveIngest } from './sebi-discovery';
 
-describe('SEBI production discovery runner & orchestration (Phase 4)', () => {
+describe('SEBI production discovery runner & orchestration (Phase 4 & Phase 6)', () => {
   it('A & J. formats concise operational summary correctly', () => {
     const sampleResult: SebiIngestionResult = {
       totalDiscovered: 5,
@@ -26,7 +28,7 @@ describe('SEBI production discovery runner & orchestration (Phase 4)', () => {
     expect(formatted).toContain('- Canonical IPOs matched: 1');
   });
 
-  it('B & K. CLI resolves SebiDiscoveryFlow, executes run, and reports output', async () => {
+  it('B & K. CLI resolves SebiDiscoveryFlow & ConfigService, executes run with configured delay, and reports output', async () => {
     const sampleResult: SebiIngestionResult = {
       totalDiscovered: 2,
       duplicateCount: 0,
@@ -40,13 +42,22 @@ describe('SEBI production discovery runner & orchestration (Phase 4)', () => {
 
     const mockRun = jest.fn().mockResolvedValue(sampleResult);
     const mockFlow = { run: mockRun } as unknown as SebiDiscoveryFlow;
-    const mockApp = { get: jest.fn().mockReturnValue(mockFlow) };
+    const mockConfig = { get: jest.fn().mockReturnValue(250) };
+    const mockApp = {
+      get: jest.fn((type: unknown) => {
+        if (type === SebiDiscoveryFlow) return mockFlow;
+        if (type === ConfigService) return mockConfig;
+        return undefined;
+      }),
+    };
     const mockWrite = jest.fn();
 
     const result = await runSebiLiveIngest(mockApp, 1, true, mockWrite);
 
     expect(mockApp.get).toHaveBeenCalledWith(SebiDiscoveryFlow);
-    expect(mockRun).toHaveBeenCalledWith(1, undefined, true, true);
+    expect(mockApp.get).toHaveBeenCalledWith(ConfigService);
+    expect(mockConfig.get).toHaveBeenCalledWith('SEBI_INTER_REQUEST_DELAY_MS', { infer: true });
+    expect(mockRun).toHaveBeenCalledWith(1, undefined, true, true, 250);
     expect(mockWrite).toHaveBeenCalledWith(formatSebiLiveIngestSummary(sampleResult));
     expect(result).toEqual(sampleResult);
   });

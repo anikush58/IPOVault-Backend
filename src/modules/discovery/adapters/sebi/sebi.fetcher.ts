@@ -16,10 +16,19 @@ export const SEBI_BROWSER_USER_AGENT =
 
 export const SEBI_HTTP_TIMEOUT_MS = 15_000;
 
+export const DEFAULT_SEBI_MAX_PDF_SIZE_BYTES = 50_000_000;
+
 export class SebiFetchError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'SebiFetchError';
+  }
+}
+
+export class SebiPdfSizeExceededError extends SebiFetchError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SebiPdfSizeExceededError';
   }
 }
 
@@ -115,6 +124,7 @@ export async function downloadSebiDocument(
   urlStr: string,
   fetchImpl?: typeof fetch,
   timeoutMs = SEBI_HTTP_TIMEOUT_MS,
+  maxSizeBytes = DEFAULT_SEBI_MAX_PDF_SIZE_BYTES,
 ): Promise<SebiDownloadDocumentResult> {
   if (!isOfficialSebiUrl(urlStr)) {
     throw new SebiFetchError(
@@ -153,9 +163,57 @@ export async function downloadSebiDocument(
     );
   }
 
+  // A. Check Content-Length header before reading body
+  const contentLengthHeader = response.headers.get('content-length');
+  if (contentLengthHeader) {
+    const headerBytes = parseInt(contentLengthHeader, 10);
+    if (!isNaN(headerBytes) && headerBytes > maxSizeBytes) {
+      throw new SebiPdfSizeExceededError(
+        `SEBI document size (${headerBytes} bytes) exceeds maximum limit (${maxSizeBytes} bytes)`,
+      );
+    }
+  }
+
   const contentType = response.headers.get('content-type') || 'unknown';
-  const arrayBuf = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuf);
+  let buffer: Buffer;
+
+  // B. Streaming / chunk byte count protection when Content-Length is absent or when reading stream
+  if (response.body && typeof response.body.getReader === 'function') {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          totalBytes += value.byteLength;
+          if (totalBytes > maxSizeBytes) {
+            await reader.cancel();
+            throw new SebiPdfSizeExceededError(
+              `SEBI document stream size (${totalBytes} bytes) exceeds maximum limit (${maxSizeBytes} bytes)`,
+            );
+          }
+          chunks.push(value);
+        }
+      }
+      buffer = Buffer.concat(chunks);
+    } catch (err: unknown) {
+      if (err instanceof SebiPdfSizeExceededError) {
+        throw err;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new SebiFetchError(`SEBI document stream read failed: ${msg}`);
+    }
+  } else {
+    const arrayBuf = await response.arrayBuffer();
+    if (arrayBuf.byteLength > maxSizeBytes) {
+      throw new SebiPdfSizeExceededError(
+        `SEBI document size (${arrayBuf.byteLength} bytes) exceeds maximum limit (${maxSizeBytes} bytes)`,
+      );
+    }
+    buffer = Buffer.from(arrayBuf);
+  }
 
   return {
     status: response.status,
@@ -189,6 +247,14 @@ export class SebiHttpClient {
     documentUrl: string,
     fetchImpl?: typeof fetch,
   ): Promise<SebiDownloadDocumentResult> {
-    return downloadSebiDocument(documentUrl, fetchImpl, SEBI_HTTP_TIMEOUT_MS);
+    const maxSizeBytes =
+      this.config.get('SEBI_MAX_PDF_SIZE_BYTES', { infer: true }) ||
+      DEFAULT_SEBI_MAX_PDF_SIZE_BYTES;
+    return downloadSebiDocument(
+      documentUrl,
+      fetchImpl,
+      SEBI_HTTP_TIMEOUT_MS,
+      maxSizeBytes,
+    );
   }
 }

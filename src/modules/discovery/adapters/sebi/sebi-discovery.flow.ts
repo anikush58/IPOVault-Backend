@@ -40,6 +40,7 @@ export class SebiDiscoveryFlow {
     fetchImpl?: typeof fetch,
     downloadDocument = false,
     processCanonicalization = true,
+    interRequestDelayMs = 0,
   ): Promise<SebiIngestionResult> {
     this.logger.log(`Starting SEBI official filing discovery flow (page ${page})...`);
     const now = new Date();
@@ -135,6 +136,12 @@ export class SebiDiscoveryFlow {
             continue;
           }
 
+          if (downloadedDocumentsCount > 0 && interRequestDelayMs > 0) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, interRequestDelayMs),
+            );
+          }
+
           try {
             const downloadResult = await this.client.downloadDocument(
               docUrl,
@@ -192,12 +199,18 @@ export class SebiDiscoveryFlow {
                   );
                 }
               } catch (parseErr: unknown) {
+                failedDownloadsCount++;
                 const parseMsg =
                   parseErr instanceof Error
                     ? parseErr.message
                     : String(parseErr);
                 this.logger.warn(
                   `SEBI PDF parsing failed for filing ${obs.externalId}: ${parseMsg}`,
+                );
+                await this.recordsRepository.mark(
+                  record.id,
+                  DiscoveryStatus.ERROR,
+                  `SEBI PDF parsing failed: ${parseMsg}`,
                 );
               }
             }

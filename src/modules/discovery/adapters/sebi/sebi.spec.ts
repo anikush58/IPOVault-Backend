@@ -13,6 +13,7 @@ import {
   isOfficialSebiUrl,
   SebiFetchError,
   SebiHttpClient,
+  SebiPdfSizeExceededError,
 } from './sebi.fetcher';
 import {
   classifySebiFilingType,
@@ -320,6 +321,150 @@ describe('SEBI Official Filing Ingestion Foundation', () => {
       expect(result.downloadedDocumentsCount).toBe(0);
       expect(result.skippedDocumentsCount).toBe(2);
       expect(mockRecordsRepo.findProcessedRecord).toHaveBeenCalledTimes(2);
+    });
+
+    it('16 (Phase 6). rejects PDF download when Content-Length exceeds maximum allowed size', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        status: 200,
+        headers: { get: (h: string) => (h === 'content-length' ? '60000000' : 'application/pdf') },
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(10)),
+      });
+
+      await expect(
+        downloadSebiDocument(
+          'https://www.sebi.gov.in/doc.pdf',
+          mockFetch as unknown as typeof fetch,
+          1000,
+          50_000_000,
+        ),
+      ).rejects.toThrow(SebiPdfSizeExceededError);
+    });
+
+    it('17 (Phase 6). allows PDF download when Content-Length is within maximum allowed size', async () => {
+      const samplePdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+      const mockFetch = jest.fn().mockResolvedValue({
+        status: 200,
+        headers: { get: (h: string) => (h === 'content-length' ? '1000' : 'application/pdf') },
+        arrayBuffer: () => Promise.resolve(samplePdfBytes.buffer),
+      });
+
+      const res = await downloadSebiDocument(
+        'https://www.sebi.gov.in/doc.pdf',
+        mockFetch as unknown as typeof fetch,
+        1000,
+        50_000_000,
+      );
+
+      expect(res.contentLength).toBe(4);
+    });
+
+    it('18 (Phase 6). updates source health to DEGRADED when PDF parsing fails for a filing', async () => {
+      const mockFetch = jest.fn().mockImplementation((url) => {
+        if (typeof url === 'string' && url.includes('ajax')) {
+          return Promise.resolve({
+            status: 200,
+            text: () => Promise.resolve(mockSebiListingHtml),
+          });
+        }
+        return Promise.resolve({
+          status: 200,
+          headers: { get: () => 'application/pdf' },
+          arrayBuffer: () => Promise.resolve(Buffer.from('not-a-valid-pdf').buffer),
+        });
+      });
+
+      const result = await flow.run(1, mockFetch as unknown as typeof fetch, true);
+
+      expect(result.failedDownloadsCount).toBeGreaterThan(0);
+      expect(mockPrisma.source.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sebi-source-id' },
+          data: expect.objectContaining({
+            healthStatus: 'DEGRADED',
+          }),
+        }),
+      );
+    });
+
+    it('19 (Phase 6). applies inter-request delay between consecutive PDF downloads but not before the first download', async () => {
+      const twoPdfListingHtml = `
+        <input type='hidden' name='totalpage' value=1 />
+        <table class='table'>
+          <tr class='odd'>
+            <td>Sep 08, 2026</td>
+            <td><a href='https://www.sebi.gov.in/filings/public-issues/sep-2026/company-a-rhp_1001.html' class='points' title="Company A Limited - RHP<br><a href= 'https://www.sebi.gov.in/sebi_data/commondocs/sep-2026/CompanyA.PDF'>Doc A</a>">Company A Limited - RHP</a></td>
+          </tr>
+          <tr class='odd'>
+            <td>Sep 07, 2026</td>
+            <td><a href='https://www.sebi.gov.in/filings/public-issues/sep-2026/company-b-rhp_1002.html' class='points' title="Company B Limited - RHP<br><a href= 'https://www.sebi.gov.in/sebi_data/commondocs/sep-2026/CompanyB.PDF'>Doc B</a>">Company B Limited - RHP</a></td>
+          </tr>
+        </table>
+      `;
+
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+
+      const mockFetch = jest.fn().mockImplementation((url) => {
+        if (typeof url === 'string' && url.includes('ajax')) {
+          return Promise.resolve({
+            status: 200,
+            text: () => Promise.resolve(twoPdfListingHtml),
+          });
+        }
+        return Promise.resolve({
+          status: 200,
+          headers: { get: () => 'application/pdf' },
+          arrayBuffer: () => Promise.resolve(Buffer.from('%PDF-1.4 Fake PDF Data').buffer),
+        });
+      });
+
+      const delayMs = 150;
+      const result = await flow.run(1, mockFetch as unknown as typeof fetch, true, true, delayMs);
+
+      expect(result.downloadedDocumentsCount).toBe(2);
+      expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), delayMs);
+
+      setTimeoutSpy.mockRestore();
+    });
+
+    it('20 (Phase 6). skips inter-request delay when filings are skipped as already processed', async () => {
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+
+      const mockFetch = jest.fn().mockResolvedValue({
+        status: 200,
+        text: () => Promise.resolve(mockSebiListingHtml),
+      });
+
+      mockRecordsRepo.findProcessedRecord.mockResolvedValue({ id: 'processed-rec-1' });
+
+      const delayMs = 200;
+      const result = await flow.run(1, mockFetch as unknown as typeof fetch, true, true, delayMs);
+
+      expect(result.downloadedDocumentsCount).toBe(0);
+      expect(result.skippedDocumentsCount).toBe(2);
+
+      const delayCalls = setTimeoutSpy.mock.calls.filter((call) => call[1] === delayMs);
+      expect(delayCalls.length).toBe(0);
+
+      setTimeoutSpy.mockRestore();
+    });
+
+    it('21 (Phase 6). skips inter-request delay when downloadDocument is false', async () => {
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+
+      const mockFetch = jest.fn().mockResolvedValue({
+        status: 200,
+        text: () => Promise.resolve(mockSebiListingHtml),
+      });
+
+      const delayMs = 200;
+      const result = await flow.run(1, mockFetch as unknown as typeof fetch, false, true, delayMs);
+
+      expect(result.downloadedDocumentsCount).toBe(0);
+
+      const delayCalls = setTimeoutSpy.mock.calls.filter((call) => call[1] === delayMs);
+      expect(delayCalls.length).toBe(0);
+
+      setTimeoutSpy.mockRestore();
     });
   });
 });

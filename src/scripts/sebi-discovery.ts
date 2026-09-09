@@ -1,6 +1,8 @@
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../app.module';
+import { Env } from '../config/env';
 import {
   SebiDiscoveryFlow,
   SebiIngestionResult,
@@ -25,13 +27,22 @@ export function formatSebiLiveIngestSummary(
 }
 
 export async function runSebiLiveIngest(
-  app: { get: (type: typeof SebiDiscoveryFlow) => SebiDiscoveryFlow },
+  app: { get: (token: any) => any },
   page = 1,
   downloadDocument = true,
   write: (line: string) => void = console.log,
 ): Promise<SebiIngestionResult> {
-  const flow = app.get(SebiDiscoveryFlow);
-  const result = await flow.run(page, undefined, downloadDocument, true);
+  const flow = app.get(SebiDiscoveryFlow) as SebiDiscoveryFlow;
+  const config = app.get(ConfigService) as ConfigService<Env, true>;
+  const interRequestDelayMs =
+    config?.get('SEBI_INTER_REQUEST_DELAY_MS', { infer: true }) ?? 0;
+  const result = await flow.run(
+    page,
+    undefined,
+    downloadDocument,
+    true,
+    interRequestDelayMs,
+  );
   write(formatSebiLiveIngestSummary(result));
   return result;
 }
