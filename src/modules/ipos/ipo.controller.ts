@@ -88,14 +88,22 @@ export class IpoController {
   /**
    * POST /ipos/:id/refresh-verification
    *
-   * Phase 15 — post-refresh verification.
-   * Accepts the execution context (sourceCode, refreshCompleted, timestamps)
-   * and returns a deterministic, read-only verification report:
-   * what changed, what quality/conflict issues remain, and whether another
-   * refresh is still needed.
+   * Phase 15 — post-refresh verification (Corrected).
    *
-   * This endpoint does NOT execute a refresh — it only evaluates the result
-   * of a previously-executed refresh.
+   * POST is used rather than GET because the request body carries
+   * execution context from Phase 14 (executionStatus, ISO timestamps)
+   * that cannot be safely reconstructed from query parameters in a
+   * deterministic way. The endpoint is read-only and performs zero
+   * writes — POST here is a "compute" operation, not a mutation.
+   *
+   * Accepts the Phase 14 execution result context and returns a
+   * deterministic, read-only verification report:
+   *  - Was the requested IPO actually observed by the requested source?
+   *  - Did canonical field values change (backed by IpoChangeEvent)?
+   *  - What quality/conflict issues remain?
+   *  - Is another refresh still needed?
+   *
+   * This endpoint does NOT execute a refresh.
    */
   @Post(':id/refresh-verification')
   @HttpCode(200)
@@ -106,7 +114,7 @@ export class IpoController {
     return this.ipos.verifyRefresh(
       params.id,
       body.source,
-      body.refreshCompleted,
+      body.executionStatus,
       body.refreshStartedAt,
       body.refreshCompletedAt,
     );

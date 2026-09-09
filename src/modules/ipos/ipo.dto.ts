@@ -46,18 +46,23 @@ export const refreshIpoSchema = z.object({
 });
 
 /**
- * Query parameters for POST /ipos/:id/refresh-verification.
- * Callers supply the execution outcome so the service can verify whether
- * a refresh was actually completed without re-running it.
+ * Request body for POST /ipos/:id/refresh-verification.
+ * Callers supply the Phase 14 execution outcome so the verifier can evaluate
+ * whether the requested IPO was actually observed without re-running the refresh.
  */
 export const verifyRefreshSchema = z.object({
   source: z.preprocess(
     (v) => (typeof v === 'string' ? v : undefined),
     z.string().min(1),
   ),
-  refreshCompleted: z.preprocess(
-    (v) => (v === 'true' || v === true ? true : v === 'false' || v === false ? false : undefined),
-    z.boolean(),
+  /**
+   * Exact execution status from RefreshExecutionResult.status.
+   * Replaces the former boolean `refreshCompleted` — allows the verifier
+   * to distinguish COMPLETED / SKIPPED / BLOCKED / FAILED semantics.
+   */
+  executionStatus: z.preprocess(
+    (v) => (typeof v === 'string' ? v : undefined),
+    z.enum(['COMPLETED', 'SKIPPED', 'BLOCKED', 'FAILED']),
   ),
   refreshStartedAt: z.preprocess(
     (v) => (typeof v === 'string' ? new Date(v) : v),

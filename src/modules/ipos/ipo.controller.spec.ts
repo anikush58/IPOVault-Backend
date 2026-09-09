@@ -154,7 +154,7 @@ describe('IpoController API Endpoints', () => {
             verify: jest.fn().mockResolvedValue({
               ipoId: '11111111-1111-1111-1111-111111111111',
               sourceCode: 'sebi',
-              refreshCompleted: true,
+              executionStatus: 'COMPLETED',
               refreshStartedAt: new Date('2026-09-10T11:59:00.000Z'),
               refreshCompletedAt: new Date('2026-09-10T12:00:00.000Z'),
               snapshotBefore: { bySource: {}, capturedAt: new Date('2026-09-10T11:59:00.000Z') },
@@ -275,14 +275,14 @@ describe('IpoController API Endpoints', () => {
       { id: '11111111-1111-1111-1111-111111111111' },
       {
         source: 'sebi',
-        refreshCompleted: true,
+        executionStatus: 'COMPLETED',
         refreshStartedAt: new Date('2026-09-10T11:59:00.000Z'),
         refreshCompletedAt: now,
       },
     );
     expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
     expect(result.sourceCode).toBe('sebi');
-    expect(result.refreshCompleted).toBe(true);
+    expect(result.executionStatus).toBe('COMPLETED');
     expect(result.verdict).toBeDefined();
     expect(result.verdict.adequacy).toBe('REFRESH_DID_NOT_HELP');
     expect(result.postRefreshPlan).toBeDefined();

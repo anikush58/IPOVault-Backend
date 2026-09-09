@@ -19,7 +19,10 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { ReconciliationService } from '../discovery/reconciliation.service';
 import { DiscoveryRefreshService } from '../discovery/discovery-refresh.service';
-import { DiscoveryRefreshExecutionService } from '../discovery/discovery-refresh-execution.service';
+import {
+  DiscoveryRefreshExecutionService,
+  RefreshExecutionStatus,
+} from '../discovery/discovery-refresh-execution.service';
 import {
   DiscoveryRefreshVerificationService,
   RefreshVerificationRequest,
@@ -142,7 +145,7 @@ export class IpoService {
   async verifyRefresh(
     id: string,
     sourceCode: string,
-    refreshCompleted: boolean,
+    executionStatus: RefreshExecutionStatus,
     refreshStartedAt: Date,
     refreshCompletedAt: Date,
   ) {
@@ -155,7 +158,7 @@ export class IpoService {
     const req: RefreshVerificationRequest = {
       ipoId: id,
       sourceCode,
-      refreshCompleted,
+      executionStatus,
       refreshStartedAt,
       refreshCompletedAt,
     };
