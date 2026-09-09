@@ -3,9 +3,11 @@ import { DiscoveryStatus, SourceType } from '@prisma/client';
 
 import { PrismaService } from '../../../../database/prisma.service';
 import { DiscoveryRecordRepository } from '../../discovery-record.repository';
+import { DiscoveryService } from '../../discovery.service';
+import { IncomingObservation } from '../../discovery.types';
 import { hashPayload } from '../../hash-payload';
 import { SEBI_SOURCE_CODE } from '../source-adapter';
-import { SebiSourceAdapter } from './sebi.adapter';
+import { sebiPdfObservationToRawPayload, SebiSourceAdapter } from './sebi.adapter';
 import { isOfficialSebiUrl, SebiHttpClient } from './sebi.fetcher';
 import { parseSebiPdfBuffer } from './sebi-pdf.parser';
 import { SebiFilingMetadata } from './sebi.types';
@@ -27,12 +29,14 @@ export class SebiDiscoveryFlow {
     private readonly recordsRepository: DiscoveryRecordRepository,
     private readonly client: SebiHttpClient,
     private readonly adapter: SebiSourceAdapter,
+    private readonly discoveryService: DiscoveryService,
   ) {}
 
   async run(
     page = 1,
     fetchImpl?: typeof fetch,
     downloadDocument = false,
+    processCanonicalization = true,
   ): Promise<SebiIngestionResult> {
     this.logger.log(`Starting SEBI official filing discovery flow (page ${page})...`);
 
@@ -86,8 +90,9 @@ export class SebiDiscoveryFlow {
       const record = await this.recordsRepository.create(obs, contentHash);
       createdRecordsCount++;
 
-      const payload = obs.rawPayload as unknown as SebiFilingMetadata;
-      const docUrl = payload.documentUrl;
+      const payload = obs.rawPayload as unknown as Record<string, any>;
+      const metadata = (payload.source ? payload : obs.rawPayload) as unknown as SebiFilingMetadata;
+      const docUrl = metadata.documentUrl || metadata.detailUrl;
 
       if (downloadDocument && docUrl) {
         if (!isOfficialSebiUrl(docUrl)) {
@@ -129,6 +134,30 @@ export class SebiDiscoveryFlow {
               this.logger.log(
                 `Parsed SEBI PDF observation for filing ${obs.externalId}: CIN=${pdfObs.cin.value || 'UNRESOLVED'}, LegalName=${pdfObs.legalName.value || 'UNRESOLVED'}, PriceBand=${pdfObs.priceBandLow.value}-${pdfObs.priceBandHigh.value}, LotSize=${pdfObs.lotSize.value}, OpenDate=${pdfObs.issueOpenDate.value}, CloseDate=${pdfObs.issueCloseDate.value}`,
               );
+
+              if (processCanonicalization) {
+                const pdfPayload = sebiPdfObservationToRawPayload(
+                  pdfObs,
+                  obs.companyName || undefined,
+                  metadata.filingDate,
+                );
+
+                const pdfObservation: IncomingObservation = {
+                  sourceId: source.id,
+                  externalId: obs.externalId,
+                  sourceReference: docUrl,
+                  companyName: pdfObs.legalName.value || obs.companyName,
+                  rawPayload: pdfPayload,
+                  discoveredAt,
+                };
+
+                const discoveryResult = await this.discoveryService.process(
+                  pdfObservation,
+                );
+                this.logger.log(
+                  `Processed SEBI PDF observation through DiscoveryService for filing ${obs.externalId}: ${discoveryResult.outcome} (IPO ID: ${discoveryResult.ipoId})`,
+                );
+              }
             } catch (parseErr: unknown) {
               const parseMsg =
                 parseErr instanceof Error
