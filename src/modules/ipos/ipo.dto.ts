@@ -26,13 +26,127 @@ export const marketSegmentSchema = z.enum(['MAINBOARD', 'SME']);
 
 export const exchangeSchema = z.enum(['NSE', 'BSE', 'BOTH']);
 
-export const ipoListQuerySchema = z.object({
-  status: z.preprocess(emptyToUndefined, ipoStatusSchema.optional()),
-  marketSegment: z.preprocess(emptyToUndefined, marketSegmentSchema.optional()),
-  exchange: z.preprocess(emptyToUndefined, exchangeSchema.optional()),
-  page: z.coerce.number().int().min(1).default(DEFAULT_PAGE),
-  limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
-});
+export const ipoSortFieldSchema = z.enum([
+  'createdAt',
+  'updatedAt',
+  'companyName',
+  'legalName',
+  'symbol',
+  'status',
+  'issueSize',
+  'priceBandLow',
+  'price',
+  'lotSize',
+]);
+
+export const sortOrderSchema = z.enum(['asc', 'desc']);
+
+const dateStringSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid ISO date string (expected YYYY-MM-DD)');
+
+export const ipoListQuerySchema = z
+  .object({
+    q: z.preprocess(emptyToUndefined, z.string().optional()),
+    status: z.preprocess(emptyToUndefined, ipoStatusSchema.optional()),
+    marketSegment: z.preprocess(emptyToUndefined, marketSegmentSchema.optional()),
+    exchange: z.preprocess(emptyToUndefined, exchangeSchema.optional()),
+    symbol: z.preprocess(emptyToUndefined, z.string().optional()),
+
+    priceMin: z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional()),
+    priceMax: z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional()),
+
+    lotSizeMin: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(0).optional(),
+    ),
+    lotSizeMax: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(0).optional(),
+    ),
+
+    issueSizeMin: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().min(0).optional(),
+    ),
+    issueSizeMax: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().min(0).optional(),
+    ),
+
+    openDateFrom: z.preprocess(emptyToUndefined, dateStringSchema.optional()),
+    openDateTo: z.preprocess(emptyToUndefined, dateStringSchema.optional()),
+    closeDateFrom: z.preprocess(emptyToUndefined, dateStringSchema.optional()),
+    closeDateTo: z.preprocess(emptyToUndefined, dateStringSchema.optional()),
+    listingDateFrom: z.preprocess(emptyToUndefined, dateStringSchema.optional()),
+    listingDateTo: z.preprocess(emptyToUndefined, dateStringSchema.optional()),
+
+    sort: z.preprocess(emptyToUndefined, ipoSortFieldSchema.optional()),
+    order: z.preprocess(emptyToUndefined, sortOrderSchema.optional()),
+
+    page: z.coerce.number().int().min(1).default(DEFAULT_PAGE),
+    limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
+  })
+  .refine(
+    (data) =>
+      data.priceMin === undefined ||
+      data.priceMax === undefined ||
+      data.priceMin <= data.priceMax,
+    {
+      message: 'priceMin cannot be greater than priceMax',
+      path: ['priceMin'],
+    },
+  )
+  .refine(
+    (data) =>
+      data.lotSizeMin === undefined ||
+      data.lotSizeMax === undefined ||
+      data.lotSizeMin <= data.lotSizeMax,
+    {
+      message: 'lotSizeMin cannot be greater than lotSizeMax',
+      path: ['lotSizeMin'],
+    },
+  )
+  .refine(
+    (data) =>
+      data.issueSizeMin === undefined ||
+      data.issueSizeMax === undefined ||
+      data.issueSizeMin <= data.issueSizeMax,
+    {
+      message: 'issueSizeMin cannot be greater than issueSizeMax',
+      path: ['issueSizeMin'],
+    },
+  )
+  .refine(
+    (data) =>
+      !data.openDateFrom ||
+      !data.openDateTo ||
+      data.openDateFrom <= data.openDateTo,
+    {
+      message: 'openDateFrom cannot be after openDateTo',
+      path: ['openDateFrom'],
+    },
+  )
+  .refine(
+    (data) =>
+      !data.closeDateFrom ||
+      !data.closeDateTo ||
+      data.closeDateFrom <= data.closeDateTo,
+    {
+      message: 'closeDateFrom cannot be after closeDateTo',
+      path: ['closeDateFrom'],
+    },
+  )
+  .refine(
+    (data) =>
+      !data.listingDateFrom ||
+      !data.listingDateTo ||
+      data.listingDateFrom <= data.listingDateTo,
+    {
+      message: 'listingDateFrom cannot be after listingDateTo',
+      path: ['listingDateFrom'],
+    },
+  );
 
 export const ipoIdParamSchema = z.object({
   id: z.string().uuid(),

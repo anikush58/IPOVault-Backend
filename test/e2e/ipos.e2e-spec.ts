@@ -84,11 +84,7 @@ const seed: IpoWithRelations[] = [
 ];
 
 function createIpoPrismaStub(rows: IpoWithRelations[]) {
-  const matches = (where: {
-    status?: string;
-    marketSegment?: string;
-    exchange?: string;
-  }) =>
+  const matches = (where: any = {}) =>
     rows.filter((item) => {
       if (where.status && item.status !== where.status) {
         return false;
@@ -97,6 +93,50 @@ function createIpoPrismaStub(rows: IpoWithRelations[]) {
         return false;
       }
       if (where.exchange && item.exchange !== where.exchange) {
+        return false;
+      }
+      if (
+        where.symbol?.contains &&
+        !item.symbol?.toLowerCase().includes(where.symbol.contains.toLowerCase())
+      ) {
+        return false;
+      }
+      if (where.OR) {
+        const matchesOr = where.OR.some((cond: any) => {
+          if (cond.company?.legalName?.contains) {
+            return item.company.legalName
+              .toLowerCase()
+              .includes(cond.company.legalName.contains.toLowerCase());
+          }
+          if (cond.company?.displayName?.contains) {
+            return item.company.displayName
+              .toLowerCase()
+              .includes(cond.company.displayName.contains.toLowerCase());
+          }
+          if (cond.symbol?.contains) {
+            return (
+              item.symbol &&
+              item.symbol
+                .toLowerCase()
+                .includes(cond.symbol.contains.toLowerCase())
+            );
+          }
+          return false;
+        });
+        if (!matchesOr) return false;
+      }
+      if (
+        where.priceBandLow?.gte &&
+        item.priceBandLow &&
+        item.priceBandLow.toNumber() < Number(where.priceBandLow.gte)
+      ) {
+        return false;
+      }
+      if (
+        where.priceBandLow?.lte &&
+        item.priceBandHigh &&
+        item.priceBandHigh.toNumber() > Number(where.priceBandLow.lte)
+      ) {
         return false;
       }
       return true;
@@ -109,30 +149,25 @@ function createIpoPrismaStub(rows: IpoWithRelations[]) {
     ipo: {
       findMany: async ({
         where = {},
+        orderBy,
         skip = 0,
         take = rows.length,
       }: {
-        where?: {
-          status?: string;
-          marketSegment?: string;
-          exchange?: string;
-        };
+        where?: any;
+        orderBy?: any;
         skip?: number;
         take?: number;
-      }) =>
-        matches(where)
-          .slice()
-          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-          .slice(skip, skip + take),
-      count: async ({
-        where = {},
-      }: {
-        where?: {
-          status?: string;
-          marketSegment?: string;
-          exchange?: string;
-        };
-      }) => matches(where).length,
+      }) => {
+        let result = matches(where).slice();
+        if (Array.isArray(orderBy) && orderBy[0]?.company?.legalName) {
+          const dir = orderBy[0].company.legalName === 'asc' ? 1 : -1;
+          result.sort((a, b) => dir * a.company.legalName.localeCompare(b.company.legalName));
+        } else {
+          result.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        }
+        return result.slice(skip, skip + take);
+      },
+      count: async ({ where = {} }: { where?: any }) => matches(where).length,
       findUnique: async ({ where: { id } }: { where: { id: string } }) =>
         rows.find((item) => item.id === id) ?? null,
     },
@@ -228,7 +263,7 @@ describe('IPO read API', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers['x-request-id']).toMatch(/^[A-Za-z0-9._-]+$/);
-    expect(response.body.meta).toEqual({ page: 1, limit: 20, total: 3 });
+    expect(response.body.meta).toEqual({ page: 1, limit: 20, total: 3, totalPages: 1 });
     expect(response.body.data).toHaveLength(3);
     expect(response.body.data[0].id).toBe(
       '11111111-1111-4111-8111-111111111111',
@@ -276,9 +311,9 @@ describe('IPO read API', () => {
     );
 
     expect(page1.body.data).toHaveLength(2);
-    expect(page1.body.meta).toEqual({ page: 1, limit: 2, total: 3 });
+    expect(page1.body.meta).toEqual({ page: 1, limit: 2, total: 3, totalPages: 2 });
     expect(page2.body.data).toHaveLength(1);
-    expect(page2.body.meta).toEqual({ page: 2, limit: 2, total: 3 });
+    expect(page2.body.meta).toEqual({ page: 2, limit: 2, total: 3, totalPages: 2 });
     expect(page2.body.data[0].id).toBe('33333333-3333-4333-8333-333333333333');
 
     await app.close();
@@ -485,6 +520,56 @@ describe('IPO read API', () => {
     );
     expect(noMatchFilter.status).toBe(200);
     expect(noMatchFilter.body.data.fields).toEqual([]);
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos?q=List - filters IPOs by text search parameter q', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get('/api/v1/ipos?q=List');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(3);
+    expect(response.body.meta).toEqual({ page: 1, limit: 20, total: 3, totalPages: 1 });
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos?priceMin=150&priceMax=100 - returns 400 Bad Request for invalid price range', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos?priceMin=150&priceMax=100',
+    );
+
+    expect(response.status).toBe(400);
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos?sort=companyName&order=asc - sorts IPOs by company legal name', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos?sort=companyName&order=asc',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(3);
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos?q=SYM&status=OPEN&priceMin=5 - applies combined AND search and filtering', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos?q=SYM&status=OPEN&priceMin=5',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.length).toBeGreaterThanOrEqual(1);
 
     await app.close();
   });

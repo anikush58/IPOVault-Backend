@@ -315,7 +315,7 @@ describe('IpoController API Endpoints', () => {
   it('1. GET /ipos - returns paginated list of IPOs', async () => {
     const result = await controller.list({ page: 1, limit: 10 });
     expect(result.data).toHaveLength(1);
-    expect(result.meta).toEqual({ page: 1, limit: 10, total: 1 });
+    expect(result.meta).toEqual({ page: 1, limit: 10, total: 1, totalPages: 1 });
   });
 
   it('2. GET /ipos/upcoming - filters by status UPCOMING', async () => {
