@@ -69,6 +69,20 @@ export class IpoController {
     return this.ipos.compare(query);
   }
 
+  /**
+   * GET /ipos/:id/analytics
+   *
+   * Phase 27 — IPO Analytics & Derived Metrics API.
+   * Read-only endpoint exposing deterministic financial, term, issue-structure,
+   * and lifecycle date metrics derived from canonical IPO data.
+   */
+  @Get(':id/analytics')
+  getAnalytics(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+  ) {
+    return this.ipos.getAnalytics(params.id);
+  }
+
   @Get(':id/timeline')
   getTimeline(
     @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,

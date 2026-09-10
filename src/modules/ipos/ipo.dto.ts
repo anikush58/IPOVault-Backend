@@ -282,6 +282,34 @@ export type IpoCompareResponseDto = {
   };
 };
 
+export type IssueCompositionEnum =
+  | 'FRESH_ONLY'
+  | 'OFS_ONLY'
+  | 'FRESH_AND_OFS'
+  | 'UNKNOWN';
+
+export type IpoAnalyticsMetricsDto = {
+  freshIssuePercentage: string | null;
+  ofsPercentage: string | null;
+  freshIssueSharePercentage: string | null;
+  ofsSharePercentage: string | null;
+  priceBandSpread: string | null;
+  priceBandSpreadPercentage: string | null;
+  minimumApplicationAmount: string | null;
+  issueComposition: IssueCompositionEnum;
+  daysToOpen: number | null;
+  daysToClose: number | null;
+  daysToListing: number | null;
+};
+
+export type IpoAnalyticsResponseDto = {
+  data: {
+    ipoId: string;
+    metrics: IpoAnalyticsMetricsDto;
+    evaluatedAt: string;
+  };
+};
+
 export type CompanySummaryDto = {
   id: string;
   legalName: string;

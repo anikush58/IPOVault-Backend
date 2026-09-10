@@ -7,6 +7,7 @@ import {
   paginationOffset,
 } from '../../common/pagination/pagination';
 import {
+  IpoAnalyticsResponseDto,
   IpoChangesQuery,
   IpoChangesResponseDto,
   IpoCompareQuery,
@@ -18,6 +19,7 @@ import {
   IpoSourcesResponseDto,
   IpoTimelineResponseDto,
 } from './ipo.dto';
+import { calculateIpoAnalytics } from './ipo-analytics.calculator';
 import {
   toDateOnly,
   toIpoChangesResponseDto,
@@ -87,6 +89,16 @@ export class IpoService {
     }
 
     return toIpoCompareResponseDto(ipos, query.ids);
+  }
+
+  async getAnalytics(id: string): Promise<IpoAnalyticsResponseDto> {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo) {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    return calculateIpoAnalytics(ipo);
   }
 
   async getById(id: string): Promise<IpoResponseDto> {

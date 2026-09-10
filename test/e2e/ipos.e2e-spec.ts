@@ -631,4 +631,36 @@ describe('IPO read API', () => {
 
     await app.close();
   });
+
+  it('GET /api/v1/ipos/:id/analytics - returns derived analytics metrics for valid IPO', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/11111111-1111-4111-8111-111111111111/analytics',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.ipoId).toBe(
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(response.body.data.metrics.priceBandSpread).toBe('2.00');
+    expect(response.body.data.metrics.minimumApplicationAmount).toBe('120.00');
+    expect(response.body.data.metrics.issueComposition).toBeDefined();
+    expect(response.body.data.evaluatedAt).toBeDefined();
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/:id/analytics - returns 404 (IPO_NOT_FOUND) for missing IPO', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/99999999-9999-4999-8999-999999999999/analytics',
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('IPO_NOT_FOUND');
+
+    await app.close();
+  });
 });
