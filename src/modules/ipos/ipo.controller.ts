@@ -6,6 +6,8 @@ import {
   ipoChangesQuerySchema,
   IpoIdParam,
   ipoIdParamSchema,
+  IpoLineageQuery,
+  ipoLineageQuerySchema,
   IpoListQuery,
   ipoListQuerySchema,
   RefreshIpoDto,
@@ -81,6 +83,23 @@ export class IpoController {
   ) {
     return this.ipos.getChanges(params.id, query);
   }
+
+  /**
+   * GET /ipos/:id/lineage
+   *
+   * Phase 24 — Field-Level IPO Data Lineage & Provenance.
+   * Read-only endpoint exposing field-level provenance/lineage for a canonical IPO.
+   * Supports optional query filtering by exact field name (?field=priceBandLow)
+   * and/or source code (?source=sebi).
+   */
+  @Get(':id/lineage')
+  getLineage(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+    @Query(new ZodValidationPipe(ipoLineageQuerySchema)) query: IpoLineageQuery,
+  ) {
+    return this.ipos.getLineage(params.id, query);
+  }
+
 
   @Get(':id/reconciliation')
   getReconciliation(

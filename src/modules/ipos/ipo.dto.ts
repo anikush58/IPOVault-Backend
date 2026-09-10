@@ -43,6 +43,11 @@ export const ipoChangesQuerySchema = z.object({
   source: z.preprocess(emptyToUndefined, z.string().optional()),
 });
 
+export const ipoLineageQuerySchema = z.object({
+  field: z.preprocess(emptyToUndefined, z.string().optional()),
+  source: z.preprocess(emptyToUndefined, z.string().optional()),
+});
+
 export const refreshIpoSchema = z.object({
   source: z.preprocess(
     (v) => (typeof v === 'string' ? v.trim() : undefined),
@@ -228,4 +233,33 @@ export type IpoChangeEventDetailDto = {
 export type IpoChangesResponseDto = {
   ipoId: string;
   changes: IpoChangeEventDetailDto[];
+};
+
+export type IpoLineageQuery = z.infer<typeof ipoLineageQuerySchema>;
+
+export type IpoSourceSummaryDto = {
+  code: string;
+  name: string;
+  sourceType: string;
+};
+
+export type IpoFieldObservationDto = {
+  source: IpoSourceSummaryDto;
+  observedValue: string;
+  observedAt: string;
+  sourceReference: string | null;
+};
+
+export type IpoFieldLineageDto = {
+  fieldName: string;
+  canonicalValue: string | null;
+  source: IpoSourceSummaryDto | null;
+  observedValue: string | null;
+  observedAt: string | null;
+  observations: IpoFieldObservationDto[];
+};
+
+export type IpoLineageResponseDto = {
+  ipoId: string;
+  fields: IpoFieldLineageDto[];
 };

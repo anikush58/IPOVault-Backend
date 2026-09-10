@@ -9,6 +9,8 @@ import {
 import {
   IpoChangesQuery,
   IpoChangesResponseDto,
+  IpoLineageQuery,
+  IpoLineageResponseDto,
   IpoListQuery,
   IpoResponseDto,
   IpoSourcesResponseDto,
@@ -18,6 +20,7 @@ import {
   toDateOnly,
   toIpoChangesResponseDto,
   toIpoDataReadinessDto,
+  toIpoLineageResponseDto,
   toIpoResponseDto,
 } from './ipo.mapper';
 import { PrismaService } from '../../database/prisma.service';
@@ -146,6 +149,26 @@ export class IpoService {
     const events = await this.ipos.findChangeEvents(id, query);
     return toIpoChangesResponseDto(id, events);
   }
+
+  async getLineage(
+    id: string,
+    query?: IpoLineageQuery,
+  ): Promise<IpoLineageResponseDto> {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo) {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    const provenances = await this.ipos.findFieldProvenances(
+      id,
+      ipo.companyId,
+      query,
+    );
+
+    return toIpoLineageResponseDto(id, ipo, provenances, query);
+  }
+
 
   async getReconciliation(id: string) {
     const ipo = await this.ipos.findById(id);

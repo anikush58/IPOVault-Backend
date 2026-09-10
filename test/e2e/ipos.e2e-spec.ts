@@ -179,6 +179,44 @@ function createIpoPrismaStub(rows: IpoWithRelations[]) {
     ipoLifecycleEvent: {
       findMany: async () => [],
     },
+    fieldProvenance: {
+      findMany: async ({ where = {} }: any) => {
+        const isIpo1 = where.OR?.some(
+          (c: any) =>
+            c.entityType === 'IPO' &&
+            c.entityId === '11111111-1111-4111-8111-111111111111',
+        );
+        if (isIpo1) {
+          const provs = [
+            {
+              id: 'prov-1',
+              entityType: 'IPO',
+              entityId: '11111111-1111-4111-8111-111111111111',
+              fieldName: 'price_band_low',
+              value: '10.00',
+              sourceId: 'src-1',
+              sourceReference: 'ref-1',
+              retrievedAt: new Date('2026-09-03T10:00:00.000Z'),
+              confidence: new Prisma.Decimal('1.000'),
+              createdAt: new Date('2026-09-03T10:00:00.000Z'),
+              source: {
+                id: 'src-1',
+                code: 'sebi',
+                name: 'SEBI',
+                sourceType: 'OFFICIAL_FILING',
+              },
+            },
+          ];
+          let res = provs;
+          if (where.source?.code) {
+            const sCode = where.source.code.toLowerCase();
+            res = res.filter((p) => p.source.code.toLowerCase() === sCode);
+          }
+          return res;
+        }
+        return [];
+      },
+    },
   };
 }
 
@@ -384,6 +422,69 @@ describe('IPO read API', () => {
     );
     expect(noMatchFilter.status).toBe(200);
     expect(noMatchFilter.body.data.changes).toEqual([]);
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/:id/lineage - returns field-level lineage details', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/11111111-1111-4111-8111-111111111111/lineage',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.ipoId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(response.body.data.fields).toHaveLength(1);
+    expect(response.body.data.fields[0].fieldName).toBe('priceBandLow');
+    expect(response.body.data.fields[0].canonicalValue).toBe('10.00');
+    expect(response.body.data.fields[0].observedValue).toBe('10.00');
+    expect(response.body.data.fields[0].source.code).toBe('sebi');
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/:id/lineage - returns empty fields for valid IPO with no field provenances', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/22222222-2222-4222-8222-222222222222/lineage',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.ipoId).toBe('22222222-2222-4222-8222-222222222222');
+    expect(response.body.data.fields).toEqual([]);
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/:id/lineage - returns 404 for unknown IPO ID', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/99999999-9999-4999-8999-999999999999/lineage',
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('IPO_NOT_FOUND');
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/:id/lineage - filters by field and source query params', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const matchFilter = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/11111111-1111-4111-8111-111111111111/lineage?field=priceBandLow&source=sebi',
+    );
+    expect(matchFilter.status).toBe(200);
+    expect(matchFilter.body.data.fields).toHaveLength(1);
+
+    const noMatchFilter = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/11111111-1111-4111-8111-111111111111/lineage?field=lotSize',
+    );
+    expect(noMatchFilter.status).toBe(200);
+    expect(noMatchFilter.body.data.fields).toEqual([]);
 
     await app.close();
   });

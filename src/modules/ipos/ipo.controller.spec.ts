@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { IpoController } from './ipo.controller';
 import { IpoService } from './ipo.service';
 import { IpoRepository } from './ipo.repository';
@@ -154,6 +155,39 @@ describe('IpoController API Endpoints', () => {
               if (query?.source) {
                 const sCode = query.source.toLowerCase();
                 res = res.filter((e) => e.source?.code.toLowerCase() === sCode);
+              }
+              return Promise.resolve(res);
+            }),
+            findFieldProvenances: jest.fn().mockImplementation((id: string, _companyId?: string, query?: { field?: string; source?: string }) => {
+              if (id !== '11111111-1111-1111-1111-111111111111') return Promise.resolve([]);
+              const provs = [
+                {
+                  id: 'prov-1',
+                  entityType: 'IPO',
+                  entityId: id,
+                  fieldName: 'price_band_high',
+                  value: '180.00',
+                  sourceId: 'src-1',
+                  sourceReference: 'ref-2',
+                  retrievedAt: new Date('2026-09-10T12:00:00.000Z'),
+                  confidence: new Prisma.Decimal('1.000'),
+                  createdAt: new Date('2026-09-10T12:00:00.000Z'),
+                  source: {
+                    id: 'src-1',
+                    code: 'NSE',
+                    name: 'National Stock Exchange',
+                    sourceType: 'EXCHANGE',
+                  },
+                },
+              ];
+              let res = provs;
+              if (query?.field) {
+                const f = query.field.toLowerCase();
+                res = res.filter((p) => p.fieldName.toLowerCase() === f || f === 'pricebandhigh');
+              }
+              if (query?.source) {
+                const sCode = query.source.toLowerCase();
+                res = res.filter((p) => p.source?.code.toLowerCase() === sCode);
               }
               return Promise.resolve(res);
             }),
@@ -496,6 +530,40 @@ describe('IpoController API Endpoints', () => {
     const recSpy = jest.spyOn(reconciliationService, 'reconcileIpo');
 
     await controller.getChanges(
+      { id: '11111111-1111-1111-1111-111111111111' },
+      {},
+    );
+
+    expect(qgSpy).not.toHaveBeenCalled();
+    expect(recSpy).not.toHaveBeenCalled();
+  });
+
+  it('23. GET /ipos/:id/lineage - returns field-level lineage DTO with source metadata', async () => {
+    const result = await controller.getLineage(
+      { id: '11111111-1111-1111-1111-111111111111' },
+      {},
+    );
+    expect(result.ipoId).toBe('11111111-1111-1111-1111-111111111111');
+    expect(result.fields).toHaveLength(1);
+    expect(result.fields[0].fieldName).toBe('priceBandHigh');
+    expect(result.fields[0].observedValue).toBe('180.00');
+    expect(result.fields[0].source?.code).toBe('NSE');
+  });
+
+  it('24. GET /ipos/:id/lineage - 404 behavior for unknown IPO ID', async () => {
+    await expect(
+      controller.getLineage(
+        { id: '99999999-9999-9999-9999-999999999999' },
+        {},
+      ),
+    ).rejects.toThrow(AppException);
+  });
+
+  it('25. GET /ipos/:id/lineage - does not invoke Quality Gate, Coverage, or Reconciliation', async () => {
+    const qgSpy = jest.spyOn(qualityGateService, 'evaluateQualityGate');
+    const recSpy = jest.spyOn(reconciliationService, 'reconcileIpo');
+
+    await controller.getLineage(
       { id: '11111111-1111-1111-1111-111111111111' },
       {},
     );
