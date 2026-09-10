@@ -573,4 +573,62 @@ describe('IPO read API', () => {
 
     await app.close();
   });
+
+  it('GET /api/v1/ipos/compare?ids=11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222 - compares two valid IPOs side-by-side', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/compare?ids=11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.ipos).toHaveLength(2);
+    expect(response.body.data.ipos[0].id).toBe(
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(response.body.data.ipos[1].id).toBe(
+      '22222222-2222-4222-8222-222222222222',
+    );
+    expect(response.body.data.ipos[0].companyName).toBe('List Co');
+    expect(response.body.data.ipos[1].companyName).toBe('List Co');
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/compare - route collision regression (returns 400 when query ids missing)', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/compare',
+    );
+
+    expect(response.status).toBe(400);
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/compare?ids=... - returns 404 (IPO_NOT_FOUND) when an IPO ID is missing', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/compare?ids=11111111-1111-4111-8111-111111111111,99999999-9999-4999-8999-999999999999',
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('IPO_NOT_FOUND');
+
+    await app.close();
+  });
+
+  it('GET /api/v1/ipos/compare?ids=... - returns 400 Bad Request for duplicate IDs', async () => {
+    const app = await createTestApp([], createIpoPrismaStub(seed));
+
+    const response = await request(app.getHttpServer()).get(
+      '/api/v1/ipos/compare?ids=11111111-1111-4111-8111-111111111111,11111111-1111-4111-8111-111111111111',
+    );
+
+    expect(response.status).toBe(400);
+
+    await app.close();
+  });
 });

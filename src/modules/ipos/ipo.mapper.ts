@@ -1,8 +1,10 @@
 import { LifecycleEventType, Prisma } from '@prisma/client';
 
 import {
+  CompareIpoItemDto,
   DataReadinessStatus,
   IpoChangesResponseDto,
+  IpoCompareResponseDto,
   IpoDataReadinessDto,
   IpoFieldLineageDto,
   IpoFieldObservationDto,
@@ -46,6 +48,63 @@ export function emptyLifecycle(): IpoLifecycleDto {
     refundInitiationDate: null,
     dematCreditDate: null,
     listingDate: null,
+  };
+}
+
+export function toCompareIpoItemDto(ipo: IpoWithRelations): CompareIpoItemDto {
+  const lifecycle = emptyLifecycle();
+
+  for (const event of ipo.lifecycleEvents ?? []) {
+    lifecycle[LIFECYCLE_FIELD[event.eventType]] = toDateOnly(event.eventDate);
+  }
+
+  return {
+    id: ipo.id,
+    companyName: ipo.company.displayName,
+    legalName: ipo.company.legalName,
+    symbol: ipo.symbol,
+    cin: ipo.company.cin,
+    status: ipo.status,
+    marketSegment: ipo.marketSegment,
+    exchange: ipo.exchange,
+    issueSize: decimalToString(ipo.issueSize),
+    freshIssueSize: decimalToString(ipo.freshIssueSize),
+    ofsSize: decimalToString(ipo.ofsSize),
+    issueShareCount: decimalToString(ipo.issueShareCount),
+    freshIssueShareCount: decimalToString(ipo.freshIssueShareCount),
+    ofsShareCount: decimalToString(ipo.ofsShareCount),
+    priceBandLow: decimalToString(ipo.priceBandLow),
+    priceBandHigh: decimalToString(ipo.priceBandHigh),
+    lotSize: ipo.lotSize,
+    minimumLots: ipo.minimumLots,
+    faceValue: decimalToString(ipo.faceValue),
+    openDate: lifecycle.openDate,
+    closeDate: lifecycle.closeDate,
+    listingDate: lifecycle.listingDate,
+  };
+}
+
+export function toIpoCompareResponseDto(
+  ipos: IpoWithRelations[],
+  requestedIds: string[],
+): IpoCompareResponseDto {
+  const ipoMap = new Map<string, IpoWithRelations>();
+  for (const ipo of ipos) {
+    ipoMap.set(ipo.id, ipo);
+  }
+
+  const orderedItems: CompareIpoItemDto[] = [];
+  for (const id of requestedIds) {
+    const ipo = ipoMap.get(id);
+    if (ipo) {
+      orderedItems.push(toCompareIpoItemDto(ipo));
+    }
+  }
+
+  return {
+    data: {
+      ipos: orderedItems,
+    },
   };
 }
 

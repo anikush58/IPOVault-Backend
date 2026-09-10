@@ -4,6 +4,8 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   IpoChangesQuery,
   ipoChangesQuerySchema,
+  IpoCompareQuery,
+  ipoCompareQuerySchema,
   IpoIdParam,
   ipoIdParamSchema,
   IpoLineageQuery,
@@ -52,6 +54,19 @@ export class IpoController {
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
   ) {
     return this.ipos.list({ ...query, status: 'LISTING_PENDING' });
+  }
+
+  /**
+   * GET /ipos/compare?ids=<id1>,<id2>
+   *
+   * Phase 26 — IPO Comparison API.
+   * Read-only endpoint allowing side-by-side comparison of 2 to 5 canonical IPO records.
+   */
+  @Get('compare')
+  compare(
+    @Query(new ZodValidationPipe(ipoCompareQuerySchema)) query: IpoCompareQuery,
+  ) {
+    return this.ipos.compare(query);
   }
 
   @Get(':id/timeline')

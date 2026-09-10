@@ -147,6 +147,41 @@ export const ipoListQuerySchema = z
       path: ['listingDateFrom'],
     },
   );
+export const ipoCompareQuerySchema = z
+  .object({
+    ids: z.preprocess(
+      (value: unknown): string[] => {
+        if (typeof value === 'string') {
+          return value
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+        }
+        if (Array.isArray(value)) {
+          return value
+            .flatMap((item) =>
+              typeof item === 'string' ? item.split(',') : [],
+            )
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+        }
+        return [];
+      },
+      z.array(z.string().uuid('Invalid UUID')),
+    ),
+  })
+  .refine((data) => data.ids.length >= 2, {
+    message: 'Comparison requires at least 2 IPO IDs',
+    path: ['ids'],
+  })
+  .refine((data) => data.ids.length <= 5, {
+    message: 'Comparison supports a maximum of 5 IPO IDs',
+    path: ['ids'],
+  })
+  .refine((data) => new Set(data.ids).size === data.ids.length, {
+    message: 'Duplicate IPO IDs are not allowed in comparison',
+    path: ['ids'],
+  });
 
 export const ipoIdParamSchema = z.object({
   id: z.string().uuid(),
@@ -211,9 +246,41 @@ export const verifyRefreshSchema = z.object({
 });
 
 export type IpoListQuery = z.infer<typeof ipoListQuerySchema>;
+export type IpoCompareQuery = z.infer<typeof ipoCompareQuerySchema>;
 export type IpoIdParam = z.infer<typeof ipoIdParamSchema>;
 export type RefreshIpoDto = z.infer<typeof refreshIpoSchema>;
 export type VerifyRefreshDto = z.infer<typeof verifyRefreshSchema>;
+
+export type CompareIpoItemDto = {
+  id: string;
+  companyName: string;
+  legalName: string;
+  symbol: string | null;
+  cin: string | null;
+  status: z.infer<typeof ipoStatusSchema>;
+  marketSegment: z.infer<typeof marketSegmentSchema>;
+  exchange: z.infer<typeof exchangeSchema>;
+  issueSize: string | null;
+  freshIssueSize: string | null;
+  ofsSize: string | null;
+  issueShareCount: string | null;
+  freshIssueShareCount: string | null;
+  ofsShareCount: string | null;
+  priceBandLow: string | null;
+  priceBandHigh: string | null;
+  lotSize: number | null;
+  minimumLots: number | null;
+  faceValue: string | null;
+  openDate: string | null;
+  closeDate: string | null;
+  listingDate: string | null;
+};
+
+export type IpoCompareResponseDto = {
+  data: {
+    ipos: CompareIpoItemDto[];
+  };
+};
 
 export type CompanySummaryDto = {
   id: string;

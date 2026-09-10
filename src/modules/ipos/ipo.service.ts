@@ -9,6 +9,8 @@ import {
 import {
   IpoChangesQuery,
   IpoChangesResponseDto,
+  IpoCompareQuery,
+  IpoCompareResponseDto,
   IpoLineageQuery,
   IpoLineageResponseDto,
   IpoListQuery,
@@ -19,6 +21,7 @@ import {
 import {
   toDateOnly,
   toIpoChangesResponseDto,
+  toIpoCompareResponseDto,
   toIpoDataReadinessDto,
   toIpoLineageResponseDto,
   toIpoResponseDto,
@@ -67,6 +70,23 @@ export class IpoService {
       data: rows.map((ipo) => toIpoResponseDto(ipo)),
       meta: paginationMeta(query.page, query.limit, total),
     };
+  }
+
+  async compare(query: IpoCompareQuery): Promise<IpoCompareResponseDto> {
+    const ipos = await this.ipos.findByIds(query.ids);
+    const foundMap = new Map(ipos.map((ipo) => [ipo.id, ipo]));
+
+    for (const requestedId of query.ids) {
+      if (!foundMap.has(requestedId)) {
+        throw new AppException(
+          ErrorCode.IPO_NOT_FOUND,
+          `IPO with ID "${requestedId}" was not found`,
+          404,
+        );
+      }
+    }
+
+    return toIpoCompareResponseDto(ipos, query.ids);
   }
 
   async getById(id: string): Promise<IpoResponseDto> {

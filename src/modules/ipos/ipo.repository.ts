@@ -41,6 +41,13 @@ export class IpoRepository {
     });
   }
 
+  async findByIds(ids: string[]): Promise<IpoWithRelations[]> {
+    return this.prisma.ipo.findMany({
+      where: { id: { in: ids } },
+      include: ipoInclude,
+    });
+  }
+
   async findTimelineEvents(ipoId: string) {
     return this.prisma.ipoLifecycleEvent.findMany({
       where: { ipoId },
