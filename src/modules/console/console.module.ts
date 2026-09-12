@@ -7,6 +7,7 @@ import { NotificationModule } from '../notifications/notification.module';
 import { AllotmentModule } from '../allotment/allotment.module';
 import { ConsoleController } from './console.controller';
 import { ConsoleService } from './console.service';
+import { ConsoleEnabledGuard } from './console.guard';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { ConsoleService } from './console.service';
     AllotmentModule,
   ],
   controllers: [ConsoleController],
-  providers: [ConsoleService],
+  providers: [ConsoleService, ConsoleEnabledGuard],
   exports: [ConsoleService],
 })
 export class ConsoleModule {}

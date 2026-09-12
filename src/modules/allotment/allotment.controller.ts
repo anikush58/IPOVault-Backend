@@ -28,23 +28,17 @@ export class AllotmentController {
   ) {}
 
   @Get('intelligence/summary')
-  async getUserSummaryIntelligence(
-    @Headers('x-user-id') userId?: string,
-  ) {
+  async getUserSummaryIntelligence(@Headers('x-user-id') userId?: string) {
     return this.allotmentIntelligenceService.getUserSummaryIntelligence(userId);
   }
 
   @Get('intelligence/history')
-  async getUserAllotmentHistory(
-    @Headers('x-user-id') userId?: string,
-  ) {
+  async getUserAllotmentHistory(@Headers('x-user-id') userId?: string) {
     return this.allotmentIntelligenceService.getUserAllotmentHistory(userId);
   }
 
   @Get('intelligence/pans')
-  async getUserPanIntelligence(
-    @Headers('x-user-id') userId?: string,
-  ) {
+  async getUserPanIntelligence(@Headers('x-user-id') userId?: string) {
     return this.allotmentIntelligenceService.getUserPanIntelligence(userId);
   }
 
@@ -61,7 +55,10 @@ export class AllotmentController {
     @Param('id') id: string,
     @Headers('x-user-id') userId?: string,
   ) {
-    return this.allotmentIntelligenceService.getIpoAllotmentIntelligence(id, userId);
+    return this.allotmentIntelligenceService.getIpoAllotmentIntelligence(
+      id,
+      userId,
+    );
   }
 
   @Post('check')

@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Put,
   Query,
@@ -83,7 +84,7 @@ export class NotificationController {
 
   @Get(':id')
   async getNotification(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<NotificationResponseDto> {
     return this.notificationService.getUserNotificationById(id, userId);
@@ -92,7 +93,7 @@ export class NotificationController {
   @Post(':id/read')
   @HttpCode(HttpStatus.OK)
   async markRead(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<NotificationResponseDto> {
     return this.notificationService.markNotificationAsRead(id, userId);

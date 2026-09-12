@@ -1,9 +1,24 @@
-import { Controller, Get, Header, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ConsoleService } from './console.service';
 import { ConsoleIpoListQueryDto } from './console.types';
 import { renderConsoleHtml } from './console.ui';
+import { ConsoleEnabledGuard } from './console.guard';
+import {
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  MAX_LIMIT,
+} from '../../common/pagination/pagination';
 
 @Controller('console')
+@UseGuards(ConsoleEnabledGuard)
 export class ConsoleController {
   constructor(private readonly consoleService: ConsoleService) {}
 
@@ -36,13 +51,23 @@ export class ConsoleController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
+    const parsedPage = parseInt(page || '', 10);
+    const parsedLimit = parseInt(limit || '', 10);
+
+    const safePage =
+      isNaN(parsedPage) || parsedPage < 1 ? DEFAULT_PAGE : parsedPage;
+    const safeLimit =
+      isNaN(parsedLimit) || parsedLimit < 1
+        ? DEFAULT_LIMIT
+        : Math.min(MAX_LIMIT, parsedLimit);
+
     const query: ConsoleIpoListQueryDto = {
       q,
       status,
       marketSegment,
       exchange,
-      page: page ? parseInt(page, 10) : 1,
-      limit: limit ? parseInt(limit, 10) : 20,
+      page: safePage,
+      limit: safeLimit,
     };
     return this.consoleService.listIpos(query);
   }
@@ -51,7 +76,7 @@ export class ConsoleController {
    * Comprehensive canonical IPO detail for console inspector.
    */
   @Get('api/ipos/:id')
-  async getIpoDetail(@Param('id') id: string) {
+  async getIpoDetail(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.consoleService.getIpoDetail(id);
   }
 
@@ -59,7 +84,7 @@ export class ConsoleController {
    * Field provenance & lineage for a canonical IPO.
    */
   @Get('api/ipos/:id/lineage')
-  async getIpoLineage(@Param('id') id: string) {
+  async getIpoLineage(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.consoleService.getIpoLineage(id);
   }
 

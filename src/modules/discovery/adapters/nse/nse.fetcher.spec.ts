@@ -88,4 +88,51 @@ describe('NSE HTTP fetcher', () => {
       fetchNseDocument({ endpoint: ENDPOINT, fetchImpl }),
     ).rejects.toThrow('NSE response was empty');
   });
+
+  it('rejects SSRF destinations (loopback, link-local, untrusted hosts, non-http protocols)', async () => {
+    const fetchImpl = jest.fn();
+
+    await expect(
+      fetchNseDocument({ endpoint: 'ftp://nseindia.com/file', fetchImpl }),
+    ).rejects.toThrow("Invalid NSE_IPO_ENDPOINT protocol 'ftp:'");
+
+    await expect(
+      fetchNseDocument({ endpoint: 'http://localhost/admin', fetchImpl }),
+    ).rejects.toThrow(
+      "Blocked internal/loopback NSE_IPO_ENDPOINT host 'localhost'",
+    );
+
+    await expect(
+      fetchNseDocument({
+        endpoint: 'http://127.0.0.1:8080/internal',
+        fetchImpl,
+      }),
+    ).rejects.toThrow(
+      "Blocked internal/loopback NSE_IPO_ENDPOINT host '127.0.0.1'",
+    );
+
+    await expect(
+      fetchNseDocument({
+        endpoint: 'http://169.254.169.254/latest/meta-data/',
+        fetchImpl,
+      }),
+    ).rejects.toThrow(
+      "Blocked internal/loopback NSE_IPO_ENDPOINT host '169.254.169.254'",
+    );
+
+    await expect(
+      fetchNseDocument({ endpoint: 'http://10.0.0.1/secret', fetchImpl }),
+    ).rejects.toThrow(
+      "Blocked internal/loopback NSE_IPO_ENDPOINT host '10.0.0.1'",
+    );
+
+    await expect(
+      fetchNseDocument({
+        endpoint: 'https://arbitrary-untrusted-site.com/data',
+        fetchImpl,
+      }),
+    ).rejects.toThrow(
+      "Untrusted NSE_IPO_ENDPOINT destination host 'arbitrary-untrusted-site.com'",
+    );
+  });
 });

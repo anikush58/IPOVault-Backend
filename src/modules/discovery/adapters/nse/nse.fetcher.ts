@@ -33,12 +33,92 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isPrivateOrLocalHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host === '0.0.0.0' ||
+    host.startsWith('127.')
+  ) {
+    return true;
+  }
+  if (host.startsWith('169.254.')) {
+    return true;
+  }
+  if (host.startsWith('10.') || host.startsWith('192.168.')) {
+    return true;
+  }
+  if (host.startsWith('172.')) {
+    const parts = host.split('.');
+    if (parts.length >= 2) {
+      const secondOctet = parseInt(parts[1], 10);
+      if (secondOctet >= 16 && secondOctet <= 31) {
+        return true;
+      }
+    }
+  }
+  if (
+    host.startsWith('fe80:') ||
+    host.startsWith('fc00:') ||
+    host.startsWith('fd00:')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isAllowedNseHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === 'nseindia.com' || host.endsWith('.nseindia.com')) {
+    return true;
+  }
+  if (host === 'nse.test' || host.endsWith('.nse.test')) {
+    return true;
+  }
+  const configuredEnvEndpoint = process.env.NSE_IPO_ENDPOINT;
+  if (configuredEnvEndpoint) {
+    try {
+      const envHost = new URL(configuredEnvEndpoint).hostname.toLowerCase();
+      if (host === envHost) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return false;
+}
+
 export async function fetchNseDocument(
   options: NseFetchOptions,
 ): Promise<NseHttpDocument> {
   const endpoint = options.endpoint.trim();
   if (endpoint.length === 0) {
     throw new NseFetchError('NSE_IPO_ENDPOINT is not configured');
+  }
+
+  try {
+    const parsedUrl = new URL(endpoint);
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw new NseFetchError(
+        `Invalid NSE_IPO_ENDPOINT protocol '${parsedUrl.protocol}'`,
+      );
+    }
+    if (isPrivateOrLocalHost(parsedUrl.hostname)) {
+      throw new NseFetchError(
+        `Blocked internal/loopback NSE_IPO_ENDPOINT host '${parsedUrl.hostname}'`,
+      );
+    }
+    if (!isAllowedNseHost(parsedUrl.hostname)) {
+      throw new NseFetchError(
+        `Untrusted NSE_IPO_ENDPOINT destination host '${parsedUrl.hostname}'`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof NseFetchError) throw err;
+    throw new NseFetchError(`Invalid NSE_IPO_ENDPOINT URL '${endpoint}'`);
   }
 
   const timeoutMs = options.timeoutMs ?? NSE_HTTP_TIMEOUT_MS;

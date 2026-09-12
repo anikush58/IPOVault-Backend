@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { ConsoleController } from './console.controller';
 import { ConsoleService } from './console.service';
+import { ConsoleEnabledGuard } from './console.guard';
 
 describe('ConsoleController', () => {
   let controller: ConsoleController;
@@ -26,7 +28,14 @@ describe('ConsoleController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ConsoleController],
-      providers: [{ provide: ConsoleService, useValue: service }],
+      providers: [
+        { provide: ConsoleService, useValue: service },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue(true) },
+        },
+        ConsoleEnabledGuard,
+      ],
     }).compile();
 
     controller = module.get<ConsoleController>(ConsoleController);

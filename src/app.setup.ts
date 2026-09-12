@@ -13,6 +13,22 @@ export function configureApp(app: INestApplication): void {
     .filter((origin) => origin.length > 0);
 
   app.use(requestIdMiddleware);
+  app.use(
+    (
+      _req: unknown,
+      res: { setHeader: (k: string, v: string) => void },
+      next: () => void,
+    ) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+      res.setHeader('X-XSS-Protection', '1; mode=block');
+      res.setHeader(
+        'Strict-Transport-Security',
+        'max-age=31536000; includeSubDomains',
+      );
+      next();
+    },
+  );
   app.setGlobalPrefix('api/v1');
   const isDev = config.get('NODE_ENV', { infer: true }) === 'development';
   app.enableCors({
