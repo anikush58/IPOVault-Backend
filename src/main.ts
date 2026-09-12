@@ -11,8 +11,8 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
   configureApp(app);
 
-  await app.listen(env.PORT, '0.0.0.0');
-  console.log(`Backend server running on http://0.0.0.0:${env.PORT}`);
+  await app.listen(env.PORT, '127.0.0.1');
+  console.log(`Backend server running on http://127.0.0.1:${env.PORT}`);
 }
 
 void bootstrap();
