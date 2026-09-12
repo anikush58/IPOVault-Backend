@@ -5,8 +5,10 @@ import {
   Param,
   ParseUUIDPipe,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ConsoleService } from './console.service';
 import { ConsoleIpoListQueryDto } from './console.types';
 import { renderConsoleHtml } from './console.ui';
@@ -26,9 +28,18 @@ export class ConsoleController {
    * Serves the self-contained, browser-accessible IPOVault Data Console HTML web UI.
    */
   @Get()
-  @Header('Content-Type', 'text/html')
-  getConsoleUi(): string {
-    return renderConsoleHtml('/api/v1/console/api');
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  getConsoleUi(@Res() res?: Response): string {
+    const html = renderConsoleHtml('/api/v1/console/api');
+    if (
+      res &&
+      typeof res.setHeader === 'function' &&
+      typeof res.send === 'function'
+    ) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(html);
+    }
+    return html;
   }
 
   /**

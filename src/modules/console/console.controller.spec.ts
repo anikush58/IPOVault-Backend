@@ -1,12 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { INestApplication } from '@nestjs/common';
+import request from 'supertest';
+import { Response } from 'express';
 import { ConsoleController } from './console.controller';
 import { ConsoleService } from './console.service';
 import { ConsoleEnabledGuard } from './console.guard';
+import { ResponseEnvelopeInterceptor } from '../../common/interceptors/response-envelope.interceptor';
 
 describe('ConsoleController', () => {
   let controller: ConsoleController;
   let service: Record<string, jest.Mock>;
+  let app: INestApplication;
 
   beforeEach(async () => {
     service = {
@@ -39,17 +44,71 @@ describe('ConsoleController', () => {
     }).compile();
 
     controller = module.get<ConsoleController>(ConsoleController);
+
+    app = module.createNestApplication();
+    app.useGlobalInterceptors(new ResponseEnvelopeInterceptor());
+    app.setGlobalPrefix('api/v1');
+    await app.init();
+  });
+
+  afterEach(async () => {
+    if (app) {
+      await app.close();
+    }
   });
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
 
-  it('should render HTML console UI template string', () => {
+  it('should render HTML console UI template string when called directly without res', () => {
     const html = controller.getConsoleUi();
     expect(html).toContain('<!DOCTYPE html>');
     expect(html).toContain('IPOVault Console');
     expect(html).toContain('Read-Only');
+    expect(html).not.toMatch(/^\s*\{\s*"data"\s*:/);
+  });
+
+  it('should invoke res.setHeader and res.send when Express Response is passed', () => {
+    const mockRes = {
+      setHeader: jest.fn(),
+      send: jest.fn(),
+    } as unknown as Response;
+
+    const html = controller.getConsoleUi(mockRes);
+
+    expect(mockRes.setHeader).toHaveBeenCalledWith(
+      'Content-Type',
+      'text/html; charset=utf-8',
+    );
+    expect(mockRes.send).toHaveBeenCalledWith(
+      expect.stringContaining('<!DOCTYPE html>'),
+    );
+    expect(html).toContain('<!DOCTYPE html>');
+  });
+
+  it('GET /api/v1/console should return HTTP 200 with raw HTML and bypass JSON envelope', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/console')
+      .expect(200)
+      .expect('Content-Type', /text\/html/);
+
+    expect(response.text).toMatch(/^\s*<!DOCTYPE html>/i);
+    expect(response.text).toContain('<html');
+    expect(response.text).toContain('IPOVault Console');
+    expect(response.text).not.toMatch(/^\s*\{\s*"data"\s*:/);
+    expect(response.text).not.toContain('{"data":');
+  });
+
+  it('GET /api/v1/console/api/dashboard should return HTTP 200 with preserved JSON envelope', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/console/api/dashboard')
+      .expect(200)
+      .expect('Content-Type', /json/);
+
+    expect(response.body).toEqual({
+      data: { ipoCounts: { total: 5 } },
+    });
   });
 
   it('should delegate dashboard summary to service', async () => {
