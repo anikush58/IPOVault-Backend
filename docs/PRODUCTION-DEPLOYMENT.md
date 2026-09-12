@@ -379,3 +379,32 @@ sudo -u postgres pg_restore --clean -d ipovault /var/backups/ipovault/<backup-fi
 # Restart application process
 sudo systemctl start ipovault-backend
 ```
+
+---
+
+## 11. Production Watchdog & Observability
+
+### Watchdog Architecture
+- **Script Path**: `/usr/local/sbin/ipovault-healthcheck` (owned by `root:root`, mode `755`).
+- **Service Unit**: `/etc/systemd/system/ipovault-healthcheck.service` (`Type=oneshot`).
+- **Timer Unit**: `/etc/systemd/system/ipovault-healthcheck.timer` (`OnCalendar=*:0/5`, runs every 5 minutes).
+
+### Inspection & Failure Classification
+The watchdog non-destructively inspects system state every 5 minutes and classifies failures into journald:
+1. **Liveness Check**: Calls `https://api.getipovault.in/api/v1/health` (HTTP 200 OK). Failure logged as `APPLICATION_DOWN`.
+2. **Readiness Check**: Calls `https://api.getipovault.in/api/v1/ready` (HTTP 200 OK + DB up). Failure logged as `DATABASE_NOT_READY`.
+3. **Direct PostgreSQL Check**: Executes read-only `SELECT 1;` query as user `postgres`. Failure logged as `POSTGRES_QUERY_FAILED`.
+4. **Disk Health**: Inspects `/` partition. Usage >= 80% logged as `DISK_WARNING`; >= 90% logged as `DISK_CRITICAL`.
+5. **Backup Freshness**: Verifies newest dump file in `/var/backups/ipovault` is non-empty and <= 30 hours old. Failure logged as `BACKUP_STALE` / `BACKUP_MISSING`.
+
+### Operator Observability Commands
+```bash
+# Check watchdog service execution status
+sudo systemctl status ipovault-healthcheck.service
+
+# View watchdog logs in journald
+sudo journalctl -u ipovault-healthcheck.service -n 50 --no-pager
+
+# Inspect next scheduled watchdog timer execution
+systemctl list-timers --all --no-pager | grep ipovault-healthcheck
+```
