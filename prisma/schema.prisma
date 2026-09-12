@@ -375,3 +375,84 @@ model UserSavedPan {
   @@index([panHash])
   @@map("user_saved_pans")
 }
+
+enum NotificationType {
+  IPO_OPENED
+  IPO_CLOSED
+  IPO_LISTING_SOON
+  IPO_DATA_CHANGED
+  IPO_DATA_QUALITY_WARNING
+  ALLOTTED_RESULT_AVAILABLE
+}
+
+enum DeliveryChannel {
+  IN_APP
+  PUSH
+  EMAIL
+  SMS
+}
+
+enum DeliveryStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  FAILED
+}
+
+model Notification {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String           @map("user_id")
+  type              NotificationType
+  title             String
+  message           String
+  relatedEntityType String?          @map("related_entity_type")
+  relatedEntityId   String?          @map("related_entity_id")
+  metadata          Json?            @db.JsonB
+  deduplicationKey  String           @map("deduplication_key")
+  readAt            DateTime?        @map("read_at") @db.Timestamptz(6)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  deliveries        NotificationDelivery[]
+
+  @@unique([userId, deduplicationKey])
+  @@index([userId, createdAt])
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notificationId      String          @map("notification_id") @db.Uuid
+  channel             DeliveryChannel
+  status              DeliveryStatus  @default(PENDING)
+  attemptCount        Int             @default(0) @map("attempt_count")
+  lastAttemptAt       DateTime?       @map("last_attempt_at") @db.Timestamptz(6)
+  processingStartedAt DateTime?       @map("processing_started_at") @db.Timestamptz(6)
+  deliveredAt         DateTime?       @map("delivered_at") @db.Timestamptz(6)
+  failureReason       String?         @map("failure_reason")
+  providerMessageId   String?         @map("provider_message_id")
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  notification        Notification    @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, channel])
+  @@index([notificationId])
+  @@index([status])
+  @@index([status, processingStartedAt])
+  @@map("notification_deliveries")
+}
+
+model NotificationPreference {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String           @map("user_id")
+  notificationType NotificationType @map("notification_type")
+  enabled          Boolean          @default(true)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId, notificationType])
+  @@index([userId])
+  @@map("notification_preferences")
+}
