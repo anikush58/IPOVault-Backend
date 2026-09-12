@@ -1,16 +1,18 @@
 # IPOVault Backend — Production Deployment & Operational Guide
 
-This document defines the official production configuration, operational boundaries, and deployment procedures for the IPOVault Backend on Oracle Cloud Always Free VM running **Ubuntu 22.04 LTS (ARM64 Ampere A1)**.
+This document defines the official production configuration, operational boundaries, and deployment procedures for the IPOVault Backend on Oracle Cloud Always Free VM running **Ubuntu 24.04.5 LTS (ARM64 Ampere A1)**.
 
 ---
 
 ## 1. Prerequisites
 
-- **Target OS**: Ubuntu 22.04 LTS ARM64
-- **Node.js**: `>= 20.0.0` (LTS Node 20 recommended)
-- **Database**: PostgreSQL 16 instance running on `127.0.0.1:5432` with `public` schema
+- **Target OS**: Ubuntu 24.04.5 LTS ARM64
+- **Node.js**: `v22.23.2` via NVM (`/home/ubuntu/.nvm/versions/node/v22.23.2/bin/node`)
+- **Database**: PostgreSQL 16.15 instance running on `127.0.0.1:5432` with `public` schema
 - **Process Manager**: `systemd` (`/etc/systemd/system/ipovault-backend.service`)
 - **Reverse Proxy**: NGINX (SSL Termination, Rate Limiting, Header Sanitization)
+- **Application Directory**: `/home/ubuntu/IPOVault-Backend`
+- **Production Domain**: `api.getipovault.in`
 
 ---
 
@@ -50,6 +52,11 @@ export $(grep -v '^#' .env.production | xargs) && npx prisma migrate deploy
 ```
 
 This applies unapplied SQL migrations from `prisma/migrations/` safely without mutating existing canonical data.
+
+### Production Migration Inventory & Reconciliation
+- **Repository Migrations**: 8 canonical migration directories exist in `prisma/migrations/`.
+- **Production `_prisma_migrations` Table**: Contains 10 execution records corresponding exactly to the 8 repository migration names. Note: `20260906211500_add_allotment_jobs_and_saved_pans` contains 2 initial interrupted/failed execution records (`finished_at IS NULL`) from initial server setup before its successful execution row.
+- **Verification Status**: Confirmed schema matches repository 100%; `npx prisma migrate status` reports `Database schema is up to date!`.
 
 ---
 
@@ -331,3 +338,44 @@ Before exposing the VM to public traffic, verify each requirement:
 - [ ] CORS origins configured strictly in `.env.production` (`CORS_ORIGINS=https://ipovault.app`).
 - [ ] Developer Data Console disabled (`ENABLE_DATA_CONSOLE=false`).
 - [ ] System logs managed via systemd `journalctl` without sensitive credentials or raw PAN leakage.
+
+---
+
+## 10. Automated Database Backups & Operations
+
+### Backup Architecture & Security
+- **Backup Script**: `/usr/local/sbin/ipovault-postgres-backup` (owned by `root:root`, mode `755`).
+- **Backup Location**: `/var/backups/ipovault` (owned by `postgres:postgres`, mode `0700`, inaccessible to public web servers).
+- **Format**: PostgreSQL Custom Format (`pg_dump -Fc -b -d ipovault`).
+- **Retention Policy**: Retains up to 23 automated daily dumps (`ipovault_auto_*.dump`). Pre-deployment backups (`ipovault_pre_*.dump`) are explicitly protected from automated pruning.
+
+### Automation via Systemd Timer
+- **Service Unit**: `/etc/systemd/system/ipovault-postgres-backup.service` (`Type=oneshot`, `User=postgres`)
+- **Timer Unit**: `/etc/systemd/system/ipovault-postgres-backup.timer` (`OnCalendar=daily`, `Persistent=true`)
+
+### Integrity Verification & Restoration Procedure
+
+#### 1. Verify Backup Catalog (Non-destructive)
+```bash
+sudo -u postgres pg_restore --list /var/backups/ipovault/ipovault_auto_YYYYMMDD_HHMMSS.dump
+```
+
+#### 2. Restore to Temporary Test Database (Validation)
+```bash
+sudo -u postgres createdb ipovault_restore_test
+sudo -u postgres pg_restore -d ipovault_restore_test /var/backups/ipovault/ipovault_auto_YYYYMMDD_HHMMSS.dump
+sudo -u postgres psql -d ipovault_restore_test -c "SELECT count(1) FROM _prisma_migrations;"
+sudo -u postgres dropdb ipovault_restore_test
+```
+
+#### 3. Production Restoration Procedure
+```bash
+# Stop application process before database restore
+sudo systemctl stop ipovault-backend
+
+# Perform full restore over production database
+sudo -u postgres pg_restore --clean -d ipovault /var/backups/ipovault/<backup-filename>.dump
+
+# Restart application process
+sudo systemctl start ipovault-backend
+```
