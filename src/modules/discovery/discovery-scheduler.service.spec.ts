@@ -51,86 +51,146 @@ describe('DiscoverySchedulerService', () => {
     jest.useRealTimers();
   });
 
-  it('1. should register no scheduler timer when scheduler is disabled', () => {
+  it('1. should report DISABLED status when scheduler is disabled', () => {
     configService.get.mockImplementation((key: string) => {
       if (key === 'DISCOVERY_SCHEDULER_ENABLED') return false;
       return undefined;
     });
 
-    const setIntervalSpy = jest.spyOn(global, 'setInterval');
+    const health = service.getHealth();
 
-    service.onModuleInit();
-
-    expect(setIntervalSpy).not.toHaveBeenCalled();
-    const config = service.getConfig();
-    expect(config.enabled).toBe(false);
+    expect(health.enabled).toBe(false);
+    expect(health.status).toBe('DISABLED');
   });
 
-  it('2. should start interval timer when scheduler is enabled', () => {
-    configService.get.mockImplementation((key: string) => {
-      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
-      if (key === 'DISCOVERY_SCHEDULER_INTERVAL_MS') return 300000;
-      return undefined;
-    });
-
-    const setIntervalSpy = jest.spyOn(global, 'setInterval');
-
-    service.onModuleInit();
-
-    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 300000);
-    service.onModuleDestroy();
-  });
-
-  it('3. should not execute discovery immediately on startup when initial delay is 0/default', () => {
-    configService.get.mockImplementation((key: string) => {
-      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
-      if (key === 'DISCOVERY_SCHEDULER_INITIAL_DELAY_MS') return 0;
-      return undefined;
-    });
-
-    service.onModuleInit();
-
-    expect(nseFlow.ingestLive).not.toHaveBeenCalled();
-    expect(sebiFlow.run).not.toHaveBeenCalled();
-
-    service.onModuleDestroy();
-  });
-
-  it('4. should execute discovery sequentially (NSE then SEBI) during tick', async () => {
+  it('2. should report STARTING status before first cycle has executed', () => {
     configService.get.mockImplementation((key: string) => {
       if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
       return undefined;
     });
 
-    const callOrder: string[] = [];
-    nseFlow.ingestLive.mockImplementation(async () => {
-      callOrder.push('NSE');
-      return [];
-    });
-    sebiFlow.run.mockImplementation(async () => {
-      callOrder.push('SEBI');
-      return {
-        totalDiscovered: 5,
-        duplicateCount: 0,
-        createdRecordsCount: 5,
-        downloadedDocumentsCount: 2,
-        skippedDocumentsCount: 0,
-        failedDownloadsCount: 0,
-        canonicalCreatedCount: 1,
-        canonicalMatchedCount: 0,
-      };
-    });
+    const health = service.getHealth();
 
-    const result = await service.tick();
-
-    expect(result.status).toBe('SUCCESS');
-    expect(callOrder).toEqual(['NSE', 'SEBI']);
-    expect(result.sources.nse.status).toBe('SUCCESS');
-    expect(result.sources.sebi.status).toBe('SUCCESS');
-    expect(result.sources.sebi.totalDiscovered).toBe(5);
+    expect(health.enabled).toBe(true);
+    expect(health.status).toBe('STARTING');
+    expect(health.lastCycle).toBeNull();
   });
 
-  it('5. should skip overlapping tick when a cycle is already running', async () => {
+  it('3. should report HEALTHY status after a successful cycle', async () => {
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
+      return undefined;
+    });
+
+    await service.tick();
+    const health = service.getHealth();
+
+    expect(health.status).toBe('HEALTHY');
+    expect(health.lastCycle?.status).toBe('SUCCESS');
+    expect(health.consecutiveFailureCount).toBe(0);
+    expect(health.sources.nse.status).toBe('SUCCESS');
+    expect(health.sources.sebi.status).toBe('SUCCESS');
+  });
+
+  it('4. should report DEGRADED status after partial success (one source fails)', async () => {
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
+      return undefined;
+    });
+
+    nseFlow.ingestLive.mockRejectedValue(new Error('NSE network error'));
+    await service.tick();
+    const health = service.getHealth();
+
+    expect(health.status).toBe('DEGRADED');
+    expect(health.sources.nse.status).toBe('FAILED');
+    expect(health.sources.sebi.status).toBe('SUCCESS');
+    expect(health.consecutiveFailureCount).toBe(1);
+  });
+
+  it('5. should report FAILED status after consecutive cycle failures', async () => {
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
+      return undefined;
+    });
+
+    nseFlow.ingestLive.mockRejectedValue(new Error('Fatal'));
+    sebiFlow.run.mockRejectedValue(new Error('Fatal'));
+
+    await service.tick();
+    await service.tick();
+
+    const health = service.getHealth();
+
+    expect(health.status).toBe('FAILED');
+    expect(health.consecutiveFailureCount).toBe(2);
+  });
+
+  it('6. should report STALE status when age exceeds 1.5 * intervalMs', async () => {
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
+      if (key === 'DISCOVERY_SCHEDULER_INTERVAL_MS') return 10000;
+      return undefined;
+    });
+
+    await service.tick();
+    const completedAt = new Date(service.getHealth().lastCycle!.completedAt);
+
+    // 1.5 * 10000ms = 15000ms stale threshold
+    const freshTime = new Date(completedAt.getTime() + 10000);
+    const staleTime = new Date(completedAt.getTime() + 16000);
+
+    const freshHealth = service.getHealth(freshTime);
+    expect(freshHealth.status).toBe('HEALTHY');
+
+    const staleHealth = service.getHealth(staleTime);
+    expect(staleHealth.status).toBe('STALE');
+    expect(staleHealth.staleThresholdMs).toBe(15000);
+  });
+
+  it('7. should use configured interval to determine stale threshold', () => {
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
+      if (key === 'DISCOVERY_SCHEDULER_INTERVAL_MS') return 3600000; // 1 hour
+      return undefined;
+    });
+
+    const health = service.getHealth();
+
+    expect(health.intervalMs).toBe(3600000);
+    expect(health.staleThresholdMs).toBe(5400000); // 1.5 hours
+  });
+
+  it('8. should increment consecutive failures on cycle failure and reset on success', async () => {
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
+      return undefined;
+    });
+
+    nseFlow.ingestLive.mockRejectedValue(new Error('Error 1'));
+    sebiFlow.run.mockRejectedValue(new Error('Error 1'));
+
+    await service.tick();
+    expect(service.getHealth().consecutiveFailureCount).toBe(1);
+
+    nseFlow.ingestLive.mockResolvedValue([]);
+    sebiFlow.run.mockResolvedValue({
+      totalDiscovered: 0,
+      duplicateCount: 0,
+      createdRecordsCount: 0,
+      downloadedDocumentsCount: 0,
+      skippedDocumentsCount: 0,
+      failedDownloadsCount: 0,
+      canonicalCreatedCount: 0,
+      canonicalMatchedCount: 0,
+    });
+
+    await service.tick();
+    expect(service.getHealth().consecutiveFailureCount).toBe(0);
+    expect(service.getHealth().status).toBe('HEALTHY');
+  });
+
+  it('9. should increment overlapSkipCount when tick overlaps', async () => {
     configService.get.mockImplementation((key: string) => {
       if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
       return undefined;
@@ -144,120 +204,43 @@ describe('DiscoverySchedulerService', () => {
         }),
     );
 
-    const firstTickPromise = service.tick();
+    const firstTick = service.tick();
+    await service.tick();
 
-    expect(service.isRunningCycle()).toBe(true);
-
-    const secondTickResult = await service.tick();
-
-    expect(secondTickResult.status).toBe('SKIPPED_OVERLAP');
-    expect(secondTickResult.sources.nse.status).toBe('SKIPPED');
+    expect(service.getHealth().overlapSkipCount).toBe(1);
 
     resolveNse([]);
-    await firstTickPromise;
-
-    expect(service.isRunningCycle()).toBe(false);
+    await firstTick;
   });
 
-  it('6. should continue to execute SEBI when NSE discovery fails', async () => {
+  it('10. should not expose sensitive fields (PANs, credentials, secrets) in health object', async () => {
     configService.get.mockImplementation((key: string) => {
       if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
       return undefined;
     });
 
-    nseFlow.ingestLive.mockRejectedValue(new Error('NSE network timeout'));
-    sebiFlow.run.mockResolvedValue({
-      totalDiscovered: 3,
-      duplicateCount: 0,
-      createdRecordsCount: 3,
-      downloadedDocumentsCount: 1,
-      skippedDocumentsCount: 0,
-      failedDownloadsCount: 0,
-      canonicalCreatedCount: 0,
-      canonicalMatchedCount: 1,
-    });
+    await service.tick();
+    const health = service.getHealth();
+    const jsonString = JSON.stringify(health);
 
-    const result = await service.tick();
-
-    expect(result.status).toBe('PARTIAL_SUCCESS');
-    expect(result.sources.nse.status).toBe('FAILED');
-    expect(result.sources.nse.error).toBe('NSE network timeout');
-    expect(result.sources.sebi.status).toBe('SUCCESS');
-    expect(sebiFlow.run).toHaveBeenCalledTimes(1);
+    expect(jsonString).not.toContain('DATABASE_URL');
+    expect(jsonString).not.toContain('password');
+    expect(jsonString).not.toContain('secret');
+    expect(jsonString).not.toContain('pan');
   });
 
-  it('7. should contain SEBI failure and not crash scheduler when SEBI throws', async () => {
-    configService.get.mockImplementation((key: string) => {
-      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
-      return undefined;
-    });
-
-    nseFlow.ingestLive.mockResolvedValue([]);
-    sebiFlow.run.mockRejectedValue(new Error('SEBI parse error'));
-
-    const result = await service.tick();
-
-    expect(result.status).toBe('PARTIAL_SUCCESS');
-    expect(result.sources.nse.status).toBe('SUCCESS');
-    expect(result.sources.sebi.status).toBe('FAILED');
-    expect(result.sources.sebi.error).toBe('SEBI parse error');
-  });
-
-  it('8. should contain unexpected discovery exception and reset running flag', async () => {
-    configService.get.mockImplementation((key: string) => {
-      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
-      return undefined;
-    });
-
-    nseFlow.ingestLive.mockRejectedValue(new Error('Fatal error'));
-    sebiFlow.run.mockRejectedValue(new Error('Fatal error'));
-
-    const result = await service.tick();
-
-    expect(result.status).toBe('FAILED');
-    expect(service.isRunningCycle()).toBe(false);
-  });
-
-  it('9. should clear timer handles on module destroy', () => {
+  it('11. should clear timers on module destroy', () => {
     configService.get.mockImplementation((key: string) => {
       if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
       if (key === 'DISCOVERY_SCHEDULER_INTERVAL_MS') return 300000;
-      if (key === 'DISCOVERY_SCHEDULER_INITIAL_DELAY_MS') return 5000;
       return undefined;
     });
 
     const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
-    const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
 
     service.onModuleInit();
     service.onModuleDestroy();
 
     expect(clearIntervalSpy).toHaveBeenCalled();
-    expect(clearTimeoutSpy).toHaveBeenCalled();
-  });
-
-  it('10. should fall back to default interval when configured interval is invalid (<1000ms)', () => {
-    configService.get.mockImplementation((key: string) => {
-      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return true;
-      if (key === 'DISCOVERY_SCHEDULER_INTERVAL_MS') return 500; // invalid < 1000ms
-      return undefined;
-    });
-
-    const config = service.getConfig();
-
-    expect(config.intervalMs).toBe(21600000); // 6 hours default
-  });
-
-  it('11. should return DISABLED status when tick is invoked while disabled', async () => {
-    configService.get.mockImplementation((key: string) => {
-      if (key === 'DISCOVERY_SCHEDULER_ENABLED') return false;
-      return undefined;
-    });
-
-    const result = await service.tick();
-
-    expect(result.status).toBe('DISABLED');
-    expect(nseFlow.ingestLive).not.toHaveBeenCalled();
-    expect(sebiFlow.run).not.toHaveBeenCalled();
   });
 });

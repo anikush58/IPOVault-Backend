@@ -20,6 +20,9 @@ export type SchedulerSourceOutcome = 'SUCCESS' | 'FAILED' | 'SKIPPED';
 export type SchedulerCycleStatus =
   'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED' | 'SKIPPED_OVERLAP' | 'DISABLED';
 
+export type DiscoverySchedulerStatus =
+  'HEALTHY' | 'DEGRADED' | 'STALE' | 'FAILED' | 'DISABLED' | 'STARTING';
+
 export interface DiscoverySchedulerCycleResult {
   cycleId: string;
   status: SchedulerCycleStatus;
@@ -29,18 +32,50 @@ export interface DiscoverySchedulerCycleResult {
   sources: {
     nse: {
       status: SchedulerSourceOutcome;
-      durationMs: number;
+      durationMs?: number;
       recordsProcessed?: number;
       error?: string;
     };
     sebi: {
       status: SchedulerSourceOutcome;
-      durationMs: number;
+      durationMs?: number;
       totalDiscovered?: number;
       canonicalCreated?: number;
       error?: string;
     };
   };
+}
+
+export interface DiscoverySchedulerHealth {
+  enabled: boolean;
+  status: DiscoverySchedulerStatus;
+  intervalMs: number;
+  staleThresholdMs: number;
+  running: boolean;
+  lastCycle: {
+    cycleId: string;
+    status: SchedulerCycleStatus;
+    startedAt: string;
+    completedAt: string;
+    durationMs: number;
+  } | null;
+  sources: {
+    nse: {
+      status: SchedulerSourceOutcome;
+      durationMs?: number;
+      recordsProcessed?: number;
+      error?: string;
+    };
+    sebi: {
+      status: SchedulerSourceOutcome;
+      durationMs?: number;
+      totalDiscovered?: number;
+      canonicalCreated?: number;
+      error?: string;
+    };
+  };
+  consecutiveFailureCount: number;
+  overlapSkipCount: number;
 }
 
 @Injectable()
@@ -51,6 +86,9 @@ export class DiscoverySchedulerService
   private timer: NodeJS.Timeout | null = null;
   private initialTimer: NodeJS.Timeout | null = null;
   private isRunning = false;
+  private lastCycle: DiscoverySchedulerCycleResult | null = null;
+  private consecutiveFailureCount = 0;
+  private overlapSkipCount = 0;
 
   constructor(
     private readonly configService: ConfigService<Env, true>,
@@ -89,6 +127,62 @@ export class DiscoverySchedulerService
 
   isRunningCycle(): boolean {
     return this.isRunning;
+  }
+
+  getHealth(now: Date = new Date()): DiscoverySchedulerHealth {
+    const config = this.getConfig();
+    const staleThresholdMs = Math.round(config.intervalMs * 1.5);
+
+    let status: DiscoverySchedulerStatus = 'HEALTHY';
+
+    if (!config.enabled) {
+      status = 'DISABLED';
+    } else if (!this.lastCycle) {
+      status = 'STARTING';
+    } else {
+      const ageMs = now.getTime() - this.lastCycle.completedAt.getTime();
+      if (ageMs > staleThresholdMs) {
+        status = 'STALE';
+      } else if (
+        this.consecutiveFailureCount >= 2 ||
+        this.lastCycle.status === 'FAILED'
+      ) {
+        status = 'FAILED';
+      } else if (
+        this.lastCycle.status === 'PARTIAL_SUCCESS' ||
+        this.consecutiveFailureCount === 1 ||
+        this.overlapSkipCount > 0
+      ) {
+        status = 'DEGRADED';
+      } else {
+        status = 'HEALTHY';
+      }
+    }
+
+    return {
+      enabled: config.enabled,
+      status,
+      intervalMs: config.intervalMs,
+      staleThresholdMs,
+      running: this.isRunning,
+      lastCycle: this.lastCycle
+        ? {
+            cycleId: this.lastCycle.cycleId,
+            status: this.lastCycle.status,
+            startedAt: this.lastCycle.startedAt.toISOString(),
+            completedAt: this.lastCycle.completedAt.toISOString(),
+            durationMs: this.lastCycle.durationMs,
+          }
+        : null,
+      sources: this.lastCycle
+        ? this.lastCycle.sources
+        : {
+            nse: { status: 'SKIPPED' },
+            sebi: { status: 'SKIPPED' },
+          },
+      consecutiveFailureCount: this.consecutiveFailureCount,
+      overlapSkipCount: this.overlapSkipCount,
+    };
   }
 
   onModuleInit(): void {
@@ -160,15 +254,16 @@ export class DiscoverySchedulerService
         completedAt: new Date(),
         durationMs: 0,
         sources: {
-          nse: { status: 'SKIPPED', durationMs: 0 },
-          sebi: { status: 'SKIPPED', durationMs: 0 },
+          nse: { status: 'SKIPPED' },
+          sebi: { status: 'SKIPPED' },
         },
       };
     }
 
     if (this.isRunning) {
+      this.overlapSkipCount++;
       this.logger.warn(
-        'Discovery scheduler tick skipped: previous cycle is still running',
+        `Discovery scheduler tick skipped: previous cycle is still running (skip count=${this.overlapSkipCount})`,
       );
       return {
         cycleId: randomUUID(),
@@ -177,8 +272,8 @@ export class DiscoverySchedulerService
         completedAt: new Date(),
         durationMs: 0,
         sources: {
-          nse: { status: 'SKIPPED', durationMs: 0 },
-          sebi: { status: 'SKIPPED', durationMs: 0 },
+          nse: { status: 'SKIPPED' },
+          sebi: { status: 'SKIPPED' },
         },
       };
     }
@@ -265,11 +360,7 @@ export class DiscoverySchedulerService
       cycleStatus = 'PARTIAL_SUCCESS';
     }
 
-    this.logger.log(
-      `[${cycleId}] Scheduled discovery cycle completed (status=${cycleStatus}, duration=${cycleDurationMs}ms)`,
-    );
-
-    return {
+    const cycleResult: DiscoverySchedulerCycleResult = {
       cycleId,
       status: cycleStatus,
       startedAt,
@@ -291,5 +382,18 @@ export class DiscoverySchedulerService
         },
       },
     };
+
+    this.lastCycle = cycleResult;
+    if (cycleStatus === 'SUCCESS') {
+      this.consecutiveFailureCount = 0;
+    } else {
+      this.consecutiveFailureCount++;
+    }
+
+    this.logger.log(
+      `[${cycleId}] Scheduled discovery cycle completed (status=${cycleStatus}, duration=${cycleDurationMs}ms)`,
+    );
+
+    return cycleResult;
   }
 }

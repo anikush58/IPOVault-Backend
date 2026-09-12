@@ -435,12 +435,51 @@ Configure scheduled discovery in `/var/www/ipovault-backend/.env.production`:
 5. **Operational Prerequisite**: The systemd automated backup timer (`ipovault-postgres-backup.timer`) MUST be active and healthy before enabling scheduled discovery.
 6. **Single-Process Limitation**: Overlap protection is scoped to the single production monolith process (`127.0.0.1:3000`). Distributed multi-node locking is not implemented.
 
-### Verification & Monitoring
+### Operational Health Endpoint (`GET /api/v1/health/discovery`)
+Exposes read-only, in-memory telemetry for operational monitoring without querying PostgreSQL:
+```json
+{
+  "data": {
+    "enabled": true,
+    "status": "HEALTHY",
+    "intervalMs": 21600000,
+    "staleThresholdMs": 32400000,
+    "running": false,
+    "lastCycle": {
+      "cycleId": "1e3414bf-8689-469a-a54d-c2bebf0e6366",
+      "status": "SUCCESS",
+      "startedAt": "2026-09-12T12:58:30.528Z",
+      "completedAt": "2026-09-12T12:58:44.197Z",
+      "durationMs": 13669
+    },
+    "sources": {
+      "nse": { "status": "SUCCESS", "durationMs": 169, "recordsProcessed": 2 },
+      "sebi": { "status": "SUCCESS", "durationMs": 13500, "totalDiscovered": 25, "canonicalCreated": 0 }
+    },
+    "consecutiveFailureCount": 0,
+    "overlapSkipCount": 0
+  }
+}
+```
+
+### Health Status Definitions & Alerting
+- `DISABLED`: `DISCOVERY_SCHEDULER_ENABLED=false`.
+- `STARTING`: Scheduler enabled; first cycle pending.
+- `HEALTHY`: Last cycle succeeded (`SUCCESS`); age <= 1.5 * interval (`32,400,000` ms / 9 hours).
+- `DEGRADED`: Last cycle partial success OR 1 consecutive failure OR overlap skips present.
+- `STALE`: Scheduler enabled, but age since last completed cycle exceeds `1.5 * DISCOVERY_SCHEDULER_INTERVAL_MS` (9 hours).
+- `FAILED`: 2 or more consecutive cycle failures OR last cycle status `FAILED`.
+
+### Verification & Watchdog Integration
 ```bash
+# Query discovery health endpoint directly
+curl -fsS https://api.getipovault.in/api/v1/health/discovery
+
 # Check scheduled discovery logs in journald
 sudo journalctl -u ipovault-backend --since "1 hour ago" --no-pager | grep DiscoverySchedulerService
 
 # How to safely disable scheduled discovery in production:
-# Edit .env.production -> DISCOVERY_SCHEDULER_ENABLED=false
+# Edit .env -> DISCOVERY_SCHEDULER_ENABLED=false
 sudo systemctl restart ipovault-backend
 ```
+

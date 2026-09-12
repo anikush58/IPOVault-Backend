@@ -4,16 +4,22 @@ import {
   HttpStatus,
   ServiceUnavailableException,
 } from '@nestjs/common';
-
 import {
   HealthService,
   LivenessStatus,
   ReadinessStatus,
 } from './health.service';
+import {
+  DiscoverySchedulerHealth,
+  DiscoverySchedulerService,
+} from '../modules/discovery/discovery-scheduler.service';
 
 @Controller()
 export class HealthController {
-  constructor(private readonly healthService: HealthService) {}
+  constructor(
+    private readonly healthService: HealthService,
+    private readonly discoverySchedulerService: DiscoverySchedulerService,
+  ) {}
 
   @Get('health')
   checkLiveness(): LivenessStatus {
@@ -31,5 +37,10 @@ export class HealthController {
         database: 'down',
       });
     }
+  }
+
+  @Get('health/discovery')
+  getDiscoveryHealth(): DiscoverySchedulerHealth {
+    return this.discoverySchedulerService.getHealth();
   }
 }
