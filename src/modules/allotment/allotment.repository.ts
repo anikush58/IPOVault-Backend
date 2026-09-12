@@ -79,4 +79,53 @@ export class AllotmentRepository {
       take: 10,
     });
   }
+
+  async findUserJobsWithItems(userId: string) {
+    return this.prisma.allotmentCheckJob.findMany({
+      where: { userId },
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  async findIposPriceBands(ipoIds: string[]) {
+    if (ipoIds.length === 0) return [];
+    return this.prisma.ipo.findMany({
+      where: { id: { in: ipoIds } },
+      select: { id: true, priceBandHigh: true },
+    });
+  }
+
+  async findUserSavedPans(userId: string) {
+    return this.prisma.userSavedPan.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async findUserJobsForIpo(userId: string, ipoId: string) {
+    return this.prisma.allotmentCheckJob.findMany({
+      where: { userId, ipoId },
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+  }
+
+  async findIposMetadata(ipoIds: string[]) {
+    if (ipoIds.length === 0) return [];
+    return this.prisma.ipo.findMany({
+      where: { id: { in: ipoIds } },
+      select: {
+        id: true,
+        symbol: true,
+        priceBandHigh: true,
+        lotSize: true,
+        company: {
+          select: { displayName: true, legalName: true },
+        },
+      },
+    });
+  }
 }

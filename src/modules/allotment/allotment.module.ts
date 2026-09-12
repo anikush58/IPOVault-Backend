@@ -4,6 +4,7 @@ import { MufgIntimeRegistrarAdapter } from './adapters/mufg-intime-registrar.ada
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import { AllotmentController } from './allotment.controller';
 import { AllotmentJobService } from './allotment-job.service';
+import { AllotmentIntelligenceService } from './allotment-intelligence.service';
 import { AllotmentRepository } from './allotment.repository';
 import { AllotmentService } from './allotment.service';
 import { RegistrarResolver } from './registrar.resolver';
@@ -16,6 +17,7 @@ import { SourceIdentitySyncService } from './discovery/source-identity-sync.serv
   providers: [
     AllotmentService,
     AllotmentJobService,
+    AllotmentIntelligenceService,
     AllotmentRepository,
     RegistrarResolver,
     RegistrarAdapterRegistry,
@@ -27,6 +29,7 @@ import { SourceIdentitySyncService } from './discovery/source-identity-sync.serv
   exports: [
     AllotmentService,
     AllotmentJobService,
+    AllotmentIntelligenceService,
     AllotmentRepository,
     RegistrarAdapterRegistry,
     KfinIdentityDiscoveryAdapter,

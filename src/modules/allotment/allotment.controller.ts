@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { AllotmentService } from './allotment.service';
 import { AllotmentJobService } from './allotment-job.service';
+import { AllotmentIntelligenceService } from './allotment-intelligence.service';
 import {
   AllotmentCheckResponseDto,
   CheckAllotmentBodyDto,
@@ -23,7 +24,45 @@ export class AllotmentController {
   constructor(
     private readonly allotmentService: AllotmentService,
     private readonly allotmentJobService: AllotmentJobService,
+    private readonly allotmentIntelligenceService: AllotmentIntelligenceService,
   ) {}
+
+  @Get('intelligence/summary')
+  async getUserSummaryIntelligence(
+    @Headers('x-user-id') userId?: string,
+  ) {
+    return this.allotmentIntelligenceService.getUserSummaryIntelligence(userId);
+  }
+
+  @Get('intelligence/history')
+  async getUserAllotmentHistory(
+    @Headers('x-user-id') userId?: string,
+  ) {
+    return this.allotmentIntelligenceService.getUserAllotmentHistory(userId);
+  }
+
+  @Get('intelligence/pans')
+  async getUserPanIntelligence(
+    @Headers('x-user-id') userId?: string,
+  ) {
+    return this.allotmentIntelligenceService.getUserPanIntelligence(userId);
+  }
+
+  @Get('jobs/:id/intelligence')
+  async getJobIntelligence(
+    @Param('id') id: string,
+    @Headers('x-user-id') userId?: string,
+  ) {
+    return this.allotmentIntelligenceService.getJobIntelligence(id, userId);
+  }
+
+  @Get('ipos/:id/intelligence')
+  async getIpoAllotmentIntelligence(
+    @Param('id') id: string,
+    @Headers('x-user-id') userId?: string,
+  ) {
+    return this.allotmentIntelligenceService.getIpoAllotmentIntelligence(id, userId);
+  }
 
   @Post('check')
   @HttpCode(HttpStatus.OK)

@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { AllotmentJobStatus, AllotmentResultStatus } from '@prisma/client';
+import { AllotmentJobStatus, AllotmentResultStatus, Prisma } from '@prisma/client';
 import request from 'supertest';
 import { createTestApp, prismaStub } from './create-test-app';
 import { encryptPan } from '../../src/modules/allotment/allotment.utils';
@@ -16,6 +16,10 @@ describe('Allotment E2E User Flow', () => {
   beforeAll(async () => {
     const mockIpo = {
       id: ipoId,
+      symbol: 'TESTIPO',
+      priceBandHigh: new Prisma.Decimal('150.00'),
+      lotSize: 150,
+      company: { displayName: 'Test Corp', legalName: 'Test Corp' },
       status: 'ALLOTMENT_COMPLETED',
     };
 
@@ -58,6 +62,7 @@ describe('Allotment E2E User Flow', () => {
       items: [
         {
           id: 'item-1',
+          identifierHash: 'hash-1',
           maskedId: 'ABCDE****F',
           status: AllotmentResultStatus.ALLOTTED,
           sharesApplied: 150,
@@ -66,6 +71,7 @@ describe('Allotment E2E User Flow', () => {
         },
         {
           id: 'item-2',
+          identifierHash: 'hash-2',
           maskedId: 'XYZAB****C',
           status: AllotmentResultStatus.NOT_ALLOTTED,
           sharesApplied: 150,
@@ -79,6 +85,17 @@ describe('Allotment E2E User Flow', () => {
       ...prismaStub,
       ipo: {
         findUnique: jest.fn().mockResolvedValue(mockIpo),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            {
+              id: ipoId,
+              symbol: 'TESTIPO',
+              priceBandHigh: new Prisma.Decimal('150.00'),
+              lotSize: 150,
+              company: { displayName: 'Test Corp', legalName: 'Test Corp' },
+            },
+          ]),
       },
       ipoSourceIdentity: {
         findFirst: jest.fn().mockResolvedValue(mockSourceIdentity),
@@ -89,6 +106,7 @@ describe('Allotment E2E User Flow', () => {
       allotmentCheckJob: {
         create: jest.fn().mockResolvedValue(mockJobRecord),
         findUnique: jest.fn().mockResolvedValue(mockJobRecord),
+        findMany: jest.fn().mockResolvedValue([mockJobRecord]),
         update: jest.fn().mockResolvedValue(mockJobRecord),
       },
       allotmentCheckJobItem: {
@@ -159,5 +177,148 @@ describe('Allotment E2E User Flow', () => {
     const dbString = JSON.stringify(createCalls);
     expect(dbString).not.toContain(pan1);
     expect(dbString).not.toContain(pan2);
+  });
+
+  it('should return authenticated user summary allotment intelligence', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/allotment/intelligence/summary')
+      .set('x-user-id', userId)
+      .expect(200);
+
+    expect(res.body.data).toBeDefined();
+    expect(res.body.data.summary.totalJobs).toBe(1);
+    expect(res.body.data.summary.totalChecks).toBe(2);
+    expect(res.body.data.summary.allottedChecks).toBe(1);
+    expect(res.body.data.summary.notAllottedChecks).toBe(1);
+    expect(res.body.data.summary.observedAllotmentRate).toBe('50.00');
+
+    // Verify privacy: no raw PAN exposed in response
+    const bodyStr = JSON.stringify(res.body);
+    expect(bodyStr).not.toContain(pan1);
+    expect(bodyStr).not.toContain(pan2);
+  });
+
+  it('should return 401 UNAUTHORIZED for user summary intelligence when unauthenticated', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/allotment/intelligence/summary')
+      .expect(401);
+  });
+
+  it('should return authenticated job-specific intelligence', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/allotment/jobs/e2e-job-uuid-999/intelligence')
+      .set('x-user-id', userId)
+      .expect(200);
+
+    expect(res.body.data).toBeDefined();
+    expect(res.body.data.jobId).toBe('e2e-job-uuid-999');
+    expect(res.body.data.summary.allottedChecks).toBe(1);
+    expect(res.body.data.accounts).toHaveLength(2);
+  });
+
+  it('should return 404 NOT_FOUND when accessing job belonging to another user', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/allotment/jobs/e2e-job-uuid-999/intelligence')
+      .set('x-user-id', 'other-user-uuid-999')
+      .expect(404);
+  });
+
+  it('should return authenticated user allotment history (GET /intelligence/history)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/allotment/intelligence/history')
+      .set('x-user-id', userId)
+      .expect(200);
+
+    expect(res.body.data).toBeDefined();
+    expect(res.body.data.summary.totalDistinctPanIpoPairs).toBe(2);
+    expect(res.body.data.summary.totalIposChecked).toBe(1);
+    expect(res.body.data.summary.allottedCount).toBe(1);
+    expect(res.body.data.summary.notAllottedCount).toBe(1);
+    expect(res.body.data.summary.observedLatestResultRate).toBe('50.00');
+    expect(res.body.data.summary.allotmentLotRatio).toBe('50.00');
+    expect(res.body.data.monthlyTrend).toBeDefined();
+
+    expect(res.body.data.quality).toBeDefined();
+    expect(res.body.data.quality.totalObservations).toBe(2);
+    expect(res.body.data.quality.observationCoveragePercentage).toBe('100.00');
+    expect(res.body.data.quality.boundedHistory).toBe(true);
+
+    // Security assertion: no raw PAN in response
+    const bodyStr = JSON.stringify(res.body);
+    expect(bodyStr).not.toContain(pan1);
+    expect(bodyStr).not.toContain(pan2);
+  });
+
+  it('should return 401 UNAUTHORIZED for allotment history when unauthenticated', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/allotment/intelligence/history')
+      .expect(401);
+  });
+
+  it('should return authenticated per-PAN intelligence (GET /intelligence/pans)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/allotment/intelligence/pans')
+      .set('x-user-id', userId)
+      .expect(200);
+
+    expect(res.body.data).toBeDefined();
+    expect(res.body.data.pans).toHaveLength(2);
+
+    const p1 = res.body.data.pans.find((p: any) => p.maskedPan === 'ABCDE****F');
+    expect(p1).toBeDefined();
+    expect(p1.totalDistinctIposChecked).toBe(1);
+    expect(p1.allottedCount).toBe(1);
+    expect(p1.observedLatestResultRate).toBe('100.00');
+    expect(p1.totalLotsApplied).toBe(1);
+    expect(p1.totalLotsAllotted).toBe(1);
+    expect(p1.allotmentLotRatio).toBe('100.00');
+    expect(p1.quality).toBeDefined();
+    expect(p1.quality.totalObservations).toBe(1);
+
+    // Security assertion: no raw PAN in response
+    const bodyStr = JSON.stringify(res.body);
+    expect(bodyStr).not.toContain(pan1);
+    expect(bodyStr).not.toContain(pan2);
+  });
+
+  it('should return 401 UNAUTHORIZED for PAN intelligence when unauthenticated', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/allotment/intelligence/pans')
+      .expect(401);
+  });
+
+  it('should return authenticated per-IPO intelligence (GET /ipos/:id/intelligence)', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/allotment/ipos/${ipoId}/intelligence`)
+      .set('x-user-id', userId)
+      .expect(200);
+
+    expect(res.body.data).toBeDefined();
+    expect(res.body.data.ipoId).toBe(ipoId);
+    expect(res.body.data.userSummary.totalDistinctPanIpoPairs).toBe(2);
+    expect(res.body.data.userSummary.allotmentLotRatio).toBe('50.00');
+    expect(res.body.data.accounts).toHaveLength(2);
+    expect(res.body.data.quality).toBeDefined();
+    expect(res.body.data.quality.totalObservations).toBe(2);
+
+    // Security assertion: no raw PAN in response
+    const bodyStr = JSON.stringify(res.body);
+    expect(bodyStr).not.toContain(pan1);
+    expect(bodyStr).not.toContain(pan2);
+  });
+
+  it('should return 401 UNAUTHORIZED for per-IPO intelligence when unauthenticated', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/v1/allotment/ipos/${ipoId}/intelligence`)
+      .expect(401);
+  });
+
+  it('should return 404 NOT_FOUND for per-IPO intelligence when IPO does not exist', async () => {
+    (mockPrisma.ipo as { findUnique: jest.Mock }).findUnique.mockResolvedValueOnce(null);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/allotment/ipos/00000000-0000-0000-0000-000000000000/intelligence')
+      .set('x-user-id', userId)
+      .expect(404);
   });
 });

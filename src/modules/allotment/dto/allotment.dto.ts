@@ -88,3 +88,242 @@ export interface AllotmentJobResponseDto {
   updatedAt: Date;
   items: AllotmentJobItemResponseDto[];
 }
+
+export interface UserAllotmentSummaryMetricsDto {
+  totalJobs: number;
+  totalChecks: number;
+  completedChecks: number;
+  allottedChecks: number;
+  notAllottedChecks: number;
+  failedChecks: number;
+  unknownChecks: number;
+  observedAllotmentRate: string | null;
+}
+
+export interface UserAllotmentCapitalMetricsDto {
+  indicativeAppliedValue: string | null;
+  indicativeAllottedValue: string | null;
+}
+
+export interface UserPanAllotmentBreakdownDto {
+  panId: string;
+  alias: string;
+  maskedPan: string;
+  totalChecks: number;
+  allottedChecks: number;
+  notAllottedChecks: number;
+  observedAllotmentRate: string | null;
+}
+
+export interface UserAllotmentIntelligenceResponseDto {
+  data: {
+    userId: string;
+    summary: UserAllotmentSummaryMetricsDto;
+    capital: UserAllotmentCapitalMetricsDto;
+    panBreakdown: UserPanAllotmentBreakdownDto[];
+    evaluatedAt: string;
+  };
+}
+
+export interface JobAllotmentSummaryMetricsDto {
+  totalChecks: number;
+  processedChecks: number;
+  allottedChecks: number;
+  notAllottedChecks: number;
+  failedChecks: number;
+  unknownChecks: number;
+  observedAllotmentRate: string | null;
+}
+
+export interface JobAllotmentCapitalMetricsDto {
+  indicativeAppliedValue: string | null;
+  indicativeAllottedValue: string | null;
+}
+
+export interface JobAccountAllotmentDetailDto {
+  panId: string | null;
+  alias: string | null;
+  maskedPan: string;
+  status: string;
+  sharesApplied: number | null;
+  sharesAllotted: number | null;
+  indicativeAppliedValue: string | null;
+  indicativeAllottedValue: string | null;
+}
+
+export interface JobAllotmentIntelligenceResponseDto {
+  data: {
+    jobId: string;
+    ipoId: string;
+    status: string;
+    summary: JobAllotmentSummaryMetricsDto;
+    capital: JobAllotmentCapitalMetricsDto;
+    accounts: JobAccountAllotmentDetailDto[];
+    evaluatedAt: string;
+  };
+}
+
+export interface UserAllotmentHistorySummaryDto {
+  totalDistinctPanIpoPairs: number;
+  totalIposChecked: number;
+  allottedCount: number;
+  partiallyAllottedCount: number;
+  notAllottedCount: number;
+  failedCount: number;
+  unknownCount: number;
+  observedLatestResultRate: string | null;
+  totalSharesApplied: number;
+  totalSharesAllotted: number;
+  totalLotsApplied: number;
+  totalLotsAllotted: number;
+  allotmentLotRatio: string | null;
+}
+
+export interface MonthlyTrendItemDto {
+  month: string;
+  totalDefinitiveResults: number;
+  allottedCount: number;
+  partiallyAllottedCount: number;
+  notAllottedCount: number;
+  observedLatestResultRate: string | null;
+}
+
+export interface UserPanHistoryBreakdownDto {
+  panId: string;
+  alias: string;
+  maskedPan: string;
+  totalIposChecked: number;
+  allottedPairs: number;
+  partiallyAllottedPairs: number;
+  notAllottedPairs: number;
+  observedLatestResultRate: string | null;
+  indicativeAllottedValue: string | null;
+}
+
+export interface UserIpoHistoryItemDto {
+  ipoId: string;
+  symbol: string | null;
+  companyName: string | null;
+  overallOutcome: string;
+  totalAccountsChecked: number;
+  allottedAccounts: number;
+  indicativeAppliedValue: string | null;
+  indicativeAllottedValue: string | null;
+  evaluatedAt: string;
+}
+
+export type IntelligenceQualityReason =
+  | 'NO_OBSERVATIONS'
+  | 'NO_DEFINITIVE_RESULTS'
+  | 'UNKNOWN_RESULTS_PRESENT'
+  | 'FAILED_RESULTS_PRESENT'
+  | 'PARTIAL_LOT_DATA'
+  | 'MISSING_LOT_SIZE'
+  | 'INVALID_LOT_DATA'
+  | 'PARTIAL_CAPITAL_DATA'
+  | 'MISSING_PRICE_BAND'
+  | 'BOUNDED_HISTORY';
+
+export interface IntelligenceQualitySummaryDto {
+  totalObservations: number;
+  definitiveObservationCount: number;
+  unknownObservationCount: number;
+  failedObservationCount: number;
+  observationCoveragePercentage: string | null;
+  observationsWithValidLotData: number;
+  observationsWithoutValidLotData: number;
+  lotDataCoveragePercentage: string | null;
+  observationsWithPriceBand: number;
+  observationsWithoutPriceBand: number;
+  capitalDataCoveragePercentage: string | null;
+  boundedHistory: boolean;
+  historyJobLimit: number | null;
+  reasons: IntelligenceQualityReason[];
+}
+
+export interface UserAllotmentHistoryResponseDto {
+  data: {
+    userId: string;
+    summary: UserAllotmentHistorySummaryDto;
+    capital: UserAllotmentCapitalMetricsDto;
+    panBreakdown: UserPanHistoryBreakdownDto[];
+    ipoHistory: UserIpoHistoryItemDto[];
+    monthlyTrend: MonthlyTrendItemDto[];
+    quality: IntelligenceQualitySummaryDto;
+    evaluatedAt: string;
+  };
+}
+
+export interface IpoUserAllotmentSummaryDto {
+  totalDistinctPanIpoPairs: number;
+  allottedCount: number;
+  partiallyAllottedCount: number;
+  notAllottedCount: number;
+  failedCount: number;
+  unknownCount: number;
+  overallOutcome: string;
+  observedLatestResultRate: string | null;
+  totalSharesApplied: number;
+  totalSharesAllotted: number;
+  totalLotsApplied: number;
+  totalLotsAllotted: number;
+  allotmentLotRatio: string | null;
+}
+
+export interface IpoAccountObservationDetailDto {
+  panId: string | null;
+  alias: string | null;
+  maskedPan: string;
+  status: string;
+  sharesApplied: number | null;
+  sharesAllotted: number | null;
+  lotsApplied: number | null;
+  lotsAllotted: number | null;
+  indicativeAppliedValue: string | null;
+  indicativeAllottedValue: string | null;
+  checkedAt: string | null;
+}
+
+export interface IpoUserAllotmentIntelligenceResponseDto {
+  data: {
+    ipoId: string;
+    symbol: string | null;
+    companyName: string | null;
+    priceBandHigh: string | null;
+    lotSize: number | null;
+    userSummary: IpoUserAllotmentSummaryDto;
+    capital: JobAllotmentCapitalMetricsDto;
+    accounts: IpoAccountObservationDetailDto[];
+    quality: IntelligenceQualitySummaryDto;
+    evaluatedAt: string;
+  };
+}
+
+export interface UserPanIntelligenceDto {
+  panId: string;
+  alias: string;
+  maskedPan: string;
+  totalDistinctIposChecked: number;
+  allottedCount: number;
+  partiallyAllottedCount: number;
+  notAllottedCount: number;
+  unknownCount: number;
+  failedCount: number;
+  observedLatestResultRate: string | null;
+  totalSharesApplied: number;
+  totalSharesAllotted: number;
+  totalLotsApplied: number;
+  totalLotsAllotted: number;
+  allotmentLotRatio: string | null;
+  indicativeAppliedValue: string | null;
+  indicativeAllottedValue: string | null;
+  quality: IntelligenceQualitySummaryDto;
+}
+
+export interface UserPanIntelligenceResponseDto {
+  data: {
+    userId: string;
+    pans: UserPanIntelligenceDto[];
+    evaluatedAt: string;
+  };
+}
