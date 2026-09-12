@@ -10,5 +10,6 @@ import { IpoService } from './ipo.service';
   imports: [DatabaseModule, DiscoveryModule],
   controllers: [IpoController],
   providers: [IpoService, IpoRepository],
+  exports: [IpoService, IpoRepository],
 })
 export class IposModule {}

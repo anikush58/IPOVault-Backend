@@ -15,6 +15,9 @@ import { IposModule } from './modules/ipos/ipos.module';
 import { SourcesModule } from './modules/sources/sources.module';
 import { AllotmentModule } from './modules/allotment/allotment.module';
 import { UserModule } from './modules/user/user.module';
+import { NotificationModule } from './modules/notifications/notification.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { ConsoleModule } from './modules/console/console.module';
 
 @Module({
   imports: [
@@ -35,6 +38,9 @@ import { UserModule } from './modules/user/user.module';
     DiscoveryModule,
     AllotmentModule,
     UserModule,
+    NotificationModule,
+    AnalyticsModule,
+    ConsoleModule,
     HealthModule,
   ],
   providers: [
