@@ -28,6 +28,22 @@ export const envSchema = z.object({
   SEBI_START_PAGE: z.coerce.number().int().positive().default(1),
   SEBI_MAX_PAGES: z.coerce.number().int().positive().default(1),
   ENABLE_DATA_CONSOLE: z.coerce.boolean().optional().default(true),
+  NOTIFICATION_WORKER_ENABLED: z.coerce.boolean().optional().default(true),
+  NOTIFICATION_WORKER_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
+  NOTIFICATION_WORKER_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .default(10_000),
+  NOTIFICATION_WORKER_STALE_LEASE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .default(300_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

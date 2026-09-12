@@ -7,18 +7,24 @@ import {
 
 import { HealthService, HealthStatus } from './health.service';
 
-@Controller('health')
+@Controller()
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
-  @Get()
-  async check(): Promise<HealthStatus> {
+  @Get('health')
+  checkLiveness(): HealthStatus {
+    return this.healthService.checkLiveness();
+  }
+
+  @Get('ready')
+  async checkReadiness(): Promise<HealthStatus> {
     try {
-      return await this.healthService.check();
+      return await this.healthService.checkReadiness();
     } catch {
       throw new ServiceUnavailableException({
         statusCode: HttpStatus.SERVICE_UNAVAILABLE,
         message: 'Database is unavailable',
+        database: 'down',
       });
     }
   }

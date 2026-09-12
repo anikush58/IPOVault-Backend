@@ -11,8 +11,16 @@ export type HealthStatus = {
 export class HealthService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async check(): Promise<HealthStatus> {
+  checkLiveness(): HealthStatus {
+    return { status: 'ok', database: 'up' };
+  }
+
+  async checkReadiness(): Promise<HealthStatus> {
     await this.prisma.$queryRaw`SELECT 1`;
     return { status: 'ok', database: 'up' };
+  }
+
+  async check(): Promise<HealthStatus> {
+    return this.checkReadiness();
   }
 }
