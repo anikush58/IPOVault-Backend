@@ -44,6 +44,17 @@ export const envSchema = z.object({
     .int()
     .min(1000)
     .default(300_000),
+  DISCOVERY_SCHEDULER_ENABLED: z.coerce.boolean().optional().default(false),
+  DISCOVERY_SCHEDULER_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .default(21_600_000),
+  DISCOVERY_SCHEDULER_INITIAL_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .default(0),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -19,6 +19,7 @@ import { DiscoveryRefreshVerificationService } from './discovery-refresh-verific
 import { DiscoverySmartRefreshService } from './discovery-smart-refresh.service';
 import { DiscoveryCoverageService } from './discovery-coverage.service';
 import { DiscoveryQualityGateService } from './discovery-quality-gate.service';
+import { DiscoverySchedulerService } from './discovery-scheduler.service';
 
 @Module({
   providers: [
@@ -32,6 +33,7 @@ import { DiscoveryQualityGateService } from './discovery-quality-gate.service';
     DiscoverySmartRefreshService,
     DiscoveryCoverageService,
     DiscoveryQualityGateService,
+    DiscoverySchedulerService,
     ReconciliationService,
     DiscoveryService,
     NseSourceAdapter,
@@ -50,6 +52,7 @@ import { DiscoveryQualityGateService } from './discovery-quality-gate.service';
     DiscoverySmartRefreshService,
     DiscoveryCoverageService,
     DiscoveryQualityGateService,
+    DiscoverySchedulerService,
     ReconciliationService,
     NseSourceAdapter,
     NseHttpClient,

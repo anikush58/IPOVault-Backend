@@ -408,3 +408,39 @@ sudo journalctl -u ipovault-healthcheck.service -n 50 --no-pager
 # Inspect next scheduled watchdog timer execution
 systemctl list-timers --all --no-pager | grep ipovault-healthcheck
 ```
+
+---
+
+## 12. Production Scheduled Discovery
+
+### Overview & Scope
+The Production Scheduled Discovery subsystem (`DiscoverySchedulerService`) automates broad IPO discovery from external sources within the NestJS backend process.
+- **Supported Sources**: `NSE` (Exchange API) and `SEBI` (Official Filing Listing & Document PDF Ingestion).
+- **Architecture**: In-process NestJS lifecycle service (`OnModuleInit`, `OnModuleDestroy`). Does not introduce external queue infrastructure (Redis/BullMQ) or secondary worker processes.
+
+### Environment Configuration
+Configure scheduled discovery in `/var/www/ipovault-backend/.env.production`:
+
+| Variable | Required? | Default | Recommended Production Setting | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `DISCOVERY_SCHEDULER_ENABLED` | No | `false` | `false` (until explicit enablement) | Controls background scheduler execution |
+| `DISCOVERY_SCHEDULER_INTERVAL_MS` | No | `21600000` | `21600000` (6 hours) | Cadence between discovery cycles in ms |
+| `DISCOVERY_SCHEDULER_INITIAL_DELAY_MS` | No | `0` | `0` | Initial startup delay before first tick |
+
+### Execution & Safety Principles
+1. **Disabled by Default**: Scheduler remains inactive unless `DISCOVERY_SCHEDULER_ENABLED=true` is explicitly configured.
+2. **Sequential Source Execution**: Every cycle runs `NSE` discovery first, followed by `SEBI` discovery. Request throttling and HTTP timeouts are preserved.
+3. **Failure Isolation**: An error in NSE discovery is contained and logged; SEBI discovery will still execute. A failure in any source will never crash the scheduler process or corrupt canonical database state.
+4. **In-Process Overlap Guard**: An atomic boolean flag prevents new ticks from running if a prior discovery cycle is still executing.
+5. **Operational Prerequisite**: The systemd automated backup timer (`ipovault-postgres-backup.timer`) MUST be active and healthy before enabling scheduled discovery.
+6. **Single-Process Limitation**: Overlap protection is scoped to the single production monolith process (`127.0.0.1:3000`). Distributed multi-node locking is not implemented.
+
+### Verification & Monitoring
+```bash
+# Check scheduled discovery logs in journald
+sudo journalctl -u ipovault-backend --since "1 hour ago" --no-pager | grep DiscoverySchedulerService
+
+# How to safely disable scheduled discovery in production:
+# Edit .env.production -> DISCOVERY_SCHEDULER_ENABLED=false
+sudo systemctl restart ipovault-backend
+```
