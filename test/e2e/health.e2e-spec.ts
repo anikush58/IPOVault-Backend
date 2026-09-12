@@ -12,7 +12,6 @@ describe('Health & Readiness API', () => {
     expect(response.body).toEqual({
       data: {
         status: 'ok',
-        database: 'up',
       },
     });
 

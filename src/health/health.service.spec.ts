@@ -8,7 +8,6 @@ describe('HealthService', () => {
 
     expect(service.checkLiveness()).toEqual({
       status: 'ok',
-      database: 'up',
     });
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });

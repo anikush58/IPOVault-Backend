@@ -2,25 +2,31 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../database/prisma.service';
 
-export type HealthStatus = {
+export type LivenessStatus = {
+  status: 'ok';
+};
+
+export type ReadinessStatus = {
   status: 'ok';
   database: 'up';
 };
+
+export type HealthStatus = LivenessStatus | ReadinessStatus;
 
 @Injectable()
 export class HealthService {
   constructor(private readonly prisma: PrismaService) {}
 
-  checkLiveness(): HealthStatus {
-    return { status: 'ok', database: 'up' };
+  checkLiveness(): LivenessStatus {
+    return { status: 'ok' };
   }
 
-  async checkReadiness(): Promise<HealthStatus> {
+  async checkReadiness(): Promise<ReadinessStatus> {
     await this.prisma.$queryRaw`SELECT 1`;
     return { status: 'ok', database: 'up' };
   }
 
-  async check(): Promise<HealthStatus> {
+  async check(): Promise<ReadinessStatus> {
     return this.checkReadiness();
   }
 }

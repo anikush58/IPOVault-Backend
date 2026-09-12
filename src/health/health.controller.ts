@@ -5,19 +5,23 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 
-import { HealthService, HealthStatus } from './health.service';
+import {
+  HealthService,
+  LivenessStatus,
+  ReadinessStatus,
+} from './health.service';
 
 @Controller()
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
   @Get('health')
-  checkLiveness(): HealthStatus {
+  checkLiveness(): LivenessStatus {
     return this.healthService.checkLiveness();
   }
 
   @Get('ready')
-  async checkReadiness(): Promise<HealthStatus> {
+  async checkReadiness(): Promise<ReadinessStatus> {
     try {
       return await this.healthService.checkReadiness();
     } catch {
