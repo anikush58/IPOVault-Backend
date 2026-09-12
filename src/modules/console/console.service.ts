@@ -26,17 +26,9 @@ export class ConsoleService {
   async getDashboardSummary(): Promise<ConsoleDashboardSummaryDto> {
     const [
       totalIpos,
-      openIpos,
-      upcomingIpos,
-      closedIpos,
-      listingSoonIpos,
-      withdrawnIpos,
-      cancelledIpos,
-      mainboardCount,
-      smeCount,
-      nseCount,
-      bseCount,
-      bothCount,
+      ipoStatusGroup,
+      ipoSegmentGroup,
+      ipoExchangeGroup,
       sourcesCount,
       activeSourcesCount,
       deliveredNotifs,
@@ -44,17 +36,18 @@ export class ConsoleService {
       allotmentObsStats,
     ] = await Promise.all([
       this.prisma.ipo.count(),
-      this.prisma.ipo.count({ where: { status: 'OPEN' } }),
-      this.prisma.ipo.count({ where: { status: 'UPCOMING' } }),
-      this.prisma.ipo.count({ where: { status: 'CLOSED' } }),
-      this.prisma.ipo.count({ where: { status: 'LISTING_PENDING' } }),
-      this.prisma.ipo.count({ where: { status: 'WITHDRAWN' } }),
-      this.prisma.ipo.count({ where: { status: 'CANCELLED' } }),
-      this.prisma.ipo.count({ where: { marketSegment: 'MAINBOARD' } }),
-      this.prisma.ipo.count({ where: { marketSegment: 'SME' } }),
-      this.prisma.ipo.count({ where: { exchange: 'NSE' } }),
-      this.prisma.ipo.count({ where: { exchange: 'BSE' } }),
-      this.prisma.ipo.count({ where: { exchange: 'BOTH' } }),
+      this.prisma.ipo.groupBy({
+        by: ['status'],
+        _count: { id: true },
+      }),
+      this.prisma.ipo.groupBy({
+        by: ['marketSegment'],
+        _count: { id: true },
+      }),
+      this.prisma.ipo.groupBy({
+        by: ['exchange'],
+        _count: { id: true },
+      }),
       this.prisma.source.count(),
       this.prisma.source.count({ where: { enabled: true } }),
       this.notificationOpsService.getDeliveryOperationsSummary().catch(() => ({
@@ -79,6 +72,30 @@ export class ConsoleService {
         .catch(() => []),
     ]);
 
+    const statusMap = ipoStatusGroup.reduce(
+      (acc, item) => {
+        acc[item.status] = item._count.id;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    const segmentMap = ipoSegmentGroup.reduce(
+      (acc, item) => {
+        acc[item.marketSegment] = item._count.id;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    const exchangeMap = ipoExchangeGroup.reduce(
+      (acc, item) => {
+        acc[item.exchange] = item._count.id;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
     const qualitySummary = await this.getDataQualitySummary();
 
     const jobCounts = allotmentJobStats.reduce(
@@ -100,21 +117,21 @@ export class ConsoleService {
     return {
       ipoCounts: {
         total: totalIpos,
-        upcoming: upcomingIpos,
-        open: openIpos,
-        closed: closedIpos,
-        listingSoon: listingSoonIpos,
-        withdrawn: withdrawnIpos,
-        cancelled: cancelledIpos,
+        upcoming: statusMap.UPCOMING || 0,
+        open: statusMap.OPEN || 0,
+        closed: statusMap.CLOSED || 0,
+        listingSoon: statusMap.LISTING_PENDING || 0,
+        withdrawn: statusMap.WITHDRAWN || 0,
+        cancelled: statusMap.CANCELLED || 0,
       },
       marketBreakdown: {
-        mainboard: mainboardCount,
-        sme: smeCount,
+        mainboard: segmentMap.MAINBOARD || 0,
+        sme: segmentMap.SME || 0,
       },
       exchangeBreakdown: {
-        nse: nseCount,
-        bse: bseCount,
-        both: bothCount,
+        nse: exchangeMap.NSE || 0,
+        bse: exchangeMap.BSE || 0,
+        both: exchangeMap.BOTH || 0,
       },
       dataQuality: {
         totalEvaluated: qualitySummary.evaluatedCount,

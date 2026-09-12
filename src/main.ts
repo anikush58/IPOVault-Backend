@@ -8,6 +8,7 @@ async function bootstrap(): Promise<void> {
   const env = validateEnv(process.env);
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
+  app.enableShutdownHooks();
   configureApp(app);
 
   await app.listen(env.PORT, '0.0.0.0');

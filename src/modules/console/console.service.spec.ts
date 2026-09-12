@@ -16,6 +16,28 @@ describe('ConsoleService', () => {
     prisma = {
       ipo: {
         count: jest.fn().mockResolvedValue(10),
+        groupBy: jest.fn().mockImplementation(({ by }) => {
+          if (by.includes('status')) {
+            return Promise.resolve([
+              { status: 'OPEN', _count: { id: 2 } },
+              { status: 'UPCOMING', _count: { id: 3 } },
+              { status: 'CLOSED', _count: { id: 5 } },
+            ]);
+          }
+          if (by.includes('marketSegment')) {
+            return Promise.resolve([
+              { marketSegment: 'MAINBOARD', _count: { id: 8 } },
+              { marketSegment: 'SME', _count: { id: 2 } },
+            ]);
+          }
+          if (by.includes('exchange')) {
+            return Promise.resolve([
+              { exchange: 'NSE', _count: { id: 6 } },
+              { exchange: 'BSE', _count: { id: 4 } },
+            ]);
+          }
+          return Promise.resolve([]);
+        }),
       },
       source: {
         count: jest.fn().mockResolvedValue(3),

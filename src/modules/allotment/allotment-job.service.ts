@@ -328,54 +328,83 @@ export class AllotmentJobService {
               const item = job.items.find((it) => it.identifierHash === hashed);
 
               const startTime = Date.now();
-              const result = await this.allotmentService.checkAllotment({
-                ipoId: job.ipoId,
-                identifierType:
-                  (item?.identifierType as AllotmentIdentifierType) ||
-                  AllotmentIdentifierType.PAN,
-                identifierValue: val,
-              });
+              try {
+                const result = await this.allotmentService.checkAllotment({
+                  ipoId: job.ipoId,
+                  identifierType:
+                    (item?.identifierType as AllotmentIdentifierType) ||
+                    AllotmentIdentifierType.PAN,
+                  identifierValue: val,
+                });
 
-              const latencyMs = Date.now() - startTime;
-              const isBusinessOrInfoSuccess =
-                result.status === AllotmentStatus.ALLOTTED ||
-                result.status === AllotmentStatus.PARTIALLY_ALLOTTED ||
-                result.status === AllotmentStatus.NOT_ALLOTTED ||
-                result.status === AllotmentStatus.APPLICATION_NOT_FOUND ||
-                result.status === AllotmentStatus.NOT_YET_AVAILABLE;
+                const latencyMs = Date.now() - startTime;
+                const isBusinessOrInfoSuccess =
+                  result.status === AllotmentStatus.ALLOTTED ||
+                  result.status === AllotmentStatus.PARTIALLY_ALLOTTED ||
+                  result.status === AllotmentStatus.NOT_ALLOTTED ||
+                  result.status === AllotmentStatus.APPLICATION_NOT_FOUND ||
+                  result.status === AllotmentStatus.NOT_YET_AVAILABLE;
 
-              const prismaStatus = (AllotmentResultStatus[
-                result.status as keyof typeof AllotmentResultStatus
-              ] || AllotmentResultStatus.UNKNOWN) as AllotmentResultStatus;
+                const prismaStatus = (AllotmentResultStatus[
+                  result.status as keyof typeof AllotmentResultStatus
+                ] || AllotmentResultStatus.UNKNOWN) as AllotmentResultStatus;
 
-              // Update item record
-              if (item) {
-                await this.prisma.allotmentCheckJobItem.update({
-                  where: { id: item.id },
+                // Update item record
+                if (item) {
+                  await this.prisma.allotmentCheckJobItem.update({
+                    where: { id: item.id },
+                    data: {
+                      status: prismaStatus,
+                      sharesApplied: result.sharesApplied ?? null,
+                      sharesAllotted: result.sharesAllotted ?? null,
+                      latencyMs,
+                      errorMessage: result.errorMessage ?? null,
+                      checkedAt: new Date(),
+                    },
+                  });
+                }
+
+                // Update job progress counters atomically
+                await this.prisma.allotmentCheckJob.update({
+                  where: { id: jobId },
                   data: {
-                    status: prismaStatus,
-                    sharesApplied: result.sharesApplied ?? null,
-                    sharesAllotted: result.sharesAllotted ?? null,
-                    latencyMs,
-                    errorMessage: result.errorMessage ?? null,
-                    checkedAt: new Date(),
+                    processedChecks: { increment: 1 },
+                    successfulChecks: isBusinessOrInfoSuccess
+                      ? { increment: 1 }
+                      : undefined,
+                    failedChecks: !isBusinessOrInfoSuccess
+                      ? { increment: 1 }
+                      : undefined,
+                  },
+                });
+              } catch (itemErr: unknown) {
+                const latencyMs = Date.now() - startTime;
+                const errMsg =
+                  itemErr instanceof Error ? itemErr.message : String(itemErr);
+                this.logger.error(
+                  `Item execution error for job ${jobId} (item: ${item?.id || hashed}): ${errMsg}`,
+                );
+
+                if (item) {
+                  await this.prisma.allotmentCheckJobItem.update({
+                    where: { id: item.id },
+                    data: {
+                      status: AllotmentResultStatus.TEMPORARY_ERROR,
+                      errorMessage: errMsg,
+                      latencyMs,
+                      checkedAt: new Date(),
+                    },
+                  });
+                }
+
+                await this.prisma.allotmentCheckJob.update({
+                  where: { id: jobId },
+                  data: {
+                    processedChecks: { increment: 1 },
+                    failedChecks: { increment: 1 },
                   },
                 });
               }
-
-              // Update job progress counters atomically
-              await this.prisma.allotmentCheckJob.update({
-                where: { id: jobId },
-                data: {
-                  processedChecks: { increment: 1 },
-                  successfulChecks: isBusinessOrInfoSuccess
-                    ? { increment: 1 }
-                    : undefined,
-                  failedChecks: !isBusinessOrInfoSuccess
-                    ? { increment: 1 }
-                    : undefined,
-                },
-              });
             }
           })(),
         );
