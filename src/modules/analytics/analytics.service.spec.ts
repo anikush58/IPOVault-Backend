@@ -597,6 +597,24 @@ describe('AnalyticsService (Phase 30.1 Foundation)', () => {
       expect(result.trends.trendPoints).toEqual([]);
     });
 
+    it('strictly isolates subscription domain from allotment check observations', async () => {
+      (prisma.ipo.count as jest.Mock).mockResolvedValue(2);
+      (prisma.ipo.groupBy as jest.Mock).mockResolvedValue([]);
+
+      const result = await analyticsService.getSubscriptionDemandAnalytics();
+
+      // Assert that allotment models are NEVER queried for subscription demand
+      expect(prisma.allotmentCheckLog.findMany).not.toHaveBeenCalled();
+      expect(prisma.allotmentCheckLog.count).not.toHaveBeenCalled();
+      expect(prisma.allotmentCheckJobItem.findMany).not.toHaveBeenCalled();
+      expect(prisma.allotmentCheckJobItem.count).not.toHaveBeenCalled();
+
+      // Assert subscription multiplier remains null and unsupported
+      expect(result.subscriptionSummary.subscriptionSupported).toBe(false);
+      expect(result.subscriptionSummary.knownSubscriptionCount).toBe(0);
+      expect(result.subscriptionSummary.averageSubscriptionMultiplier).toBeNull();
+    });
+
     it('rejects invalid date range filter with explicit error message', async () => {
       await expect(
         analyticsService.getSubscriptionDemandAnalytics({

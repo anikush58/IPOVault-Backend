@@ -315,13 +315,20 @@ Phase 30.4 introduces `AnalyticsService.getSubscriptionDemandAnalytics()`, estab
 
 **Core Rule**: IPOVault does not fabricate subscription multiples, synthetic category demand figures, or speculative demand metrics.
 
+> [!WARNING]
+> **Domain Separation Guarantee**:
+> **ALLOTMENT CHECK OBSERVATIONS ARE NOT IPO SUBSCRIPTION APPLICATIONS.**
+> IPOVault does **NOT** infer subscription demand from allotment check logs (`AllotmentCheckLog`), check jobs (`AllotmentCheckJob`), job items (`AllotmentCheckJobItem`), or user saved PAN records (`UserSavedPan`). Internal check attempt logs describe user check activity, NOT market-wide subscription demand.
+
 ### B. Subscription Data Matrix
 
 | Metric | Status | Reason / Canonical Evidence |
 |---|---|---|
 | **`TOTAL_SUBSCRIPTION_MULTIPLIER`** | `FUTURE_DATA_DEPENDENT` | Canonical `Ipo` schema currently lacks `totalBidsSubmitted` and `totalSharesOffered` demand fields. |
-| **`CATEGORY_WISE_SUBSCRIPTION`** | `FUTURE_DATA_DEPENDENT` | Canonical schema lacks category demand breakdown tables for `QIB`, `NII`, `RETAIL`, `EMPLOYEE`, `SHAREHOLDER`. |
+| **`CATEGORY_WISE_SUBSCRIPTION`** | `FUTURE_DATA_DEPENDENT` | Canonical schema lacks category demand breakdown tables for `QIB`, `NII`, `RETAIL`, `EMPLOYEE`, `SHAREHOLDER`, `OTHER`. |
 | **`SUBSCRIPTION_BY_DAY`** | `FUTURE_DATA_DEPENDENT` | Canonical schema does not track daily subscription progression during the issue open window. |
+| **`TOTAL_APPLICATION_COUNT`** | `FUTURE_DATA_DEPENDENT` | Canonical schema lacks market-wide application count tables. Allotment check records are NOT applications. |
+| **`TOTAL_SUBSCRIBED_SHARES`** | `FUTURE_DATA_DEPENDENT` | Canonical schema lacks subscribed share count columns. |
 | **`SUBSCRIPTION_COVERAGE`** | `SUPPORTED` (0%) | Evaluated as `knownSubscriptionCount / totalIpos * 100` (returns 0% until schema extension). |
 
 ### C. Category & Denominator Semantics
@@ -329,10 +336,11 @@ Phase 30.4 introduces `AnalyticsService.getSubscriptionDemandAnalytics()`, estab
 2. **Category Isolation**: Categories are preserved without silent merging (e.g. NII is NOT merged with HNI, Employee is NOT merged with Retail).
 3. **Denominator Rule**: Subscription multiplier formula is `totalBidsSubmitted / totalSharesOffered`. Bids and shares MUST be evaluated in `SHARES`, strictly isolated from monetary INR amounts (`issueSize`).
 
-### D. Data Quality & Safety Rules
-1. **Zero Denominator Protection**: Division by zero returns `null` (zero `NaN` or `Infinity`).
-2. **Negative Bids Protection**: Negative bid quantities or multipliers return `null`.
-3. **Explicit Deferral**: Returns `subscriptionSupported: false`, `knownSubscriptionCount: 0`, and explicit `unsupportedMetricReason` detailing missing canonical schema tables.
+### D. Live vs. Final Subscription & Data Quality Rules
+1. **Live vs Final Distinction**: When schema extensions introduce subscription tracking, live intraday snapshots and final official subscription figures MUST be stored with observation period timestamps and NEVER combined into a single ambiguous figure.
+2. **Zero Denominator Protection**: Division by zero returns `null` (zero `NaN` or `Infinity`).
+3. **Negative Bids Protection**: Negative bid quantities or multipliers return `null`.
+4. **Explicit Deferral**: Returns `subscriptionSupported: false`, `knownSubscriptionCount: 0`, and explicit `unsupportedMetricReason` detailing missing canonical schema tables.
 
 ---
 
