@@ -739,11 +739,14 @@ describe('AnalyticsService (Phase 30.1 Foundation)', () => {
       expect(result.summary.outcomes.partialAllotmentRatePercentage).toBe(33.33);
       expect(result.summary.outcomes.notAllottedRatePercentage).toBe(33.33);
 
-      // Privacy check: JSON stringified response must not contain raw/encrypted PAN fields
+      // Privacy check: JSON stringified response must not contain raw/encrypted PAN fields or identifierHash values
       const jsonString = JSON.stringify(result);
       expect(jsonString).not.toContain('panEncrypted');
       expect(jsonString).not.toContain('panMasked');
       expect(jsonString).not.toContain('panHash');
+      expect(jsonString).not.toContain('hash-pan-a');
+      expect(jsonString).not.toContain('hash-pan-b');
+      expect(jsonString).not.toContain('identifierHash');
 
       // Segment Breakdown
       const mainboard = result.bySegmentDetailed.find((s) => s.segment === 'MAINBOARD');
@@ -755,6 +758,122 @@ describe('AnalyticsService (Phase 30.1 Foundation)', () => {
       expect(sme?.dataQuality.deduplicatedObservationsCount).toBe(2);
       expect(sme?.outcomes.positiveOutcomeCount).toBe(1); // 1 PARTIALLY_ALLOTTED, 1 UNKNOWN -> 1 definitive -> 100%
       expect(sme?.outcomes.observedPositiveAllotmentRatePercentage).toBe(100.0);
+    });
+
+    it('handles deterministic tie-breaking and retry attempt deduplication', async () => {
+      const ts = new Date('2026-09-12T12:00:00Z');
+
+      (prisma.allotmentCheckLog.findMany as jest.Mock).mockResolvedValue([
+        // Retry attempt 1: FAILED check
+        {
+          id: 'log-retry-1',
+          ipoId: 'ipo-tie',
+          identifierHash: 'hash-tie-pan',
+          status: 'RATE_LIMITED',
+          checkedAt: ts,
+          sharesApplied: 15,
+          sharesAllotted: null,
+          ipo: { symbol: 'TIE1', marketSegment: 'MAINBOARD', company: { displayName: 'Tie Corp' } },
+        },
+        // Retry attempt 2: Definitive check with exact same timestamp
+        {
+          id: 'log-retry-2',
+          ipoId: 'ipo-tie',
+          identifierHash: 'hash-tie-pan',
+          status: 'ALLOTTED',
+          checkedAt: ts,
+          sharesApplied: 15,
+          sharesAllotted: 15,
+          ipo: { symbol: 'TIE1', marketSegment: 'MAINBOARD', company: { displayName: 'Tie Corp' } },
+        },
+      ]);
+      (prisma.allotmentCheckJobItem.findMany as jest.Mock).mockResolvedValue([]);
+
+      const result = await analyticsService.getAllotmentAnalytics();
+      expect(result.summary.dataQuality.totalRawObservations).toBe(2);
+      expect(result.summary.dataQuality.deduplicatedObservationsCount).toBe(1);
+      expect(result.summary.outcomes.allottedCount).toBe(1);
+      expect(result.summary.outcomes.observedPositiveAllotmentRatePercentage).toBe(100.0);
+    });
+
+    it('computes 100% positive rate when all definitive observations are positive', async () => {
+      const ts = new Date('2026-09-12T12:00:00Z');
+      (prisma.allotmentCheckLog.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'log-pos-1',
+          ipoId: 'ipo-pos',
+          identifierHash: 'hash-pos-1',
+          status: 'ALLOTTED',
+          checkedAt: ts,
+          sharesApplied: 15,
+          sharesAllotted: 15,
+          ipo: { symbol: 'POS1', marketSegment: 'MAINBOARD', company: { displayName: 'Positive Corp' } },
+        },
+        {
+          id: 'log-pos-2',
+          ipoId: 'ipo-pos',
+          identifierHash: 'hash-pos-2',
+          status: 'PARTIALLY_ALLOTTED',
+          checkedAt: ts,
+          sharesApplied: 30,
+          sharesAllotted: 15,
+          ipo: { symbol: 'POS1', marketSegment: 'MAINBOARD', company: { displayName: 'Positive Corp' } },
+        },
+      ]);
+      (prisma.allotmentCheckJobItem.findMany as jest.Mock).mockResolvedValue([]);
+
+      const result = await analyticsService.getAllotmentAnalytics();
+      expect(result.summary.outcomes.positiveOutcomeCount).toBe(2);
+      expect(result.summary.outcomes.notAllottedCount).toBe(0);
+      expect(result.summary.outcomes.observedPositiveAllotmentRatePercentage).toBe(100.0);
+      expect(result.summary.outcomes.notAllottedRatePercentage).toBe(0.0);
+    });
+
+    it('computes 0% positive rate when all definitive observations are negative', async () => {
+      const ts = new Date('2026-09-12T12:00:00Z');
+      (prisma.allotmentCheckLog.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'log-neg-1',
+          ipoId: 'ipo-neg',
+          identifierHash: 'hash-neg-1',
+          status: 'NOT_ALLOTTED',
+          checkedAt: ts,
+          sharesApplied: 15,
+          sharesAllotted: 0,
+          ipo: { symbol: 'NEG1', marketSegment: 'MAINBOARD', company: { displayName: 'Negative Corp' } },
+        },
+      ]);
+      (prisma.allotmentCheckJobItem.findMany as jest.Mock).mockResolvedValue([]);
+
+      const result = await analyticsService.getAllotmentAnalytics();
+      expect(result.summary.outcomes.positiveOutcomeCount).toBe(0);
+      expect(result.summary.outcomes.notAllottedCount).toBe(1);
+      expect(result.summary.outcomes.observedPositiveAllotmentRatePercentage).toBe(0.0);
+      expect(result.summary.outcomes.notAllottedRatePercentage).toBe(100.0);
+    });
+
+    it('supports trend aggregation across DAY, WEEK, MONTH, QUARTER, and YEAR periods', async () => {
+      const ts = new Date('2026-09-12T12:00:00Z');
+      (prisma.allotmentCheckLog.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'log-trend',
+          ipoId: 'ipo-trend',
+          identifierHash: 'hash-trend-1',
+          status: 'ALLOTTED',
+          checkedAt: ts,
+          sharesApplied: 15,
+          sharesAllotted: 15,
+          ipo: { symbol: 'TRND1', marketSegment: 'MAINBOARD', company: { displayName: 'Trend Corp' } },
+        },
+      ]);
+      (prisma.allotmentCheckJobItem.findMany as jest.Mock).mockResolvedValue([]);
+
+      const periods = ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] as any[];
+      for (const p of periods) {
+        const res = await analyticsService.getAllotmentAnalytics({ period: p });
+        expect(res.trends.period).toBe(p);
+        expect(res.trends.trendPoints.length).toBe(1);
+      }
     });
   });
 

@@ -350,6 +350,13 @@ Phase 30.4 introduces `AnalyticsService.getSubscriptionDemandAnalytics()`, estab
 
 Phase 30.5 builds a read-only Allotment Analytics domain layer composing existing Phase 28 allotment intelligence and observation semantics.
 
+> [!IMPORTANT]
+> **Observation vs Market Application Statement**:
+> "Allotment analytics represent IPOVault's observed allotment-check outcomes and are NOT market-wide IPO application or allotment statistics."
+>
+> **Descriptive vs Predictive Statement**:
+> "Observed positive allotment rate is descriptive, not predictive."
+
 **Authoritative Semantic Rules**:
 1. **`AllotmentCheckJobItem` & `AllotmentCheckLog` are observations, NOT user application records.**
 2. An observation represents a checked PAN/IPO check result stream.
