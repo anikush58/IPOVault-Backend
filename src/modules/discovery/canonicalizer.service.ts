@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   IpoChangeType,
+  IpoStatus,
   LifecycleEventType,
   Prisma,
   ProvenanceEntityType,
@@ -99,6 +100,58 @@ const LIFECYCLE_TYPES: Array<{
   },
 ];
 
+export type DeriveStatusParams = {
+  explicitStatus?: string | null;
+  currentStatus?: string | null;
+  openDate?: string | null;
+  closeDate?: string | null;
+  nowDate?: Date;
+};
+
+export const PROTECTED_IPO_STATUSES = new Set<IpoStatus>([
+  IpoStatus.ALLOTMENT_PENDING,
+  IpoStatus.ALLOTMENT_COMPLETED,
+  IpoStatus.LISTING_PENDING,
+  IpoStatus.LISTED,
+  IpoStatus.WITHDRAWN,
+  IpoStatus.CANCELLED,
+]);
+
+export function deriveIpoStatus(params: DeriveStatusParams): IpoStatus {
+  const { explicitStatus, currentStatus, openDate, closeDate } = params;
+  const nowStr = (params.nowDate ?? new Date()).toISOString().slice(0, 10);
+
+  if (currentStatus && PROTECTED_IPO_STATUSES.has(currentStatus as IpoStatus)) {
+    return currentStatus as IpoStatus;
+  }
+
+  if (explicitStatus && PROTECTED_IPO_STATUSES.has(explicitStatus as IpoStatus)) {
+    return explicitStatus as IpoStatus;
+  }
+
+  if (explicitStatus && explicitStatus !== 'DRAFT') {
+    return explicitStatus as IpoStatus;
+  }
+
+  if (openDate && openDate > nowStr) {
+    return IpoStatus.UPCOMING;
+  }
+
+  if (openDate && closeDate && openDate <= nowStr && nowStr <= closeDate) {
+    return IpoStatus.OPEN;
+  }
+
+  if (openDate && !closeDate && openDate <= nowStr) {
+    return IpoStatus.OPEN;
+  }
+
+  if (closeDate && closeDate < nowStr) {
+    return IpoStatus.CLOSED;
+  }
+
+  return (currentStatus as IpoStatus) ?? (explicitStatus as IpoStatus) ?? IpoStatus.DRAFT;
+}
+
 @Injectable()
 export class CanonicalizerService {
   async apply(tx: Tx, input: ApplyInput): Promise<CanonicalizeResult> {
@@ -117,13 +170,13 @@ export class CanonicalizerService {
         },
       });
       companyId = company.id;
-      const ipo = await this.createIpo(tx, companyId, discovered, sourceId);
+      const ipo = await this.createIpo(tx, companyId, discovered, sourceId, retrievedAt);
       ipoId = ipo.id;
       created = true;
     } else if (match.decision === 'MATCH_COMPANY') {
       companyId = match.companyId;
       await this.updateCompany(tx, companyId, discovered);
-      const ipo = await this.createIpo(tx, companyId, discovered, sourceId);
+      const ipo = await this.createIpo(tx, companyId, discovered, sourceId, retrievedAt);
       ipoId = ipo.id;
       created = true;
     } else {
@@ -215,6 +268,7 @@ export class CanonicalizerService {
     companyId: string,
     discovered: DiscoveredIpo,
     sourceId: string,
+    retrievedAt?: Date,
   ) {
     const incomingSourceType = await this.resolveSourceType(tx, sourceId);
     const applied = applyIssueStructureFacts({
@@ -224,12 +278,19 @@ export class CanonicalizerService {
       currentAuthority: {},
     });
 
+    const status = deriveIpoStatus({
+      explicitStatus: discovered.ipo.status,
+      openDate: discovered.lifecycle.openDate,
+      closeDate: discovered.lifecycle.closeDate,
+      nowDate: retrievedAt,
+    });
+
     return tx.ipo.create({
       data: {
         companyId,
         marketSegment: discovered.ipo.marketSegment,
         exchange: discovered.ipo.exchange,
-        status: discovered.ipo.status ?? 'DRAFT',
+        status,
         symbol: discovered.ipo.symbol,
         issueSize: applied.next.issueSize,
         freshIssueSize: applied.next.freshIssueSize,
@@ -293,10 +354,32 @@ export class CanonicalizerService {
 
     const isIncomingPreliminaryDrhp = discovered.source.filingType === 'DRHP';
 
+    const existingOpenEvt = await tx.ipoLifecycleEvent.findFirst({
+      where: { ipoId, eventType: 'OPEN' },
+    });
+    const existingCloseEvt = await tx.ipoLifecycleEvent.findFirst({
+      where: { ipoId, eventType: 'CLOSE' },
+    });
+
+    const openDate =
+      discovered.lifecycle.openDate ??
+      (existingOpenEvt ? existingOpenEvt.eventDate.toISOString().slice(0, 10) : null);
+    const closeDate =
+      discovered.lifecycle.closeDate ??
+      (existingCloseEvt ? existingCloseEvt.eventDate.toISOString().slice(0, 10) : null);
+
+    const derivedStatus = deriveIpoStatus({
+      explicitStatus: discovered.ipo.status,
+      currentStatus: ipo.status,
+      openDate,
+      closeDate,
+      nowDate: retrievedAt,
+    });
+
     const next = {
       marketSegment: discovered.ipo.marketSegment,
       exchange: discovered.ipo.exchange,
-      status: discovered.ipo.status ?? ipo.status,
+      status: derivedStatus,
       symbol: discovered.ipo.symbol ?? ipo.symbol,
       issueSize: applied.next.issueSize,
       freshIssueSize: applied.next.freshIssueSize,

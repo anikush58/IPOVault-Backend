@@ -119,7 +119,11 @@ export class IpoRepository {
     }
 
     if (query.status) {
-      where.status = query.status;
+      if (Array.isArray(query.status)) {
+        where.status = { in: query.status };
+      } else {
+        where.status = query.status;
+      }
     }
     if (query.marketSegment) {
       where.marketSegment = query.marketSegment;

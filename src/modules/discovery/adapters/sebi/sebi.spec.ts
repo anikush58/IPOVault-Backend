@@ -11,6 +11,7 @@ import {
   downloadSebiDocument,
   fetchSebiListing,
   isOfficialSebiUrl,
+  resolveSebiPdfUrlFromHtml,
   SebiFetchError,
   SebiHttpClient,
   SebiPdfSizeExceededError,
@@ -537,6 +538,58 @@ describe('SEBI Official Filing Ingestion Foundation', () => {
           }),
         }),
       );
+    });
+
+    it('processes SEBI listing observations through DiscoveryService even without PDF download', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        status: 200,
+        text: () => Promise.resolve(mockSebiListingHtml),
+      });
+
+      const mockDiscoverySvc = flow['discoveryService'] as any;
+
+      await flow.run(1, mockFetch as unknown as typeof fetch, false, true);
+
+      expect(mockDiscoverySvc.process).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('SEBI Detail HTML -> PDF Resolution (Phase 31.1 Part A)', () => {
+    const baseUrl = 'https://www.sebi.gov.in/filings/public-issues/sep-2026/sample_1001.html';
+
+    it('resolves iframe PDF URL from HTML detail page', () => {
+      const html = `<html><body><iframe src="https://www.sebi.gov.in/sebi_data/attachdocs/sep-2026/12345.pdf"></iframe></body></html>`;
+      const resolved = resolveSebiPdfUrlFromHtml(html, baseUrl);
+      expect(resolved).toBe('https://www.sebi.gov.in/sebi_data/attachdocs/sep-2026/12345.pdf');
+    });
+
+    it('resolves relative anchor PDF URL from HTML detail page', () => {
+      const html = `<html><body><a href="/sebi_data/attachdocs/sep-2026/67890.pdf">Download RHP</a></body></html>`;
+      const resolved = resolveSebiPdfUrlFromHtml(html, baseUrl);
+      expect(resolved).toBe('https://www.sebi.gov.in/sebi_data/attachdocs/sep-2026/67890.pdf');
+    });
+
+    it('resolves absolute anchor PDF URL', () => {
+      const html = `<html><body><a href="https://www.sebi.gov.in/sebi_data/attachdocs/sep-2026/67890.pdf">Link</a></body></html>`;
+      const resolved = resolveSebiPdfUrlFromHtml(html, baseUrl);
+      expect(resolved).toBe('https://www.sebi.gov.in/sebi_data/attachdocs/sep-2026/67890.pdf');
+    });
+
+    it('returns null when HTML contains no PDF links', () => {
+      const html = `<html><body><p>No document attached to this filing page.</p></body></html>`;
+      const resolved = resolveSebiPdfUrlFromHtml(html, baseUrl);
+      expect(resolved).toBeNull();
+    });
+
+    it('rejects external/non-SEBI PDF URLs embedded in HTML', () => {
+      const html = `<html><body><iframe src="https://external-malicious-site.com/doc.pdf"></iframe></body></html>`;
+      const resolved = resolveSebiPdfUrlFromHtml(html, baseUrl);
+      expect(resolved).toBeNull();
+    });
+
+    it('handles malformed HTML gracefully without throwing', () => {
+      expect(resolveSebiPdfUrlFromHtml('', baseUrl)).toBeNull();
+      expect(resolveSebiPdfUrlFromHtml('<<<invalid html>>>', baseUrl)).toBeNull();
     });
   });
 });

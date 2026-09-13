@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { CanonicalizerService } from './canonicalizer.service';
+import { CanonicalizerService, deriveIpoStatus } from './canonicalizer.service';
 import { createFakePrisma } from './fake-prisma';
 import { mockObservationPayload } from './mock-observation';
 import { normalizeDiscoveredIpo } from './normalize';
@@ -222,5 +222,94 @@ describe('CanonicalizerService issue-structure contract', () => {
         ['issue_size', 'issue_share_count'].includes(String(row.fieldName)),
       ),
     ).toHaveLength(0);
+  });
+
+  describe('deriveIpoStatus date-aware lifecycle status rules (Correction 2)', () => {
+    const nowDate = new Date('2026-09-13T00:00:00.000Z');
+
+    it('A. openDate > now derives UPCOMING', () => {
+      const status = deriveIpoStatus({
+        openDate: '2026-09-16',
+        closeDate: '2026-09-18',
+        nowDate,
+      });
+      expect(status).toBe('UPCOMING');
+    });
+
+    it('B. openDate <= now <= closeDate derives OPEN', () => {
+      const status = deriveIpoStatus({
+        openDate: '2026-09-11',
+        closeDate: '2026-09-16',
+        nowDate,
+      });
+      expect(status).toBe('OPEN');
+    });
+
+    it('C. closeDate < now derives CLOSED', () => {
+      const status = deriveIpoStatus({
+        openDate: '2026-09-01',
+        closeDate: '2026-09-03',
+        nowDate,
+      });
+      expect(status).toBe('CLOSED');
+    });
+
+    it('D. ALLOTMENT_COMPLETED remains ALLOTMENT_COMPLETED', () => {
+      const status = deriveIpoStatus({
+        currentStatus: 'ALLOTMENT_COMPLETED',
+        openDate: '2026-09-01',
+        closeDate: '2026-09-03',
+        nowDate,
+      });
+      expect(status).toBe('ALLOTMENT_COMPLETED');
+    });
+
+    it('E. LISTED remains LISTED', () => {
+      const status = deriveIpoStatus({
+        currentStatus: 'LISTED',
+        openDate: '2026-09-01',
+        closeDate: '2026-09-03',
+        nowDate,
+      });
+      expect(status).toBe('LISTED');
+    });
+
+    it('F. CANCELLED remains CANCELLED', () => {
+      const status = deriveIpoStatus({
+        currentStatus: 'CANCELLED',
+        openDate: '2026-09-01',
+        closeDate: '2026-09-03',
+        nowDate,
+      });
+      expect(status).toBe('CANCELLED');
+    });
+
+    it('G. Explicit valid non-DRAFT source status is preserved', () => {
+      const status = deriveIpoStatus({
+        explicitStatus: 'LISTING_PENDING',
+        nowDate,
+      });
+      expect(status).toBe('LISTING_PENDING');
+    });
+
+    it('H. Null/absent explicit status + dates derives correctly', () => {
+      const status = deriveIpoStatus({
+        explicitStatus: null,
+        openDate: '2026-09-10',
+        closeDate: '2026-09-15',
+        nowDate,
+      });
+      expect(status).toBe('OPEN');
+    });
+
+    it('I. Missing dates preserves safe fallback DRAFT behavior', () => {
+      const status = deriveIpoStatus({
+        explicitStatus: null,
+        openDate: null,
+        closeDate: null,
+        nowDate,
+      });
+      expect(status).toBe('DRAFT');
+    });
   });
 });

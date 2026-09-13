@@ -120,6 +120,83 @@ export async function fetchSebiListing(
   return { status: response.status, body: text };
 }
 
+export function resolveSebiPdfUrlFromHtml(
+  html: string,
+  baseUrl: string,
+): string | null {
+  if (!html || typeof html !== 'string') {
+    return null;
+  }
+
+  // 1. Try iframe src (supports optional spaces around = and single/double quotes)
+  const iframeMatches = html.matchAll(/<iframe[^>]+src\s*=\s*["']([^"']+)["']/gi);
+  for (const match of iframeMatches) {
+    if (match[1]) {
+      const candidate = buildAndValidateSebiUrl(match[1], baseUrl);
+      if (candidate) return candidate;
+    }
+  }
+
+  // 2. Try anchor href (supports optional spaces around = and single/double quotes)
+  const anchorMatches = html.matchAll(/<a[^>]+href\s*=\s*["']([^"']+)["']/gi);
+  for (const match of anchorMatches) {
+    const href = match[1];
+    if (
+      href &&
+      (href.toLowerCase().includes('.pdf') ||
+        href.toLowerCase().includes('attachdocs') ||
+        href.toLowerCase().includes('commondocs') ||
+        href.toLowerCase().includes('file=') ||
+        href.toLowerCase().includes('doc='))
+    ) {
+      const candidate = buildAndValidateSebiUrl(href, baseUrl);
+      if (candidate) return candidate;
+    }
+  }
+
+  // 3. Fallback regex for attachdocs/commondocs PDF in raw text/script
+  const rawPdfMatch = html.match(
+    /(?:https?:\/\/[^\s"'<>]*)?\/sebi_data\/(?:attachdocs|commondocs)\/[^\s"'<>]+\.pdf/i,
+  );
+  if (rawPdfMatch && rawPdfMatch[0]) {
+    const candidate = buildAndValidateSebiUrl(rawPdfMatch[0], baseUrl);
+    if (candidate) return candidate;
+  }
+
+  return null;
+}
+
+function extractTargetUrl(rawHref: string): string {
+  try {
+    const match = rawHref.match(/[?&](?:file|doc)=([^&"'>\s]+)/i);
+    if (match && match[1]) {
+      const decoded = decodeURIComponent(match[1]);
+      if (decoded && decoded.trim().length > 0) {
+        return decoded.trim();
+      }
+    }
+  } catch {
+    // Ignore decoding errors
+  }
+  return rawHref;
+}
+
+function buildAndValidateSebiUrl(
+  href: string,
+  baseUrl: string,
+): string | null {
+  try {
+    const target = extractTargetUrl(href);
+    const resolved = new URL(target, baseUrl).href;
+    if (isOfficialSebiUrl(resolved)) {
+      return resolved;
+    }
+  } catch {
+    // Ignore invalid URL
+  }
+  return null;
+}
+
 export async function downloadSebiDocument(
   urlStr: string,
   fetchImpl?: typeof fetch,
@@ -213,6 +290,35 @@ export async function downloadSebiDocument(
       );
     }
     buffer = Buffer.from(arrayBuf);
+  }
+
+  // C. PART A: HTML Detail Page -> PDF Resolution
+  // If response is HTML, attempt to resolve the actual embedded PDF URL and download it.
+  const lowerContentType = contentType.toLowerCase();
+  const isHtmlResponse =
+    lowerContentType.includes('text/html') ||
+    buffer.slice(0, 200).toString('utf-8').toLowerCase().includes('<html') ||
+    buffer.slice(0, 200).toString('utf-8').toLowerCase().includes('<!doctype');
+
+  if (isHtmlResponse) {
+    const htmlText = buffer.toString('utf-8');
+    const resolvedPdfUrl = resolveSebiPdfUrlFromHtml(htmlText, urlStr);
+
+    if (resolvedPdfUrl && resolvedPdfUrl !== urlStr) {
+      try {
+        const pdfResult = await downloadSebiDocument(
+          resolvedPdfUrl,
+          fetcher,
+          timeoutMs,
+          maxSizeBytes,
+        );
+        if (pdfResult.documentBuffer && pdfResult.contentType.toLowerCase().includes('pdf')) {
+          return pdfResult;
+        }
+      } catch {
+        // Fall back to returning HTML response if PDF download fails
+      }
+    }
   }
 
   return {

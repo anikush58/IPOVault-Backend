@@ -153,12 +153,34 @@ export class SebiDiscoveryFlow {
         );
 
         let record;
+        let isAlreadyProcessedDuplicate = false;
         if (duplicate) {
           duplicateCount++;
           record = duplicate;
+          if (
+            duplicate.status === DiscoveryStatus.CREATED ||
+            duplicate.status === DiscoveryStatus.MATCHED
+          ) {
+            isAlreadyProcessedDuplicate = true;
+          }
         } else {
           record = await this.recordsRepository.create(obs, contentHash);
           createdRecordsCount++;
+        }
+
+        // PART B: Process listing observation through DiscoveryService if not already processed
+        if (actualProcessCanonicalization && !isAlreadyProcessedDuplicate) {
+          try {
+            const listingResult = await this.discoveryService.process(obs);
+            if (listingResult.outcome === 'CREATED') {
+              canonicalCreatedCount++;
+            } else if (listingResult.outcome === 'MATCHED') {
+              canonicalMatchedCount++;
+            }
+          } catch (procErr: unknown) {
+            const msg = procErr instanceof Error ? procErr.message : String(procErr);
+            this.logger.warn(`Failed to process SEBI listing observation ${obs.externalId}: ${msg}`);
+          }
         }
 
         const payload = obs.rawPayload as unknown as Record<string, any>;

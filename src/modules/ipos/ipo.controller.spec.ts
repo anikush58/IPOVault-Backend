@@ -350,6 +350,14 @@ describe('IpoController API Endpoints', () => {
     );
   });
 
+  it('filters by multiple comma-separated statuses in list query', async () => {
+    const listSpy = jest.spyOn(service, 'list');
+    await controller.list({ page: 1, limit: 10, status: ['UPCOMING', 'OPEN'] as any });
+    expect(listSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: ['UPCOMING', 'OPEN'] }),
+    );
+  });
+
   it('6. GET /ipos/:id/timeline - returns lifecycle timeline events', async () => {
     const result = await controller.getTimeline({
       id: '11111111-1111-1111-1111-111111111111',

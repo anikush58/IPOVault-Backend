@@ -29,15 +29,22 @@ export class DiscoveryService {
       contentHash,
     );
 
+    let record;
     if (duplicate) {
-      return {
-        outcome: 'DUPLICATE',
-        discoveryRecordId: duplicate.id,
-        ipoId: null,
-      };
+      if (
+        duplicate.status === DiscoveryStatus.CREATED ||
+        duplicate.status === DiscoveryStatus.MATCHED
+      ) {
+        return {
+          outcome: 'DUPLICATE',
+          discoveryRecordId: duplicate.id,
+          ipoId: null,
+        };
+      }
+      record = duplicate;
+    } else {
+      record = await this.records.create(observation, contentHash);
     }
-
-    const record = await this.records.create(observation, contentHash);
 
     try {
       const discovered = normalizeDiscoveredIpo(observation.rawPayload);

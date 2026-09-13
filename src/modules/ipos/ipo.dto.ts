@@ -45,10 +45,20 @@ const dateStringSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid ISO date string (expected YYYY-MM-DD)');
 
+export const ipoStatusQuerySchema = z.preprocess(
+  (val) => {
+    if (typeof val === 'string' && val.includes(',')) {
+      return val.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    return emptyToUndefined(val);
+  },
+  z.union([ipoStatusSchema, z.array(ipoStatusSchema)]).optional(),
+);
+
 export const ipoListQuerySchema = z
   .object({
     q: z.preprocess(emptyToUndefined, z.string().optional()),
-    status: z.preprocess(emptyToUndefined, ipoStatusSchema.optional()),
+    status: ipoStatusQuerySchema,
     marketSegment: z.preprocess(emptyToUndefined, marketSegmentSchema.optional()),
     exchange: z.preprocess(emptyToUndefined, exchangeSchema.optional()),
     symbol: z.preprocess(emptyToUndefined, z.string().optional()),
