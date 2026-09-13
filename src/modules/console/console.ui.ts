@@ -950,6 +950,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
         tbody.innerHTML = items.map(ipo => {
           const pubClass = (ipo.publicationStatus || 'DRAFT').toLowerCase();
+          const pubBtnHtml = ipo.publicationStatus !== 'PUBLISHED'
+            ? '<button class="btn btn-success" onclick="publishManualIpoDirect(\\\'' + ipo.id + '\\\')">Publish</button>'
+            : '<button class="btn btn-warning" onclick="unpublishManualIpoDirect(\\\'' + ipo.id + '\\\')">Unpublish</button>';
           return \`
             <tr>
               <td>
@@ -964,10 +967,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
               <td>
                 <div style="display:flex; gap:6px;">
                   <button class="btn btn-secondary" onclick="editManualIpo('\${ipo.id}')">Inspect/Edit</button>
-                  \${ipo.publicationStatus !== 'PUBLISHED'
-                    ? \`<button class="btn btn-success" onclick="publishManualIpoDirect('\${ipo.id}')">Publish</button>\`
-                    : \`<button class="btn btn-warning" onclick="unpublishManualIpoDirect('\${ipo.id}')">Unpublish</button>\`
-                  }
+                  \${pubBtnHtml}
                 </div>
               </td>
             </tr>
@@ -1446,10 +1446,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           return;
         }
 
-        alert('✅ Canonical JSON Import Successful!\nIPO saved in DRAFT status with ID: ' + data.id);
+        alert('✅ Canonical JSON Import Successful!\\nIPO saved in DRAFT status with ID: ' + data.id);
         fetchManualIpos();
         editManualIpo(data.id);
-      } catch (err: any) {
+      } catch (err) {
         console.error('JSON import error:', err);
         alert('Invalid JSON file format: ' + (err.message || err));
       } finally {
