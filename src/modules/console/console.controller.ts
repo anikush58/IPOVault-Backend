@@ -48,6 +48,9 @@ export class ConsoleController {
    */
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  @Header('Expires', '0')
   getConsoleUi(@Res() res?: Response): string {
     const html = renderConsoleHtml('/api/v1/console/api');
     if (
@@ -56,6 +59,9 @@ export class ConsoleController {
       typeof res.send === 'function'
     ) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.send(html);
     }
     return html;
