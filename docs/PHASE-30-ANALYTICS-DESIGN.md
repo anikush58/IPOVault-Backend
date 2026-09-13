@@ -247,7 +247,27 @@ Phase 30.2 introduces `AnalyticsService.getDetailedMarketAnalytics()`, deliverin
 ### A. Performance Analytics Scope
 Phase 30.3 introduces `AnalyticsService.getIpoPerformanceAnalytics()`, delivering canonical performance foundation analytics derived strictly from available schema fields (`priceBandLow`, `priceBandHigh`, and `IpoLifecycleEvent` records for `CLOSE` and `LISTING` event types).
 
-### B. Core Features & Capabilities
+> [!IMPORTANT]
+> **Listing Gain Calculation Policy**:
+> If canonical listing price is absent in database records, IPOVault does **NOT** calculate listing gain/loss or synthesize listing performance metrics. Listing gain analytics remain strictly `FUTURE_DATA_DEPENDENT`.
+
+### B. Supported vs. Unsupported Performance Data Matrix
+
+| Performance Metric / Field | Canonical Source Field | Status | Calculation / Null Policy |
+|---|---|---|---|
+| **Price Band Low** | `Ipo.priceBandLow` | `SUPPORTED` | `Decimal(20, 2)` |
+| **Price Band High** | `Ipo.priceBandHigh` | `SUPPORTED` | `Decimal(20, 2)` |
+| **Price Band Spread (INR)** | `priceBandHigh - priceBandLow` | `SUPPORTED` | Null if either bound is missing or `high < low`. |
+| **Price Band Spread (%)** | `((high - low) / low) * 100` | `SUPPORTED` | Null if `low <= 0` or bounds missing/invalid. |
+| **Close Date** | `IpoLifecycleEvent.eventDate` (`CLOSE`) | `SUPPORTED` | Canonical lifecycle event date (`CLOSE`). |
+| **Listing Date** | `IpoLifecycleEvent.eventDate` (`LISTING`) | `SUPPORTED` | Canonical lifecycle event date (`LISTING`). |
+| **Close-to-Listing Duration** | `eventDate(LISTING) - eventDate(CLOSE)` | `SUPPORTED` | Integer calendar days. Requires both events; rejects negative durations (`listingDate < closeDate`). |
+| **Final Issue Price** | *None on `Ipo` model* | `FUTURE_DATA_DEPENDENT` | Schema lacks `issuePrice`. `priceBandHigh` is NOT substituted. |
+| **Listing Price** | *None on `Ipo` model* | `FUTURE_DATA_DEPENDENT` | Schema lacks `listingPrice` or `marketPrice` fields. |
+| **Listing Gain Percentage** | *None* | `FUTURE_DATA_DEPENDENT` | Returns `null`. `listingPerformanceSupported: false`. |
+| **Performance Classification** | *None* | `FUTURE_DATA_DEPENDENT` | Returns `null`. Classifications (Positive/Flat/Negative) are disabled. |
+
+### C. Core Features & Capabilities
 
 1. **Price Band Analytics (`PriceBandAnalyticsSummaryDto`)**:
    - Monetary spread evaluated in INR (`priceBandHigh - priceBandLow`).
@@ -281,7 +301,7 @@ Phase 30.3 introduces `AnalyticsService.getIpoPerformanceAnalytics()`, deliverin
    - Validation: Strict date format checking and boundary validation (`from <= to`). Throws explicit error on invalid parameters.
    - Anchored Filtering: Filters matching lifecycle events when anchor is `LISTING_DATE`, `OPEN_DATE`, or `CLOSE_DATE`, or `createdAt` when anchor is `CREATED_AT`.
 
-### C. Explicitly Deferred Metrics (Future Data Dependent)
+### D. Explicitly Deferred Metrics (Future Data Dependent)
 - **`LISTING_GAIN_PERCENTAGE`**: Requires canonical `listingPrice` and `issuePrice` schema fields.
 - **`LISTING_PERFORMANCE_CLASSIFICATION`**: Requires canonical `listingPrice` to classify Positive, Flat, or Negative listing outcome.
 - **`ISSUE_PRICE_INR`**: Requires canonical `issuePrice` schema field.
