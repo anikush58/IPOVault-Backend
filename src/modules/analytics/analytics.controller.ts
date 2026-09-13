@@ -12,6 +12,7 @@ import {
 } from './analytics.dto';
 import { AnalyticsService } from './analytics.service';
 import {
+  AnalyticsSummaryResponseDto,
   DetailedAllotmentAnalyticsResponseDto,
   DetailedAnalyticsQualitySummaryResponseDto,
   DetailedIpoMarketAnalyticsResponseDto,
@@ -32,6 +33,8 @@ import {
  *   - GET /api/v1/analytics/subscription
  *   - GET /api/v1/analytics/allotment
  *   - GET /api/v1/analytics/quality
+ *   - GET /api/v1/analytics/summary
+ *   - GET /api/v1/analytics/metrics
  *   - GET /api/v1/analytics/contracts
  *
  * Guarantees:
@@ -100,6 +103,24 @@ export class AnalyticsController {
   @Get('quality')
   async getQualityAnalytics(): Promise<DetailedAnalyticsQualitySummaryResponseDto> {
     return this.analyticsService.getAnalyticsQualitySummary();
+  }
+
+  /**
+   * GET /api/v1/analytics/summary
+   * Exposes lightweight mobile-friendly summary snapshot of market, performance, subscription availability, allotment observations, and quality status.
+   */
+  @Get('summary')
+  async getAnalyticsSummary(): Promise<AnalyticsSummaryResponseDto> {
+    return this.analyticsService.getAnalyticsSummary();
+  }
+
+  /**
+   * GET /api/v1/analytics/metrics
+   * Alias endpoint exposing metric definitions registry and availability contracts.
+   */
+  @Get('metrics')
+  async getMetricRegistry(): Promise<Record<string, MetricContract>> {
+    return this.analyticsService.getMetricContracts();
   }
 
   /**

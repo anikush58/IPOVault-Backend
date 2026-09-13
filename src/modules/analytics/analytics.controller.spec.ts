@@ -213,9 +213,28 @@ describe('AnalyticsController Unit Tests', () => {
     });
   });
 
-  describe('GET /api/v1/analytics/contracts', () => {
-    it('should return metric contracts registry', async () => {
+  describe('GET /api/v1/analytics/summary', () => {
+    it('should return lightweight summary response', async () => {
+      const mockSummary = { evaluatedAt: new Date().toISOString(), market: {} };
+      (service as any).getAnalyticsSummary = jest.fn().mockResolvedValue(mockSummary);
+
+      const result = await controller.getAnalyticsSummary();
+
+      expect(service.getAnalyticsSummary).toHaveBeenCalled();
+      expect(result).toBe(mockSummary);
+    });
+  });
+
+  describe('GET /api/v1/analytics/metrics & /contracts', () => {
+    it('should return metric contracts registry for /contracts', async () => {
       const result = await controller.getMetricContracts();
+
+      expect(service.getMetricContracts).toHaveBeenCalled();
+      expect(result).toEqual({ TOTAL_IPOS: {} });
+    });
+
+    it('should return metric contracts registry for /metrics alias', async () => {
+      const result = await controller.getMetricRegistry();
 
       expect(service.getMetricContracts).toHaveBeenCalled();
       expect(result).toEqual({ TOTAL_IPOS: {} });

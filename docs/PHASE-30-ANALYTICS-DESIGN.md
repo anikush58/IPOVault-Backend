@@ -464,41 +464,66 @@ Phase 30.6 introduces `AnalyticsService.getAnalyticsQualitySummary()`, establish
 Phase 30.7 introduces the canonical Analytics REST API boundary under `/api/v1/analytics`.
 
 **Key Architectural Guarantees**:
-1. **Read-Only Surface**: All endpoints accept HTTP `GET` only. Zero data mutation or side effects.
+1. **Read-Only Surface**: All endpoints accept HTTP `GET` only. Zero data mutation, queueing, or database writes.
 2. **Thin API Boundary**: `AnalyticsController` acts strictly as an API delegation layer with zero inline business calculations or database access.
-3. **Strict Validation**: All query parameters are validated via Zod schemas (`ZodValidationPipe`), returning HTTP 400 Bad Request for invalid dates (`from > to`), invalid enums, or malformed filters.
-4. **Privacy & Security Guarantee**: Response payloads strictly use explicit DTOs. Zero raw/encrypted PAN, credentials, secrets, or raw source payloads are ever exposed.
+3. **Strict Validation**: All query parameters are validated via Zod schemas (`ZodValidationPipe`), returning HTTP 400 Bad Request with standard `{ error: { code: "VALIDATION_ERROR", message: ... } }` envelope for invalid date ordering (`from > to`), invalid enums, or malformed parameters.
+4. **Privacy & Security Guarantee**: Response payloads strictly use explicit serializable DTOs. Zero raw/encrypted PAN (`panEncrypted`, `panMasked`, `panHash`), credentials, secrets, or raw provider response objects are exposed.
 5. **Standardized Response Wrapping**: Responses are automatically wrapped in NestJS `{ data: ... }` response envelopes by global interceptor architecture.
 
 ### B. Endpoint Catalog
 
-| HTTP Method | Route Path | Purpose & Underlying Service Method | Supported Query Parameters | Response Contract |
+| HTTP Method | Route Path | Purpose & Service Delegation | Supported Query Parameters | Primary Response DTO |
 |---|---|---|---|---|
-| `GET` | `/api/v1/analytics/market` | Detailed IPO Market Analytics (`AnalyticsService.getDetailedMarketAnalytics`) | `from`, `to`, `segment`, `exchange`, `status`, `period`, `anchor` | `DetailedIpoMarketAnalyticsResponseDto` |
+| `GET` | `/api/v1/analytics/market` | Detailed Market Analytics (`AnalyticsService.getDetailedMarketAnalytics`) | `from`, `to`, `segment`, `exchange`, `status`, `period`, `anchor` | `DetailedIpoMarketAnalyticsResponseDto` |
 | `GET` | `/api/v1/analytics/performance` | Detailed Performance Analytics (`AnalyticsService.getIpoPerformanceAnalytics`) | `from`, `to`, `segment`, `exchange`, `status`, `period`, `anchor` | `DetailedIpoPerformanceAnalyticsResponseDto` |
-| `GET` | `/api/v1/analytics/subscription` | Subscription & Demand Analytics (`AnalyticsService.getSubscriptionDemandAnalytics`) | `from`, `to`, `segment`, `exchange`, `status`, `period`, `anchor` | `DetailedSubscriptionDemandAnalyticsResponseDto` |
+| `GET` | `/api/v1/analytics/subscription` | Subscription Analytics (`AnalyticsService.getSubscriptionDemandAnalytics`) | `from`, `to`, `segment`, `exchange`, `status`, `period`, `anchor` | `DetailedSubscriptionDemandAnalyticsResponseDto` |
 | `GET` | `/api/v1/analytics/allotment` | Allotment Observation Analytics (`AnalyticsService.getAllotmentAnalytics`) | `ipoId`, `segment`, `from`, `to`, `period` | `DetailedAllotmentAnalyticsResponseDto` |
-| `GET` | `/api/v1/analytics/quality` | Unified Data-Quality Telemetry (`AnalyticsService.getAnalyticsQualitySummary`) | None | `DetailedAnalyticsQualitySummaryResponseDto` |
-| `GET` | `/api/v1/analytics/contracts` | Metric Definitions Registry (`AnalyticsService.getMetricContracts`) | None | `Record<string, MetricContract>` |
+| `GET` | `/api/v1/analytics/quality` | Unified Data Quality Telemetry (`AnalyticsService.getAnalyticsQualitySummary`) | None | `DetailedAnalyticsQualitySummaryResponseDto` |
+| `GET` | `/api/v1/analytics/summary` | Lightweight Mobile Summary Snapshot (`AnalyticsService.getAnalyticsSummary`) | `segment`, `exchange` | `AnalyticsSummaryResponseDto` |
+| `GET` | `/api/v1/analytics/metrics` | Metric Catalog Registry (`AnalyticsService.getMetricDefinitionsList`) | None | `AnalyticsMetricDefinitionDto[]` |
+| `GET` | `/api/v1/analytics/contracts` | Metric Definitions Map (`AnalyticsService.getMetricContracts`) | None | `Record<string, MetricContract>` |
 
-### C. Domain API Semantics
+### C. Domain API Semantics & Availability
 
-1. **Market API**:
-   - Returns snapshot, status distribution, segment/exchange breakdown, and issue size metrics.
-   - Reuses existing date/anchor filters (`OPEN_DATE`, `CLOSE_DATE`, `LISTING_DATE`, `CREATED_AT`).
+1. **Market API (`GET /api/v1/analytics/market`)**:
+   - Returns market snapshot (total IPOs, active, closed, listed), status distribution, segment/exchange breakdown, issue size aggregations, and trend series.
+   - Filters: Reuses `AnalyticsFilter` (`OPEN_DATE`, `CLOSE_DATE`, `LISTING_DATE`, `CREATED_AT` anchors).
 
-2. **Performance API**:
+2. **Performance API (`GET /api/v1/analytics/performance`)**:
    - Exposes price band spread metrics and close-to-listing timeline duration metrics.
    - Listing price performance metrics explicitly return `listingPerformanceSupported: false` with reason `"Listing price performance metrics are FUTURE_DATA_DEPENDENT."`
 
-3. **Subscription API**:
-   - Explicitly returns `subscriptionSupported: false` with reason `"Subscription demand metrics are FUTURE_DATA_DEPENDENT."`
+3. **Subscription API (`GET /api/v1/analytics/subscription`)**:
+   - Explicitly returns HTTP 200 OK with `subscriptionSupported: false`, `qualityStatus: FUTURE_DATA_DEPENDENT`, `knownObservationCount: 0`, `coveragePercentage: 0`, and explicit reason `"Subscription demand metrics are FUTURE_DATA_DEPENDENT."`
    - Does NOT convert missing subscription demand into false 0% or 0x multiplier metrics.
 
-4. **Allotment API**:
+4. **Allotment API (`GET /api/v1/analytics/allotment`)**:
    - Exposes descriptive outcome distribution rates (`observedPositiveAllotmentRatePercentage`, `fullAllotmentRatePercentage`, `partialAllotmentRatePercentage`, `notAllottedRatePercentage`).
    - Includes mandatory sample disclaimer: *"Observed allotment rates represent descriptive statistics of checked sample observations only. They MUST NOT be interpreted as predictive probabilities of future allotment success."*
 
-5. **Quality API**:
+5. **Quality API (`GET /api/v1/analytics/quality`)**:
    - Exposes unified data-quality telemetry across Completeness, Freshness, Provenance, Source Health, and Quality Gates.
    - Distinguishes explicitly between `COMPLETE`, `PARTIAL`, `INSUFFICIENT_DATA`, `UNAVAILABLE`, and `NEEDS_REVIEW` states.
+
+6. **Summary API (`GET /api/v1/analytics/summary`)**:
+   - Aggregates market snapshot, performance snapshot, subscription availability, allotment snapshot, and overall quality status into a single lightweight parallel execution call tailored for mobile dashboards.
+   - Omits heavy trend arrays and detailed per-IPO lists to keep payload size bounded (< 2 KB).
+
+7. **Metrics API (`GET /api/v1/analytics/metrics`)**:
+   - Provides client discovery for all canonical analytics metrics, including metric ID, name, category, unit, availability status, description, and formula.
+
+### D. Serialization & Type Contracts
+
+- **Decimal / Monetary Serialization**: Prisma `Decimal` instances are converted to standard JavaScript numbers via `.toNumber()` or rounded string representations prior to JSON serialization, preventing `Prisma.Decimal` object serialization anomalies in client apps.
+- **Date Serialization**: Timestamps and dates are formatted as ISO-8601 UTC strings (`YYYY-MM-DDTHH:mm:ss.sssZ`).
+- **Error Handling**: Malformed or out-of-bound parameters trigger `ZodValidationPipe` failures resulting in HTTP 400 Bad Request with standardized error payloads:
+  ```json
+  {
+    "error": {
+      "code": "VALIDATION_ERROR",
+      "message": "Validation failed",
+      "details": [...]
+    }
+  }
+  ```
+- **Security & Privacy Boundary**: All allotment calculations are computed over aggregated logs. Sensitive fields (`panEncrypted`, `panMasked`, `panHash`, `identifierHash`, raw provider payloads) are excluded from DTO contracts.

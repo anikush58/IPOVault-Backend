@@ -14,6 +14,7 @@ import {
   AnalyticsDateAnchor,
   AnalyticsQualityStatus,
   AnalyticsQualityWarningCode,
+  AnalyticsSummaryResponseDto,
   AnalyticsTimePeriod,
   CategoryWiseSubscriptionAnalyticsDto,
   DetailedAllotmentAnalyticsResponseDto,
@@ -1862,6 +1863,42 @@ export class AnalyticsService {
       qualityGate,
       metricQualityContracts,
       activeWarnings: Array.from(activeWarningsSet),
+    };
+  }
+
+  /**
+   * Computes Phase 30.7 Lightweight Mobile Summary Snapshot.
+   * Exposes high-level snapshots of market, performance, subscription availability, allotment observations, and quality status.
+   * Avoids heavy per-IPO detailed lists or period trend point arrays.
+   */
+  async getAnalyticsSummary(): Promise<AnalyticsSummaryResponseDto> {
+    const evaluatedAt = new Date().toISOString();
+
+    const [marketDetails, performanceDetails, subscriptionDetails, allotmentDetails, qualitySummary] =
+      await Promise.all([
+        this.getDetailedMarketAnalytics(),
+        this.getIpoPerformanceAnalytics(),
+        this.getSubscriptionDemandAnalytics(),
+        this.getAllotmentAnalytics(),
+        this.getAnalyticsQualitySummary(),
+      ]);
+
+    return {
+      evaluatedAt,
+      market: {
+        snapshot: marketDetails.snapshot,
+        summary: marketDetails.marketSummary,
+      },
+      performance: {
+        priceBandSummary: performanceDetails.priceBandSummary,
+        listingPerformance: performanceDetails.listingPerformance,
+      },
+      subscription: subscriptionDetails.subscriptionSummary,
+      allotment: allotmentDetails.summary,
+      qualityStatus: {
+        overallStatus: qualitySummary.overallQualityStatus,
+        activeWarnings: qualitySummary.activeWarnings,
+      },
     };
   }
 }

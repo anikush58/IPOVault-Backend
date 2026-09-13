@@ -169,6 +169,34 @@ describe('Analytics API E2E Suite (Phase 30.7)', () => {
     });
   });
 
+  describe('GET /api/v1/analytics/summary', () => {
+    it('should return 200 OK with aggregated lightweight mobile summary snapshot', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/analytics/summary')
+        .expect(200);
+
+      expect(res.body).toHaveProperty('data');
+      expect(res.body.data).toHaveProperty('market');
+      expect(res.body.data).toHaveProperty('performance');
+      expect(res.body.data).toHaveProperty('subscription');
+      expect(res.body.data).toHaveProperty('allotment');
+      expect(res.body.data).toHaveProperty('qualityStatus');
+      expect(res.body.data.market.snapshot.totalIpos).toBe(1);
+    });
+  });
+
+  describe('GET /api/v1/analytics/metrics', () => {
+    it('should return 200 OK with lightweight metric registry catalog', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/analytics/metrics')
+        .expect(200);
+
+      expect(res.body).toHaveProperty('data');
+      expect(res.body.data).toHaveProperty('TOTAL_IPOS');
+      expect(res.body.data).toHaveProperty('OBSERVED_POSITIVE_ALLOTMENT_RATE');
+    });
+  });
+
   describe('GET /api/v1/analytics/contracts', () => {
     it('should return 200 OK with metric contracts registry', async () => {
       const res = await request(app.getHttpServer())
@@ -188,6 +216,8 @@ describe('Analytics API E2E Suite (Phase 30.7)', () => {
         '/api/v1/analytics/subscription',
         '/api/v1/analytics/allotment',
         '/api/v1/analytics/quality',
+        '/api/v1/analytics/summary',
+        '/api/v1/analytics/metrics',
         '/api/v1/analytics/contracts',
       ];
 

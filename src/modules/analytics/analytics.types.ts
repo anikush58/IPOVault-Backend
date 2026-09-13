@@ -559,3 +559,21 @@ export interface DetailedAnalyticsQualitySummaryResponseDto {
   metricQualityContracts: MetricQualityContractDto[];
   activeWarnings: AnalyticsQualityWarningCode[];
 }
+
+export interface AnalyticsSummaryResponseDto {
+  evaluatedAt: string;
+  market: {
+    snapshot: IpoMarketSnapshotDto;
+    summary: IpoMarketSummaryMetrics;
+  };
+  performance: {
+    priceBandSummary: PriceBandAnalyticsSummaryDto;
+    listingPerformance: ListingPerformanceAnalyticsSummaryDto;
+  };
+  subscription: SubscriptionDemandSummaryDto;
+  allotment: AllotmentAnalyticsSummaryDto;
+  qualityStatus: {
+    overallStatus: AnalyticsQualityStatus;
+    activeWarnings: AnalyticsQualityWarningCode[];
+  };
+}
