@@ -386,9 +386,15 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         <!-- Document Ingestion Drawer -->
         <div class="card">
           <div class="card-title">RHP / DRHP Document Ingestion & SEBI PDF Parser</div>
-          <div style="display:flex; gap:12px; margin-top:8px;">
-            <input type="text" id="doc-url-input" placeholder="Paste SEBI HTML detail page URL or direct PDF URL..." style="flex:1; background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text);" />
-            <button class="btn" onclick="parseDocumentUrl()">Parse URL</button>
+          <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+            <div style="display:flex; gap:12px;">
+              <input type="text" id="doc-url-input" placeholder="Paste SEBI HTML detail page URL or direct PDF URL..." style="flex:1; background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text);" />
+              <button class="btn" onclick="parseDocumentUrl()">Parse URL</button>
+            </div>
+            <div style="display:flex; gap:12px; align-items:center;">
+              <input type="file" id="doc-file-input" accept="application/pdf" style="flex:1; background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:6px 12px; color:var(--text);" />
+              <button class="btn btn-secondary" onclick="uploadDocumentFile()">Upload & Parse PDF</button>
+            </div>
           </div>
           <div id="parser-review-container" style="display:none; margin-top:14px; flex-direction:column; gap:10px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1005,6 +1011,38 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         renderExtractionReview(data.extraction);
       } catch (err) {
         console.error('Parse URL error:', err);
+      }
+    }
+
+    async function uploadDocumentFile() {
+      const fileInput = document.getElementById('doc-file-input');
+      const file = fileInput?.files?.[0];
+      const ipoId = document.getElementById('form-ipo-id').value || undefined;
+      if (!file) { alert('Please select a PDF file to upload.'); return; }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      let url = API_BASE + '/manual-ipos/upload';
+      if (ipoId) url += '?ipoId=' + encodeURIComponent(ipoId);
+
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          body: formData,
+        });
+        const json = await res.json();
+        const data = json.data || json;
+
+        if (data.parsingStatus === 'FAILED') {
+          alert('PDF parsing failed: ' + (data.errorMessage || 'Unknown error'));
+          return;
+        }
+
+        lastExtractionReview = data.extraction;
+        renderExtractionReview(data.extraction);
+      } catch (err) {
+        console.error('Upload PDF error:', err);
       }
     }
 
