@@ -10,11 +10,8 @@ import {
   Post,
   Query,
   Res,
-  UploadedFile,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { ConsoleService } from './console.service';
 import { ConsoleIpoListQueryDto } from './console.types';
@@ -30,10 +27,9 @@ import {
   AdminIpoQueryDto,
   ConfigureAllotmentDto,
   CreateAdminIpoDto,
-  ParseDocumentUrlDto,
+  ImportAdminIpoJsonDto,
   UpdateAdminIpoDto,
 } from '../admin/admin-ipo.dto';
-import { DocumentType } from '@prisma/client';
 
 @Controller('console')
 @UseGuards(ConsoleEnabledGuard)
@@ -198,32 +194,15 @@ export class ConsoleController {
     return this.adminIpoService.archiveIpo(id);
   }
 
-  @Post('api/manual-ipos/parse-url')
-  async parseManualIpoUrl(@Body() dto: ParseDocumentUrlDto) {
-    return this.adminIpoService.parseUrlAndStore(
-      dto.url,
-      dto.ipoId,
-      dto.documentType || DocumentType.RHP,
-    );
-  }
-
-  @Post('api/manual-ipos/upload')
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadManualIpoPdf(
-    @UploadedFile() file: { buffer: Buffer; originalname?: string; mimetype?: string },
-    @Query('ipoId') ipoId?: string,
-    @Query('documentType') documentType?: DocumentType,
+  @Post('api/manual-ipos/import-json')
+  async importManualIpoJson(
+    @Body() dto: ImportAdminIpoJsonDto,
+    @Query('targetIpoId') targetIpoId?: string,
   ) {
-    if (!file || !file.buffer) {
-      throw new BadRequestException('No PDF file provided');
+    if (!dto || typeof dto !== 'object') {
+      throw new BadRequestException('Invalid JSON payload provided');
     }
-    return this.adminIpoService.parseAndStorePdfBuffer(
-      file.buffer,
-      file.originalname || 'document.pdf',
-      file.mimetype || 'application/pdf',
-      ipoId,
-      documentType || DocumentType.RHP,
-    );
+    return this.adminIpoService.importIpoFromJson(dto, targetIpoId);
   }
 
   @Post('api/manual-ipos/:id/allotment-config')

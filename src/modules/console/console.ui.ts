@@ -329,9 +329,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
         <div class="table-container">
           <div class="table-header">
-            <div style="display:flex; align-items:center; gap:16px;">
+            <div style="display:flex; align-items:center; gap:12px;">
               <div class="table-title">Manual IPO Management</div>
               <button class="btn" onclick="openCreateModal()">+ Add Manual IPO</button>
+              <button class="btn btn-secondary" onclick="triggerJsonImport()">📥 Import JSON</button>
+              <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
             </div>
             <div class="search-box">
               <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" />
@@ -382,36 +384,6 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
         <!-- Validation Banner -->
         <div id="validation-banner" style="display:none;" class="alert-box"></div>
-
-        <!-- Document Ingestion Drawer -->
-        <div class="card">
-          <div class="card-title">RHP / DRHP Document Ingestion & SEBI PDF Parser</div>
-          <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
-            <div style="display:flex; gap:12px;">
-              <input type="text" id="doc-url-input" placeholder="Paste SEBI HTML detail page URL or direct PDF URL..." style="flex:1; background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text);" />
-              <button type="button" class="btn" id="btn-parse-url" onclick="parseDocumentUrl()">Parse URL</button>
-            </div>
-            <div style="display:flex; gap:12px; align-items:center;">
-              <input type="file" id="doc-file-input" accept="application/pdf" style="flex:1; background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:6px 12px; color:var(--text);" />
-              <button type="button" class="btn btn-secondary" id="btn-upload-file" onclick="uploadDocumentFile()">Upload & Parse PDF</button>
-            </div>
-            <div id="upload-status-message" style="display:none; margin-top:8px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:500;"></div>
-          </div>
-          <div id="parser-review-container" style="display:none; margin-top:14px; flex-direction:column; gap:10px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <strong style="color:var(--primary); font-size:13px;">Extracted PDF Fields Review</strong>
-              <button type="button" class="btn btn-secondary" onclick="applyExtractedValuesToForm()">Apply Extracted Fields to Form</button>
-            </div>
-            <div class="table-container">
-              <table>
-                <thead>
-                  <tr><th>Field</th><th>Extracted Value</th><th>Extraction Status</th></tr>
-                </thead>
-                <tbody id="extraction-review-body"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
 
         <!-- Canonical IPO Editor Form -->
         <div class="card">
@@ -1445,142 +1417,44 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       }
     }
 
-    async function parseDocumentUrl() {
-      const urlInput = document.getElementById('doc-url-input');
-      const btn = document.getElementById('btn-parse-url');
-      const url = urlInput?.value.trim();
-      const ipoId = document.getElementById('form-ipo-id').value || undefined;
-
-      if (!url) {
-        showUploadStatus('Please enter a valid SEBI detail page URL or direct PDF URL.', 'error');
-        return;
-      }
-
-      try {
-        if (btn) { btn.disabled = true; btn.textContent = 'Parsing URL...'; }
-        showUploadStatus('Fetching URL & parsing PDF... Please wait.', 'info');
-
-        const res = await fetch(API_BASE + '/manual-ipos/parse-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, ipoId }),
-        });
-
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          showUploadStatus('URL parsing failed: ' + (json.message || res.statusText || 'Backend server error'), 'error');
-          return;
-        }
-
-        const data = json.data || json;
-        if (data.parsingStatus === 'FAILED') {
-          showUploadStatus('PDF parsing failed: ' + (data.errorMessage || 'Unknown error'), 'error');
-          return;
-        }
-
-        showUploadStatus('✅ Extraction complete! Review extracted fields below.', 'success');
-        lastExtractionReview = data.extraction;
-        renderExtractionReview(data.extraction);
-      } catch (err) {
-        console.error('Parse URL error:', err);
-        showUploadStatus('Parse URL failed: backend unavailable.', 'error');
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Parse URL'; }
-      }
+    function triggerJsonImport() {
+      const fileInput = document.getElementById('json-file-input');
+      if (fileInput) fileInput.click();
     }
 
-    async function uploadDocumentFile() {
-      const btn = document.getElementById('btn-upload-file');
+    async function handleJsonFileSelect(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
       try {
-        const fileInput = document.getElementById('doc-file-input');
-        const ipoIdInput = document.getElementById('form-ipo-id');
-        const ipoId = ipoIdInput?.value?.trim() || undefined;
-        const file = fileInput?.files?.[0];
+        const text = await file.text();
+        const jsonPayload = JSON.parse(text);
 
-        if (!file) {
-          showUploadStatus('No PDF file selected.', 'error');
-          return;
-        }
-
-        const fileName = file.name || '';
-        const fileType = file.type || '';
-        const isPdfExt = fileName.toLowerCase().endsWith('.pdf');
-        const isPdfMime = fileType.includes('pdf') || fileType === 'application/octet-stream' || fileType === '';
-
-        if (!isPdfExt && !isPdfMime) {
-          showUploadStatus('Only PDF documents are supported.', 'error');
-          return;
-        }
-
-        const formData = new FormData();
-        formData.append('file', file);
-
-        let url = API_BASE + '/manual-ipos/upload';
-        if (ipoId) url += '?ipoId=' + encodeURIComponent(ipoId);
-
-        if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
-        showUploadStatus('Uploading & parsing PDF... Please wait.', 'info');
+        const currentIpoId = document.getElementById('form-ipo-id')?.value || undefined;
+        let url = API_BASE + '/manual-ipos/import-json';
+        if (currentIpoId) url += '?targetIpoId=' + encodeURIComponent(currentIpoId);
 
         const res = await fetch(url, {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(jsonPayload),
         });
 
-        const json = await res.json().catch(() => ({}));
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          showUploadStatus('Upload failed: ' + (json.message || res.statusText || 'Backend server error'), 'error');
+          alert('JSON Import Failed: ' + (data.message || res.statusText || 'Invalid JSON format'));
           return;
         }
 
-        const data = json.data || json;
-        if (data.parsingStatus === 'FAILED') {
-          showUploadStatus('PDF parsing failed: ' + (data.errorMessage || 'Unknown extraction error'), 'error');
-          return;
-        }
-
-        showUploadStatus('✅ Extraction complete! Review extracted fields below.', 'success');
-        lastExtractionReview = data.extraction;
-        renderExtractionReview(data.extraction);
-      } catch (err) {
-        console.error('Upload PDF error:', err);
-        showUploadStatus('Upload failed: ' + (err.message || 'backend unavailable.'), 'error');
+        alert('✅ Canonical JSON Import Successful!\nIPO saved in DRAFT status with ID: ' + data.id);
+        fetchManualIpos();
+        editManualIpo(data.id);
+      } catch (err: any) {
+        console.error('JSON import error:', err);
+        alert('Invalid JSON file format: ' + (err.message || err));
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Upload & Parse PDF'; }
+        event.target.value = '';
       }
-    }
-
-    function renderExtractionReview(ext) {
-      const container = document.getElementById('parser-review-container');
-      const tbody = document.getElementById('extraction-review-body');
-      if (!ext || !ext.fields) { container.style.display = 'none'; return; }
-
-      tbody.innerHTML = Object.entries(ext.fields).map(([k, f]) => \`
-        <tr>
-          <td><strong>\${k}</strong></td>
-          <td>\${f.value !== null && f.value !== undefined ? f.value : '<span style="color:var(--muted)">[null]</span>'}</td>
-          <td><span class="badge \${f.status === 'FOUND' ? 'badge-open' : 'badge-closed'}">\${f.status}</span></td>
-        </tr>
-      \`).join('');
-
-      container.style.display = 'flex';
-    }
-
-    function applyExtractedValuesToForm() {
-      if (!lastExtractionReview || !lastExtractionReview.fields) return;
-      const f = lastExtractionReview.fields;
-
-      if (f.legalName?.value) document.getElementById('form-legalName').value = f.legalName.value;
-      if (f.cin?.value) document.getElementById('form-cin').value = f.cin.value;
-      if (f.priceBandLow?.value) document.getElementById('form-priceBandLow').value = f.priceBandLow.value;
-      if (f.priceBandHigh?.value) document.getElementById('form-priceBandHigh').value = f.priceBandHigh.value;
-      if (f.lotSize?.value) document.getElementById('form-lotSize').value = f.lotSize.value;
-      if (f.faceValue?.value) document.getElementById('form-faceValue').value = f.faceValue.value;
-      if (f.ofsSize?.value) document.getElementById('form-ofsSize').value = (f.ofsSize.value / 10000000).toFixed(2);
-      if (f.freshIssueSize?.value) document.getElementById('form-freshIssueSize').value = (f.freshIssueSize.value / 10000000).toFixed(2);
-      if (f.openDate?.value) document.getElementById('form-openDate').value = f.openDate.value;
-      if (f.closeDate?.value) document.getElementById('form-closeDate').value = f.closeDate.value;
-
-      showUploadStatus('✅ Extracted values applied to form! Review form fields and click Save Changes.', 'success');
     }
 
     async function saveAllotmentConfig() {

@@ -5,7 +5,7 @@ import { ConsoleService } from './console.service';
 import { AdminIpoService } from '../admin/admin-ipo.service';
 import { ConsoleEnabledGuard } from './console.guard';
 import { renderConsoleHtml } from './console.ui';
-import { DocumentType, ExchangeListing, MarketSegment, PublicationStatus } from '@prisma/client';
+import { ExchangeListing, MarketSegment, PublicationStatus } from '@prisma/client';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { AppException } from '../../common/errors/app.exception';
 
@@ -76,27 +76,14 @@ describe('Phase 34.3A — Manual IPO Console Workflow & Reset Safety', () => {
         if (id === '34300000-0000-0000-0000-000000000002') return Promise.resolve(mockExistingIpo);
         throw new AppException(ErrorCode.IPO_NOT_FOUND, `IPO ${id} not found`, 404);
       }),
-      parseAndStorePdfBuffer: jest.fn().mockImplementation((buffer) => {
-        if (!buffer || buffer.length === 0) {
-          throw new Error('No PDF file provided');
+      importIpoFromJson: jest.fn().mockImplementation((payload) => {
+        if (!payload || !payload.company?.legalName) {
+          throw new AppException(ErrorCode.VALIDATION_ERROR, 'company.legalName is required', 400);
         }
         return Promise.resolve({
-          documentId: 'doc-hero-1',
-          parsingStatus: 'PARSED',
-          extraction: {
-            parserVersion: 'sebi-pdf-parser-1.0.0',
-            extractedAt: '2026-09-13T20:00:00.000Z',
-            fields: {
-              legalName: { value: 'Hero Motors Limited', status: 'FOUND' },
-              cin: { value: 'U34100DL1988PLC033333', status: 'FOUND' },
-              faceValue: { value: 10, status: 'FOUND' },
-              freshIssueSize: { value: 6000000000, status: 'FOUND' },
-              ofsSize: { value: 4000000000, status: 'FOUND' },
-              openDate: { value: '2026-09-16', status: 'FOUND' },
-              closeDate: { value: '2026-09-18', status: 'FOUND' },
-            },
-          },
-          errorMessage: null,
+          id: '34300000-0000-0000-0000-000000000003',
+          publicationStatus: 'DRAFT',
+          message: 'JSON import successful. IPO created/updated in DRAFT status.',
         });
       }),
     };
@@ -160,86 +147,59 @@ describe('Phase 34.3A — Manual IPO Console Workflow & Reset Safety', () => {
     });
   });
 
-  describe('Part B — PDF Upload Endpoint & Interceptor Contract', () => {
-    it('6. File input selection elements exist in HTML UI', () => {
+  describe('Part B — Canonical JSON Import Contract & Isolation', () => {
+    it('6. JSON file input selection element exists in HTML UI', () => {
       const html = renderConsoleHtml();
-      expect(html).toContain('id="doc-file-input"');
-      expect(html).toContain('accept="application/pdf"');
+      expect(html).toContain('id="json-file-input"');
+      expect(html).toContain('accept=".json,application/json"');
     });
 
-    it('7. Upload button invokes upload handler', () => {
+    it('7. Import JSON button invokes JSON import trigger', () => {
       const html = renderConsoleHtml();
-      expect(html).toContain('id="btn-upload-file"');
-      expect(html).toContain('onclick="uploadDocumentFile()"');
+      expect(html).toContain('onclick="triggerJsonImport()"');
+      expect(html).toContain('function triggerJsonImport()');
     });
 
-    it('8. Multipart field name matches backend "file"', () => {
-      const html = renderConsoleHtml();
-      expect(html).toContain("formData.append('file', file)");
+    it('8. Controller endpoint delegates to importIpoFromJson service method', async () => {
+      const mockImportResult = {
+        id: '34300000-0000-0000-0000-000000000003',
+        publicationStatus: 'DRAFT',
+        message: 'JSON import successful. IPO created/updated in DRAFT status.',
+      };
+      (adminIpoService.importIpoFromJson as jest.Mock) = jest.fn().mockResolvedValue(mockImportResult);
+
+      const jsonPayload = {
+        company: { legalName: 'JSON Imported Enterprise Limited' },
+        ipo: { marketSegment: 'MAINBOARD', exchange: 'NSE' },
+      };
+
+      const res = await controller.importManualIpoJson(jsonPayload as any);
+
+      expect(adminIpoService.importIpoFromJson).toHaveBeenCalledWith(jsonPayload, undefined);
+      expect(res.id).toBe('34300000-0000-0000-0000-000000000003');
+      expect(res.publicationStatus).toBe('DRAFT');
     });
 
-    it('9. Backend receives uploaded PDF and passes file buffer', async () => {
-      const dummyPdfBuffer = Buffer.from('%PDF-1.4 dummy content');
-      const res = await controller.uploadManualIpoPdf(
-        { buffer: dummyPdfBuffer, originalname: 'hero-motors-limited-rhp.pdf', mimetype: 'application/pdf' },
-        '34300000-0000-0000-0000-000000000001',
-        DocumentType.RHP,
+    it('9. Missing JSON payload throws BadRequestException', async () => {
+      await expect(controller.importManualIpoJson(null as any)).rejects.toThrow(
+        'Invalid JSON payload provided',
       );
-
-      expect(adminIpoService.parseAndStorePdfBuffer).toHaveBeenCalledWith(
-        dummyPdfBuffer,
-        'hero-motors-limited-rhp.pdf',
-        'application/pdf',
-        '34300000-0000-0000-0000-000000000001',
-        DocumentType.RHP,
-      );
-      expect(res.parsingStatus).toBe('PARSED');
     });
 
-    it('10. PDF parser is invoked and returns extraction review', async () => {
-      const dummyPdfBuffer = Buffer.from('%PDF-1.4 dummy content');
-      const res = await controller.uploadManualIpoPdf(
-        { buffer: dummyPdfBuffer, originalname: 'hero-motors-limited-rhp.pdf', mimetype: 'application/pdf' },
-        '34300000-0000-0000-0000-000000000001',
-        DocumentType.RHP,
-      );
-
-      expect(res.extraction).toBeDefined();
-      expect(res.extraction?.fields.openDate.value).toBe('2026-09-16');
-    });
-
-    it('11. Successful extraction response reaches Console HTML logic', () => {
+    it('10. PDF/URL manual extraction endpoints are no longer exposed on Console UI', () => {
       const html = renderConsoleHtml();
-      expect(html).toContain('renderExtractionReview(data.extraction)');
+      expect(html).not.toContain('id="btn-upload-file"');
+      expect(html).not.toContain('id="btn-parse-url"');
+      expect(html).not.toContain('onclick="uploadDocumentFile()"');
+      expect(html).not.toContain('onclick="parseDocumentUrl()"');
     });
 
-    it('12. Parser failure is visible in upload status UI', () => {
-      const html = renderConsoleHtml();
-      expect(html).toContain('PDF parsing failed:');
-    });
-
-    it('13. Missing file returns visible error', async () => {
-      await expect(
-        controller.uploadManualIpoPdf(
-          null as any,
-          undefined,
-          undefined,
-        ),
-      ).rejects.toThrow('No PDF file provided');
-    });
-
-    it('14. Apply Extracted Fields function exists in Console UI logic', () => {
-      const html = renderConsoleHtml();
-      expect(html).toContain('onclick="applyExtractedValuesToForm()"');
-      expect(html).toContain('function applyExtractedValuesToForm()');
-    });
-
-    it('15. Extraction does not publish (remains DRAFT)', async () => {
+    it('11. Imported IPO remains in DRAFT status by default', async () => {
       const draft = await controller.getManualIpoDetail('34300000-0000-0000-0000-000000000001');
       expect(draft.publicationStatus).toBe('DRAFT');
     });
 
-    it('16. Draft remains hidden from public API and existing workflow remains intact', async () => {
+    it('12. Existing DRAFT can be retrieved and published via admin action', async () => {
       const draft = await controller.getManualIpoDetail('34300000-0000-0000-0000-000000000001');
       expect(draft.publicationStatus).toBe(PublicationStatus.DRAFT);
     });

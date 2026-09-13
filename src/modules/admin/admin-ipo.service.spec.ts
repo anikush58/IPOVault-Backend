@@ -1,20 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminIpoService } from './admin-ipo.service';
 import { AdminValidationService } from './admin-validation.service';
-import { AdminExtractionService } from './admin-extraction.service';
 import { PrismaService } from '../../database/prisma.service';
 import { ExchangeListing, MarketSegment, PublicationStatus } from '@prisma/client';
 
 describe('AdminIpoService & AdminValidationService', () => {
   let adminIpoService: AdminIpoService;
   let validationService: AdminValidationService;
-  let extractionService: AdminExtractionService;
 
   const mockPrisma = {
+    $transaction: jest.fn().mockImplementation((cb) => cb(mockPrisma)),
     source: {
       upsert: jest.fn().mockResolvedValue({ id: 'admin-source-id', code: 'ADMIN' }),
     },
     company: {
+      findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({
         id: 'company-uuid-1',
@@ -37,28 +37,41 @@ describe('AdminIpoService & AdminValidationService', () => {
       findUnique: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
-      update: jest.fn(),
+      update: jest.fn().mockResolvedValue({
+        id: 'ipo-uuid-1',
+        publicationStatus: PublicationStatus.DRAFT,
+      }),
     },
     ipoLifecycleEvent: {
       upsert: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
-    fieldProvenance: {
+    companyFinancial: {
+      upsert: jest.fn().mockResolvedValue({}),
+    },
+    ipoOfferCategory: {
+      upsert: jest.fn().mockResolvedValue({}),
+    },
+    ipoParticipant: {
       create: jest.fn().mockResolvedValue({}),
+    },
+    ipoAllotmentConfig: {
+      upsert: jest.fn().mockResolvedValue({ registrar: 'kfintech', registrarIpoCode: 'MANIKA2026', enabled: true }),
     },
     ipoDocument: {
       create: jest.fn().mockResolvedValue({ id: 'doc-uuid-1', parsingStatus: 'PARSED' }),
     },
+    gmpObservation: {
+      create: jest.fn().mockResolvedValue({}),
+    },
+    subscriptionObservation: {
+      create: jest.fn().mockResolvedValue({}),
+    },
+    fieldProvenance: {
+      create: jest.fn().mockResolvedValue({}),
+    },
     ipoSourceIdentity: {
       upsert: jest.fn().mockResolvedValue({ id: 'source-id-1' }),
-    },
-    ipoAllotmentConfig: {
-      upsert: jest.fn().mockResolvedValue({
-        id: 'config-uuid-1',
-        ipoId: 'ipo-uuid-1',
-        registrar: 'kfintech',
-        enabled: true,
-      }),
     },
   };
 
@@ -67,14 +80,12 @@ describe('AdminIpoService & AdminValidationService', () => {
       providers: [
         AdminIpoService,
         AdminValidationService,
-        AdminExtractionService,
         { provide: PrismaService, useValue: mockPrisma },
       ],
     }).compile();
 
     adminIpoService = module.get<AdminIpoService>(AdminIpoService);
     validationService = module.get<AdminValidationService>(AdminValidationService);
-    extractionService = module.get<AdminExtractionService>(AdminExtractionService);
     jest.clearAllMocks();
   });
 
@@ -116,41 +127,57 @@ describe('AdminIpoService & AdminValidationService', () => {
     });
   });
 
-  describe('Admin Extraction Review', () => {
-    it('maps extracted PDF fields to FOUND, NOT_FOUND, preserving nulls for placeholders', async () => {
-      jest.spyOn(require('../discovery/adapters/sebi/sebi-pdf.parser'), 'parseSebiPdfBuffer').mockResolvedValueOnce({
-        externalId: 'test.pdf',
-        extractedAt: new Date().toISOString(),
-        legalName: { value: 'MANIKA PLASTECH LIMITED', status: 'EXTRACTED' },
-        cin: { value: 'U25209MH2011PLC214589', status: 'EXTRACTED' },
-        faceValue: { value: 2, status: 'EXTRACTED' },
-        priceBandLow: { value: 40, status: 'EXTRACTED' },
-        priceBandHigh: { value: 43, status: 'EXTRACTED' },
-        issueShareCount: { value: null, status: 'UNRESOLVED' },
-        freshIssueShareCount: { value: null, status: 'UNRESOLVED' },
-        ofsShareCount: { value: null, status: 'UNRESOLVED' },
-        lotSize: { value: null, status: 'UNRESOLVED' },
-        issueSize: { value: null, status: 'UNRESOLVED' },
-        freshIssueSize: { value: null, status: 'UNRESOLVED' },
-        ofsSize: { value: 925000000, status: 'EXTRACTED' },
-        issueOpenDate: { value: '2026-09-11', status: 'EXTRACTED' },
-        issueCloseDate: { value: '2026-09-16', status: 'EXTRACTED' },
-        warnings: [],
+  describe('Canonical JSON Import Service', () => {
+    it('validates and imports a complete JSON payload into DRAFT status', async () => {
+      const payload = {
+        company: {
+          legalName: 'JSON TEST ENTERPRISES LIMITED',
+          displayName: 'JSON TEST ENTERPRISES',
+          cin: 'U12345MH2026PLC000001',
+        },
+        ipo: {
+          symbol: 'JSONTEST',
+          marketSegment: 'MAINBOARD',
+          exchange: 'NSE',
+          status: 'UPCOMING',
+          publicationStatus: 'PUBLISHED', // Must be forced to DRAFT
+          priceBandLow: 100,
+          priceBandHigh: 105,
+        },
+        lifecycle: {
+          openDate: '2026-10-01',
+          closeDate: '2026-10-05',
+        },
+      };
+
+      const res = await adminIpoService.importIpoFromJson(payload);
+
+      expect(res.publicationStatus).toBe(PublicationStatus.DRAFT);
+      expect(res.id).toBe('ipo-uuid-1');
+      expect(mockPrisma.ipo.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          publicationStatus: PublicationStatus.DRAFT,
+          symbol: 'JSONTEST',
+        }),
       });
+    });
 
-      const review = await extractionService.extractFromPdfBuffer(
-        Buffer.from('mock-pdf-content'),
-        'https://www.sebi.gov.in/test.pdf',
-      );
+    it('rejects JSON import when legalName is missing', async () => {
+      await expect(
+        adminIpoService.importIpoFromJson({
+          company: {},
+          ipo: { marketSegment: 'MAINBOARD' },
+        }),
+      ).rejects.toThrow('company.legalName is required');
+    });
 
-      expect(review).toBeDefined();
-      expect(review.sourceType).toBe('SEBI_PDF');
-      expect(review.fields.legalName.status).toBe('FOUND');
-      expect(review.fields.legalName.value).toBe('MANIKA PLASTECH LIMITED');
-      expect(review.fields.ofsSize.status).toBe('FOUND');
-      expect(review.fields.ofsSize.value).toBe(925000000);
-      expect(review.fields.issueShareCount.status).toBe('NOT_FOUND');
-      expect(review.fields.issueShareCount.value).toBeNull();
+    it('rejects JSON import when price band low > high', async () => {
+      await expect(
+        adminIpoService.importIpoFromJson({
+          company: { legalName: 'Invalid Price Band Co' },
+          ipo: { priceBandLow: 150, priceBandHigh: 100 },
+        }),
+      ).rejects.toThrow('priceBandLow (150) cannot be greater than priceBandHigh (100)');
     });
   });
 

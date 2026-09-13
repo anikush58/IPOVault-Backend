@@ -7,18 +7,13 @@ import {
   Patch,
   Post,
   Query,
-  UploadedFile,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { DocumentType } from '@prisma/client';
 import { AdminGuard } from './admin.guard';
 import {
   AdminIpoQueryDto,
   ConfigureAllotmentDto,
   CreateAdminIpoDto,
-  ParseDocumentUrlDto,
   UpdateAdminIpoDto,
 } from './admin-ipo.dto';
 import { AdminIpoService } from './admin-ipo.service';
@@ -85,40 +80,6 @@ export class AdminIpoController {
   @Post(':id/archive')
   async archiveIpo(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.adminIpoService.archiveIpo(id);
-  }
-
-  /**
-   * Upload a DRHP/RHP PDF document and extract fields.
-   */
-  @Post('documents/upload')
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadDocument(
-    @UploadedFile() file: { buffer: Buffer; originalname?: string; mimetype?: string },
-    @Query('ipoId') ipoId?: string,
-    @Query('documentType') documentType?: DocumentType,
-  ) {
-    if (!file) {
-      throw new Error('No PDF file provided in request body');
-    }
-    return this.adminIpoService.parseAndStorePdfBuffer(
-      file.buffer,
-      file.originalname || 'document.pdf',
-      file.mimetype || 'application/pdf',
-      ipoId,
-      documentType || DocumentType.RHP,
-    );
-  }
-
-  /**
-   * Parse a PDF document from a web URL (or SEBI HTML detail page).
-   */
-  @Post('documents/parse-url')
-  async parseDocumentUrl(@Body() dto: ParseDocumentUrlDto) {
-    return this.adminIpoService.parseUrlAndStore(
-      dto.url,
-      dto.ipoId,
-      dto.documentType || DocumentType.RHP,
-    );
   }
 
   /**
