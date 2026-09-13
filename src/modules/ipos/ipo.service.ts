@@ -12,11 +12,13 @@ import {
   IpoChangesResponseDto,
   IpoCompareQuery,
   IpoCompareResponseDto,
+  IpoGmpHistoryResponseDto,
   IpoLineageQuery,
   IpoLineageResponseDto,
   IpoListQuery,
   IpoResponseDto,
   IpoSourcesResponseDto,
+  IpoSubscriptionHistoryResponseDto,
   IpoTimelineResponseDto,
 } from './ipo.dto';
 import { calculateIpoAnalytics } from './ipo-analytics.calculator';
@@ -25,8 +27,10 @@ import {
   toIpoChangesResponseDto,
   toIpoCompareResponseDto,
   toIpoDataReadinessDto,
+  toIpoGmpHistoryResponseDto,
   toIpoLineageResponseDto,
   toIpoResponseDto,
+  toIpoSubscriptionHistoryResponseDto,
 } from './ipo.mapper';
 import { PrismaService } from '../../database/prisma.service';
 import { ReconciliationService } from '../discovery/reconciliation.service';
@@ -104,7 +108,7 @@ export class IpoService {
   async getById(id: string): Promise<IpoResponseDto> {
     const ipo = await this.ipos.findById(id);
 
-    if (!ipo) {
+    if (!ipo || ipo.publicationStatus === 'DRAFT') {
       throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
     }
 
@@ -120,6 +124,30 @@ export class IpoService {
       }
       return toIpoResponseDto(ipo);
     }
+  }
+
+  async getGmpHistory(id: string): Promise<IpoGmpHistoryResponseDto> {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo || ipo.publicationStatus === 'DRAFT') {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    const observations = await this.ipos.findGmpHistory(id);
+    return toIpoGmpHistoryResponseDto(id, observations);
+  }
+
+  async getSubscriptionHistory(
+    id: string,
+  ): Promise<IpoSubscriptionHistoryResponseDto> {
+    const ipo = await this.ipos.findById(id);
+
+    if (!ipo || ipo.publicationStatus === 'DRAFT') {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO was not found', 404);
+    }
+
+    const observations = await this.ipos.findSubscriptionHistory(id);
+    return toIpoSubscriptionHistoryResponseDto(id, observations);
   }
 
   async getTimeline(id: string): Promise<IpoTimelineResponseDto> {

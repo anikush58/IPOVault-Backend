@@ -6,8 +6,34 @@ import { IpoListQuery } from './ipo.dto';
 import { IpoWithRelations } from './ipo.types';
 
 const ipoInclude = {
-  company: true,
+  company: {
+    include: {
+      financials: {
+        orderBy: { fiscalPeriod: 'asc' },
+      },
+    },
+  },
   lifecycleEvents: true,
+  offerCategories: {
+    orderBy: { category: 'asc' },
+  },
+  participants: {
+    orderBy: { displayOrder: 'asc' },
+  },
+  documents: {
+    orderBy: { uploadedAt: 'desc' },
+  },
+  allotmentConfig: true,
+  gmpObservations: {
+    orderBy: { observedAt: 'desc' },
+    take: 1,
+    include: { source: true },
+  },
+  subscriptionObservations: {
+    orderBy: { observedAt: 'desc' },
+    take: 10,
+    include: { source: true },
+  },
 } satisfies Prisma.IpoInclude;
 
 @Injectable()
@@ -45,6 +71,22 @@ export class IpoRepository {
     return this.prisma.ipo.findMany({
       where: { id: { in: ids } },
       include: ipoInclude,
+    });
+  }
+
+  async findGmpHistory(ipoId: string) {
+    return this.prisma.gmpObservation.findMany({
+      where: { ipoId },
+      include: { source: true },
+      orderBy: { observedAt: 'asc' },
+    });
+  }
+
+  async findSubscriptionHistory(ipoId: string) {
+    return this.prisma.subscriptionObservation.findMany({
+      where: { ipoId },
+      include: { source: true },
+      orderBy: { observedAt: 'asc' },
     });
   }
 

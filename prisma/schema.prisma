@@ -106,51 +106,60 @@ enum IpoChangeType {
 }
 
 model Company {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  legalName   String   @map("legal_name")
-  displayName String   @map("display_name")
-  cin         String?  @unique
-  website     String?
-  industry    String?
-  sector      String?
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  legalName        String   @map("legal_name")
+  displayName      String   @map("display_name")
+  cin              String?  @unique
+  website          String?
+  industry         String?
+  sector           String?
+  aboutDescription String?  @map("about_description") @db.Text
+  phone            String?
+  email            String?
+  contactPerson    String?  @map("contact_person")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  ipos Ipo[]
+  ipos       Ipo[]
+  financials CompanyFinancial[]
 
   @@map("companies")
 }
 
 model Ipo {
-  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId      String            @map("company_id") @db.Uuid
-  marketSegment  MarketSegment     @map("market_segment")
-  exchange       ExchangeListing
-  status         IpoStatus         @default(DRAFT)
-  publicationStatus PublicationStatus @default(DRAFT) @map("publication_status")
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId            String              @map("company_id") @db.Uuid
+  marketSegment        MarketSegment       @map("market_segment")
+  exchange             ExchangeListing
+  status               IpoStatus           @default(DRAFT)
+  publicationStatus    PublicationStatus   @default(DRAFT) @map("publication_status")
   symbol               String?
-  issueSize            Decimal?          @map("issue_size") @db.Decimal(20, 2)
-  freshIssueSize       Decimal?          @map("fresh_issue_size") @db.Decimal(20, 2)
-  ofsSize              Decimal?          @map("ofs_size") @db.Decimal(20, 2)
-  issueShareCount      Decimal?          @map("issue_share_count") @db.Decimal(20, 0)
-  freshIssueShareCount Decimal?          @map("fresh_issue_share_count") @db.Decimal(20, 0)
-  ofsShareCount        Decimal?          @map("ofs_share_count") @db.Decimal(20, 0)
-  faceValue            Decimal?          @map("face_value") @db.Decimal(20, 2)
-  priceBandLow   Decimal?          @map("price_band_low") @db.Decimal(20, 2)
-  priceBandHigh  Decimal?          @map("price_band_high") @db.Decimal(20, 2)
-  lotSize        Int?              @map("lot_size")
-  minimumLots    Int?              @map("minimum_lots")
-  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  issueSize            Decimal?            @map("issue_size") @db.Decimal(20, 2)
+  freshIssueSize       Decimal?            @map("fresh_issue_size") @db.Decimal(20, 2)
+  ofsSize              Decimal?            @map("ofs_size") @db.Decimal(20, 2)
+  issueShareCount      Decimal?            @map("issue_share_count") @db.Decimal(20, 0)
+  freshIssueShareCount Decimal?            @map("fresh_issue_share_count") @db.Decimal(20, 0)
+  ofsShareCount        Decimal?            @map("ofs_share_count") @db.Decimal(20, 0)
+  faceValue            Decimal?            @map("face_value") @db.Decimal(20, 2)
+  priceBandLow         Decimal?            @map("price_band_low") @db.Decimal(20, 2)
+  priceBandHigh        Decimal?            @map("price_band_high") @db.Decimal(20, 2)
+  lotSize              Int?                @map("lot_size")
+  minimumLots          Int?                @map("minimum_lots")
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  company          Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  lifecycleEvents  IpoLifecycleEvent[]
-  sourceIdentities IpoSourceIdentity[]
-  changeEvents     IpoChangeEvent[]
-  allotmentCheckLogs AllotmentCheckLog[]
-  allotmentCheckJobs AllotmentCheckJob[]
-  documents        IpoDocument[]
-  allotmentConfig  IpoAllotmentConfig?
+  company                  Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  lifecycleEvents          IpoLifecycleEvent[]
+  sourceIdentities         IpoSourceIdentity[]
+  changeEvents             IpoChangeEvent[]
+  allotmentCheckLogs       AllotmentCheckLog[]
+  allotmentCheckJobs       AllotmentCheckJob[]
+  documents                IpoDocument[]
+  allotmentConfig          IpoAllotmentConfig?
+  offerCategories          IpoOfferCategory[]
+  participants             IpoParticipant[]
+  gmpObservations          GmpObservation[]
+  subscriptionObservations SubscriptionObservation[]
 
   @@index([companyId])
   @@index([status])
@@ -236,12 +245,14 @@ model Source {
   createdAt                DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  lifecycleEvents  IpoLifecycleEvent[]
-  sourceIdentities IpoSourceIdentity[]
-  discoveryRecords DiscoveryRecord[]
-  fieldProvenance  FieldProvenance[]
-  changeEvents     IpoChangeEvent[]
-  allotmentCheckLogs AllotmentCheckLog[]
+  lifecycleEvents          IpoLifecycleEvent[]
+  sourceIdentities         IpoSourceIdentity[]
+  discoveryRecords         DiscoveryRecord[]
+  fieldProvenance          FieldProvenance[]
+  changeEvents             IpoChangeEvent[]
+  allotmentCheckLogs       AllotmentCheckLog[]
+  gmpObservations          GmpObservation[]
+  subscriptionObservations SubscriptionObservation[]
 
   @@index([enabled])
   @@index([sourceType])
@@ -518,4 +529,125 @@ model NotificationPreference {
   @@unique([userId, notificationType])
   @@index([userId])
   @@map("notification_preferences")
+}
+
+enum OfferCategoryType {
+  QIB
+  NII
+  NII_SMALL
+  NII_BIG
+  RETAIL
+  EMPLOYEE
+  SHAREHOLDER
+  OTHER
+}
+
+enum ParticipantRole {
+  REGISTRAR
+  BRLM
+  CO_BRLM
+  SYNDICATE_MEMBER
+}
+
+model IpoOfferCategory {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId         String            @map("ipo_id") @db.Uuid
+  category      OfferCategoryType
+  allocationPct Decimal?          @map("allocation_pct") @db.Decimal(5, 2)
+  minLots       Int?              @map("min_lots")
+  maxLots       Int?              @map("max_lots")
+  minShares     Int?              @map("min_shares")
+  maxShares     Int?              @map("max_shares")
+  minAmount     Decimal?          @map("min_amount") @db.Decimal(20, 2)
+  maxAmount     Decimal?          @map("max_amount") @db.Decimal(20, 2)
+  isUpiEligible Boolean           @default(true) @map("is_upi_eligible")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipo Ipo @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+
+  @@unique([ipoId, category])
+  @@index([ipoId])
+  @@map("ipo_offer_categories")
+}
+
+model CompanyFinancial {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId        String   @map("company_id") @db.Uuid
+  fiscalPeriod     String   @map("fiscal_period")
+  periodType       String   @default("ANNUAL") @map("period_type")
+  totalAssets      Decimal? @map("total_assets") @db.Decimal(20, 2)
+  totalRevenue     Decimal? @map("total_revenue") @db.Decimal(20, 2)
+  pat              Decimal? @map("pat") @db.Decimal(20, 2)
+  ebitda           Decimal? @map("ebitda") @db.Decimal(20, 2)
+  netWorth         Decimal? @map("net_worth") @db.Decimal(20, 2)
+  roePercentage    Decimal? @map("roe_percentage") @db.Decimal(6, 2)
+  rocePercentage   Decimal? @map("roce_percentage") @db.Decimal(6, 2)
+  eps              Decimal? @map("eps") @db.Decimal(10, 2)
+  patMarginPercent Decimal? @map("pat_margin_percent") @db.Decimal(6, 2)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, fiscalPeriod, periodType])
+  @@index([companyId])
+  @@map("company_financials")
+}
+
+model IpoParticipant {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId        String          @map("ipo_id") @db.Uuid
+  role         ParticipantRole
+  name         String
+  phone        String?
+  email        String?
+  website      String?
+  displayOrder Int             @default(0) @map("display_order")
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipo Ipo @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+
+  @@index([ipoId, role])
+  @@map("ipo_participants")
+}
+
+model GmpObservation {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId           String   @map("ipo_id") @db.Uuid
+  gmpAmount       Decimal  @map("gmp_amount") @db.Decimal(10, 2)
+  gmpPercentage   Decimal? @map("gmp_percentage") @db.Decimal(6, 2)
+  estProfitPerLot Decimal? @map("est_profit_per_lot") @db.Decimal(12, 2)
+  sourceId        String?  @map("source_id") @db.Uuid
+  sourceReference String?  @map("source_reference")
+  observedAt      DateTime @map("observed_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ipo    Ipo     @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+  source Source? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([ipoId, observedAt])
+  @@index([sourceId, observedAt])
+  @@map("gmp_observations")
+}
+
+model SubscriptionObservation {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId                String            @map("ipo_id") @db.Uuid
+  category             OfferCategoryType
+  subscriptionMultiple Decimal           @map("subscription_multiple") @db.Decimal(10, 4)
+  sharesBid            Decimal?          @map("shares_bid") @db.Decimal(20, 0)
+  sharesOffered        Decimal?          @map("shares_offered") @db.Decimal(20, 0)
+  sourceId             String?           @map("source_id") @db.Uuid
+  sourceReference      String?           @map("source_reference")
+  observedAt           DateTime          @map("observed_at") @db.Timestamptz(6)
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ipo    Ipo     @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+  source Source? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([ipoId, category, observedAt])
+  @@index([sourceId, observedAt])
+  @@map("subscription_observations")
 }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -207,8 +208,8 @@ export class ConsoleController {
     @Query('ipoId') ipoId?: string,
     @Query('documentType') documentType?: DocumentType,
   ) {
-    if (!file) {
-      throw new Error('No PDF file provided');
+    if (!file || !file.buffer) {
+      throw new BadRequestException('No PDF file provided');
     }
     return this.adminIpoService.parseAndStorePdfBuffer(
       file.buffer,

@@ -33,8 +33,30 @@ export function toDateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
 
-export function decimalToString(value: Prisma.Decimal | null): string | null {
-  return value === null ? null : value.toFixed(2);
+export function decimalToString(
+  value: Prisma.Decimal | number | bigint | string | null | undefined,
+): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return value.toString();
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && typeof (value as any).toFixed === 'function') {
+    return (value as any).toFixed(2);
+  }
+  return String(value);
+}
+
+export function decimalToNumber(
+  value: Prisma.Decimal | number | bigint | string | null | undefined,
+): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'bigint') return Number(value);
+  if (typeof value === 'string') return Number(value);
+  if (typeof value === 'object' && typeof (value as any).toNumber === 'function') {
+    return (value as any).toNumber();
+  }
+  return Number(value);
 }
 
 export function emptyLifecycle(): IpoLifecycleDto {
@@ -63,7 +85,7 @@ export function toCompareIpoItemDto(ipo: IpoWithRelations): CompareIpoItemDto {
     companyName: ipo.company.displayName,
     legalName: ipo.company.legalName,
     symbol: ipo.symbol,
-    cin: ipo.company.cin,
+    cin: ipo.company.cin ?? null,
     status: ipo.status,
     marketSegment: ipo.marketSegment,
     exchange: ipo.exchange,
@@ -161,8 +183,49 @@ export function toIpoResponseDto(
 ): IpoResponseDto {
   const lifecycle = emptyLifecycle();
 
-  for (const event of ipo.lifecycleEvents) {
+  for (const event of ipo.lifecycleEvents ?? []) {
     lifecycle[LIFECYCLE_FIELD[event.eventType]] = toDateOnly(event.eventDate);
+  }
+
+  // Derived minimum investment amount (lotSize * priceBandHigh)
+  let minimumInvestmentAmount: string | null = null;
+  if (ipo.lotSize != null && ipo.priceBandHigh != null) {
+    const minVal = ipo.lotSize * Number(ipo.priceBandHigh);
+    if (!isNaN(minVal) && minVal > 0) {
+      minimumInvestmentAmount = minVal.toFixed(2);
+    }
+  }
+
+  // Current GMP snapshot from latest observation
+  let currentGmp = null;
+  const latestGmp = ipo.gmpObservations?.[0];
+  if (latestGmp) {
+    currentGmp = {
+      gmpAmount: decimalToString(latestGmp.gmpAmount)!,
+      gmpPercentage: decimalToString(latestGmp.gmpPercentage),
+      estProfitPerLot: decimalToString(latestGmp.estProfitPerLot),
+      observedAt: latestGmp.observedAt.toISOString(),
+    };
+  }
+
+  // Current Subscription snapshot from latest observations
+  let currentSubscription = null;
+  if (ipo.subscriptionObservations && ipo.subscriptionObservations.length > 0) {
+    const obsList = ipo.subscriptionObservations;
+    const latestDate = obsList[0].observedAt;
+    const catList = obsList
+      .filter((s) => s.observedAt.getTime() === latestDate.getTime())
+      .map((s) => ({
+        category: s.category,
+        subscriptionMultiple: decimalToString(s.subscriptionMultiple)!,
+      }));
+
+    const totalItem = catList.find((c) => c.category === 'OTHER' || c.category === 'QIB');
+    currentSubscription = {
+      totalSubscriptionMultiple: totalItem ? totalItem.subscriptionMultiple : catList[0]?.subscriptionMultiple ?? null,
+      categories: catList,
+      observedAt: latestDate.toISOString(),
+    };
   }
 
   return {
@@ -171,10 +234,30 @@ export function toIpoResponseDto(
       id: ipo.company.id,
       legalName: ipo.company.legalName,
       displayName: ipo.company.displayName,
-      cin: ipo.company.cin,
-      website: ipo.company.website,
-      industry: ipo.company.industry,
-      sector: ipo.company.sector,
+      cin: ipo.company.cin ?? null,
+      website: ipo.company.website ?? null,
+      industry: ipo.company.industry ?? null,
+      sector: ipo.company.sector ?? null,
+      aboutDescription: ipo.company.aboutDescription ?? null,
+      phone: ipo.company.phone ?? null,
+      email: ipo.company.email ?? null,
+      contactPerson: ipo.company.contactPerson ?? null,
+      financials: (ipo.company.financials ?? []).map((f) => ({
+        id: f.id,
+        fiscalPeriod: f.fiscalPeriod,
+        periodType: f.periodType,
+        totalAssets: decimalToString(f.totalAssets),
+        totalRevenue: decimalToString(f.totalRevenue),
+        pat: decimalToString(f.pat),
+        ebitda: decimalToString(f.ebitda),
+        netWorth: decimalToString(f.netWorth),
+        roePercentage: decimalToString(f.roePercentage),
+        rocePercentage: decimalToString(f.rocePercentage),
+        eps: decimalToString(f.eps),
+        patMarginPercent: decimalToString(f.patMarginPercent),
+        createdAt: f.createdAt.toISOString(),
+        updatedAt: f.updatedAt.toISOString(),
+      })),
     },
     marketSegment: ipo.marketSegment,
     exchange: ipo.exchange,
@@ -183,15 +266,128 @@ export function toIpoResponseDto(
     issueSize: decimalToString(ipo.issueSize),
     freshIssueSize: decimalToString(ipo.freshIssueSize),
     ofsSize: decimalToString(ipo.ofsSize),
+    issueShareCount: decimalToString(ipo.issueShareCount),
+    freshIssueShareCount: decimalToString(ipo.freshIssueShareCount),
+    ofsShareCount: decimalToString(ipo.ofsShareCount),
     faceValue: decimalToString(ipo.faceValue),
     priceBandLow: decimalToString(ipo.priceBandLow),
     priceBandHigh: decimalToString(ipo.priceBandHigh),
     lotSize: ipo.lotSize,
     minimumLots: ipo.minimumLots,
+    minimumInvestmentAmount,
     lifecycle,
+    offerCategories: (ipo.offerCategories ?? []).map((c) => ({
+      id: c.id,
+      category: c.category,
+      allocationPct: decimalToString(c.allocationPct),
+      minLots: c.minLots,
+      maxLots: c.maxLots,
+      minShares: c.minShares,
+      maxShares: c.maxShares,
+      minAmount: decimalToString(c.minAmount),
+      maxAmount: decimalToString(c.maxAmount),
+      isUpiEligible: c.isUpiEligible,
+    })),
+    participants: (ipo.participants ?? []).map((p) => ({
+      id: p.id,
+      role: p.role,
+      name: p.name,
+      phone: p.phone,
+      email: p.email,
+      website: p.website,
+      displayOrder: p.displayOrder,
+    })),
+    documents: (ipo.documents ?? []).map((d) => ({
+      id: d.id,
+      documentType: d.documentType,
+      title: d.fileName,
+      fileName: d.fileName,
+      sourceUrl: d.sourceUrl,
+      fileUrl: d.sourceUrl,
+      documentUrl: d.sourceUrl,
+      mimeType: d.mimeType,
+      fileSizeBytes: d.fileSizeBytes,
+      parsingStatus: d.parsingStatus,
+      uploadedAt: d.uploadedAt.toISOString(),
+    })),
+    allotment: ipo.allotmentConfig
+      ? {
+          registrar: ipo.allotmentConfig.registrar,
+          registrarIpoCode: ipo.allotmentConfig.registrarIpoCode,
+          sourceUrl: ipo.allotmentConfig.allotmentSourceUrl,
+          allotmentSourceUrl: ipo.allotmentConfig.allotmentSourceUrl,
+          expectedDate: ipo.allotmentConfig.expectedAllotmentDate
+            ? toDateOnly(ipo.allotmentConfig.expectedAllotmentDate)
+            : null,
+          expectedAllotmentDate: ipo.allotmentConfig.expectedAllotmentDate
+            ? toDateOnly(ipo.allotmentConfig.expectedAllotmentDate)
+            : null,
+          enabled: ipo.allotmentConfig.enabled,
+        }
+      : null,
+    currentGmp,
+    currentSubscription,
     ...(dataReadiness ? { dataReadiness } : {}),
     createdAt: ipo.createdAt.toISOString(),
     updatedAt: ipo.updatedAt.toISOString(),
+  };
+}
+
+export type GmpObservationWithSource = Prisma.GmpObservationGetPayload<{
+  include: { source: true };
+}>;
+
+export function toIpoGmpHistoryResponseDto(
+  ipoId: string,
+  observations: GmpObservationWithSource[],
+) {
+  return {
+    ipoId,
+    observations: observations.map((o) => ({
+      id: o.id,
+      gmpAmount: decimalToString(o.gmpAmount)!,
+      gmpPercentage: decimalToString(o.gmpPercentage),
+      estProfitPerLot: decimalToString(o.estProfitPerLot),
+      source: o.source
+        ? {
+            code: o.source.code,
+            name: o.source.name,
+          }
+        : null,
+      observedAt: o.observedAt.toISOString(),
+      createdAt: o.createdAt.toISOString(),
+    })),
+    totalCount: observations.length,
+  };
+}
+
+export type SubscriptionObservationWithSource = Prisma.SubscriptionObservationGetPayload<{
+  include: { source: true };
+}>;
+
+export function toIpoSubscriptionHistoryResponseDto(
+  ipoId: string,
+  observations: SubscriptionObservationWithSource[],
+) {
+  return {
+    ipoId,
+    subscriptionSupported: observations.length > 0,
+    observations: observations.map((s) => ({
+      id: s.id,
+      category: s.category,
+      subscriptionMultiple: decimalToString(s.subscriptionMultiple)!,
+      sharesBid: decimalToString(s.sharesBid),
+      sharesOffered: decimalToString(s.sharesOffered),
+      source: s.source
+        ? {
+            code: s.source.code,
+            name: s.source.name,
+          }
+        : null,
+      observedAt: s.observedAt.toISOString(),
+      createdAt: s.createdAt.toISOString(),
+    })),
+    totalCount: observations.length,
   };
 }
 

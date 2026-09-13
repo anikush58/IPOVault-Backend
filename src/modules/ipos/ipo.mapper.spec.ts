@@ -74,7 +74,7 @@ describe('toIpoResponseDto', () => {
     const dto = toIpoResponseDto(buildIpo());
 
     expect(dto.id).toBe('11111111-1111-4111-8111-111111111111');
-    expect(dto.company).toEqual({
+    expect(dto.company).toMatchObject({
       id: '22222222-2222-4222-8222-222222222222',
       legalName: 'Example Technologies Limited',
       displayName: 'Example Tech',

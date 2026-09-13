@@ -389,17 +389,18 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
             <div style="display:flex; gap:12px;">
               <input type="text" id="doc-url-input" placeholder="Paste SEBI HTML detail page URL or direct PDF URL..." style="flex:1; background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text);" />
-              <button class="btn" onclick="parseDocumentUrl()">Parse URL</button>
+              <button type="button" class="btn" id="btn-parse-url" onclick="parseDocumentUrl()">Parse URL</button>
             </div>
             <div style="display:flex; gap:12px; align-items:center;">
               <input type="file" id="doc-file-input" accept="application/pdf" style="flex:1; background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:6px 12px; color:var(--text);" />
-              <button class="btn btn-secondary" onclick="uploadDocumentFile()">Upload & Parse PDF</button>
+              <button type="button" class="btn btn-secondary" id="btn-upload-file" onclick="uploadDocumentFile()">Upload & Parse PDF</button>
             </div>
+            <div id="upload-status-message" style="display:none; margin-top:8px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:500;"></div>
           </div>
           <div id="parser-review-container" style="display:none; margin-top:14px; flex-direction:column; gap:10px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <strong style="color:var(--primary); font-size:13px;">Extracted PDF Fields Review</strong>
-              <button class="btn btn-secondary" onclick="applyExtractedValuesToForm()">Apply Extracted Fields to Form</button>
+              <button type="button" class="btn btn-secondary" onclick="applyExtractedValuesToForm()">Apply Extracted Fields to Form</button>
             </div>
             <div class="table-container">
               <table>
@@ -415,25 +416,25 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         <!-- Canonical IPO Editor Form -->
         <div class="card">
           <div class="card-title">Canonical IPO Information</div>
-          <form id="manual-ipo-form" onsubmit="event.preventDefault(); saveManualIpo();" style="display:flex; flex-direction:column; gap:16px; margin-top:12px;">
+          <form id="manual-ipo-form" autocomplete="off" onsubmit="event.preventDefault(); saveManualIpo();" style="display:flex; flex-direction:column; gap:16px; margin-top:12px;">
             <input type="hidden" id="form-ipo-id" />
 
             <div class="form-grid">
               <div class="form-group">
                 <label>Legal Company Name *</label>
-                <input type="text" id="form-legalName" required />
+                <input type="text" id="form-legalName" autocomplete="off" required />
               </div>
               <div class="form-group">
                 <label>Display Name</label>
-                <input type="text" id="form-displayName" />
+                <input type="text" id="form-displayName" autocomplete="off" />
               </div>
               <div class="form-group">
                 <label>CIN</label>
-                <input type="text" id="form-cin" placeholder="U27109HR1974PLC007126" />
+                <input type="text" id="form-cin" autocomplete="off" placeholder="e.g. U12345MH2024PLC000001" />
               </div>
               <div class="form-group">
                 <label>Trading Symbol</label>
-                <input type="text" id="form-symbol" placeholder="MANIKA" />
+                <input type="text" id="form-symbol" autocomplete="off" placeholder="e.g. SYMBOL" />
               </div>
             </div>
 
@@ -511,6 +512,21 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
             <div class="form-grid">
               <div class="form-group">
+                <label>Total Issue Shares</label>
+                <input type="number" id="form-issueShareCount" placeholder="e.g. 10000000" />
+              </div>
+              <div class="form-group">
+                <label>Fresh Issue Shares</label>
+                <input type="number" id="form-freshIssueShareCount" placeholder="e.g. 6000000" />
+              </div>
+              <div class="form-group">
+                <label>OFS Shares</label>
+                <input type="number" id="form-ofsShareCount" placeholder="e.g. 4000000" />
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
                 <label>Issue Open Date</label>
                 <input type="date" id="form-openDate" />
               </div>
@@ -519,8 +535,204 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                 <input type="date" id="form-closeDate" />
               </div>
               <div class="form-group">
+                <label>Allotment Date</label>
+                <input type="date" id="form-allotmentDate" />
+              </div>
+              <div class="form-group">
                 <label>Listing Date</label>
                 <input type="date" id="form-listingDate" />
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
+              <strong style="color:var(--primary); font-size:14px;">Company Information & Contact</strong>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Website</label>
+                <input type="url" id="form-website" placeholder="https://..." />
+              </div>
+              <div class="form-group">
+                <label>Industry</label>
+                <input type="text" id="form-industry" placeholder="e.g. Electrical Equipment" />
+              </div>
+              <div class="form-group">
+                <label>Sector</label>
+                <input type="text" id="form-sector" placeholder="e.g. Capital Goods" />
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Phone</label>
+                <input type="text" id="form-phone" placeholder="e.g. +91 120 1234567" />
+              </div>
+              <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="form-email" placeholder="investors@company.com" />
+              </div>
+              <div class="form-group">
+                <label>Contact Person</label>
+                <input type="text" id="form-contactPerson" placeholder="Company Secretary / CS" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>About Company Description</label>
+              <textarea id="form-aboutDescription" rows="3" placeholder="Enter company background and business overview..." style="background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text); font-family:inherit; font-size:13px;"></textarea>
+            </div>
+
+            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
+              <strong style="color:var(--primary); font-size:14px;">Offer Breakup & Retail Category Terms</strong>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>QIB Allocation (%)</label>
+                <input type="number" step="0.01" id="cat-qib-pct" placeholder="e.g. 50" />
+              </div>
+              <div class="form-group">
+                <label>NII Allocation (%)</label>
+                <input type="number" step="0.01" id="cat-nii-pct" placeholder="e.g. 15" />
+              </div>
+              <div class="form-group">
+                <label>Retail Allocation (%)</label>
+                <input type="number" step="0.01" id="cat-retail-pct" placeholder="e.g. 35" />
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Retail Min Lots</label>
+                <input type="number" id="cat-retail-min-lots" placeholder="1" />
+              </div>
+              <div class="form-group">
+                <label>Retail Max Lots</label>
+                <input type="number" id="cat-retail-max-lots" placeholder="13" />
+              </div>
+              <div class="form-group">
+                <label>Retail Min Shares</label>
+                <input type="number" id="cat-retail-min-shares" placeholder="e.g. 100" />
+              </div>
+              <div class="form-group">
+                <label>Retail Max Shares</label>
+                <input type="number" id="cat-retail-max-shares" placeholder="e.g. 1300" />
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Retail Min Amount (₹)</label>
+                <input type="number" step="0.01" id="cat-retail-min-amount" placeholder="e.g. 14800" />
+              </div>
+              <div class="form-group">
+                <label>Retail Max Amount (₹)</label>
+                <input type="number" step="0.01" id="cat-retail-max-amount" placeholder="e.g. 192400" />
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
+              <strong style="color:var(--primary); font-size:14px;">Participants (Registrar & Lead Managers)</strong>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Registrar Name</label>
+                <input type="text" id="part-reg-name" placeholder="e.g. MUFG Intime India Pvt Ltd / KFintech" />
+              </div>
+              <div class="form-group">
+                <label>Registrar Phone</label>
+                <input type="text" id="part-reg-phone" placeholder="e.g. +91 22 4918 6270" />
+              </div>
+              <div class="form-group">
+                <label>Registrar Email</label>
+                <input type="email" id="part-reg-email" placeholder="e.g. ipo@linkintime.co.in" />
+              </div>
+              <div class="form-group">
+                <label>Registrar Website</label>
+                <input type="url" id="part-reg-website" placeholder="https://..." />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Lead Manager / BRLM Name(s)</label>
+              <input type="text" id="part-brlm-name" placeholder="e.g. ICICI Securities, Axis Capital (comma-separated)" />
+            </div>
+
+            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
+              <strong style="color:var(--primary); font-size:14px;">Financial History (Latest Fiscal Year)</strong>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Fiscal Period</label>
+                <input type="text" id="fin-period" placeholder="e.g. FY24" />
+              </div>
+              <div class="form-group">
+                <label>Total Assets (₹ Cr)</label>
+                <input type="number" step="0.01" id="fin-assets" />
+              </div>
+              <div class="form-group">
+                <label>Total Revenue (₹ Cr)</label>
+                <input type="number" step="0.01" id="fin-revenue" />
+              </div>
+              <div class="form-group">
+                <label>PAT (₹ Cr)</label>
+                <input type="number" step="0.01" id="fin-pat" />
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>EBITDA (₹ Cr)</label>
+                <input type="number" step="0.01" id="fin-ebitda" />
+              </div>
+              <div class="form-group">
+                <label>Net Worth (₹ Cr)</label>
+                <input type="number" step="0.01" id="fin-networth" />
+              </div>
+              <div class="form-group">
+                <label>EPS (₹)</label>
+                <input type="number" step="0.01" id="fin-eps" />
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
+              <strong style="color:var(--primary); font-size:14px;">Manual GMP & Subscription Observations</strong>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>GMP Amount (₹)</label>
+                <input type="number" step="0.01" id="gmp-amount" placeholder="e.g. 25.00" />
+              </div>
+              <div class="form-group">
+                <label>GMP Percentage (%)</label>
+                <input type="number" step="0.01" id="gmp-percentage" placeholder="e.g. 23.15" />
+              </div>
+              <div class="form-group">
+                <label>Est Profit / Lot (₹)</label>
+                <input type="number" step="0.01" id="gmp-est-profit" placeholder="e.g. 3500.00" />
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>QIB Sub (x)</label>
+                <input type="number" step="0.01" id="sub-qib" placeholder="e.g. 4.5" />
+              </div>
+              <div class="form-group">
+                <label>NII Sub (x)</label>
+                <input type="number" step="0.01" id="sub-nii" placeholder="e.g. 12.3" />
+              </div>
+              <div class="form-group">
+                <label>Retail Sub (x)</label>
+                <input type="number" step="0.01" id="sub-retail" placeholder="e.g. 8.1" />
+              </div>
+              <div class="form-group">
+                <label>Total Sub (x)</label>
+                <input type="number" step="0.01" id="sub-total" placeholder="e.g. 7.9" />
               </div>
             </div>
 
@@ -540,7 +752,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
             <div class="form-group">
               <label>Registrar IPO Code / ID</label>
-              <input type="text" id="allot-registrar-ipo-code" placeholder="e.g. MANIKA2026" />
+              <input type="text" id="allot-registrar-ipo-code" placeholder="e.g. REGISTRAR_IPO_CODE" />
             </div>
           </div>
           <div style="display:flex; justify-content:flex-end; margin-top:12px;">
@@ -811,16 +1023,88 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       document.getElementById('form-issueSize').value = '';
       document.getElementById('form-freshIssueSize').value = '';
       document.getElementById('form-ofsSize').value = '';
+      document.getElementById('form-issueShareCount').value = '';
+      document.getElementById('form-freshIssueShareCount').value = '';
+      document.getElementById('form-ofsShareCount').value = '';
       document.getElementById('form-openDate').value = '';
       document.getElementById('form-closeDate').value = '';
+      document.getElementById('form-allotmentDate').value = '';
       document.getElementById('form-listingDate').value = '';
+
+      document.getElementById('form-website').value = '';
+      document.getElementById('form-industry').value = '';
+      document.getElementById('form-sector').value = '';
+      document.getElementById('form-phone').value = '';
+      document.getElementById('form-email').value = '';
+      document.getElementById('form-contactPerson').value = '';
+      document.getElementById('form-aboutDescription').value = '';
+
+      document.getElementById('cat-qib-pct').value = '';
+      document.getElementById('cat-nii-pct').value = '';
+      document.getElementById('cat-retail-pct').value = '';
+      document.getElementById('cat-retail-min-lots').value = '';
+      document.getElementById('cat-retail-max-lots').value = '';
+      document.getElementById('cat-retail-min-shares').value = '';
+      document.getElementById('cat-retail-max-shares').value = '';
+      document.getElementById('cat-retail-min-amount').value = '';
+      document.getElementById('cat-retail-max-amount').value = '';
+
+      document.getElementById('part-reg-name').value = '';
+      document.getElementById('part-reg-phone').value = '';
+      document.getElementById('part-reg-email').value = '';
+      document.getElementById('part-reg-website').value = '';
+      document.getElementById('part-brlm-name').value = '';
+
+      document.getElementById('fin-period').value = '';
+      document.getElementById('fin-assets').value = '';
+      document.getElementById('fin-revenue').value = '';
+      document.getElementById('fin-pat').value = '';
+      document.getElementById('fin-ebitda').value = '';
+      document.getElementById('fin-networth').value = '';
+      document.getElementById('fin-eps').value = '';
+
+      document.getElementById('gmp-amount').value = '';
+      document.getElementById('gmp-percentage').value = '';
+      document.getElementById('gmp-est-profit').value = '';
+
+      document.getElementById('sub-qib').value = '';
+      document.getElementById('sub-nii').value = '';
+      document.getElementById('sub-retail').value = '';
+      document.getElementById('sub-total').value = '';
+
       document.getElementById('validation-banner').style.display = 'none';
+
+      document.getElementById('allot-registrar-code').value = '';
+      document.getElementById('allot-registrar-ipo-code').value = '';
+
+      const fileInput = document.getElementById('doc-file-input');
+      if (fileInput) fileInput.value = '';
+      const urlInput = document.getElementById('doc-url-input');
+      if (urlInput) urlInput.value = '';
+
+      lastExtractionReview = null;
+      const reviewContainer = document.getElementById('parser-review-container');
+      if (reviewContainer) reviewContainer.style.display = 'none';
+      const statusMsg = document.getElementById('upload-status-message');
+      if (statusMsg) { statusMsg.style.display = 'none'; statusMsg.textContent = ''; }
 
       switchTab('manual-edit');
     }
 
     async function editManualIpo(id) {
       switchTab('manual-edit');
+
+      // Reset document upload & extraction review state when opening IPO for edit
+      const fileInput = document.getElementById('doc-file-input');
+      if (fileInput) fileInput.value = '';
+      const urlInput = document.getElementById('doc-url-input');
+      if (urlInput) urlInput.value = '';
+      lastExtractionReview = null;
+      const reviewContainer = document.getElementById('parser-review-container');
+      if (reviewContainer) reviewContainer.style.display = 'none';
+      const statusMsg = document.getElementById('upload-status-message');
+      if (statusMsg) { statusMsg.style.display = 'none'; statusMsg.textContent = ''; }
+
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id);
         const json = await res.json();
@@ -842,16 +1126,81 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-issueSize').value = ipo.issueSize ? (ipo.issueSize / 10000000).toFixed(2) : '';
         document.getElementById('form-freshIssueSize').value = ipo.freshIssueSize ? (ipo.freshIssueSize / 10000000).toFixed(2) : '';
         document.getElementById('form-ofsSize').value = ipo.ofsSize ? (ipo.ofsSize / 10000000).toFixed(2) : '';
+        document.getElementById('form-issueShareCount').value = ipo.issueShareCount ?? '';
+        document.getElementById('form-freshIssueShareCount').value = ipo.freshIssueShareCount ?? '';
+        document.getElementById('form-ofsShareCount').value = ipo.ofsShareCount ?? '';
         document.getElementById('form-openDate').value = ipo.openDate || '';
         document.getElementById('form-closeDate').value = ipo.closeDate || '';
         document.getElementById('form-listingDate').value = ipo.listingDate || '';
+
+        const allotmentEv = ipo.lifecycleEvents?.find(e => e.eventType === 'BASIS_OF_ALLOTMENT');
+        document.getElementById('form-allotmentDate').value = allotmentEv ? allotmentEv.eventDate.slice(0, 10) : '';
+
+        // Company
+        document.getElementById('form-website').value = ipo.company?.website || '';
+        document.getElementById('form-industry').value = ipo.company?.industry || '';
+        document.getElementById('form-sector').value = ipo.company?.sector || '';
+        document.getElementById('form-phone').value = ipo.company?.phone || '';
+        document.getElementById('form-email').value = ipo.company?.email || '';
+        document.getElementById('form-contactPerson').value = ipo.company?.contactPerson || '';
+        document.getElementById('form-aboutDescription').value = ipo.company?.aboutDescription || '';
+
+        // Categories
+        const qib = ipo.offerCategories?.find(c => c.category === 'QIB');
+        const nii = ipo.offerCategories?.find(c => c.category === 'NII');
+        const retail = ipo.offerCategories?.find(c => c.category === 'RETAIL');
+        document.getElementById('cat-qib-pct').value = qib?.allocationPct ?? '';
+        document.getElementById('cat-nii-pct').value = nii?.allocationPct ?? '';
+        document.getElementById('cat-retail-pct').value = retail?.allocationPct ?? '';
+        document.getElementById('cat-retail-min-lots').value = retail?.minLots ?? '';
+        document.getElementById('cat-retail-max-lots').value = retail?.maxLots ?? '';
+        document.getElementById('cat-retail-min-shares').value = retail?.minShares ?? '';
+        document.getElementById('cat-retail-max-shares').value = retail?.maxShares ?? '';
+        document.getElementById('cat-retail-min-amount').value = retail?.minAmount ?? '';
+        document.getElementById('cat-retail-max-amount').value = retail?.maxAmount ?? '';
+
+        // Participants
+        const reg = ipo.participants?.find(p => p.role === 'REGISTRAR');
+        const brlms = ipo.participants?.filter(p => p.role === 'BRLM' || p.role === 'CO_BRLM').map(p => p.name).join(', ');
+        document.getElementById('part-reg-name').value = reg?.name || ipo.allotmentConfig?.registrar || '';
+        document.getElementById('part-reg-phone').value = reg?.phone || '';
+        document.getElementById('part-reg-email').value = reg?.email || '';
+        document.getElementById('part-reg-website').value = reg?.website || ipo.allotmentConfig?.allotmentSourceUrl || '';
+        document.getElementById('part-brlm-name').value = brlms || '';
+
+        // Financials
+        const fin = ipo.financials?.[0] || ipo.company?.financials?.[0];
+        document.getElementById('fin-period').value = fin?.fiscalPeriod || '';
+        document.getElementById('fin-assets').value = fin?.totalAssets ?? '';
+        document.getElementById('fin-revenue').value = fin?.totalRevenue ?? '';
+        document.getElementById('fin-pat').value = fin?.pat ?? '';
+        document.getElementById('fin-ebitda').value = fin?.ebitda ?? '';
+        document.getElementById('fin-networth').value = fin?.netWorth ?? '';
+        document.getElementById('fin-eps').value = fin?.eps ?? '';
+
+        // GMP
+        const gmp = ipo.gmpObservations?.[0];
+        document.getElementById('gmp-amount').value = gmp?.gmpAmount ?? '';
+        document.getElementById('gmp-percentage').value = gmp?.gmpPercentage ?? '';
+        document.getElementById('gmp-est-profit').value = gmp?.estProfitPerLot ?? '';
+
+        // Subscription
+        const subs = ipo.subscriptionObservations || [];
+        const qibSub = subs.find(s => s.category === 'QIB');
+        const niiSub = subs.find(s => s.category === 'NII');
+        const retailSub = subs.find(s => s.category === 'RETAIL');
+        const totalSub = subs.find(s => s.category === 'OTHER');
+        document.getElementById('sub-qib').value = qibSub?.subscriptionMultiple ?? '';
+        document.getElementById('sub-nii').value = niiSub?.subscriptionMultiple ?? '';
+        document.getElementById('sub-retail').value = retailSub?.subscriptionMultiple ?? '';
+        document.getElementById('sub-total').value = totalSub?.subscriptionMultiple ?? '';
 
         // Allotment config
         if (ipo.allotmentConfig) {
           document.getElementById('allot-registrar-code').value = ipo.allotmentConfig.registrar || '';
           document.getElementById('allot-registrar-ipo-code').value = ipo.allotmentConfig.registrarIpoCode || '';
         } else {
-          document.getElementById('allot-registrar-code').value = '';
+          document.getElementById('allot-registrar-code').value = reg?.name ? reg.name.toLowerCase().replace(/\s+/g, '') : '';
           document.getElementById('allot-registrar-ipo-code').value = '';
         }
 
@@ -887,6 +1236,76 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       const freshSizeVal = document.getElementById('form-freshIssueSize').value;
       const ofsSizeVal = document.getElementById('form-ofsSize').value;
 
+      const offerCategories = [];
+      const qibPct = parseFloat(document.getElementById('cat-qib-pct').value);
+      const niiPct = parseFloat(document.getElementById('cat-nii-pct').value);
+      const retailPct = parseFloat(document.getElementById('cat-retail-pct').value);
+      if (!isNaN(qibPct)) offerCategories.push({ category: 'QIB', allocationPct: qibPct });
+      if (!isNaN(niiPct)) offerCategories.push({ category: 'NII', allocationPct: niiPct });
+      if (!isNaN(retailPct)) {
+        offerCategories.push({
+          category: 'RETAIL',
+          allocationPct: retailPct,
+          minLots: parseInt(document.getElementById('cat-retail-min-lots').value, 10) || undefined,
+          maxLots: parseInt(document.getElementById('cat-retail-max-lots').value, 10) || undefined,
+          minShares: parseInt(document.getElementById('cat-retail-min-shares').value, 10) || undefined,
+          maxShares: parseInt(document.getElementById('cat-retail-max-shares').value, 10) || undefined,
+          minAmount: parseFloat(document.getElementById('cat-retail-min-amount').value) || undefined,
+          maxAmount: parseFloat(document.getElementById('cat-retail-max-amount').value) || undefined,
+        });
+      }
+
+      const participants = [];
+      const regName = document.getElementById('part-reg-name').value.trim();
+      if (regName) {
+        participants.push({
+          role: 'REGISTRAR',
+          name: regName,
+          phone: document.getElementById('part-reg-phone').value.trim() || undefined,
+          email: document.getElementById('part-reg-email').value.trim() || undefined,
+          website: document.getElementById('part-reg-website').value.trim() || undefined,
+          displayOrder: 1,
+        });
+      }
+      const brlmLines = document.getElementById('part-brlm-name').value.split(',').map(s => s.trim()).filter(Boolean);
+      brlmLines.forEach((bName, idx) => {
+        participants.push({ role: 'BRLM', name: bName, displayOrder: idx + 2 });
+      });
+
+      const financials = [];
+      const finPeriod = document.getElementById('fin-period').value.trim();
+      if (finPeriod) {
+        financials.push({
+          fiscalPeriod: finPeriod,
+          totalAssets: parseFloat(document.getElementById('fin-assets').value) || undefined,
+          totalRevenue: parseFloat(document.getElementById('fin-revenue').value) || undefined,
+          pat: parseFloat(document.getElementById('fin-pat').value) || undefined,
+          ebitda: parseFloat(document.getElementById('fin-ebitda').value) || undefined,
+          netWorth: parseFloat(document.getElementById('fin-networth').value) || undefined,
+          eps: parseFloat(document.getElementById('fin-eps').value) || undefined,
+        });
+      }
+
+      let gmp = undefined;
+      const gmpVal = parseFloat(document.getElementById('gmp-amount').value);
+      if (!isNaN(gmpVal)) {
+        gmp = {
+          gmpAmount: gmpVal,
+          gmpPercentage: parseFloat(document.getElementById('gmp-percentage').value) || undefined,
+          estProfitPerLot: parseFloat(document.getElementById('gmp-est-profit').value) || undefined,
+        };
+      }
+
+      const subscription = [];
+      const subQib = parseFloat(document.getElementById('sub-qib').value);
+      const subNii = parseFloat(document.getElementById('sub-nii').value);
+      const subRetail = parseFloat(document.getElementById('sub-retail').value);
+      const subTotal = parseFloat(document.getElementById('sub-total').value);
+      if (!isNaN(subQib)) subscription.push({ category: 'QIB', subscriptionMultiple: subQib });
+      if (!isNaN(subNii)) subscription.push({ category: 'NII', subscriptionMultiple: subNii });
+      if (!isNaN(subRetail)) subscription.push({ category: 'RETAIL', subscriptionMultiple: subRetail });
+      if (!isNaN(subTotal)) subscription.push({ category: 'OTHER', subscriptionMultiple: subTotal });
+
       const body = {
         legalName: document.getElementById('form-legalName').value,
         displayName: document.getElementById('form-displayName').value || undefined,
@@ -903,9 +1322,27 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         issueSize: issueSizeVal ? parseFloat(issueSizeVal) * 10000000 : undefined,
         freshIssueSize: freshSizeVal ? parseFloat(freshSizeVal) * 10000000 : undefined,
         ofsSize: ofsSizeVal ? parseFloat(ofsSizeVal) * 10000000 : undefined,
+        issueShareCount: parseInt(document.getElementById('form-issueShareCount').value, 10) || undefined,
+        freshIssueShareCount: parseInt(document.getElementById('form-freshIssueShareCount').value, 10) || undefined,
+        ofsShareCount: parseInt(document.getElementById('form-ofsShareCount').value, 10) || undefined,
         openDate: document.getElementById('form-openDate').value || undefined,
         closeDate: document.getElementById('form-closeDate').value || undefined,
         listingDate: document.getElementById('form-listingDate').value || undefined,
+        allotmentDate: document.getElementById('form-allotmentDate').value || undefined,
+
+        website: document.getElementById('form-website').value || undefined,
+        industry: document.getElementById('form-industry').value || undefined,
+        sector: document.getElementById('form-sector').value || undefined,
+        phone: document.getElementById('form-phone').value || undefined,
+        email: document.getElementById('form-email').value || undefined,
+        contactPerson: document.getElementById('form-contactPerson').value || undefined,
+        aboutDescription: document.getElementById('form-aboutDescription').value || undefined,
+
+        offerCategories: offerCategories.length > 0 ? offerCategories : undefined,
+        participants: participants.length > 0 ? participants : undefined,
+        financials: financials.length > 0 ? financials : undefined,
+        gmp,
+        subscription: subscription.length > 0 ? subscription : undefined,
       };
 
       try {
@@ -988,61 +1425,127 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    function showUploadStatus(text, type = 'info') {
+      const statusMsg = document.getElementById('upload-status-message');
+      if (!statusMsg) return;
+      statusMsg.style.display = 'block';
+      statusMsg.textContent = text;
+      if (type === 'error') {
+        statusMsg.style.background = 'rgba(248, 113, 113, 0.15)';
+        statusMsg.style.color = 'var(--danger)';
+        statusMsg.style.border = '1px solid rgba(248, 113, 113, 0.3)';
+      } else if (type === 'success') {
+        statusMsg.style.background = 'rgba(52, 211, 153, 0.15)';
+        statusMsg.style.color = 'var(--success)';
+        statusMsg.style.border = '1px solid rgba(52, 211, 153, 0.3)';
+      } else {
+        statusMsg.style.background = 'rgba(56, 189, 248, 0.15)';
+        statusMsg.style.color = 'var(--primary)';
+        statusMsg.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+      }
+    }
+
     async function parseDocumentUrl() {
-      const url = document.getElementById('doc-url-input').value.trim();
+      const urlInput = document.getElementById('doc-url-input');
+      const btn = document.getElementById('btn-parse-url');
+      const url = urlInput?.value.trim();
       const ipoId = document.getElementById('form-ipo-id').value || undefined;
-      if (!url) { alert('Please enter a SEBI detail page URL or PDF URL.'); return; }
+
+      if (!url) {
+        showUploadStatus('Please enter a valid SEBI detail page URL or direct PDF URL.', 'error');
+        return;
+      }
 
       try {
+        if (btn) { btn.disabled = true; btn.textContent = 'Parsing URL...'; }
+        showUploadStatus('Fetching URL & parsing PDF... Please wait.', 'info');
+
         const res = await fetch(API_BASE + '/manual-ipos/parse-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url, ipoId }),
         });
-        const json = await res.json();
-        const data = json.data || json;
 
-        if (data.parsingStatus === 'FAILED') {
-          alert('PDF parsing failed: ' + (data.errorMessage || 'Unknown error'));
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showUploadStatus('URL parsing failed: ' + (json.message || res.statusText || 'Backend server error'), 'error');
           return;
         }
 
+        const data = json.data || json;
+        if (data.parsingStatus === 'FAILED') {
+          showUploadStatus('PDF parsing failed: ' + (data.errorMessage || 'Unknown error'), 'error');
+          return;
+        }
+
+        showUploadStatus('✅ Extraction complete! Review extracted fields below.', 'success');
         lastExtractionReview = data.extraction;
         renderExtractionReview(data.extraction);
       } catch (err) {
         console.error('Parse URL error:', err);
+        showUploadStatus('Parse URL failed: backend unavailable.', 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Parse URL'; }
       }
     }
 
     async function uploadDocumentFile() {
-      const fileInput = document.getElementById('doc-file-input');
-      const file = fileInput?.files?.[0];
-      const ipoId = document.getElementById('form-ipo-id').value || undefined;
-      if (!file) { alert('Please select a PDF file to upload.'); return; }
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      let url = API_BASE + '/manual-ipos/upload';
-      if (ipoId) url += '?ipoId=' + encodeURIComponent(ipoId);
-
+      const btn = document.getElementById('btn-upload-file');
       try {
+        const fileInput = document.getElementById('doc-file-input');
+        const ipoIdInput = document.getElementById('form-ipo-id');
+        const ipoId = ipoIdInput?.value?.trim() || undefined;
+        const file = fileInput?.files?.[0];
+
+        if (!file) {
+          showUploadStatus('No PDF file selected.', 'error');
+          return;
+        }
+
+        const fileName = file.name || '';
+        const fileType = file.type || '';
+        const isPdfExt = fileName.toLowerCase().endsWith('.pdf');
+        const isPdfMime = fileType.includes('pdf') || fileType === 'application/octet-stream' || fileType === '';
+
+        if (!isPdfExt && !isPdfMime) {
+          showUploadStatus('Only PDF documents are supported.', 'error');
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        let url = API_BASE + '/manual-ipos/upload';
+        if (ipoId) url += '?ipoId=' + encodeURIComponent(ipoId);
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
+        showUploadStatus('Uploading & parsing PDF... Please wait.', 'info');
+
         const res = await fetch(url, {
           method: 'POST',
           body: formData,
         });
-        const json = await res.json();
-        const data = json.data || json;
 
-        if (data.parsingStatus === 'FAILED') {
-          alert('PDF parsing failed: ' + (data.errorMessage || 'Unknown error'));
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showUploadStatus('Upload failed: ' + (json.message || res.statusText || 'Backend server error'), 'error');
           return;
         }
 
+        const data = json.data || json;
+        if (data.parsingStatus === 'FAILED') {
+          showUploadStatus('PDF parsing failed: ' + (data.errorMessage || 'Unknown extraction error'), 'error');
+          return;
+        }
+
+        showUploadStatus('✅ Extraction complete! Review extracted fields below.', 'success');
         lastExtractionReview = data.extraction;
         renderExtractionReview(data.extraction);
       } catch (err) {
         console.error('Upload PDF error:', err);
+        showUploadStatus('Upload failed: ' + (err.message || 'backend unavailable.'), 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Upload & Parse PDF'; }
       }
     }
 
@@ -1073,10 +1576,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       if (f.lotSize?.value) document.getElementById('form-lotSize').value = f.lotSize.value;
       if (f.faceValue?.value) document.getElementById('form-faceValue').value = f.faceValue.value;
       if (f.ofsSize?.value) document.getElementById('form-ofsSize').value = (f.ofsSize.value / 10000000).toFixed(2);
+      if (f.freshIssueSize?.value) document.getElementById('form-freshIssueSize').value = (f.freshIssueSize.value / 10000000).toFixed(2);
       if (f.openDate?.value) document.getElementById('form-openDate').value = f.openDate.value;
       if (f.closeDate?.value) document.getElementById('form-closeDate').value = f.closeDate.value;
 
-      alert('Extracted values applied to form! Review and click Save Changes.');
+      showUploadStatus('✅ Extracted values applied to form! Review form fields and click Save Changes.', 'success');
     }
 
     async function saveAllotmentConfig() {

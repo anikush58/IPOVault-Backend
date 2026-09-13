@@ -97,6 +97,26 @@ export class AdminIpoService {
           legalName,
           displayName,
           cin: dto.cin?.trim() || null,
+          website: dto.website?.trim() || null,
+          industry: dto.industry?.trim() || null,
+          sector: dto.sector?.trim() || null,
+          aboutDescription: dto.aboutDescription?.trim() || null,
+          phone: dto.phone?.trim() || null,
+          email: dto.email?.trim() || null,
+          contactPerson: dto.contactPerson?.trim() || null,
+        },
+      });
+    } else {
+      await this.prisma.company.update({
+        where: { id: company.id },
+        data: {
+          ...(dto.website !== undefined ? { website: dto.website?.trim() || null } : {}),
+          ...(dto.industry !== undefined ? { industry: dto.industry?.trim() || null } : {}),
+          ...(dto.sector !== undefined ? { sector: dto.sector?.trim() || null } : {}),
+          ...(dto.aboutDescription !== undefined ? { aboutDescription: dto.aboutDescription?.trim() || null } : {}),
+          ...(dto.phone !== undefined ? { phone: dto.phone?.trim() || null } : {}),
+          ...(dto.email !== undefined ? { email: dto.email?.trim() || null } : {}),
+          ...(dto.contactPerson !== undefined ? { contactPerson: dto.contactPerson?.trim() || null } : {}),
         },
       });
     }
@@ -162,7 +182,27 @@ export class AdminIpoService {
       openDate: dto.openDate,
       closeDate: dto.closeDate,
       listingDate: dto.listingDate,
+      allotmentDate: dto.allotmentDate,
     });
+
+    if (dto.offerCategories && dto.offerCategories.length > 0) {
+      await this.saveOfferCategories(ipo.id, dto.offerCategories);
+    }
+    if (dto.financials && dto.financials.length > 0) {
+      await this.saveFinancials(company.id, dto.financials);
+    }
+    if (dto.participants && dto.participants.length > 0) {
+      await this.saveParticipants(ipo.id, dto.participants);
+    }
+    if (dto.allotmentConfig) {
+      await this.configureAllotment(ipo.id, dto.allotmentConfig);
+    }
+    if (dto.gmp) {
+      await this.saveGmpObservation(ipo.id, dto.gmp, adminSourceId);
+    }
+    if (dto.subscription && dto.subscription.length > 0) {
+      await this.saveSubscriptionObservations(ipo.id, dto.subscription, adminSourceId);
+    }
 
     // Save field provenance for created fields
     await this.recordFieldProvenance(
@@ -193,14 +233,32 @@ export class AdminIpoService {
       throw new NotFoundException(`IPO with ID '${id}' not found`);
     }
 
-    // Update company if legalName or cin changed
-    if (dto.legalName || dto.displayName || dto.cin) {
+    // Update company if any company field is provided
+    if (
+      dto.legalName ||
+      dto.displayName ||
+      dto.cin !== undefined ||
+      dto.website !== undefined ||
+      dto.industry !== undefined ||
+      dto.sector !== undefined ||
+      dto.aboutDescription !== undefined ||
+      dto.phone !== undefined ||
+      dto.email !== undefined ||
+      dto.contactPerson !== undefined
+    ) {
       await this.prisma.company.update({
         where: { id: existing.companyId },
         data: {
           ...(dto.legalName ? { legalName: dto.legalName.trim() } : {}),
           ...(dto.displayName ? { displayName: dto.displayName.trim() } : {}),
           ...(dto.cin !== undefined ? { cin: dto.cin?.trim() || null } : {}),
+          ...(dto.website !== undefined ? { website: dto.website?.trim() || null } : {}),
+          ...(dto.industry !== undefined ? { industry: dto.industry?.trim() || null } : {}),
+          ...(dto.sector !== undefined ? { sector: dto.sector?.trim() || null } : {}),
+          ...(dto.aboutDescription !== undefined ? { aboutDescription: dto.aboutDescription?.trim() || null } : {}),
+          ...(dto.phone !== undefined ? { phone: dto.phone?.trim() || null } : {}),
+          ...(dto.email !== undefined ? { email: dto.email?.trim() || null } : {}),
+          ...(dto.contactPerson !== undefined ? { contactPerson: dto.contactPerson?.trim() || null } : {}),
         },
       });
     }
@@ -312,13 +370,34 @@ export class AdminIpoService {
     if (
       dto.openDate !== undefined ||
       dto.closeDate !== undefined ||
-      dto.listingDate !== undefined
+      dto.listingDate !== undefined ||
+      dto.allotmentDate !== undefined
     ) {
       await this.updateLifecycleEvents(id, {
         openDate: dto.openDate,
         closeDate: dto.closeDate,
         listingDate: dto.listingDate,
+        allotmentDate: dto.allotmentDate,
       });
+    }
+
+    if (dto.offerCategories !== undefined) {
+      await this.saveOfferCategories(id, dto.offerCategories);
+    }
+    if (dto.financials !== undefined) {
+      await this.saveFinancials(existing.companyId, dto.financials);
+    }
+    if (dto.participants !== undefined) {
+      await this.saveParticipants(id, dto.participants);
+    }
+    if (dto.allotmentConfig !== undefined) {
+      await this.configureAllotment(id, dto.allotmentConfig);
+    }
+    if (dto.gmp !== undefined && dto.gmp !== null) {
+      await this.saveGmpObservation(id, dto.gmp, adminSourceId);
+    }
+    if (dto.subscription !== undefined) {
+      await this.saveSubscriptionObservations(id, dto.subscription, adminSourceId);
     }
 
     await this.recordFieldProvenance(
@@ -341,10 +420,28 @@ export class AdminIpoService {
     const ipo = await this.prisma.ipo.findUnique({
       where: { id },
       include: {
-        company: true,
+        company: {
+          include: {
+            financials: {
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+        },
         lifecycleEvents: true,
         documents: true,
         allotmentConfig: true,
+        offerCategories: true,
+        participants: {
+          orderBy: { displayOrder: 'asc' },
+        },
+        gmpObservations: {
+          orderBy: { observedAt: 'desc' },
+          take: 1,
+        },
+        subscriptionObservations: {
+          orderBy: { observedAt: 'desc' },
+          take: 20,
+        },
         sourceIdentities: { include: { source: true } },
       },
     });
@@ -393,6 +490,10 @@ export class AdminIpoService {
         website: ipo.company.website,
         industry: ipo.company.industry,
         sector: ipo.company.sector,
+        aboutDescription: ipo.company.aboutDescription,
+        phone: ipo.company.phone,
+        email: ipo.company.email,
+        contactPerson: ipo.company.contactPerson,
       },
       marketSegment: ipo.marketSegment,
       exchange: ipo.exchange,
@@ -418,6 +519,11 @@ export class AdminIpoService {
         : null,
       documents: ipo.documents,
       allotmentConfig: ipo.allotmentConfig,
+      offerCategories: ipo.offerCategories,
+      financials: ipo.company.financials,
+      participants: ipo.participants,
+      gmpObservations: ipo.gmpObservations,
+      subscriptionObservations: ipo.subscriptionObservations,
       sourceIdentities: ipo.sourceIdentities,
       validation: validationReport,
       createdAt: ipo.createdAt,
@@ -708,12 +814,13 @@ export class AdminIpoService {
 
   private async updateLifecycleEvents(
     ipoId: string,
-    dates: { openDate?: string; closeDate?: string; listingDate?: string },
+    dates: { openDate?: string; closeDate?: string; listingDate?: string; allotmentDate?: string },
   ) {
-    const updates: Array<{ eventType: 'OPEN' | 'CLOSE' | 'LISTING'; dateStr?: string }> = [
+    const updates: Array<{ eventType: 'OPEN' | 'CLOSE' | 'LISTING' | 'BASIS_OF_ALLOTMENT'; dateStr?: string }> = [
       { eventType: 'OPEN', dateStr: dates.openDate },
       { eventType: 'CLOSE', dateStr: dates.closeDate },
       { eventType: 'LISTING', dateStr: dates.listingDate },
+      { eventType: 'BASIS_OF_ALLOTMENT', dateStr: dates.allotmentDate },
     ];
 
     for (const item of updates) {
@@ -731,6 +838,100 @@ export class AdminIpoService {
           create: { ipoId, eventType: item.eventType, eventDate: d },
         });
       }
+    }
+  }
+
+  private async saveOfferCategories(ipoId: string, categories: any[]) {
+    await this.prisma.ipoOfferCategory.deleteMany({ where: { ipoId } });
+    for (const cat of categories) {
+      if (!cat.category) continue;
+      await this.prisma.ipoOfferCategory.create({
+        data: {
+          ipoId,
+          category: cat.category,
+          allocationPct: cat.allocationPct !== undefined && cat.allocationPct !== null ? new Prisma.Decimal(cat.allocationPct) : null,
+          minLots: cat.minLots || null,
+          maxLots: cat.maxLots || null,
+          minShares: cat.minShares || null,
+          maxShares: cat.maxShares || null,
+          minAmount: cat.minAmount !== undefined && cat.minAmount !== null ? new Prisma.Decimal(cat.minAmount) : null,
+          maxAmount: cat.maxAmount !== undefined && cat.maxAmount !== null ? new Prisma.Decimal(cat.maxAmount) : null,
+          isUpiEligible: cat.isUpiEligible !== undefined ? !!cat.isUpiEligible : true,
+        },
+      });
+    }
+  }
+
+  private async saveFinancials(companyId: string, financials: any[]) {
+    await this.prisma.companyFinancial.deleteMany({ where: { companyId } });
+    for (const fin of financials) {
+      if (!fin.fiscalPeriod) continue;
+      await this.prisma.companyFinancial.create({
+        data: {
+          companyId,
+          fiscalPeriod: fin.fiscalPeriod,
+          periodType: fin.periodType || 'ANNUAL',
+          totalAssets: fin.totalAssets !== undefined && fin.totalAssets !== null ? new Prisma.Decimal(fin.totalAssets) : null,
+          totalRevenue: fin.totalRevenue !== undefined && fin.totalRevenue !== null ? new Prisma.Decimal(fin.totalRevenue) : null,
+          pat: fin.pat !== undefined && fin.pat !== null ? new Prisma.Decimal(fin.pat) : null,
+          ebitda: fin.ebitda !== undefined && fin.ebitda !== null ? new Prisma.Decimal(fin.ebitda) : null,
+          netWorth: fin.netWorth !== undefined && fin.netWorth !== null ? new Prisma.Decimal(fin.netWorth) : null,
+          roePercentage: fin.roePercentage !== undefined && fin.roePercentage !== null ? new Prisma.Decimal(fin.roePercentage) : null,
+          rocePercentage: fin.rocePercentage !== undefined && fin.rocePercentage !== null ? new Prisma.Decimal(fin.rocePercentage) : null,
+          eps: fin.eps !== undefined && fin.eps !== null ? new Prisma.Decimal(fin.eps) : null,
+          patMarginPercent: fin.patMarginPercent !== undefined && fin.patMarginPercent !== null ? new Prisma.Decimal(fin.patMarginPercent) : null,
+        },
+      });
+    }
+  }
+
+  private async saveParticipants(ipoId: string, participants: any[]) {
+    await this.prisma.ipoParticipant.deleteMany({ where: { ipoId } });
+    for (const part of participants) {
+      if (!part.name || !part.role) continue;
+      await this.prisma.ipoParticipant.create({
+        data: {
+          ipoId,
+          role: part.role,
+          name: part.name.trim(),
+          phone: part.phone?.trim() || null,
+          email: part.email?.trim() || null,
+          website: part.website?.trim() || null,
+          displayOrder: part.displayOrder || 0,
+        },
+      });
+    }
+  }
+
+  private async saveGmpObservation(ipoId: string, gmp: any, sourceId: string) {
+    if (gmp.gmpAmount === undefined || gmp.gmpAmount === null) return;
+    await this.prisma.gmpObservation.create({
+      data: {
+        ipoId,
+        gmpAmount: new Prisma.Decimal(gmp.gmpAmount),
+        gmpPercentage: gmp.gmpPercentage !== undefined && gmp.gmpPercentage !== null ? new Prisma.Decimal(gmp.gmpPercentage) : null,
+        estProfitPerLot: gmp.estProfitPerLot !== undefined && gmp.estProfitPerLot !== null ? new Prisma.Decimal(gmp.estProfitPerLot) : null,
+        sourceId,
+        observedAt: gmp.observedAt ? new Date(gmp.observedAt) : new Date(),
+      },
+    });
+  }
+
+  private async saveSubscriptionObservations(ipoId: string, subscriptions: any[], sourceId: string) {
+    const obsDate = new Date();
+    for (const sub of subscriptions) {
+      if (!sub.category || sub.subscriptionMultiple === undefined || sub.subscriptionMultiple === null) continue;
+      await this.prisma.subscriptionObservation.create({
+        data: {
+          ipoId,
+          category: sub.category,
+          subscriptionMultiple: new Prisma.Decimal(sub.subscriptionMultiple),
+          sharesBid: sub.sharesBid !== undefined && sub.sharesBid !== null ? new Prisma.Decimal(sub.sharesBid) : null,
+          sharesOffered: sub.sharesOffered !== undefined && sub.sharesOffered !== null ? new Prisma.Decimal(sub.sharesOffered) : null,
+          sourceId,
+          observedAt: sub.observedAt ? new Date(sub.observedAt) : obsDate,
+        },
+      });
     }
   }
 

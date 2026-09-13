@@ -323,6 +323,23 @@ export type IpoAnalyticsResponseDto = {
   };
 };
 
+export type CompanyFinancialDto = {
+  id: string;
+  fiscalPeriod: string;
+  periodType: string;
+  totalAssets: string | null;
+  totalRevenue: string | null;
+  pat: string | null;
+  ebitda: string | null;
+  netWorth: string | null;
+  roePercentage: string | null;
+  rocePercentage: string | null;
+  eps: string | null;
+  patMarginPercent: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CompanySummaryDto = {
   id: string;
   legalName: string;
@@ -331,6 +348,76 @@ export type CompanySummaryDto = {
   website: string | null;
   industry: string | null;
   sector: string | null;
+  aboutDescription?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  contactPerson?: string | null;
+  financials?: CompanyFinancialDto[];
+};
+
+export type IpoOfferCategoryDto = {
+  id: string;
+  category: string;
+  allocationPct: string | null;
+  minLots: number | null;
+  maxLots: number | null;
+  minShares: number | null;
+  maxShares: number | null;
+  minAmount: string | null;
+  maxAmount: string | null;
+  isUpiEligible: boolean;
+};
+
+export type IpoParticipantDto = {
+  id: string;
+  role: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  displayOrder: number;
+};
+
+export type IpoDocumentSummaryDto = {
+  id: string;
+  documentType: string;
+  title: string | null;
+  fileName: string | null;
+  sourceUrl: string | null;
+  fileUrl: string | null;
+  documentUrl: string | null;
+  mimeType: string | null;
+  fileSizeBytes: number | null;
+  parsingStatus: string;
+  uploadedAt: string;
+};
+
+export type IpoAllotmentSummaryDto = {
+  registrar: string;
+  registrarIpoCode: string | null;
+  sourceUrl: string | null;
+  allotmentSourceUrl: string | null;
+  expectedDate: string | null;
+  expectedAllotmentDate: string | null;
+  enabled: boolean;
+};
+
+export type CurrentGmpSnapshotDto = {
+  gmpAmount: string;
+  gmpPercentage: string | null;
+  estProfitPerLot: string | null;
+  observedAt: string;
+};
+
+export type CategorySubscriptionSnapshotDto = {
+  category: string;
+  subscriptionMultiple: string;
+};
+
+export type CurrentSubscriptionSnapshotDto = {
+  totalSubscriptionMultiple: string | null;
+  categories: CategorySubscriptionSnapshotDto[];
+  observedAt: string | null;
 };
 
 export type IpoLifecycleDto = {
@@ -390,15 +477,65 @@ export type IpoResponseDto = {
   issueSize: string | null;
   freshIssueSize: string | null;
   ofsSize: string | null;
+  issueShareCount?: string | null;
+  freshIssueShareCount?: string | null;
+  ofsShareCount?: string | null;
   faceValue: string | null;
   priceBandLow: string | null;
   priceBandHigh: string | null;
   lotSize: number | null;
   minimumLots: number | null;
+  minimumInvestmentAmount?: string | null;
   lifecycle: IpoLifecycleDto;
+  offerCategories?: IpoOfferCategoryDto[];
+  participants?: IpoParticipantDto[];
+  documents?: IpoDocumentSummaryDto[];
+  allotment?: IpoAllotmentSummaryDto | null;
+  currentGmp?: CurrentGmpSnapshotDto | null;
+  currentSubscription?: CurrentSubscriptionSnapshotDto | null;
   dataReadiness?: IpoDataReadinessDto;
   createdAt: string;
   updatedAt: string;
+};
+
+export type GmpObservationItemDto = {
+  id: string;
+  gmpAmount: string;
+  gmpPercentage: string | null;
+  estProfitPerLot: string | null;
+  source: {
+    code: string;
+    name: string;
+  } | null;
+  observedAt: string;
+  createdAt: string;
+};
+
+export type IpoGmpHistoryResponseDto = {
+  ipoId: string;
+  observations: GmpObservationItemDto[];
+  totalCount: number;
+};
+
+export type SubscriptionObservationItemDto = {
+  id: string;
+  category: string;
+  subscriptionMultiple: string;
+  sharesBid: string | null;
+  sharesOffered: string | null;
+  source: {
+    code: string;
+    name: string;
+  } | null;
+  observedAt: string;
+  createdAt: string;
+};
+
+export type IpoSubscriptionHistoryResponseDto = {
+  ipoId: string;
+  subscriptionSupported: boolean;
+  observations: SubscriptionObservationItemDto[];
+  totalCount: number;
 };
 
 export type IpoLifecycleEventDetailDto = {

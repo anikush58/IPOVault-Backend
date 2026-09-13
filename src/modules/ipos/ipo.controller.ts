@@ -94,6 +94,30 @@ export class IpoController {
     return this.ipos.getAnalytics(params.id);
   }
 
+  /**
+   * GET /ipos/:id/gmp-history
+   *
+   * Phase 34.2 — Expose historical Grey Market Premium observations in chronological order.
+   */
+  @Get(':id/gmp-history')
+  getGmpHistory(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+  ) {
+    return this.ipos.getGmpHistory(params.id);
+  }
+
+  /**
+   * GET /ipos/:id/subscription-history
+   *
+   * Phase 34.2 — Expose historical category subscription observations in chronological order.
+   */
+  @Get(':id/subscription-history')
+  getSubscriptionHistory(
+    @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
+  ) {
+    return this.ipos.getSubscriptionHistory(params.id);
+  }
+
   @Get(':id/timeline')
   getTimeline(
     @Param(new ZodValidationPipe(ipoIdParamSchema)) params: IpoIdParam,
