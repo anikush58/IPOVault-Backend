@@ -454,6 +454,9 @@ export class AdminIpoService {
     const listingEvent = ipo.lifecycleEvents.find(
       (e) => e.eventType === 'LISTING',
     );
+    const allotmentEvent = ipo.lifecycleEvents.find(
+      (e) => e.eventType === 'BASIS_OF_ALLOTMENT',
+    );
 
     const validationReport = this.validationService.validateIpo({
       legalName: ipo.company.legalName,
@@ -477,6 +480,7 @@ export class AdminIpoService {
       openDate: openEvent ? openEvent.eventDate.toISOString() : null,
       closeDate: closeEvent ? closeEvent.eventDate.toISOString() : null,
       listingDate: listingEvent ? listingEvent.eventDate.toISOString() : null,
+      allotmentDate: allotmentEvent ? allotmentEvent.eventDate.toISOString() : null,
     });
 
     return {
@@ -493,6 +497,7 @@ export class AdminIpoService {
         phone: ipo.company.phone,
         email: ipo.company.email,
         contactPerson: ipo.company.contactPerson,
+        financials: ipo.company.financials,
       },
       marketSegment: ipo.marketSegment,
       exchange: ipo.exchange,
@@ -515,6 +520,9 @@ export class AdminIpoService {
       closeDate: closeEvent ? closeEvent.eventDate.toISOString().slice(0, 10) : null,
       listingDate: listingEvent
         ? listingEvent.eventDate.toISOString().slice(0, 10)
+        : null,
+      allotmentDate: allotmentEvent
+        ? allotmentEvent.eventDate.toISOString().slice(0, 10)
         : null,
       documents: ipo.documents,
       allotmentConfig: ipo.allotmentConfig,

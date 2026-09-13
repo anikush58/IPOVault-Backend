@@ -38,6 +38,7 @@ export interface IpoValidationInput {
   openDate?: string | Date | null;
   closeDate?: string | Date | null;
   listingDate?: string | Date | null;
+  allotmentDate?: string | Date | null;
 }
 
 @Injectable()

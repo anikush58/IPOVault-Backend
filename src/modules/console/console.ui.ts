@@ -577,11 +577,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             <div class="form-grid">
               <div class="form-group">
                 <label>Retail Min Lots</label>
-                <input type="number" id="cat-retail-min-lots" placeholder="1" />
+                <input type="number" id="cat-retail-min-lots" placeholder="e.g. 1" />
               </div>
               <div class="form-group">
                 <label>Retail Max Lots</label>
-                <input type="number" id="cat-retail-max-lots" placeholder="13" />
+                <input type="number" id="cat-retail-max-lots" placeholder="e.g. 13" />
               </div>
               <div class="form-group">
                 <label>Retail Min Shares</label>
@@ -632,43 +632,19 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
               <input type="text" id="part-brlm-name" placeholder="e.g. ICICI Securities, Axis Capital (comma-separated)" />
             </div>
 
-            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
-              <strong style="color:var(--primary); font-size:14px;">Financial History (Latest Fiscal Year)</strong>
+            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
+              <strong style="color:var(--primary); font-size:14px;">Financial History</strong>
+              <button type="button" class="btn btn-secondary" onclick="addFinancialRow()" style="padding:4px 10px; font-size:12px;">+ Add Period</button>
             </div>
 
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Fiscal Period</label>
-                <input type="text" id="fin-period" placeholder="e.g. FY24" />
-              </div>
-              <div class="form-group">
-                <label>Total Assets (₹ Cr)</label>
-                <input type="number" step="0.01" id="fin-assets" />
-              </div>
-              <div class="form-group">
-                <label>Total Revenue (₹ Cr)</label>
-                <input type="number" step="0.01" id="fin-revenue" />
-              </div>
-              <div class="form-group">
-                <label>PAT (₹ Cr)</label>
-                <input type="number" step="0.01" id="fin-pat" />
-              </div>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>EBITDA (₹ Cr)</label>
-                <input type="number" step="0.01" id="fin-ebitda" />
-              </div>
-              <div class="form-group">
-                <label>Net Worth (₹ Cr)</label>
-                <input type="number" step="0.01" id="fin-networth" />
-              </div>
-              <div class="form-group">
-                <label>EPS (₹)</label>
-                <input type="number" step="0.01" id="fin-eps" />
-              </div>
-            </div>
+            <div id="financial-rows-container"></div>
+            <input type="hidden" id="fin-period" />
+            <input type="hidden" id="fin-assets" />
+            <input type="hidden" id="fin-revenue" />
+            <input type="hidden" id="fin-pat" />
+            <input type="hidden" id="fin-ebitda" />
+            <input type="hidden" id="fin-networth" />
+            <input type="hidden" id="fin-eps" />
 
             <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
               <strong style="color:var(--primary); font-size:14px;">Manual GMP & Subscription Observations</strong>
@@ -872,6 +848,98 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     let manualSearchTimeout = null;
     let lastExtractionReview = null;
 
+    function formatCrores(val) {
+      if (val === null || val === undefined || val === '') return '';
+      const num = Number(val);
+      if (isNaN(num)) return '';
+      const inCrores = num >= 100000 ? num / 10000000 : num;
+      return Number.isInteger(inCrores) ? inCrores.toString() : inCrores.toFixed(2);
+    }
+
+    function renderFinancialRows(list) {
+      const container = document.getElementById('financial-rows-container');
+      if (!container) return;
+      const items = (Array.isArray(list) && list.length > 0) ? list : [{}];
+      container.innerHTML = items.map((fin, idx) => \`
+        <div class="fin-row" style="background:rgba(255,255,255,0.02); border:1px solid var(--card-border); border-radius:8px; padding:12px; margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="font-size:12px; font-weight:600; color:var(--text-muted);">Financial Period #\${idx + 1}</span>
+            \${items.length > 1 ? \`<button type="button" onclick="removeFinancialRow(\${idx})" style="background:transparent; border:none; color:#ef4444; cursor:pointer; font-size:12px;">✕ Remove</button>\` : ''}
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Fiscal Period</label>
+              <input type="text" class="fin-period-input" value="\${fin.fiscalPeriod || ''}" placeholder="e.g. FY24" />
+            </div>
+            <div class="form-group">
+              <label>Total Assets (₹ Cr)</label>
+              <input type="number" step="0.01" class="fin-assets-input" value="\${fin.totalAssets ?? ''}" />
+            </div>
+            <div class="form-group">
+              <label>Total Revenue (₹ Cr)</label>
+              <input type="number" step="0.01" class="fin-revenue-input" value="\${fin.totalRevenue ?? ''}" />
+            </div>
+            <div class="form-group">
+              <label>PAT (₹ Cr)</label>
+              <input type="number" step="0.01" class="fin-pat-input" value="\${fin.pat ?? ''}" />
+            </div>
+          </div>
+          <div class="form-grid" style="margin-top:8px;">
+            <div class="form-group">
+              <label>EBITDA (₹ Cr)</label>
+              <input type="number" step="0.01" class="fin-ebitda-input" value="\${fin.ebitda ?? ''}" />
+            </div>
+            <div class="form-group">
+              <label>Net Worth (₹ Cr)</label>
+              <input type="number" step="0.01" class="fin-networth-input" value="\${fin.netWorth ?? ''}" />
+            </div>
+            <div class="form-group">
+              <label>EPS (₹)</label>
+              <input type="number" step="0.01" class="fin-eps-input" value="\${fin.eps ?? ''}" />
+            </div>
+          </div>
+        </div>
+      \`).join('');
+    }
+
+    function addFinancialRow() {
+      const current = getFinancialsFromForm();
+      current.push({});
+      renderFinancialRows(current);
+    }
+
+    function removeFinancialRow(idx) {
+      const current = getFinancialsFromForm();
+      current.splice(idx, 1);
+      renderFinancialRows(current.length > 0 ? current : [{}]);
+    }
+
+    function getFinancialsFromForm() {
+      const rows = document.querySelectorAll('.fin-row');
+      const financials = [];
+      rows.forEach(row => {
+        const period = row.querySelector('.fin-period-input')?.value?.trim();
+        const assets = parseFloat(row.querySelector('.fin-assets-input')?.value);
+        const revenue = parseFloat(row.querySelector('.fin-revenue-input')?.value);
+        const pat = parseFloat(row.querySelector('.fin-pat-input')?.value);
+        const ebitda = parseFloat(row.querySelector('.fin-ebitda-input')?.value);
+        const networth = parseFloat(row.querySelector('.fin-networth-input')?.value);
+        const eps = parseFloat(row.querySelector('.fin-eps-input')?.value);
+        if (period || !isNaN(assets) || !isNaN(revenue) || !isNaN(pat) || !isNaN(ebitda) || !isNaN(networth) || !isNaN(eps)) {
+          financials.push({
+            fiscalPeriod: period || '',
+            totalAssets: !isNaN(assets) ? assets : undefined,
+            totalRevenue: !isNaN(revenue) ? revenue : undefined,
+            pat: !isNaN(pat) ? pat : undefined,
+            ebitda: !isNaN(ebitda) ? ebitda : undefined,
+            netWorth: !isNaN(networth) ? networth : undefined,
+            eps: !isNaN(eps) ? eps : undefined,
+          });
+        }
+      });
+      return financials;
+    }
+
     function switchTab(tabId) {
       document.querySelectorAll('.nav-item button').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('.section-view').forEach(sec => sec.classList.remove('active'));
@@ -1027,13 +1095,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       document.getElementById('part-reg-website').value = '';
       document.getElementById('part-brlm-name').value = '';
 
-      document.getElementById('fin-period').value = '';
-      document.getElementById('fin-assets').value = '';
-      document.getElementById('fin-revenue').value = '';
-      document.getElementById('fin-pat').value = '';
-      document.getElementById('fin-ebitda').value = '';
-      document.getElementById('fin-networth').value = '';
-      document.getElementById('fin-eps').value = '';
+      renderFinancialRows([]);
 
       document.getElementById('gmp-amount').value = '';
       document.getElementById('gmp-percentage').value = '';
@@ -1095,9 +1157,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-priceBandHigh').value = ipo.priceBandHigh ?? '';
         document.getElementById('form-lotSize').value = ipo.lotSize ?? '';
         document.getElementById('form-faceValue').value = ipo.faceValue ?? '';
-        document.getElementById('form-issueSize').value = ipo.issueSize ? (ipo.issueSize / 10000000).toFixed(2) : '';
-        document.getElementById('form-freshIssueSize').value = ipo.freshIssueSize ? (ipo.freshIssueSize / 10000000).toFixed(2) : '';
-        document.getElementById('form-ofsSize').value = ipo.ofsSize ? (ipo.ofsSize / 10000000).toFixed(2) : '';
+        document.getElementById('form-issueSize').value = formatCrores(ipo.issueSize);
+        document.getElementById('form-freshIssueSize').value = formatCrores(ipo.freshIssueSize);
+        document.getElementById('form-ofsSize').value = formatCrores(ipo.ofsSize);
         document.getElementById('form-issueShareCount').value = ipo.issueShareCount ?? '';
         document.getElementById('form-freshIssueShareCount').value = ipo.freshIssueShareCount ?? '';
         document.getElementById('form-ofsShareCount').value = ipo.ofsShareCount ?? '';
@@ -1106,7 +1168,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-listingDate').value = ipo.listingDate || '';
 
         const allotmentEv = ipo.lifecycleEvents?.find(e => e.eventType === 'BASIS_OF_ALLOTMENT');
-        document.getElementById('form-allotmentDate').value = allotmentEv ? allotmentEv.eventDate.slice(0, 10) : '';
+        document.getElementById('form-allotmentDate').value = ipo.allotmentDate || (allotmentEv ? allotmentEv.eventDate.slice(0, 10) : '');
 
         // Company
         document.getElementById('form-website').value = ipo.company?.website || '';
@@ -1141,14 +1203,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('part-brlm-name').value = brlms || '';
 
         // Financials
-        const fin = ipo.financials?.[0] || ipo.company?.financials?.[0];
-        document.getElementById('fin-period').value = fin?.fiscalPeriod || '';
-        document.getElementById('fin-assets').value = fin?.totalAssets ?? '';
-        document.getElementById('fin-revenue').value = fin?.totalRevenue ?? '';
-        document.getElementById('fin-pat').value = fin?.pat ?? '';
-        document.getElementById('fin-ebitda').value = fin?.ebitda ?? '';
-        document.getElementById('fin-networth').value = fin?.netWorth ?? '';
-        document.getElementById('fin-eps').value = fin?.eps ?? '';
+        renderFinancialRows(ipo.financials || ipo.company?.financials || []);
 
         // GMP
         const gmp = ipo.gmpObservations?.[0];
@@ -1291,9 +1346,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         priceBandHigh: parseFloat(document.getElementById('form-priceBandHigh').value) || undefined,
         lotSize: parseInt(document.getElementById('form-lotSize').value, 10) || undefined,
         faceValue: parseFloat(document.getElementById('form-faceValue').value) || undefined,
-        issueSize: issueSizeVal ? parseFloat(issueSizeVal) * 10000000 : undefined,
-        freshIssueSize: freshSizeVal ? parseFloat(freshSizeVal) * 10000000 : undefined,
-        ofsSize: ofsSizeVal ? parseFloat(ofsSizeVal) * 10000000 : undefined,
+        issueSize: issueSizeVal ? parseFloat(issueSizeVal) : undefined,
+        freshIssueSize: freshSizeVal ? parseFloat(freshSizeVal) : undefined,
+        ofsSize: ofsSizeVal ? parseFloat(ofsSizeVal) : undefined,
         issueShareCount: parseInt(document.getElementById('form-issueShareCount').value, 10) || undefined,
         freshIssueShareCount: parseInt(document.getElementById('form-freshIssueShareCount').value, 10) || undefined,
         ofsShareCount: parseInt(document.getElementById('form-ofsShareCount').value, 10) || undefined,
@@ -1312,7 +1367,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
         offerCategories: offerCategories.length > 0 ? offerCategories : undefined,
         participants: participants.length > 0 ? participants : undefined,
-        financials: financials.length > 0 ? financials : undefined,
+        financials: getFinancialsFromForm().filter(f => f.fiscalPeriod),
         gmp,
         subscription: subscription.length > 0 ? subscription : undefined,
       };

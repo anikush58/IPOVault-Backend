@@ -336,4 +336,67 @@ describe('AdminIpoService & AdminValidationService', () => {
       );
     });
   });
+
+  describe('Phase 35.6 Data Mapping Verification', () => {
+    it('returns top-level allotmentDate and all 4 financial periods from getIpoDetail', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'manika-uuid-1',
+        companyId: 'company-manika-1',
+        company: {
+          legalName: 'Manika Plastech Limited',
+          displayName: 'Manika Plastech',
+          cin: 'U74999DN1996PLC000469',
+          financials: [
+            { fiscalPeriod: 'Q1 FY27', totalRevenue: '100.5' },
+            { fiscalPeriod: 'FY26', totalRevenue: '350.2' },
+            { fiscalPeriod: 'FY25', totalRevenue: '310.0' },
+            { fiscalPeriod: 'FY24', totalRevenue: '280.0' },
+          ],
+        },
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.BOTH,
+        status: 'OPEN',
+        publicationStatus: PublicationStatus.DRAFT,
+        symbol: null,
+        priceBandLow: null,
+        priceBandHigh: null,
+        lotSize: null,
+        faceValue: '2',
+        freshIssueSize: '92.5',
+        ofsShareCount: '7674418',
+        lifecycleEvents: [
+          { eventType: 'OPEN', eventDate: new Date('2026-09-11') },
+          { eventType: 'CLOSE', eventDate: new Date('2026-09-16') },
+          { eventType: 'BASIS_OF_ALLOTMENT', eventDate: new Date('2026-09-17') },
+          { eventType: 'LISTING', eventDate: new Date('2026-09-21') },
+        ],
+        documents: [],
+        allotmentConfig: { registrar: 'MUFG_INTIME', registrarIpoCode: null },
+        offerCategories: [
+          { category: 'QIB', allocationPct: '50' },
+          { category: 'NII', allocationPct: '15' },
+          { category: 'RETAIL', allocationPct: '35', minLots: null, maxLots: null },
+        ],
+        participants: [
+          { role: 'REGISTRAR', name: 'MUFG Intime India Private Limited' },
+          { role: 'BRLM', name: 'Pantomath Capital Advisors Private Limited' },
+        ],
+        gmpObservations: [],
+        subscriptionObservations: [],
+        sourceIdentities: [],
+      });
+
+      const detail = await adminIpoService.getIpoDetail('manika-uuid-1');
+
+      expect(detail.freshIssueSize).toBe(92.5);
+      expect(detail.allotmentDate).toBe('2026-09-17');
+      expect(detail.financials).toHaveLength(4);
+      expect(detail.financials.map((f: any) => f.fiscalPeriod)).toEqual(['Q1 FY27', 'FY26', 'FY25', 'FY24']);
+      expect(detail.priceBandLow).toBeNull();
+      expect(detail.priceBandHigh).toBeNull();
+      expect(detail.lotSize).toBeNull();
+      expect(detail.offerCategories.find((c: any) => c.category === 'RETAIL')?.minLots).toBeNull();
+      expect(detail.offerCategories.find((c: any) => c.category === 'RETAIL')?.maxLots).toBeNull();
+    });
+  });
 });
