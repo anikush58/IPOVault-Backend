@@ -444,11 +444,11 @@ export class AnalyticsCalculator {
     const { availability, completenessPercentage, qualityGateStatus, hasDegradedSources } = params;
 
     if (availability === MetricAvailabilityStatus.FUTURE_DATA_DEPENDENT) {
-      return AnalyticsQualityStatus.UNAVAILABLE;
+      return AnalyticsQualityStatus.FUTURE_DATA_DEPENDENT;
     }
 
     if (completenessPercentage === null || completenessPercentage === 0) {
-      return AnalyticsQualityStatus.INSUFFICIENT_DATA;
+      return AnalyticsQualityStatus.UNAVAILABLE;
     }
 
     if (qualityGateStatus === 'NEEDS_REVIEW' || hasDegradedSources) {
@@ -459,6 +459,100 @@ export class AnalyticsCalculator {
       return AnalyticsQualityStatus.PARTIAL;
     }
 
-    return AnalyticsQualityStatus.COMPLETE;
+    return AnalyticsQualityStatus.AVAILABLE;
+  }
+
+  /**
+   * Deterministically derives quality status based on capability availability, observation counts, and quality signals.
+   */
+  static deriveQualityStatus(params: {
+    availability: MetricAvailabilityStatus;
+    knownObservationCount: number;
+    totalObservationCount: number;
+    excludedObservationCount?: number;
+    hasDegradedSources?: boolean;
+    needsReview?: boolean;
+  }): AnalyticsQualityStatus {
+    const {
+      availability,
+      knownObservationCount,
+      totalObservationCount,
+      excludedObservationCount = 0,
+      hasDegradedSources = false,
+      needsReview = false,
+    } = params;
+
+    if (availability === MetricAvailabilityStatus.FUTURE_DATA_DEPENDENT) {
+      return AnalyticsQualityStatus.FUTURE_DATA_DEPENDENT;
+    }
+
+    if (totalObservationCount <= 0 || knownObservationCount <= 0) {
+      return AnalyticsQualityStatus.UNAVAILABLE;
+    }
+
+    if (needsReview || hasDegradedSources) {
+      return AnalyticsQualityStatus.NEEDS_REVIEW;
+    }
+
+    if (knownObservationCount < totalObservationCount || excludedObservationCount > 0) {
+      return AnalyticsQualityStatus.PARTIAL;
+    }
+
+    return AnalyticsQualityStatus.AVAILABLE;
+  }
+
+  /**
+   * Computes missing canonical field counts across registered IPO records.
+   */
+  static calculateMissingFieldCounts(
+    ipos: Array<{
+      symbol?: string | null;
+      priceBandLow?: any;
+      priceBandHigh?: any;
+      issueSize?: any;
+      issueShareCount?: any;
+      freshIssueSize?: any;
+      ofsSize?: any;
+      exchange?: any;
+      marketSegment?: any;
+      _lifecycleCount?: number;
+    }>,
+  ) {
+    let missingSymbolCount = 0;
+    let missingPriceBandLowCount = 0;
+    let missingPriceBandHighCount = 0;
+    let missingIssueSizeCount = 0;
+    let missingIssueShareCount = 0;
+    let missingFreshIssueSizeCount = 0;
+    let missingOfsSizeCount = 0;
+    let missingExchangeCount = 0;
+    let missingSegmentCount = 0;
+    let missingLifecycleDatesCount = 0;
+
+    ipos.forEach((ipo) => {
+      if (!ipo.symbol) missingSymbolCount++;
+      if (ipo.priceBandLow === null || ipo.priceBandLow === undefined) missingPriceBandLowCount++;
+      if (ipo.priceBandHigh === null || ipo.priceBandHigh === undefined) missingPriceBandHighCount++;
+      if (ipo.issueSize === null || ipo.issueSize === undefined) missingIssueSizeCount++;
+      if (ipo.issueShareCount === null || ipo.issueShareCount === undefined) missingIssueShareCount++;
+      if (ipo.freshIssueSize === null || ipo.freshIssueSize === undefined) missingFreshIssueSizeCount++;
+      if (ipo.ofsSize === null || ipo.ofsSize === undefined) missingOfsSizeCount++;
+      if (!ipo.exchange) missingExchangeCount++;
+      if (!ipo.marketSegment) missingSegmentCount++;
+      if (!ipo._lifecycleCount || ipo._lifecycleCount < 2) missingLifecycleDatesCount++;
+    });
+
+    return {
+      missingSymbolCount,
+      missingPriceBandLowCount,
+      missingPriceBandHighCount,
+      missingIssueSizeCount,
+      missingIssueShareCount,
+      missingFreshIssueSizeCount,
+      missingOfsSizeCount,
+      missingExchangeCount,
+      missingSegmentCount,
+      missingLifecycleDatesCount,
+    };
   }
 }

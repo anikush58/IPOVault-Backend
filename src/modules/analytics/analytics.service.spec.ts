@@ -921,10 +921,13 @@ describe('AnalyticsService (Phase 30.1 Foundation)', () => {
       expect(result.domains.performance.completenessPercentage).toBe(75); // 3 price band / 4 total
 
       expect(result.domains.subscription.domain).toBe('SUBSCRIPTION');
-      expect(result.domains.subscription.qualityStatus).toBe('UNAVAILABLE');
+      expect(result.domains.subscription.qualityStatus).toBe('FUTURE_DATA_DEPENDENT');
 
       expect(result.domains.allotment.domain).toBe('ALLOTMENT');
-      expect(result.domains.allotment.qualityStatus).toBe('INSUFFICIENT_DATA');
+      expect(result.domains.allotment.qualityStatus).toBe('UNAVAILABLE');
+
+      expect(result.missingFieldCounts).toBeDefined();
+      expect(result.missingFieldCounts?.missingSymbolCount).toBe(2);
 
       expect(result.sourceHealth.totalSources).toBe(2);
       expect(result.sourceHealth.healthySourcesCount).toBe(1);
@@ -933,6 +936,39 @@ describe('AnalyticsService (Phase 30.1 Foundation)', () => {
       expect(result.activeWarnings).toContain('PRICE_BAND_INCOMPLETE');
       expect(result.activeWarnings).toContain('SUBSCRIPTION_DATA_UNAVAILABLE');
       expect(result.activeWarnings).toContain('SOURCE_HEALTH_DEGRADED');
+    });
+
+    it('verifies independent domain quality statuses without collapsing into a single score', async () => {
+      (prisma.ipo.count as jest.Mock).mockImplementation(async (args?: any) => {
+        if (!args || !args.where) return 1;
+        if (args.where.priceBandLow && args.where.priceBandHigh && args.where.symbol) return 1;
+        if (args.where.priceBandLow) return 1;
+        return 0;
+      });
+
+      (prisma.source.findMany as jest.Mock).mockResolvedValue([
+        { healthStatus: 'HEALTHY', enabled: true },
+      ]);
+      (prisma.fieldProvenance.count as jest.Mock).mockResolvedValue(10);
+      (prisma.allotmentCheckLog.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.allotmentCheckJobItem.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.ipo.findMany as jest.Mock).mockResolvedValue([
+        { id: 'ipo-complete', symbol: 'CMP1', companyId: 'comp-1', priceBandLow: 100, priceBandHigh: 200, marketSegment: 'MAINBOARD' },
+      ]);
+      (prisma.ipoLifecycleEvent.groupBy as jest.Mock).mockResolvedValue([
+        { ipoId: 'ipo-complete', _count: { eventType: 2 } },
+      ]);
+
+      const result = await analyticsService.getAnalyticsQualitySummary();
+
+      // Market: 100% complete -> AVAILABLE
+      expect(result.domains.market.qualityStatus).toBe('AVAILABLE');
+      // Performance: 100% price band -> AVAILABLE
+      expect(result.domains.performance.qualityStatus).toBe('AVAILABLE');
+      // Subscription: capability model absent -> FUTURE_DATA_DEPENDENT
+      expect(result.domains.subscription.qualityStatus).toBe('FUTURE_DATA_DEPENDENT');
+      // Allotment: zero observations -> UNAVAILABLE
+      expect(result.domains.allotment.qualityStatus).toBe('UNAVAILABLE');
     });
   });
 });

@@ -411,6 +411,15 @@ Phase 30.5 builds a read-only Allotment Analytics domain layer composing existin
 ### A. Scope & Non-Predictive Quality Disclaimer
 Phase 30.6 introduces `AnalyticsService.getAnalyticsQualitySummary()`, establishing a unified, transparent data-quality contract across all existing Phase 30 analytics capabilities (Market, Performance, Subscription, Allotment).
 
+> [!IMPORTANT]
+> **Status Distinction Guarantee**:
+> "FUTURE_DATA_DEPENDENT is different from UNAVAILABLE."
+> - **`FUTURE_DATA_DEPENDENT`**: The metric cannot currently be calculated because the canonical schema or source capability does not yet exist.
+> - **`UNAVAILABLE`**: Capability exists in canonical schema/source, but zero usable observation records exist.
+>
+> **Zero Conversion Prevention Guarantee**:
+> "Missing data must never be silently represented as zero."
+
 **Mandatory Quality Principles**:
 1. **Data quality telemetry describes the completeness, retrieval freshness, lineage provenance, and source health of underlying canonical records.** It is NOT an investment-quality rating, financial recommendation, or predictive score.
 2. **Non-Predictive Allotment Disclaimer**: Observed allotment rates remain sample statistics of checked observations and are NOT predictive probabilities of future allotment success.
@@ -421,7 +430,7 @@ Phase 30.6 introduces `AnalyticsService.getAnalyticsQualitySummary()`, establish
 
 | Dimension | Metrics & Sources | Quality Status Rules |
 |---|---|---|
-| **COMPLETENESS** | Evaluated via missing/known field coverage ratios across Market, Performance, and Allotment data. | `COMPLETE` (100%), `PARTIAL` (<100%), `INSUFFICIENT_DATA` (0% or 0 observations). |
+| **COMPLETENESS** | Evaluated via missing/known field coverage ratios across Market, Performance, and Allotment data. | `AVAILABLE` (100%), `PARTIAL` (<100%), `UNAVAILABLE` (0% or 0 observations). |
 | **FRESHNESS** | Evaluated via `FieldProvenance.retrievedAt` retrieval age against source TTL defaults. | `FRESH` (within TTL window), `STALE` (exceeds TTL window), `UNKNOWN` (no observation timestamp). |
 | **PROVENANCE** | Evaluated via `FieldProvenance` count against total core canonical fields. | `provenanceCoveragePercentage = (knownProvenance / totalFields) * 100`. |
 | **SOURCE HEALTH** | Evaluated via `Source.healthStatus` (`HEALTHY`, `DEGRADED`, `FAILED`). | Triggers `SOURCE_HEALTH_DEGRADED` warning if degraded/failed sources exist. |
@@ -429,12 +438,22 @@ Phase 30.6 introduces `AnalyticsService.getAnalyticsQualitySummary()`, establish
 
 ### C. Deterministic Quality Warning Codes
 
-- `PRICE_BAND_INCOMPLETE`: One or more IPO records lack upper/lower price band bounds.
-- `LISTING_TIMELINE_INCOMPLETE`: One or more IPO records lack matching close and listing lifecycle event dates.
+- `NO_DATA`: No observation records exist for the metric.
+- `PARTIAL_DATA`: Metric data exists with partial coverage or exclusions.
+- `MISSING_PRICE_BAND`: One or more IPO records lack upper/lower price band bounds.
+- `MISSING_ISSUE_SIZE`: One or more IPO records lack monetary issue size.
+- `MISSING_SHARE_COUNT`: One or more IPO records lack issue share count.
+- `MISSING_LIFECYCLE_DATE`: One or more IPO records lack key lifecycle dates (Close/Listing).
 - `SUBSCRIPTION_DATA_UNAVAILABLE`: Subscription demand analytics are `FUTURE_DATA_DEPENDENT` (canonical schema lacks demand tables).
-- `ALLOTMENT_SAMPLE_ONLY`: Allotment rates are descriptive sample statistics of checked observations only.
+- `LISTING_PRICE_UNAVAILABLE`: Listing price gain metrics are `FUTURE_DATA_DEPENDENT`.
+- `NON_DEFINITIVE_ALLOTMENT_OBSERVATIONS`: Non-definitive or technical failure observations were excluded.
+- `INVALID_OBSERVATIONS_EXCLUDED`: Invalid or contradictory observations were excluded from rate calculation.
+- `STALE_DATA`: Source retrieval age exceeds technical TTL window.
 - `PROVENANCE_INCOMPLETE`: Field provenance lineage records are incomplete.
 - `SOURCE_HEALTH_DEGRADED`: One or more enabled data sources are in degraded or failed health status.
+- `PRICE_BAND_INCOMPLETE`: Price band coverage is incomplete across evaluated IPOs.
+- `LISTING_TIMELINE_INCOMPLETE`: Close-to-listing timeline duration coverage is incomplete.
+- `ALLOTMENT_SAMPLE_ONLY`: Allotment rates are descriptive sample statistics of checked observations only.
 - `DATA_QUALITY_WARNINGS_PRESENT`: Quality gate blockers or warnings exist across canonical IPO records.
 
 ---

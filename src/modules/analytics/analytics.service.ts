@@ -1606,6 +1606,11 @@ export class AnalyticsService {
           companyId: true,
           priceBandLow: true,
           priceBandHigh: true,
+          issueSize: true,
+          issueShareCount: true,
+          freshIssueSize: true,
+          ofsSize: true,
+          exchange: true,
           marketSegment: true,
         },
       }),
@@ -1620,9 +1625,14 @@ export class AnalyticsService {
     const priceBandCoveragePct = AnalyticsCalculator.calculatePercentage(iposWithPriceBand, totalIpos);
     const marketCompletenessPct = AnalyticsCalculator.calculatePercentage(completeIposCount, totalIpos);
 
+    const missingFieldCounts = AnalyticsCalculator.calculateMissingFieldCounts(iposMeta);
+
     const marketWarnings: AnalyticsQualityWarningCode[] = [];
     if (iposWithPriceBand < totalIpos) {
       marketWarnings.push(AnalyticsQualityWarningCode.PRICE_BAND_INCOMPLETE);
+    }
+    if (missingFieldCounts.missingIssueSizeCount > 0) {
+      marketWarnings.push(AnalyticsQualityWarningCode.MISSING_ISSUE_SIZE);
     }
 
     const marketQuality: DomainQualitySummaryDto = {
@@ -1649,6 +1659,7 @@ export class AnalyticsService {
     if (timelineCount < totalIpos) {
       performanceWarnings.push(AnalyticsQualityWarningCode.LISTING_TIMELINE_INCOMPLETE);
     }
+    performanceWarnings.push(AnalyticsQualityWarningCode.LISTING_PRICE_UNAVAILABLE);
 
     const performanceQuality: DomainQualitySummaryDto = {
       domain: 'PERFORMANCE',
@@ -1663,10 +1674,10 @@ export class AnalyticsService {
       warnings: performanceWarnings,
     };
 
-    // 3. Subscription Data Quality
+    // 3. Subscription Data Quality (FUTURE_DATA_DEPENDENT)
     const subscriptionQuality: DomainQualitySummaryDto = {
       domain: 'SUBSCRIPTION',
-      qualityStatus: AnalyticsQualityStatus.UNAVAILABLE,
+      qualityStatus: AnalyticsQualityStatus.FUTURE_DATA_DEPENDENT,
       completenessPercentage: 0,
       knownObservationCount: 0,
       missingObservationCount: totalIpos,
@@ -1680,7 +1691,7 @@ export class AnalyticsService {
       domain: 'ALLOTMENT',
       qualityStatus:
         allotmentDataQuality.deduplicatedObservationsCount === 0
-          ? AnalyticsQualityStatus.INSUFFICIENT_DATA
+          ? AnalyticsQualityStatus.UNAVAILABLE
           : AnalyticsQualityStatus.PARTIAL,
       completenessPercentage: allotmentDataQuality.observationCoveragePercentage,
       knownObservationCount: allotmentDataQuality.definitiveObservationsCount,
@@ -1765,7 +1776,7 @@ export class AnalyticsService {
         metricId: 'TOTAL_IPOS',
         category: MetricCategory.MARKET,
         availability: MetricAvailabilityStatus.SUPPORTED,
-        qualityStatus: totalIpos > 0 ? AnalyticsQualityStatus.COMPLETE : AnalyticsQualityStatus.INSUFFICIENT_DATA,
+        qualityStatus: totalIpos > 0 ? AnalyticsQualityStatus.AVAILABLE : AnalyticsQualityStatus.UNAVAILABLE,
         completenessPercentage: 100,
         freshnessStatus: 'FRESH',
         provenanceCoveragePercentage: provenanceCoveragePct,
@@ -1775,7 +1786,7 @@ export class AnalyticsService {
         metricId: 'PRICE_BAND_SPREAD_INR',
         category: MetricCategory.PERFORMANCE,
         availability: MetricAvailabilityStatus.SUPPORTED,
-        qualityStatus: priceBandCoveragePct === 100 ? AnalyticsQualityStatus.COMPLETE : AnalyticsQualityStatus.PARTIAL,
+        qualityStatus: priceBandCoveragePct === 100 ? AnalyticsQualityStatus.AVAILABLE : AnalyticsQualityStatus.PARTIAL,
         completenessPercentage: priceBandCoveragePct,
         freshnessStatus: 'FRESH',
         provenanceCoveragePercentage: provenanceCoveragePct,
@@ -1785,7 +1796,7 @@ export class AnalyticsService {
         metricId: 'TOTAL_SUBSCRIPTION_MULTIPLIER',
         category: MetricCategory.SUBSCRIPTION,
         availability: MetricAvailabilityStatus.FUTURE_DATA_DEPENDENT,
-        qualityStatus: AnalyticsQualityStatus.UNAVAILABLE,
+        qualityStatus: AnalyticsQualityStatus.FUTURE_DATA_DEPENDENT,
         completenessPercentage: 0,
         freshnessStatus: 'UNKNOWN',
         provenanceCoveragePercentage: 0,
@@ -1795,7 +1806,7 @@ export class AnalyticsService {
         metricId: 'OBSERVED_POSITIVE_ALLOTMENT_RATE',
         category: MetricCategory.ALLOTMENT,
         availability: MetricAvailabilityStatus.SUPPORTED,
-        qualityStatus: allotmentDataQuality.deduplicatedObservationsCount > 0 ? AnalyticsQualityStatus.PARTIAL : AnalyticsQualityStatus.INSUFFICIENT_DATA,
+        qualityStatus: allotmentDataQuality.deduplicatedObservationsCount > 0 ? AnalyticsQualityStatus.PARTIAL : AnalyticsQualityStatus.UNAVAILABLE,
         completenessPercentage: allotmentDataQuality.observationCoveragePercentage,
         freshnessStatus: 'FRESH',
         provenanceCoveragePercentage: provenanceCoveragePct,
@@ -1805,7 +1816,7 @@ export class AnalyticsService {
         metricId: 'COMPLETENESS_SCORE',
         category: MetricCategory.DATA_QUALITY,
         availability: MetricAvailabilityStatus.SUPPORTED,
-        qualityStatus: marketCompletenessPct === 100 ? AnalyticsQualityStatus.COMPLETE : AnalyticsQualityStatus.PARTIAL,
+        qualityStatus: marketCompletenessPct === 100 ? AnalyticsQualityStatus.AVAILABLE : AnalyticsQualityStatus.PARTIAL,
         completenessPercentage: marketCompletenessPct,
         freshnessStatus: 'FRESH',
         provenanceCoveragePercentage: provenanceCoveragePct,
@@ -1831,7 +1842,7 @@ export class AnalyticsService {
         ? AnalyticsQualityStatus.NEEDS_REVIEW
         : marketCompletenessPct < 100
           ? AnalyticsQualityStatus.PARTIAL
-          : AnalyticsQualityStatus.COMPLETE;
+          : AnalyticsQualityStatus.AVAILABLE;
 
     return {
       evaluatedAt,
@@ -1844,6 +1855,7 @@ export class AnalyticsService {
         subscription: subscriptionQuality,
         allotment: allotmentQuality,
       },
+      missingFieldCounts,
       provenance,
       sourceHealth,
       freshness,

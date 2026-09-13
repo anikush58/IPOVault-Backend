@@ -435,21 +435,56 @@ export interface DetailedAllotmentAnalyticsResponseDto {
 // ── Phase 30.6 Data-Quality-Aware Analytics DTOs ─────────────────────────────
 
 export enum AnalyticsQualityStatus {
+  AVAILABLE = 'AVAILABLE',
   COMPLETE = 'COMPLETE',
   PARTIAL = 'PARTIAL',
   INSUFFICIENT_DATA = 'INSUFFICIENT_DATA',
   UNAVAILABLE = 'UNAVAILABLE',
+  FUTURE_DATA_DEPENDENT = 'FUTURE_DATA_DEPENDENT',
   NEEDS_REVIEW = 'NEEDS_REVIEW',
 }
 
 export enum AnalyticsQualityWarningCode {
-  PRICE_BAND_INCOMPLETE = 'PRICE_BAND_INCOMPLETE',
-  LISTING_TIMELINE_INCOMPLETE = 'LISTING_TIMELINE_INCOMPLETE',
+  NO_DATA = 'NO_DATA',
+  PARTIAL_DATA = 'PARTIAL_DATA',
+  MISSING_PRICE_BAND = 'MISSING_PRICE_BAND',
+  MISSING_ISSUE_SIZE = 'MISSING_ISSUE_SIZE',
+  MISSING_SHARE_COUNT = 'MISSING_SHARE_COUNT',
+  MISSING_LIFECYCLE_DATE = 'MISSING_LIFECYCLE_DATE',
   SUBSCRIPTION_DATA_UNAVAILABLE = 'SUBSCRIPTION_DATA_UNAVAILABLE',
-  ALLOTMENT_SAMPLE_ONLY = 'ALLOTMENT_SAMPLE_ONLY',
+  LISTING_PRICE_UNAVAILABLE = 'LISTING_PRICE_UNAVAILABLE',
+  NON_DEFINITIVE_ALLOTMENT_OBSERVATIONS = 'NON_DEFINITIVE_ALLOTMENT_OBSERVATIONS',
+  INVALID_OBSERVATIONS_EXCLUDED = 'INVALID_OBSERVATIONS_EXCLUDED',
+  STALE_DATA = 'STALE_DATA',
   PROVENANCE_INCOMPLETE = 'PROVENANCE_INCOMPLETE',
   SOURCE_HEALTH_DEGRADED = 'SOURCE_HEALTH_DEGRADED',
+  PRICE_BAND_INCOMPLETE = 'PRICE_BAND_INCOMPLETE',
+  LISTING_TIMELINE_INCOMPLETE = 'LISTING_TIMELINE_INCOMPLETE',
+  ALLOTMENT_SAMPLE_ONLY = 'ALLOTMENT_SAMPLE_ONLY',
   DATA_QUALITY_WARNINGS_PRESENT = 'DATA_QUALITY_WARNINGS_PRESENT',
+}
+
+export interface AnalyticsQualityMetadata {
+  status: AnalyticsQualityStatus;
+  coveragePercentage: number | null;
+  knownObservationCount: number;
+  totalObservationCount: number;
+  excludedObservationCount: number;
+  warningCodes: AnalyticsQualityWarningCode[];
+  explanation: string;
+}
+
+export interface MissingFieldCountsDto {
+  missingSymbolCount: number;
+  missingPriceBandLowCount: number;
+  missingPriceBandHighCount: number;
+  missingIssueSizeCount: number;
+  missingIssueShareCount: number;
+  missingFreshIssueSizeCount: number;
+  missingOfsSizeCount: number;
+  missingExchangeCount: number;
+  missingSegmentCount: number;
+  missingLifecycleDatesCount: number;
 }
 
 export interface MetricQualityContractDto {
@@ -516,6 +551,7 @@ export interface DetailedAnalyticsQualitySummaryResponseDto {
     subscription: DomainQualitySummaryDto;
     allotment: DomainQualitySummaryDto;
   };
+  missingFieldCounts?: MissingFieldCountsDto;
   provenance: ProvenanceQualitySummaryDto;
   sourceHealth: SourceHealthQualitySummaryDto;
   freshness: FreshnessQualitySummaryDto;

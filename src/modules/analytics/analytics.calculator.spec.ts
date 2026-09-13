@@ -251,21 +251,21 @@ describe('AnalyticsCalculator (Phase 30.1)', () => {
     });
   });
 
-  describe('classifyQualityStatus', () => {
+  describe('classifyQualityStatus & deriveQualityStatus (Phase 30.6)', () => {
     it('classifies metric quality statuses correctly', () => {
       expect(
         AnalyticsCalculator.classifyQualityStatus({
           availability: MetricAvailabilityStatus.FUTURE_DATA_DEPENDENT,
           completenessPercentage: 0,
         }),
-      ).toBe(AnalyticsQualityStatus.UNAVAILABLE);
+      ).toBe(AnalyticsQualityStatus.FUTURE_DATA_DEPENDENT);
 
       expect(
         AnalyticsCalculator.classifyQualityStatus({
           availability: MetricAvailabilityStatus.SUPPORTED,
           completenessPercentage: 0,
         }),
-      ).toBe(AnalyticsQualityStatus.INSUFFICIENT_DATA);
+      ).toBe(AnalyticsQualityStatus.UNAVAILABLE);
 
       expect(
         AnalyticsCalculator.classifyQualityStatus({
@@ -279,7 +279,7 @@ describe('AnalyticsCalculator (Phase 30.1)', () => {
           availability: MetricAvailabilityStatus.SUPPORTED,
           completenessPercentage: 100,
         }),
-      ).toBe(AnalyticsQualityStatus.COMPLETE);
+      ).toBe(AnalyticsQualityStatus.AVAILABLE);
 
       expect(
         AnalyticsCalculator.classifyQualityStatus({
@@ -288,6 +288,91 @@ describe('AnalyticsCalculator (Phase 30.1)', () => {
           qualityGateStatus: 'NEEDS_REVIEW',
         }),
       ).toBe(AnalyticsQualityStatus.NEEDS_REVIEW);
+    });
+
+    it('derives quality status deterministically based on counts and quality flags', () => {
+      expect(
+        AnalyticsCalculator.deriveQualityStatus({
+          availability: MetricAvailabilityStatus.FUTURE_DATA_DEPENDENT,
+          knownObservationCount: 0,
+          totalObservationCount: 0,
+        }),
+      ).toBe(AnalyticsQualityStatus.FUTURE_DATA_DEPENDENT);
+
+      expect(
+        AnalyticsCalculator.deriveQualityStatus({
+          availability: MetricAvailabilityStatus.SUPPORTED,
+          knownObservationCount: 0,
+          totalObservationCount: 10,
+        }),
+      ).toBe(AnalyticsQualityStatus.UNAVAILABLE);
+
+      expect(
+        AnalyticsCalculator.deriveQualityStatus({
+          availability: MetricAvailabilityStatus.SUPPORTED,
+          knownObservationCount: 8,
+          totalObservationCount: 10,
+        }),
+      ).toBe(AnalyticsQualityStatus.PARTIAL);
+
+      expect(
+        AnalyticsCalculator.deriveQualityStatus({
+          availability: MetricAvailabilityStatus.SUPPORTED,
+          knownObservationCount: 10,
+          totalObservationCount: 10,
+          hasDegradedSources: true,
+        }),
+      ).toBe(AnalyticsQualityStatus.NEEDS_REVIEW);
+
+      expect(
+        AnalyticsCalculator.deriveQualityStatus({
+          availability: MetricAvailabilityStatus.SUPPORTED,
+          knownObservationCount: 10,
+          totalObservationCount: 10,
+        }),
+      ).toBe(AnalyticsQualityStatus.AVAILABLE);
+    });
+
+    it('calculates missing field counts across registered IPO records', () => {
+      const mockIpos = [
+        {
+          symbol: 'SYM1',
+          priceBandLow: 100,
+          priceBandHigh: 120,
+          issueSize: 1000,
+          issueShareCount: 500,
+          freshIssueSize: 500,
+          ofsSize: 500,
+          exchange: 'NSE',
+          marketSegment: 'MAINBOARD',
+          _lifecycleCount: 2,
+        },
+        {
+          symbol: null,
+          priceBandLow: null,
+          priceBandHigh: null,
+          issueSize: null,
+          issueShareCount: null,
+          freshIssueSize: null,
+          ofsSize: null,
+          exchange: null,
+          marketSegment: null,
+          _lifecycleCount: 0,
+        },
+      ];
+
+      const res = AnalyticsCalculator.calculateMissingFieldCounts(mockIpos as any);
+
+      expect(res.missingSymbolCount).toBe(1);
+      expect(res.missingPriceBandLowCount).toBe(1);
+      expect(res.missingPriceBandHighCount).toBe(1);
+      expect(res.missingIssueSizeCount).toBe(1);
+      expect(res.missingIssueShareCount).toBe(1);
+      expect(res.missingFreshIssueSizeCount).toBe(1);
+      expect(res.missingOfsSizeCount).toBe(1);
+      expect(res.missingExchangeCount).toBe(1);
+      expect(res.missingSegmentCount).toBe(1);
+      expect(res.missingLifecycleDatesCount).toBe(1);
     });
   });
 });
