@@ -18,6 +18,7 @@ import { UserModule } from './modules/user/user.module';
 import { NotificationModule } from './modules/notifications/notification.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ConsoleModule } from './modules/console/console.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { ConsoleModule } from './modules/console/console.module';
     NotificationModule,
     AnalyticsModule,
     ConsoleModule,
+    AdminModule,
     HealthModule,
   ],
   providers: [

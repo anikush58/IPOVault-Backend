@@ -51,7 +51,23 @@ export class RegistrarResolver {
       orConditions.unshift({ ipoId });
     }
 
-    // 1. Check direct match or flexible symbol/company name match in database
+    // 1. Check IpoAllotmentConfig table for admin-managed allotment configuration
+    if (isUuid) {
+      const config = await this.prisma.ipoAllotmentConfig.findUnique({
+        where: { ipoId },
+      });
+      if (config && config.enabled && config.registrar) {
+        const adapter = this.registry.get(config.registrar.toLowerCase());
+        if (adapter) {
+          return {
+            adapter,
+            registrarIpoCode: config.registrarIpoCode || ipoId,
+          };
+        }
+      }
+    }
+
+    // 2. Check direct match or flexible symbol/company name match in database IpoSourceIdentity
     const sourceIdentity = await this.prisma.ipoSourceIdentity.findFirst({
       where: {
         OR: orConditions,

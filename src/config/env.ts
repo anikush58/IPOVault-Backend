@@ -55,6 +55,7 @@ export const envSchema = z.object({
     .int()
     .min(0)
     .default(0),
+  ADMIN_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

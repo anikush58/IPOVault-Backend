@@ -118,6 +118,12 @@ export class IpoRepository {
       ];
     }
 
+    if (query.publicationStatus) {
+      where.publicationStatus = query.publicationStatus;
+    } else {
+      where.publicationStatus = 'PUBLISHED';
+    }
+
     if (query.status) {
       if (Array.isArray(query.status)) {
         where.status = { in: query.status };

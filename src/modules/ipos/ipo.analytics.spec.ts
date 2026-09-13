@@ -35,6 +35,7 @@ describe('Phase 27 — IPO Analytics / Derived Metrics (Unit)', () => {
     marketSegment: 'MAINBOARD',
     exchange: 'BOTH',
     status: 'OPEN',
+    publicationStatus: 'PUBLISHED',
     symbol: 'ALPHA',
     issueSize: new Prisma.Decimal('500.00'),
     freshIssueSize: new Prisma.Decimal('300.00'),

@@ -15,6 +15,7 @@ function makeIpoRecord(id = '11111111-1111-4111-8111-111111111111'): IpoWithRela
     marketSegment: 'MAINBOARD',
     exchange: 'NSE',
     status: 'OPEN',
+    publicationStatus: 'PUBLISHED',
     symbol: 'TESTSYM',
     issueSize: new Prisma.Decimal('100.00'),
     freshIssueSize: null,

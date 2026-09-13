@@ -30,6 +30,17 @@ export class IpoController {
     return this.ipos.list(query);
   }
 
+  @Get('new-ipos')
+  newIpos(
+    @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+  ) {
+    return this.ipos.list({
+      ...query,
+      publicationStatus: 'PUBLISHED',
+      status: ['UPCOMING', 'OPEN'],
+    });
+  }
+
   @Get('upcoming')
   upcoming(
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,

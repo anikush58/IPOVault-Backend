@@ -7,13 +7,28 @@ import { ConsoleController } from './console.controller';
 import { ConsoleService } from './console.service';
 import { ConsoleEnabledGuard } from './console.guard';
 import { ResponseEnvelopeInterceptor } from '../../common/interceptors/response-envelope.interceptor';
+import { AdminIpoService } from '../admin/admin-ipo.service';
 
 describe('ConsoleController', () => {
   let controller: ConsoleController;
   let service: Record<string, jest.Mock>;
+  let adminIpoService: Record<string, jest.Mock>;
   let app: INestApplication;
 
   beforeEach(async () => {
+    adminIpoService = {
+      listManualIpos: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+      createManualIpo: jest.fn().mockResolvedValue({ id: 'ipo-1' }),
+      getManualIpo: jest.fn().mockResolvedValue({ id: 'ipo-1' }),
+      updateManualIpo: jest.fn().mockResolvedValue({ id: 'ipo-1' }),
+      publishIpo: jest.fn().mockResolvedValue({ id: 'ipo-1', publicationStatus: 'PUBLISHED' }),
+      unpublishIpo: jest.fn().mockResolvedValue({ id: 'ipo-1', publicationStatus: 'DRAFT' }),
+      archiveIpo: jest.fn().mockResolvedValue({ id: 'ipo-1', publicationStatus: 'ARCHIVED' }),
+      parseDocumentUrl: jest.fn().mockResolvedValue({ extraction: {} }),
+      uploadAndParseDocument: jest.fn().mockResolvedValue({ extraction: {} }),
+      updateAllotmentConfig: jest.fn().mockResolvedValue({ id: 'ipo-1' }),
+    };
+
     service = {
       getDashboardSummary: jest
         .fn()
@@ -35,6 +50,7 @@ describe('ConsoleController', () => {
       controllers: [ConsoleController],
       providers: [
         { provide: ConsoleService, useValue: service },
+        { provide: AdminIpoService, useValue: adminIpoService },
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue(true) },
@@ -65,7 +81,7 @@ describe('ConsoleController', () => {
     const html = controller.getConsoleUi();
     expect(html).toContain('<!DOCTYPE html>');
     expect(html).toContain('IPOVault Console');
-    expect(html).toContain('Read-Only');
+    expect(html).toContain('Manual IPOs');
     expect(html).not.toMatch(/^\s*\{\s*"data"\s*:/);
   });
 

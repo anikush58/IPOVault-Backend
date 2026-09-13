@@ -17,6 +17,7 @@ function buildIpo(
     marketSegment: 'MAINBOARD',
     exchange: 'NSE',
     status: 'OPEN',
+    publicationStatus: 'PUBLISHED',
     symbol: 'EXMPL',
     issueSize: new Prisma.Decimal('12500000000.00'),
     freshIssueSize: new Prisma.Decimal('10000000000.00'),

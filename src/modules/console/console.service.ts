@@ -27,6 +27,7 @@ export class ConsoleService {
     const [
       totalIpos,
       ipoStatusGroup,
+      ipoPubGroup,
       ipoSegmentGroup,
       ipoExchangeGroup,
       sourcesCount,
@@ -38,6 +39,10 @@ export class ConsoleService {
       this.prisma.ipo.count(),
       this.prisma.ipo.groupBy({
         by: ['status'],
+        _count: { id: true },
+      }),
+      this.prisma.ipo.groupBy({
+        by: ['publicationStatus'],
         _count: { id: true },
       }),
       this.prisma.ipo.groupBy({
@@ -114,6 +119,14 @@ export class ConsoleService {
       {} as Record<string, number>,
     );
 
+    const pubMap = ipoPubGroup.reduce(
+      (acc, item) => {
+        acc[item.publicationStatus] = item._count.id;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
     return {
       ipoCounts: {
         total: totalIpos,
@@ -123,6 +136,11 @@ export class ConsoleService {
         listingSoon: statusMap.LISTING_PENDING || 0,
         withdrawn: statusMap.WITHDRAWN || 0,
         cancelled: statusMap.CANCELLED || 0,
+      },
+      publicationBreakdown: {
+        published: pubMap.PUBLISHED || 0,
+        draft: pubMap.DRAFT || 0,
+        archived: pubMap.ARCHIVED || 0,
       },
       marketBreakdown: {
         mainboard: segmentMap.MAINBOARD || 0,

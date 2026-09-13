@@ -9,6 +9,8 @@ import { ConsoleController } from './console.controller';
 import { ConsoleService } from './console.service';
 import { ConsoleEnabledGuard } from './console.guard';
 
+import { AdminModule } from '../admin/admin.module';
+
 @Module({
   imports: [
     DatabaseModule,
@@ -17,6 +19,7 @@ import { ConsoleEnabledGuard } from './console.guard';
     DiscoveryModule,
     NotificationModule,
     AllotmentModule,
+    AdminModule,
   ],
   controllers: [ConsoleController],
   providers: [ConsoleService, ConsoleEnabledGuard],

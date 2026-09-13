@@ -1,13 +1,19 @@
 import {
+  Body,
   Controller,
   Get,
   Header,
   Param,
   ParseUUIDPipe,
+  Patch,
+  Post,
   Query,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { ConsoleService } from './console.service';
 import { ConsoleIpoListQueryDto } from './console.types';
@@ -18,11 +24,23 @@ import {
   DEFAULT_PAGE,
   MAX_LIMIT,
 } from '../../common/pagination/pagination';
+import { AdminIpoService } from '../admin/admin-ipo.service';
+import {
+  AdminIpoQueryDto,
+  ConfigureAllotmentDto,
+  CreateAdminIpoDto,
+  ParseDocumentUrlDto,
+  UpdateAdminIpoDto,
+} from '../admin/admin-ipo.dto';
+import { DocumentType } from '@prisma/client';
 
 @Controller('console')
 @UseGuards(ConsoleEnabledGuard)
 export class ConsoleController {
-  constructor(private readonly consoleService: ConsoleService) {}
+  constructor(
+    private readonly consoleService: ConsoleService,
+    private readonly adminIpoService: AdminIpoService,
+  ) {}
 
   /**
    * Serves the self-contained, browser-accessible IPOVault Data Console HTML web UI.
@@ -129,5 +147,83 @@ export class ConsoleController {
   @Get('api/allotment')
   async getAllotmentOpsSummary() {
     return this.consoleService.getAllotmentOpsSummary();
+  }
+
+  // ==========================================
+  // MANUAL IPOs CONSOLE MANAGEMENT ENDPOINTS
+  // ==========================================
+
+  @Get('api/manual-ipos')
+  async listManualIpos(@Query() query: AdminIpoQueryDto) {
+    return this.adminIpoService.listIpos(query);
+  }
+
+  @Post('api/manual-ipos')
+  async createManualIpo(@Body() dto: CreateAdminIpoDto) {
+    return this.adminIpoService.createIpo(dto);
+  }
+
+  @Get('api/manual-ipos/:id')
+  async getManualIpoDetail(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.adminIpoService.getIpoDetail(id);
+  }
+
+  @Patch('api/manual-ipos/:id')
+  async updateManualIpo(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateAdminIpoDto,
+  ) {
+    return this.adminIpoService.updateIpo(id, dto);
+  }
+
+  @Post('api/manual-ipos/:id/publish')
+  async publishManualIpo(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.adminIpoService.publishIpo(id);
+  }
+
+  @Post('api/manual-ipos/:id/unpublish')
+  async unpublishManualIpo(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.adminIpoService.unpublishIpo(id);
+  }
+
+  @Post('api/manual-ipos/:id/archive')
+  async archiveManualIpo(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.adminIpoService.archiveIpo(id);
+  }
+
+  @Post('api/manual-ipos/parse-url')
+  async parseManualIpoUrl(@Body() dto: ParseDocumentUrlDto) {
+    return this.adminIpoService.parseUrlAndStore(
+      dto.url,
+      dto.ipoId,
+      dto.documentType || DocumentType.RHP,
+    );
+  }
+
+  @Post('api/manual-ipos/upload')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadManualIpoPdf(
+    @UploadedFile() file: { buffer: Buffer; originalname?: string; mimetype?: string },
+    @Query('ipoId') ipoId?: string,
+    @Query('documentType') documentType?: DocumentType,
+  ) {
+    if (!file) {
+      throw new Error('No PDF file provided');
+    }
+    return this.adminIpoService.parseAndStorePdfBuffer(
+      file.buffer,
+      file.originalname || 'document.pdf',
+      file.mimetype || 'application/pdf',
+      ipoId,
+      documentType || DocumentType.RHP,
+    );
+  }
+
+  @Post('api/manual-ipos/:id/allotment-config')
+  async configureManualIpoAllotment(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: ConfigureAllotmentDto,
+  ) {
+    return this.adminIpoService.configureAllotment(id, dto);
   }
 }

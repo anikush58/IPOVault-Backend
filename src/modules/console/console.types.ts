@@ -47,6 +47,11 @@ export interface ConsoleDashboardSummaryDto {
     totalObservations: number;
     positiveAllotments: number;
   };
+  publicationBreakdown?: {
+    draft: number;
+    published: number;
+    archived: number;
+  };
 }
 
 export interface ConsoleIpoListQueryDto {

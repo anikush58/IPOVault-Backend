@@ -31,6 +31,25 @@ enum IpoStatus {
   CANCELLED
 }
 
+enum PublicationStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum DocumentType {
+  DRHP
+  RHP
+  PROSPECTUS
+  OTHER
+}
+
+enum DocumentParsingStatus {
+  PENDING
+  PARSED
+  FAILED
+}
+
 enum LifecycleEventType {
   DRHP
   RHP
@@ -103,25 +122,26 @@ model Company {
 }
 
 model Ipo {
-  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId      String           @map("company_id") @db.Uuid
-  marketSegment  MarketSegment    @map("market_segment")
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId      String            @map("company_id") @db.Uuid
+  marketSegment  MarketSegment     @map("market_segment")
   exchange       ExchangeListing
-  status         IpoStatus        @default(DRAFT)
+  status         IpoStatus         @default(DRAFT)
+  publicationStatus PublicationStatus @default(DRAFT) @map("publication_status")
   symbol               String?
-  issueSize            Decimal?         @map("issue_size") @db.Decimal(20, 2)
-  freshIssueSize       Decimal?         @map("fresh_issue_size") @db.Decimal(20, 2)
-  ofsSize              Decimal?         @map("ofs_size") @db.Decimal(20, 2)
-  issueShareCount      Decimal?         @map("issue_share_count") @db.Decimal(20, 0)
-  freshIssueShareCount Decimal?         @map("fresh_issue_share_count") @db.Decimal(20, 0)
-  ofsShareCount        Decimal?         @map("ofs_share_count") @db.Decimal(20, 0)
-  faceValue            Decimal?         @map("face_value") @db.Decimal(20, 2)
-  priceBandLow   Decimal?         @map("price_band_low") @db.Decimal(20, 2)
-  priceBandHigh  Decimal?         @map("price_band_high") @db.Decimal(20, 2)
-  lotSize        Int?             @map("lot_size")
-  minimumLots    Int?             @map("minimum_lots")
-  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  issueSize            Decimal?          @map("issue_size") @db.Decimal(20, 2)
+  freshIssueSize       Decimal?          @map("fresh_issue_size") @db.Decimal(20, 2)
+  ofsSize              Decimal?          @map("ofs_size") @db.Decimal(20, 2)
+  issueShareCount      Decimal?          @map("issue_share_count") @db.Decimal(20, 0)
+  freshIssueShareCount Decimal?          @map("fresh_issue_share_count") @db.Decimal(20, 0)
+  ofsShareCount        Decimal?          @map("ofs_share_count") @db.Decimal(20, 0)
+  faceValue            Decimal?          @map("face_value") @db.Decimal(20, 2)
+  priceBandLow   Decimal?          @map("price_band_low") @db.Decimal(20, 2)
+  priceBandHigh  Decimal?          @map("price_band_high") @db.Decimal(20, 2)
+  lotSize        Int?              @map("lot_size")
+  minimumLots    Int?              @map("minimum_lots")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   company          Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
   lifecycleEvents  IpoLifecycleEvent[]
@@ -129,11 +149,54 @@ model Ipo {
   changeEvents     IpoChangeEvent[]
   allotmentCheckLogs AllotmentCheckLog[]
   allotmentCheckJobs AllotmentCheckJob[]
+  documents        IpoDocument[]
+  allotmentConfig  IpoAllotmentConfig?
 
   @@index([companyId])
   @@index([status])
+  @@index([publicationStatus])
   @@index([symbol])
   @@map("ipos")
+}
+
+model IpoDocument {
+  id            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId         String?               @map("ipo_id") @db.Uuid
+  documentType  DocumentType          @map("document_type")
+  sourceUrl     String?               @map("source_url")
+  filePath      String?               @map("file_path")
+  fileName      String?               @map("file_name")
+  mimeType      String?               @map("mime_type")
+  fileSizeBytes Int?                  @map("file_size_bytes")
+  source        String                @default("MANUAL_UPLOAD")
+  parsingStatus DocumentParsingStatus @default(PENDING) @map("parsing_status")
+  parserVersion String?               @map("parser_version")
+  extractionData Json?                @map("extraction_data") @db.JsonB
+  errorMessage  String?               @map("error_message")
+  uploadedAt    DateTime              @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipo           Ipo?                  @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+
+  @@index([ipoId])
+  @@map("ipo_documents")
+}
+
+model IpoAllotmentConfig {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ipoId                 String    @unique @map("ipo_id") @db.Uuid
+  registrar             String
+  registrarIpoCode      String?   @map("registrar_ipo_code")
+  allotmentSourceUrl    String?   @map("allotment_source_url")
+  expectedAllotmentDate DateTime? @map("expected_allotment_date") @db.Date
+  enabled               Boolean   @default(true)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipo                   Ipo       @relation(fields: [ipoId], references: [id], onDelete: Cascade)
+
+  @@map("ipo_allotment_configs")
 }
 
 model IpoLifecycleEvent {

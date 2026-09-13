@@ -58,6 +58,7 @@ describe('Phase 24 — Field-Level IPO Data Lineage & Provenance', () => {
     marketSegment: 'MAINBOARD',
     exchange: 'NSE',
     status: 'OPEN',
+    publicationStatus: 'PUBLISHED',
     symbol: 'ACME',
     issueSize: new Prisma.Decimal('500.00'),
     freshIssueSize: new Prisma.Decimal('300.00'),

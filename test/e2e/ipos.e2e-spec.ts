@@ -19,6 +19,7 @@ function ipo(partial: {
     marketSegment: partial.marketSegment,
     exchange: partial.exchange,
     status: partial.status,
+    publicationStatus: 'PUBLISHED',
     symbol: 'SYM',
     issueSize: new Prisma.Decimal('100.00'),
     freshIssueSize: null,

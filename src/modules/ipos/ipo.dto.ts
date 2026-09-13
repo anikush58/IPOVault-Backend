@@ -22,6 +22,8 @@ export const ipoStatusSchema = z.enum([
   'CANCELLED',
 ]);
 
+export const publicationStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']);
+
 export const marketSegmentSchema = z.enum(['MAINBOARD', 'SME']);
 
 export const exchangeSchema = z.enum(['NSE', 'BSE', 'BOTH']);
@@ -59,6 +61,7 @@ export const ipoListQuerySchema = z
   .object({
     q: z.preprocess(emptyToUndefined, z.string().optional()),
     status: ipoStatusQuerySchema,
+    publicationStatus: z.preprocess(emptyToUndefined, publicationStatusSchema.optional()),
     marketSegment: z.preprocess(emptyToUndefined, marketSegmentSchema.optional()),
     exchange: z.preprocess(emptyToUndefined, exchangeSchema.optional()),
     symbol: z.preprocess(emptyToUndefined, z.string().optional()),
