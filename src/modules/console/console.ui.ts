@@ -1509,7 +1509,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/archive', { method: 'POST' });
         if (res.ok) {
-          alert('📦 IPO archived successfully.\n(Status set to ARCHIVED. Data remains in database but is hidden from mobile app)');
+          alert('📦 IPO archived successfully.\\n(Status set to ARCHIVED. Data remains in database but is hidden from mobile app)');
           if (document.getElementById('form-ipo-id').value === id) editManualIpo(id);
           else fetchManualIpos();
         } else {
@@ -1549,9 +1549,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       if (!id) return;
 
       const confirmed = confirm(
-        '⚠️ PERMANENT HARD DELETE WARNING:\n\n' +
-        'Are you sure you want to PERMANENTLY DELETE "' + name + '"?\n\n' +
-        'This will PERMANENTLY ERASE this IPO and all associated records from the database.\n\n' +
+        '⚠️ PERMANENT HARD DELETE WARNING:\\n\\n' +
+        'Are you sure you want to PERMANENTLY DELETE "' + name + '"?\\n\\n' +
+        'This will PERMANENTLY ERASE this IPO and all associated records from the database.\\n\\n' +
         'This action is PERMANENT and CANNOT be undone. Proceed?'
       );
 
@@ -1567,9 +1567,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     async function deleteManualIpoDirect(id, name, promptConfirm = true) {
       if (promptConfirm) {
         const confirmed = confirm(
-          '⚠️ PERMANENT HARD DELETE WARNING:\n\n' +
-          'Are you sure you want to PERMANENTLY DELETE "' + (name || 'this IPO') + '"?\n\n' +
-          'This will PERMANENTLY ERASE this IPO and all associated records from the database.\n\n' +
+          '⚠️ PERMANENT HARD DELETE WARNING:\\n\\n' +
+          'Are you sure you want to PERMANENTLY DELETE "' + (name || 'this IPO') + '"?\\n\\n' +
+          'This will PERMANENTLY ERASE this IPO and all associated records from the database.\\n\\n' +
           'This action is PERMANENT and CANNOT be undone. Proceed?'
         );
         if (!confirmed) return false;
