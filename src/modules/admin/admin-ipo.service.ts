@@ -103,6 +103,7 @@ export class AdminIpoService {
           phone: dto.phone?.trim() || null,
           email: dto.email?.trim() || null,
           contactPerson: dto.contactPerson?.trim() || null,
+          logoUrl: dto.logoUrl?.trim() || null,
         },
       });
     } else {
@@ -116,6 +117,7 @@ export class AdminIpoService {
           ...(dto.phone !== undefined ? { phone: dto.phone?.trim() || null } : {}),
           ...(dto.email !== undefined ? { email: dto.email?.trim() || null } : {}),
           ...(dto.contactPerson !== undefined ? { contactPerson: dto.contactPerson?.trim() || null } : {}),
+          ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl?.trim() || null } : {}),
         },
       });
     }
@@ -243,7 +245,8 @@ export class AdminIpoService {
       dto.aboutDescription !== undefined ||
       dto.phone !== undefined ||
       dto.email !== undefined ||
-      dto.contactPerson !== undefined
+      dto.contactPerson !== undefined ||
+      dto.logoUrl !== undefined
     ) {
       await this.prisma.company.update({
         where: { id: existing.companyId },
@@ -258,6 +261,7 @@ export class AdminIpoService {
           ...(dto.phone !== undefined ? { phone: dto.phone?.trim() || null } : {}),
           ...(dto.email !== undefined ? { email: dto.email?.trim() || null } : {}),
           ...(dto.contactPerson !== undefined ? { contactPerson: dto.contactPerson?.trim() || null } : {}),
+          ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl?.trim() || null } : {}),
         },
       });
     }
@@ -1525,5 +1529,42 @@ export class AdminIpoService {
         },
       });
     }
+  }
+
+  /**
+   * Delete an IPO permanently.
+   */
+  async deleteIpo(id: string) {
+    const existing = await this.prisma.ipo.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`IPO with ID ${id} not found.`);
+    }
+
+    await this.prisma.ipoGmpObservation.deleteMany({ where: { ipoId: id } });
+    await this.prisma.ipoSubscription.deleteMany({ where: { ipoId: id } });
+    await this.prisma.ipoLifecycleEvent.deleteMany({ where: { ipoId: id } });
+    await this.prisma.ipoOfferCategory.deleteMany({ where: { ipoId: id } });
+    await this.prisma.ipoParticipant.deleteMany({ where: { ipoId: id } });
+    await this.prisma.adminDataSource.deleteMany({ where: { ipoId: id } });
+
+    await this.prisma.ipo.delete({ where: { id } });
+
+    return { id, message: 'IPO deleted permanently.' };
+  }
+
+  /**
+   * Unarchive an IPO (revert to DRAFT).
+   */
+  async unarchiveIpo(id: string) {
+    const updated = await this.prisma.ipo.update({
+      where: { id },
+      data: { publicationStatus: PublicationStatus.DRAFT },
+    });
+
+    return {
+      id: updated.id,
+      publicationStatus: updated.publicationStatus,
+      message: 'IPO unarchived (reverted to DRAFT).',
+    };
   }
 }

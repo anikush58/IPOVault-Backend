@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -59,6 +60,14 @@ export class AdminIpoController {
   }
 
   /**
+   * Delete an IPO permanently.
+   */
+  @Delete(':id')
+  async deleteIpo(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.adminIpoService.deleteIpo(id);
+  }
+
+  /**
    * Validate and publish an IPO.
    */
   @Post(':id/publish')
@@ -80,6 +89,14 @@ export class AdminIpoController {
   @Post(':id/archive')
   async archiveIpo(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.adminIpoService.archiveIpo(id);
+  }
+
+  /**
+   * Unarchive an IPO.
+   */
+  @Post(':id/unarchive')
+  async unarchiveIpo(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.adminIpoService.unarchiveIpo(id);
   }
 
   /**

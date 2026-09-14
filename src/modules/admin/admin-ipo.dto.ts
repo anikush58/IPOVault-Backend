@@ -88,6 +88,9 @@ export class CreateAdminIpoDto {
   phone?: string;
   email?: string;
   contactPerson?: string;
+  logoUrl?: string;
+  rhpUrl?: string;
+  drhpUrl?: string;
   offerCategories?: OfferCategoryDto[];
   financials?: CompanyFinancialDto[];
   participants?: ParticipantDto[];
@@ -126,6 +129,9 @@ export class UpdateAdminIpoDto {
   phone?: string;
   email?: string;
   contactPerson?: string;
+  logoUrl?: string;
+  rhpUrl?: string;
+  drhpUrl?: string;
   offerCategories?: OfferCategoryDto[];
   financials?: CompanyFinancialDto[];
   participants?: ParticipantDto[];
