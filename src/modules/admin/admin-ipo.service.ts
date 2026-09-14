@@ -4,10 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  DocumentType,
   ExchangeListing,
   IpoStatus,
   MarketSegment,
   OfferCategoryType,
+  ParticipantRole,
   Prisma,
   PublicationStatus,
 } from '@prisma/client';
@@ -696,21 +698,56 @@ export class AdminIpoService {
     const companyData = payload.company || {};
     const ipoData = payload.ipo || {};
     const lifecycleData = payload.lifecycle || {};
+    const allotmentConfigData = payload.allotmentConfig || {};
+    const gmpData = payload.gmp || {};
 
     // 1. Mandatory Identity & Enums
-    const legalName = companyData.legalName?.trim();
+    const legalName = (
+      companyData.legalName ||
+      companyData.displayName ||
+      companyData.companyName ||
+      payload.companyName
+    )?.trim();
     if (!legalName) {
-      throw new BadRequestException('company.legalName is required in JSON payload');
+      throw new BadRequestException('Company name (legalName or companyName) is required in JSON payload');
     }
 
-    const marketSegment: MarketSegment = ipoData.marketSegment || MarketSegment.MAINBOARD;
-    if (!Object.values(MarketSegment).includes(marketSegment)) {
-      throw new BadRequestException(`Invalid marketSegment: ${ipoData.marketSegment}`);
+    // Exchange Normalization
+    const rawExchange = String(
+      payload.exchange || ipoData.exchange || companyData.exchange || 'NSE',
+    ).trim();
+    let exchange: ExchangeListing = ExchangeListing.NSE;
+    if (
+      rawExchange.toUpperCase().includes('BOTH') ||
+      (rawExchange.toUpperCase().includes('BSE') && rawExchange.toUpperCase().includes('NSE'))
+    ) {
+      exchange = ExchangeListing.BOTH;
+    } else if (rawExchange.toUpperCase().includes('NSE')) {
+      exchange = ExchangeListing.NSE;
+    } else if (rawExchange.toUpperCase().includes('BSE')) {
+      exchange = ExchangeListing.BSE;
+    } else if (Object.values(ExchangeListing).includes(rawExchange as ExchangeListing)) {
+      exchange = rawExchange as ExchangeListing;
+    } else {
+      throw new BadRequestException(`Invalid exchange: ${rawExchange}`);
     }
 
-    const exchange: ExchangeListing = ipoData.exchange || ExchangeListing.NSE;
-    if (!Object.values(ExchangeListing).includes(exchange)) {
-      throw new BadRequestException(`Invalid exchange: ${ipoData.exchange}`);
+    // Market Segment / Issue Type Normalization
+    const rawSegment = String(
+      payload.issueType || ipoData.issueType || ipoData.marketSegment || companyData.marketSegment || 'MAINBOARD',
+    ).trim();
+    let marketSegment: MarketSegment = MarketSegment.MAINBOARD;
+    if (rawSegment.toUpperCase().includes('SME')) {
+      marketSegment = MarketSegment.SME;
+    } else if (
+      rawSegment.toUpperCase().includes('MAINBOARD') ||
+      rawSegment.toUpperCase().includes('MAIN')
+    ) {
+      marketSegment = MarketSegment.MAINBOARD;
+    } else if (Object.values(MarketSegment).includes(rawSegment as MarketSegment)) {
+      marketSegment = rawSegment as MarketSegment;
+    } else {
+      throw new BadRequestException(`Invalid issueType / marketSegment: ${rawSegment}`);
     }
 
     const status: IpoStatus = ipoData.status || IpoStatus.DRAFT;
@@ -719,50 +756,55 @@ export class AdminIpoService {
     }
 
     // 2. Validate Price Band
+    const priceBandLowVal = ipoData.priceBandLow ?? ipoData.priceBandMin ?? payload.priceBandMin;
+    const priceBandHighVal = ipoData.priceBandHigh ?? ipoData.priceBandMax ?? payload.priceBandMax;
+
     if (
-      ipoData.priceBandLow !== undefined &&
-      ipoData.priceBandLow !== null &&
-      ipoData.priceBandHigh !== undefined &&
-      ipoData.priceBandHigh !== null
+      priceBandLowVal !== undefined &&
+      priceBandLowVal !== null &&
+      priceBandHighVal !== undefined &&
+      priceBandHighVal !== null
     ) {
-      if (Number(ipoData.priceBandLow) > Number(ipoData.priceBandHigh)) {
+      if (Number(priceBandLowVal) > Number(priceBandHighVal)) {
         throw new BadRequestException(
-          `priceBandLow (${ipoData.priceBandLow}) cannot be greater than priceBandHigh (${ipoData.priceBandHigh})`,
+          `priceBandLow/Min (${priceBandLowVal}) cannot be greater than priceBandHigh/Max (${priceBandHighVal})`,
         );
       }
     }
 
     // 3. Validate Monetary Sizes & Share Counts consistency
+    const freshIssueSizeVal = ipoData.freshIssueSize ?? payload.freshIssueSize;
+    const ofsSizeVal = ipoData.ofsSize ?? payload.ofsSize;
+    const issueSizeVal = ipoData.issueSize ?? payload.issueSize;
+
     if (
-      ipoData.freshIssueSize !== undefined &&
-      ipoData.freshIssueSize !== null &&
-      ipoData.ofsSize !== undefined &&
-      ipoData.ofsSize !== null &&
-      ipoData.issueSize !== undefined &&
-      ipoData.issueSize !== null
+      freshIssueSizeVal !== undefined &&
+      freshIssueSizeVal !== null &&
+      ofsSizeVal !== undefined &&
+      ofsSizeVal !== null &&
+      issueSizeVal !== undefined &&
+      issueSizeVal !== null
     ) {
-      if (
-        Number(ipoData.issueSize) <
-        Number(ipoData.freshIssueSize) + Number(ipoData.ofsSize)
-      ) {
+      if (Number(issueSizeVal) < Number(freshIssueSizeVal) + Number(ofsSizeVal)) {
         throw new BadRequestException(
           'issueSize cannot be less than the sum of freshIssueSize and ofsSize',
         );
       }
     }
 
+    const freshIssueShareCountVal = ipoData.freshIssueShareCount ?? payload.freshIssueShareCount;
+    const ofsShareCountVal = ipoData.ofsShareCount ?? payload.ofsShareCount;
+    const issueShareCountVal = ipoData.issueShareCount ?? payload.issueShareCount;
+
     if (
-      ipoData.freshIssueShareCount !== undefined &&
-      ipoData.freshIssueShareCount !== null &&
-      ipoData.ofsShareCount !== undefined &&
-      ipoData.ofsShareCount !== null &&
-      ipoData.issueShareCount !== undefined &&
-      ipoData.issueShareCount !== null
+      freshIssueShareCountVal !== undefined &&
+      freshIssueShareCountVal !== null &&
+      ofsShareCountVal !== undefined &&
+      ofsShareCountVal !== null &&
+      issueShareCountVal !== undefined &&
+      issueShareCountVal !== null
     ) {
-      if (
-        Number(ipoData.issueShareCount) <
-        Number(ipoData.freshIssueShareCount) + Number(ipoData.ofsShareCount)
-      ) {
+      if (Number(issueShareCountVal) < Number(freshIssueShareCountVal) + Number(ofsShareCountVal)) {
         throw new BadRequestException(
           'issueShareCount cannot be less than the sum of freshIssueShareCount and ofsShareCount',
         );
@@ -779,13 +821,13 @@ export class AdminIpoService {
       return d;
     };
 
-    const openDate = parseDateStr(lifecycleData.openDate);
-    const closeDate = parseDateStr(lifecycleData.closeDate);
-    const allotmentDate = parseDateStr(lifecycleData.allotmentDate);
-    const listingDate = parseDateStr(lifecycleData.listingDate);
-    const drhpDate = parseDateStr(lifecycleData.drhpDate);
-    const rhpDate = parseDateStr(lifecycleData.rhpDate);
-    const anchorDate = parseDateStr(lifecycleData.anchorDate);
+    const openDate = parseDateStr(payload.openDate || lifecycleData.openDate || ipoData.openDate);
+    const closeDate = parseDateStr(payload.closeDate || lifecycleData.closeDate || ipoData.closeDate);
+    const allotmentDate = parseDateStr(payload.allotmentDate || lifecycleData.allotmentDate || ipoData.allotmentDate);
+    const listingDate = parseDateStr(payload.listingDate || lifecycleData.listingDate || ipoData.listingDate);
+    const drhpDate = parseDateStr(payload.drhpDate || lifecycleData.drhpDate);
+    const rhpDate = parseDateStr(payload.rhpDate || lifecycleData.rhpDate);
+    const anchorDate = parseDateStr(payload.anchorDate || lifecycleData.anchorDate);
 
     if (openDate && closeDate && openDate > closeDate) {
       throw new BadRequestException('openDate cannot be after closeDate');
@@ -815,7 +857,7 @@ export class AdminIpoService {
     }
 
     // 6. Company Identity & Ambiguity Check
-    const cin = companyData.cin?.trim() || null;
+    const cin = companyData.cin?.trim() || payload.cin?.trim() || null;
     let company: any = null;
 
     if (existingIpo) {
@@ -840,6 +882,15 @@ export class AdminIpoService {
     // 7. Atomic Transactional DB Creation / Update
     const adminSourceId = await this.getAdminSourceId();
 
+    const logoUrl = (payload.logoUrl || companyData.logoUrl)?.trim() || null;
+    const companyPhone = (payload.companyPhone || payload.phone || companyData.companyPhone || companyData.phone)?.trim() || null;
+    const companyEmail = (payload.companyEmail || payload.email || companyData.companyEmail || companyData.email)?.trim() || null;
+    const contactPerson = (companyData.contactPerson || payload.contactPerson)?.trim() || null;
+    const website = (payload.website || companyData.website)?.trim() || null;
+    const industry = (payload.industry || companyData.industry)?.trim() || null;
+    const sector = (payload.sector || companyData.sector)?.trim() || null;
+    const aboutDescription = (companyData.aboutDescription || payload.aboutDescription || payload.notes || companyData.notes || ipoData.notes)?.trim() || null;
+
     const createdOrUpdatedIpo = await this.prisma.$transaction(async (tx) => {
       // Upsert / Update Company
       if (!company) {
@@ -848,13 +899,14 @@ export class AdminIpoService {
             legalName,
             displayName: companyData.displayName?.trim() || legalName,
             cin,
-            aboutDescription: companyData.aboutDescription?.trim() || null,
-            website: companyData.website?.trim() || null,
-            email: companyData.email?.trim() || null,
-            phone: companyData.phone?.trim() || null,
-            contactPerson: companyData.contactPerson?.trim() || null,
-            industry: companyData.industry?.trim() || null,
-            sector: companyData.sector?.trim() || null,
+            aboutDescription,
+            website,
+            email: companyEmail,
+            phone: companyPhone,
+            contactPerson,
+            industry,
+            sector,
+            logoUrl,
           },
         });
       } else {
@@ -865,42 +917,29 @@ export class AdminIpoService {
             displayName:
               companyData.displayName?.trim() || company.displayName || legalName,
             ...(cin ? { cin } : {}),
-            ...(companyData.aboutDescription !== undefined
-              ? { aboutDescription: companyData.aboutDescription?.trim() || null }
-              : {}),
-            ...(companyData.website !== undefined
-              ? { website: companyData.website?.trim() || null }
-              : {}),
-            ...(companyData.email !== undefined
-              ? { email: companyData.email?.trim() || null }
-              : {}),
-            ...(companyData.phone !== undefined
-              ? { phone: companyData.phone?.trim() || null }
-              : {}),
-            ...(companyData.contactPerson !== undefined
-              ? { contactPerson: companyData.contactPerson?.trim() || null }
-              : {}),
-            ...(companyData.industry !== undefined
-              ? { industry: companyData.industry?.trim() || null }
-              : {}),
-            ...(companyData.sector !== undefined
-              ? { sector: companyData.sector?.trim() || null }
-              : {}),
+            ...(aboutDescription !== null ? { aboutDescription } : {}),
+            ...(website !== null ? { website } : {}),
+            ...(companyEmail !== null ? { email: companyEmail } : {}),
+            ...(companyPhone !== null ? { phone: companyPhone } : {}),
+            ...(contactPerson !== null ? { contactPerson } : {}),
+            ...(industry !== null ? { industry } : {}),
+            ...(sector !== null ? { sector } : {}),
+            ...(logoUrl !== null ? { logoUrl } : {}),
           },
         });
       }
 
-      // Upsert Company Financials
-      if (
-        Array.isArray(companyData.financials) &&
-        companyData.financials.length > 0
-      ) {
-        for (const fin of companyData.financials) {
+      // Upsert Company Financials Array
+      const financialsArray = companyData.financials || payload.financials || [];
+      if (Array.isArray(financialsArray) && financialsArray.length > 0) {
+        for (const fin of financialsArray) {
           const fiscalPeriod = (fin.fiscalPeriod || fin.fiscalYear || '').toString().trim();
           if (!fiscalPeriod) continue;
           const totalRevenue = fin.totalRevenue !== undefined && fin.totalRevenue !== null ? fin.totalRevenue : fin.revenue;
           const pat = fin.pat !== undefined && fin.pat !== null ? fin.pat : fin.netProfit;
           const netWorth = fin.netWorth !== undefined && fin.netWorth !== null ? fin.netWorth : (fin.nav || fin.ronw);
+          const roePercentage = fin.roePercentage !== undefined && fin.roePercentage !== null ? fin.roePercentage : fin.roePercent;
+          const patMarginPercent = fin.patMarginPercent !== undefined && fin.patMarginPercent !== null ? fin.patMarginPercent : fin.patPercent;
 
           await tx.companyFinancial.upsert({
             where: {
@@ -932,8 +971,8 @@ export class AdminIpoService {
                   ? new Prisma.Decimal(netWorth)
                   : undefined,
               roePercentage:
-                fin.roePercentage !== undefined && fin.roePercentage !== null
-                  ? new Prisma.Decimal(fin.roePercentage)
+                roePercentage !== undefined && roePercentage !== null
+                  ? new Prisma.Decimal(roePercentage)
                   : undefined,
               rocePercentage:
                 fin.rocePercentage !== undefined && fin.rocePercentage !== null
@@ -944,8 +983,8 @@ export class AdminIpoService {
                   ? new Prisma.Decimal(fin.eps)
                   : undefined,
               patMarginPercent:
-                fin.patMarginPercent !== undefined && fin.patMarginPercent !== null
-                  ? new Prisma.Decimal(fin.patMarginPercent)
+                patMarginPercent !== undefined && patMarginPercent !== null
+                  ? new Prisma.Decimal(patMarginPercent)
                   : undefined,
             },
             create: {
@@ -973,8 +1012,8 @@ export class AdminIpoService {
                   ? new Prisma.Decimal(netWorth)
                   : null,
               roePercentage:
-                fin.roePercentage !== undefined && fin.roePercentage !== null
-                  ? new Prisma.Decimal(fin.roePercentage)
+                roePercentage !== undefined && roePercentage !== null
+                  ? new Prisma.Decimal(roePercentage)
                   : null,
               rocePercentage:
                 fin.rocePercentage !== undefined && fin.rocePercentage !== null
@@ -985,8 +1024,8 @@ export class AdminIpoService {
                   ? new Prisma.Decimal(fin.eps)
                   : null,
               patMarginPercent:
-                fin.patMarginPercent !== undefined && fin.patMarginPercent !== null
-                  ? new Prisma.Decimal(fin.patMarginPercent)
+                patMarginPercent !== undefined && patMarginPercent !== null
+                  ? new Prisma.Decimal(patMarginPercent)
                   : null,
             },
           });
@@ -996,9 +1035,12 @@ export class AdminIpoService {
       // Force publicationStatus = DRAFT ALWAYS
       const derivedStatus = deriveIpoStatus({
         explicitStatus: status,
-        openDate: lifecycleData.openDate,
-        closeDate: lifecycleData.closeDate,
+        openDate: openDate?.toISOString(),
+        closeDate: closeDate?.toISOString(),
       });
+
+      const symbolVal = (payload.symbol || ipoData.symbol || companyData.symbol)?.trim() || null;
+      const faceValueVal = ipoData.faceValue ?? payload.faceValue;
 
       const ipoPayload: Prisma.IpoUncheckedCreateInput = {
         companyId: company.id,
@@ -1006,35 +1048,35 @@ export class AdminIpoService {
         exchange,
         status: derivedStatus,
         publicationStatus: PublicationStatus.DRAFT,
-        symbol: ipoData.symbol?.trim() || null,
+        symbol: symbolVal,
         priceBandLow:
-          ipoData.priceBandLow !== undefined && ipoData.priceBandLow !== null
-            ? new Prisma.Decimal(ipoData.priceBandLow)
+          priceBandLowVal !== undefined && priceBandLowVal !== null
+            ? new Prisma.Decimal(priceBandLowVal)
             : null,
         priceBandHigh:
-          ipoData.priceBandHigh !== undefined && ipoData.priceBandHigh !== null
-            ? new Prisma.Decimal(ipoData.priceBandHigh)
+          priceBandHighVal !== undefined && priceBandHighVal !== null
+            ? new Prisma.Decimal(priceBandHighVal)
             : null,
-        lotSize: ipoData.lotSize || null,
+        lotSize: ipoData.lotSize ?? payload.lotSize ?? null,
         faceValue:
-          ipoData.faceValue !== undefined && ipoData.faceValue !== null
-            ? new Prisma.Decimal(ipoData.faceValue)
+          faceValueVal !== undefined && faceValueVal !== null
+            ? new Prisma.Decimal(faceValueVal)
             : null,
         issueSize:
-          ipoData.issueSize !== undefined && ipoData.issueSize !== null
-            ? new Prisma.Decimal(ipoData.issueSize)
+          issueSizeVal !== undefined && issueSizeVal !== null
+            ? new Prisma.Decimal(issueSizeVal)
             : null,
         freshIssueSize:
-          ipoData.freshIssueSize !== undefined && ipoData.freshIssueSize !== null
-            ? new Prisma.Decimal(ipoData.freshIssueSize)
+          freshIssueSizeVal !== undefined && freshIssueSizeVal !== null
+            ? new Prisma.Decimal(freshIssueSizeVal)
             : null,
         ofsSize:
-          ipoData.ofsSize !== undefined && ipoData.ofsSize !== null
-            ? new Prisma.Decimal(ipoData.ofsSize)
+          ofsSizeVal !== undefined && ofsSizeVal !== null
+            ? new Prisma.Decimal(ofsSizeVal)
             : null,
-        issueShareCount: ipoData.issueShareCount || null,
-        freshIssueShareCount: ipoData.freshIssueShareCount || null,
-        ofsShareCount: ipoData.ofsShareCount || null,
+        issueShareCount: issueShareCountVal || null,
+        freshIssueShareCount: freshIssueShareCountVal || null,
+        ofsShareCount: ofsShareCountVal || null,
       };
 
       let ipo;
@@ -1087,11 +1129,9 @@ export class AdminIpoService {
       }
 
       // Offer Categories
-      if (
-        Array.isArray(payload.offerCategories) &&
-        payload.offerCategories.length > 0
-      ) {
-        for (const cat of payload.offerCategories) {
+      const categoriesArray = payload.offerCategories || ipoData.offerCategories || [];
+      if (Array.isArray(categoriesArray) && categoriesArray.length > 0) {
+        for (const cat of categoriesArray) {
           const category = cat.category || cat.categoryCode;
           if (!category) continue;
           const allocationPct = cat.allocationPct !== undefined && cat.allocationPct !== null ? cat.allocationPct : cat.allocationPercentage;
@@ -1143,11 +1183,37 @@ export class AdminIpoService {
         }
       }
 
-      // Participants
-      if (
-        Array.isArray(payload.participants) &&
-        payload.participants.length > 0
-      ) {
+      // Participants (Registrar, Lead Manager, explicitly listed participants)
+      const registrarName = (payload.registrar || allotmentConfigData.registrar || companyData.registrar)?.trim();
+      const registrarPhone = (payload.registrarPhone || allotmentConfigData.registrarPhone)?.trim() || null;
+      const registrarEmail = (payload.registrarEmail || allotmentConfigData.registrarEmail)?.trim() || null;
+
+      if (registrarName) {
+        await tx.ipoParticipant.create({
+          data: {
+            ipoId: ipo.id,
+            role: ParticipantRole.REGISTRAR,
+            name: registrarName,
+            phone: registrarPhone,
+            email: registrarEmail,
+            displayOrder: 1,
+          },
+        });
+      }
+
+      const leadManagerName = (payload.leadManager || companyData.leadManager)?.trim();
+      if (leadManagerName) {
+        await tx.ipoParticipant.create({
+          data: {
+            ipoId: ipo.id,
+            role: ParticipantRole.BRLM,
+            name: leadManagerName,
+            displayOrder: 2,
+          },
+        });
+      }
+
+      if (Array.isArray(payload.participants) && payload.participants.length > 0) {
         for (const part of payload.participants) {
           if (!part.role || !part.name) continue;
           await tx.ipoParticipant.create({
@@ -1165,33 +1231,60 @@ export class AdminIpoService {
       }
 
       // Allotment Config
-      if (payload.allotmentConfig && payload.allotmentConfig.registrar) {
-        const ac = payload.allotmentConfig;
+      if (registrarName) {
         await tx.ipoAllotmentConfig.upsert({
           where: { ipoId: ipo.id },
           update: {
-            registrar: ac.registrar.trim(),
-            registrarIpoCode: ac.registrarIpoCode?.trim() || null,
-            allotmentSourceUrl: ac.allotmentSourceUrl?.trim() || null,
-            expectedAllotmentDate: ac.expectedAllotmentDate
-              ? new Date(ac.expectedAllotmentDate)
+            registrar: registrarName,
+            registrarIpoCode: allotmentConfigData.registrarIpoCode?.trim() || null,
+            allotmentSourceUrl: allotmentConfigData.allotmentSourceUrl?.trim() || null,
+            expectedAllotmentDate: allotmentConfigData.expectedAllotmentDate || allotmentDate
+              ? new Date(allotmentConfigData.expectedAllotmentDate || allotmentDate!)
               : undefined,
-            enabled: ac.enabled ?? true,
+            enabled: allotmentConfigData.enabled ?? true,
           },
           create: {
             ipoId: ipo.id,
-            registrar: ac.registrar.trim(),
-            registrarIpoCode: ac.registrarIpoCode?.trim() || null,
-            allotmentSourceUrl: ac.allotmentSourceUrl?.trim() || null,
-            expectedAllotmentDate: ac.expectedAllotmentDate
-              ? new Date(ac.expectedAllotmentDate)
+            registrar: registrarName,
+            registrarIpoCode: allotmentConfigData.registrarIpoCode?.trim() || null,
+            allotmentSourceUrl: allotmentConfigData.allotmentSourceUrl?.trim() || null,
+            expectedAllotmentDate: allotmentConfigData.expectedAllotmentDate || allotmentDate
+              ? new Date(allotmentConfigData.expectedAllotmentDate || allotmentDate!)
               : null,
-            enabled: ac.enabled ?? true,
+            enabled: allotmentConfigData.enabled ?? true,
           },
         });
       }
 
-      // Documents
+      // Documents (DRHP, RHP, or array)
+      const drhpUrl = (payload.drhpUrl || ipoData.drhpUrl)?.trim();
+      if (drhpUrl) {
+        await tx.ipoDocument.create({
+          data: {
+            ipoId: ipo.id,
+            documentType: DocumentType.DRHP,
+            fileName: 'DRHP Document',
+            sourceUrl: drhpUrl,
+            source: 'MANUAL_IMPORT',
+            parsingStatus: 'PARSED',
+          },
+        });
+      }
+
+      const rhpUrl = (payload.rhpUrl || ipoData.rhpUrl)?.trim();
+      if (rhpUrl) {
+        await tx.ipoDocument.create({
+          data: {
+            ipoId: ipo.id,
+            documentType: DocumentType.RHP,
+            fileName: 'RHP Document',
+            sourceUrl: rhpUrl,
+            source: 'MANUAL_IMPORT',
+            parsingStatus: 'PARSED',
+          },
+        });
+      }
+
       if (Array.isArray(payload.documents) && payload.documents.length > 0) {
         for (const doc of payload.documents) {
           if (!doc.documentType) continue;
@@ -1210,28 +1303,25 @@ export class AdminIpoService {
       }
 
       // GMP Observation
-      if (
-        payload.gmp &&
-        payload.gmp.gmpAmount !== undefined &&
-        payload.gmp.gmpAmount !== null
-      ) {
+      const gmpAmt = payload.gmpAmount ?? gmpData.gmpAmount;
+      const gmpPct = payload.gmpPercent ?? gmpData.gmpPercent ?? gmpData.gmpPercentage;
+
+      if (gmpAmt !== undefined && gmpAmt !== null) {
         await tx.gmpObservation.create({
           data: {
             ipoId: ipo.id,
-            gmpAmount: new Prisma.Decimal(payload.gmp.gmpAmount),
+            gmpAmount: new Prisma.Decimal(gmpAmt),
             gmpPercentage:
-              payload.gmp.gmpPercentage !== undefined &&
-              payload.gmp.gmpPercentage !== null
-                ? new Prisma.Decimal(payload.gmp.gmpPercentage)
+              gmpPct !== undefined && gmpPct !== null
+                ? new Prisma.Decimal(gmpPct)
                 : null,
             estProfitPerLot:
-              payload.gmp.estProfitPerLot !== undefined &&
-              payload.gmp.estProfitPerLot !== null
-                ? new Prisma.Decimal(payload.gmp.estProfitPerLot)
+              gmpData.estProfitPerLot !== undefined && gmpData.estProfitPerLot !== null
+                ? new Prisma.Decimal(gmpData.estProfitPerLot)
                 : null,
             sourceId: adminSourceId,
-            observedAt: payload.gmp.observedAt
-              ? new Date(payload.gmp.observedAt)
+            observedAt: gmpData.observedAt
+              ? new Date(gmpData.observedAt)
               : new Date(),
           },
         });
@@ -1258,34 +1348,30 @@ export class AdminIpoService {
           const category = (rawCat === 'BNII' || rawCat === 'SNII') ? 'NII' : rawCat;
           if (
             !category ||
-            !Object.values(OfferCategoryType).includes(category as any) ||
-            sub.subscriptionMultiple === undefined ||
-            sub.subscriptionMultiple === null
-          )
+            !Object.values(OfferCategoryType).includes(category as OfferCategoryType)
+          ) {
             continue;
-          await tx.subscriptionObservation.create({
-            data: {
-              ipoId: ipo.id,
-              category: category as any,
-              subscriptionMultiple: new Prisma.Decimal(
-                sub.subscriptionMultiple,
-              ),
-              sharesBid:
-                sub.sharesBid !== undefined && sub.sharesBid !== null
-                  ? new Prisma.Decimal(sub.sharesBid)
-                  : null,
-              sharesOffered:
-                sub.sharesOffered !== undefined && sub.sharesOffered !== null
-                  ? new Prisma.Decimal(sub.sharesOffered)
-                  : null,
-              sourceId: adminSourceId,
-              observedAt: sub.observedAt
-                ? new Date(sub.observedAt)
-                : payload.subscription?.asOf
-                  ? new Date(payload.subscription.asOf)
-                  : new Date(),
-            },
-          });
+          }
+          if (
+            sub.subscriptionMultiple !== undefined &&
+            sub.subscriptionMultiple !== null
+          ) {
+            await tx.subscriptionObservation.create({
+              data: {
+                ipoId: ipo.id,
+                category: category as OfferCategoryType,
+                subscriptionMultiple: new Prisma.Decimal(sub.subscriptionMultiple),
+                sharesBid: sub.sharesBid ? new Prisma.Decimal(sub.sharesBid) : null,
+                sharesOffered: sub.sharesOffered ? new Prisma.Decimal(sub.sharesOffered) : null,
+                sourceId: adminSourceId,
+                observedAt: sub.observedAt
+                  ? new Date(sub.observedAt)
+                  : payload.subscription?.asOf
+                    ? new Date(payload.subscription.asOf)
+                    : new Date(),
+              },
+            });
+          }
         }
       }
 

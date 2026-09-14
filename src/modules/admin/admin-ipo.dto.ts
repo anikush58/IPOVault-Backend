@@ -167,37 +167,53 @@ export class ImportCompanyFinancialDto {
   periodType?: string;
   totalAssets?: number;
   totalRevenue?: number;
+  revenue?: number; // Alias for totalRevenue
   pat?: number;
+  netProfit?: number; // Alias for pat
   ebitda?: number;
+  ebitdaPercent?: number; // Alias for ebitda margin
   netWorth?: number;
+  nav?: number; // Alias for netWorth
+  ronw?: number; // Alias for netWorth
+  roePercent?: number; // Alias for roePercentage
   roePercentage?: number;
   rocePercentage?: number;
   eps?: number;
+  patPercent?: number; // Alias for patMarginPercent
   patMarginPercent?: number;
 }
 
 export class ImportCompanyDto {
-  legalName!: string;
+  legalName?: string;
   displayName?: string;
+  companyName?: string; // Intuitive alias
+  logoUrl?: string; // Added form field
   cin?: string;
   aboutDescription?: string;
   website?: string;
   email?: string;
+  companyEmail?: string; // Intuitive alias
   phone?: string;
+  companyPhone?: string; // Intuitive alias
   contactPerson?: string;
   industry?: string;
   sector?: string;
+  notes?: string;
   financials?: ImportCompanyFinancialDto[];
 }
 
 export class ImportIpoCoreDto {
+  ipoName?: string; // Added form field
   symbol?: string;
-  marketSegment?: MarketSegment;
-  exchange?: ExchangeListing;
+  marketSegment?: MarketSegment | string;
+  issueType?: string; // Intuitive alias ('Mainboard' | 'SME')
+  exchange?: ExchangeListing | string; // Intuitive ('BSE' | 'NSE' | 'BSE / NSE' | 'BOTH')
   status?: IpoStatus;
   publicationStatus?: PublicationStatus;
   priceBandLow?: number;
+  priceBandMin?: number; // Intuitive alias
   priceBandHigh?: number;
+  priceBandMax?: number; // Intuitive alias
   lotSize?: number;
   faceValue?: number;
   issueSize?: number;
@@ -206,6 +222,13 @@ export class ImportIpoCoreDto {
   issueShareCount?: number;
   freshIssueShareCount?: number;
   ofsShareCount?: number;
+  openDate?: string;
+  closeDate?: string;
+  allotmentDate?: string;
+  listingDate?: string;
+  drhpUrl?: string;
+  rhpUrl?: string;
+  notes?: string;
 }
 
 export class ImportIpoLifecycleDto {
@@ -219,8 +242,10 @@ export class ImportIpoLifecycleDto {
 }
 
 export class ImportOfferCategoryDto {
-  category!: OfferCategoryType;
+  category!: OfferCategoryType | string;
+  categoryCode?: string;
   allocationPct?: number;
+  allocationPercentage?: number;
   minLots?: number;
   maxLots?: number;
   minShares?: number;
@@ -231,7 +256,7 @@ export class ImportOfferCategoryDto {
 }
 
 export class ImportParticipantDto {
-  role!: ParticipantRole;
+  role!: ParticipantRole | string;
   name!: string;
   phone?: string;
   email?: string;
@@ -241,6 +266,8 @@ export class ImportParticipantDto {
 
 export class ImportAllotmentConfigDto {
   registrar!: string;
+  registrarPhone?: string; // Added form field
+  registrarEmail?: string; // Added form field
   registrarIpoCode?: string;
   allotmentSourceUrl?: string;
   expectedAllotmentDate?: string;
@@ -248,20 +275,22 @@ export class ImportAllotmentConfigDto {
 }
 
 export class ImportDocumentDto {
-  documentType!: DocumentType;
+  documentType!: DocumentType | string;
   fileName?: string;
   sourceUrl?: string;
+  url?: string;
 }
 
 export class ImportGmpDto {
-  gmpAmount?: number;
+  gmpAmount?: number; // Intuitive alias
+  gmpPercent?: number; // Intuitive alias
   gmpPercentage?: number;
   estProfitPerLot?: number;
   observedAt?: string;
 }
 
 export class ImportSubscriptionDto {
-  category!: OfferCategoryType;
+  category!: OfferCategoryType | string;
   subscriptionMultiple?: number;
   sharesBid?: number;
   sharesOffered?: number;
@@ -274,8 +303,46 @@ export class ImportAdminIpoJsonDto {
     sourceSystem?: string;
     exportedAt?: string;
   };
-  company!: ImportCompanyDto;
-  ipo!: ImportIpoCoreDto;
+
+  // Top-level intuitive shortcuts aligned with Manual IPO Form
+  ipoName?: string;
+  companyName?: string;
+  logoUrl?: string;
+  symbol?: string;
+  exchange?: ExchangeListing | string;
+  issueType?: MarketSegment | string;
+  sector?: string;
+  industry?: string;
+
+  priceBandMin?: number;
+  priceBandMax?: number;
+  lotSize?: number;
+  issueSize?: number;
+
+  gmpAmount?: number;
+  gmpPercent?: number;
+
+  openDate?: string;
+  closeDate?: string;
+  allotmentDate?: string;
+  listingDate?: string;
+
+  registrar?: string;
+  registrarPhone?: string;
+  registrarEmail?: string;
+  leadManager?: string;
+
+  website?: string;
+  companyPhone?: string;
+  companyEmail?: string;
+
+  drhpUrl?: string;
+  rhpUrl?: string;
+  notes?: string;
+
+  // Canonical nested structures
+  company?: ImportCompanyDto;
+  ipo?: ImportIpoCoreDto;
   lifecycle?: ImportIpoLifecycleDto;
   offerCategories?: ImportOfferCategoryDto[];
   participants?: ImportParticipantDto[];
