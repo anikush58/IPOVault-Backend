@@ -521,10 +521,18 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
 
             <div class="form-grid">
+              <div class="form-group" style="grid-column: span 2;">
+                <label>Company Logo URL</label>
+                <div style="display:flex; gap:8px; align-items:center;">
+                  <input type="url" id="form-logoUrl" placeholder="https://example.com/logo.png" oninput="updateLogoPreview()" style="flex:1;" />
+                  <img id="form-logo-preview" style="display:none; max-height:36px; max-width:100px; border-radius:6px; border:1px solid var(--card-border); background:#fff; padding:2px; object-fit:contain;" alt="Logo Preview" onerror="this.style.display='none'" />
+                </div>
+              </div>
               <div class="form-group">
                 <label>Website</label>
                 <input type="url" id="form-website" placeholder="https://..." />
               </div>
+            </div>
               <div class="form-group">
                 <label>Industry</label>
                 <input type="text" id="form-industry" placeholder="e.g. Electrical Equipment" />
@@ -1044,6 +1052,18 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       } catch (err) {
         console.error('Error fetching manual IPOs:', err);
       }
+    function updateLogoPreview() {
+      const url = (document.getElementById('form-logoUrl')?.value || '').trim();
+      const img = document.getElementById('form-logo-preview');
+      if (img) {
+        if (url) {
+          img.src = url;
+          img.style.display = 'inline-block';
+        } else {
+          img.style.display = 'none';
+          img.src = '';
+        }
+      }
     }
 
     function openCreateModal() {
@@ -1071,6 +1091,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       document.getElementById('form-allotmentDate').value = '';
       document.getElementById('form-listingDate').value = '';
 
+      document.getElementById('form-logoUrl').value = '';
       document.getElementById('form-website').value = '';
       document.getElementById('form-industry').value = '';
       document.getElementById('form-sector').value = '';
@@ -1078,6 +1099,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       document.getElementById('form-email').value = '';
       document.getElementById('form-contactPerson').value = '';
       document.getElementById('form-aboutDescription').value = '';
+      updateLogoPreview();
 
       document.getElementById('cat-qib-pct').value = '';
       document.getElementById('cat-nii-pct').value = '';
@@ -1171,6 +1193,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-allotmentDate').value = ipo.allotmentDate || (allotmentEv ? allotmentEv.eventDate.slice(0, 10) : '');
 
         // Company
+        document.getElementById('form-logoUrl').value = ipo.company?.logoUrl || ipo.logoUrl || '';
         document.getElementById('form-website').value = ipo.company?.website || '';
         document.getElementById('form-industry').value = ipo.company?.industry || '';
         document.getElementById('form-sector').value = ipo.company?.sector || '';
@@ -1178,6 +1201,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-email').value = ipo.company?.email || '';
         document.getElementById('form-contactPerson').value = ipo.company?.contactPerson || '';
         document.getElementById('form-aboutDescription').value = ipo.company?.aboutDescription || '';
+        updateLogoPreview();
 
         // Categories
         const qib = ipo.offerCategories?.find(c => c.category === 'QIB');
@@ -1357,6 +1381,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         listingDate: document.getElementById('form-listingDate').value || undefined,
         allotmentDate: document.getElementById('form-allotmentDate').value || undefined,
 
+        logoUrl: document.getElementById('form-logoUrl').value || undefined,
         website: document.getElementById('form-website').value || undefined,
         industry: document.getElementById('form-industry').value || undefined,
         sector: document.getElementById('form-sector').value || undefined,
@@ -1497,7 +1522,8 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          alert('JSON Import Failed: ' + (data.message || res.statusText || 'Invalid JSON format'));
+          const errorMsg = data.error?.message || data.message || res.statusText || 'Invalid JSON format';
+          alert('JSON Import Failed: ' + errorMsg);
           return;
         }
 

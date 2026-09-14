@@ -451,5 +451,104 @@ describe('AdminIpoService & AdminValidationService', () => {
       const res = await adminIpoService.importIpoFromJson(heroJson);
       expect(res).toBeDefined();
     });
+
+    it('imports Jindal Supreme (India) Limited RHP JSON successfully, preserving null fields', async () => {
+      const fs = require('fs');
+      const jindalJson = JSON.parse(
+        fs.readFileSync('C:/Users/Anish/Downloads/Jindal-Supreme_RHP-IPO.json', 'utf8'),
+      );
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(null);
+      mockPrisma.company.findFirst.mockResolvedValue(null);
+
+      mockPrisma.ipo.create.mockResolvedValue({
+        id: 'jindal-uuid-1',
+        companyId: 'jindal-company-uuid-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.BOTH,
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+        symbol: null,
+      });
+
+      mockPrisma.ipo.findUnique.mockResolvedValue({
+        id: 'jindal-uuid-1',
+        companyId: 'jindal-company-uuid-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.BOTH,
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+        symbol: null,
+        priceBandLow: null,
+        priceBandHigh: null,
+        lotSize: null,
+        issueSize: 90.0,
+        freshIssueSize: 90.0,
+        ofsSize: 0,
+        company: {
+          id: 'jindal-company-uuid-1',
+          legalName: 'Jindal Supreme (India) Limited',
+          displayName: 'Jindal Supreme',
+          cin: 'U27109HR1974PLC007126',
+          financials: [],
+        },
+        lifecycleEvents: [
+          { eventType: 'OPEN', eventDate: new Date('2026-09-17') },
+          { eventType: 'CLOSE', eventDate: new Date('2026-09-21') },
+        ],
+        offerCategories: [],
+        participants: [],
+        gmpObservations: [],
+        subscriptionObservations: [],
+        sourceIdentities: [],
+      });
+
+      const res = await adminIpoService.importIpoFromJson(jindalJson);
+      expect(res).toBeDefined();
+      expect(res.id).toBe('jindal-uuid-1');
+      expect(res.publicationStatus).toBe(PublicationStatus.DRAFT);
+      expect(mockPrisma.ipo.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          publicationStatus: PublicationStatus.DRAFT,
+          priceBandLow: null,
+          priceBandHigh: null,
+          lotSize: null,
+        }),
+      });
+    });
+
+    it('rejects JSON import overwrite when target IPO is PUBLISHED', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'published-ipo-id',
+        publicationStatus: PublicationStatus.PUBLISHED,
+      });
+
+      await expect(
+        adminIpoService.importIpoFromJson(
+          {
+            company: { legalName: 'Jindal Supreme (India) Limited' },
+            ipo: {},
+          },
+          'published-ipo-id',
+        ),
+      ).rejects.toThrow('Cannot overwrite a PUBLISHED IPO via JSON import. Unpublish first.');
+    });
+
+    it('rejects JSON import overwrite when target IPO is ARCHIVED', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'archived-ipo-id',
+        publicationStatus: PublicationStatus.ARCHIVED,
+      });
+
+      await expect(
+        adminIpoService.importIpoFromJson(
+          {
+            company: { legalName: 'Jindal Supreme (India) Limited' },
+            ipo: {},
+          },
+          'archived-ipo-id',
+        ),
+      ).rejects.toThrow('Cannot overwrite a ARCHIVED IPO via JSON import. Unpublish first.');
+    });
   });
 });

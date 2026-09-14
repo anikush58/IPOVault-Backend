@@ -496,6 +496,7 @@ export class AdminIpoService {
         legalName: ipo.company.legalName,
         displayName: ipo.company.displayName,
         cin: ipo.company.cin,
+        logoUrl: ipo.company.logoUrl,
         website: ipo.company.website,
         industry: ipo.company.industry,
         sector: ipo.company.sector,

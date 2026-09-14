@@ -89,7 +89,7 @@ describe('AllExceptionsFilter', () => {
     expect(json).toHaveBeenCalledWith({
       error: {
         code: ErrorCode.NOT_FOUND,
-        message: 'The requested resource was not found',
+        message: 'Cannot GET /secret',
         requestId: 'req-3',
       },
     });

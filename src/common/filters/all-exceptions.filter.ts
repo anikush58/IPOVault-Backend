@@ -74,11 +74,24 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
+      const res = exception.getResponse();
+      let message = this.publicHttpMessage(status);
+
+      if (typeof res === 'string' && res.trim()) {
+        message = res;
+      } else if (res && typeof res === 'object') {
+        const resObj = res as Record<string, any>;
+        if (Array.isArray(resObj.message) && resObj.message.length > 0) {
+          message = resObj.message.join('; ');
+        } else if (typeof resObj.message === 'string' && resObj.message.trim()) {
+          message = resObj.message;
+        }
+      }
 
       return {
         status,
         code: this.codeForHttpStatus(status),
-        message: this.publicHttpMessage(status),
+        message,
       };
     }
 
