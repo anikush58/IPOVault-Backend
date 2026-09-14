@@ -230,10 +230,12 @@ export function toIpoResponseDto(
 
   return {
     id: ipo.id,
+    logoUrl: ipo.company.logoUrl ?? null,
     company: {
       id: ipo.company.id,
       legalName: ipo.company.legalName,
       displayName: ipo.company.displayName,
+      logoUrl: ipo.company.logoUrl ?? null,
       cin: ipo.company.cin ?? null,
       website: ipo.company.website ?? null,
       industry: ipo.company.industry ?? null,

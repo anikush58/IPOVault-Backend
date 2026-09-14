@@ -344,6 +344,7 @@ export type CompanySummaryDto = {
   id: string;
   legalName: string;
   displayName: string;
+  logoUrl?: string | null;
   cin: string | null;
   website: string | null;
   industry: string | null;
@@ -470,6 +471,7 @@ export type IpoDataReadinessDto = {
 export type IpoResponseDto = {
   id: string;
   company: CompanySummaryDto;
+  logoUrl?: string | null;
   marketSegment: z.infer<typeof marketSegmentSchema>;
   exchange: z.infer<typeof exchangeSchema>;
   status: z.infer<typeof ipoStatusSchema>;
