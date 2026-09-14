@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -189,9 +190,19 @@ export class ConsoleController {
     return this.adminIpoService.unpublishIpo(id);
   }
 
+  @Delete('api/manual-ipos/:id')
+  async deleteManualIpo(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.adminIpoService.deleteIpo(id);
+  }
+
   @Post('api/manual-ipos/:id/archive')
   async archiveManualIpo(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.adminIpoService.archiveIpo(id);
+  }
+
+  @Post('api/manual-ipos/:id/unarchive')
+  async unarchiveManualIpo(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.adminIpoService.unarchiveIpo(id);
   }
 
   @Post('api/manual-ipos/import-json')

@@ -1635,6 +1635,8 @@ export class AdminIpoService {
     await this.prisma.ipoSourceIdentity.deleteMany({ where: { ipoId: id } });
     await this.prisma.ipoDocument.deleteMany({ where: { ipoId: id } });
     await this.prisma.ipoAllotmentConfig.deleteMany({ where: { ipoId: id } });
+    await this.prisma.fieldProvenance.deleteMany({ where: { entityId: id } });
+    await this.prisma.ipoChangeEvent.deleteMany({ where: { ipoId: id } });
 
     await this.prisma.ipo.delete({ where: { id } });
 

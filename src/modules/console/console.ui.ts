@@ -378,7 +378,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           <div style="display:flex; gap:10px;">
             <button class="btn btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">🚀 PUBLISH TO MOBILE</button>
             <button class="btn btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">⏸️ Unpublish</button>
-            <button class="btn btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">📦 Archive</button>
+            <button class="btn btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">📦 Archive IPO</button>
+            <button class="btn btn-secondary" id="btn-unarchive-action" onclick="unarchiveCurrentIpo()" style="display:none;">↩️ Unarchive IPO</button>
+            <button class="btn btn-danger" id="btn-delete-action" onclick="deleteCurrentIpo()">🗑️ PERMANENTLY DELETE</button>
           </div>
         </div>
 
@@ -1029,6 +1031,12 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           const pubBtnHtml = ipo.publicationStatus !== 'PUBLISHED'
             ? '<button class="btn btn-success" onclick="publishManualIpoDirect(\\\'' + ipo.id + '\\\')">Publish</button>'
             : '<button class="btn btn-warning" onclick="unpublishManualIpoDirect(\\\'' + ipo.id + '\\\')">Unpublish</button>';
+          const arcBtnHtml = ipo.publicationStatus === 'ARCHIVED'
+            ? '<button class="btn btn-secondary" onclick="unarchiveManualIpoDirect(\\\'' + ipo.id + '\\\')" title="Revert to DRAFT status">↩️ Unarchive</button>'
+            : '<button class="btn btn-secondary" onclick="archiveManualIpoDirect(\\\'' + ipo.id + '\\\')" title="Set status to ARCHIVED">📦 Archive</button>';
+          const safeName = (ipo.legalName || ipo.displayName || ipo.symbol || '').replace(/'/g, "\\\\'");
+          const delBtnHtml = '<button class="btn btn-danger" onclick="deleteManualIpoDirect(\\\'' + ipo.id + '\\\', \\\'' + safeName + '\\\')" title="PERMANENTLY delete from database">🗑️ Delete</button>';
+
           return \`
             <tr>
               <td>
@@ -1044,6 +1052,8 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                 <div style="display:flex; gap:6px;">
                   <button class="btn btn-secondary" onclick="editManualIpo('\${ipo.id}')">Inspect/Edit</button>
                   \${pubBtnHtml}
+                  \${arcBtnHtml}
+                  \${delBtnHtml}
                 </div>
               </td>
             </tr>
@@ -1146,6 +1156,18 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       const statusMsg = document.getElementById('upload-status-message');
       if (statusMsg) { statusMsg.style.display = 'none'; statusMsg.textContent = ''; }
 
+      const btnPublish = document.getElementById('btn-publish-action');
+      const btnUnpublish = document.getElementById('btn-unpublish-action');
+      const btnArchive = document.getElementById('btn-archive-action');
+      const btnUnarchive = document.getElementById('btn-unarchive-action');
+      const btnDelete = document.getElementById('btn-delete-action');
+
+      if (btnPublish) btnPublish.style.display = 'none';
+      if (btnUnpublish) btnUnpublish.style.display = 'none';
+      if (btnArchive) btnArchive.style.display = 'none';
+      if (btnUnarchive) btnUnarchive.style.display = 'none';
+      if (btnDelete) btnDelete.style.display = 'none';
+
       switchTab('manual-edit');
     }
 
@@ -1167,6 +1189,19 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         const res = await fetch(API_BASE + '/manual-ipos/' + id);
         const json = await res.json();
         const ipo = json.data || json;
+
+        const pubStatus = ipo.publicationStatus || 'DRAFT';
+        const btnPublish = document.getElementById('btn-publish-action');
+        const btnUnpublish = document.getElementById('btn-unpublish-action');
+        const btnArchive = document.getElementById('btn-archive-action');
+        const btnUnarchive = document.getElementById('btn-unarchive-action');
+        const btnDelete = document.getElementById('btn-delete-action');
+
+        if (btnPublish) btnPublish.style.display = pubStatus === 'PUBLISHED' ? 'none' : 'inline-block';
+        if (btnUnpublish) btnUnpublish.style.display = pubStatus === 'PUBLISHED' ? 'inline-block' : 'none';
+        if (btnArchive) btnArchive.style.display = pubStatus === 'ARCHIVED' ? 'none' : 'inline-block';
+        if (btnUnarchive) btnUnarchive.style.display = pubStatus === 'ARCHIVED' ? 'inline-block' : 'none';
+        if (btnDelete) btnDelete.style.display = 'inline-block';
 
         document.getElementById('form-ipo-id').value = ipo.id;
         document.getElementById('form-legalName').value = ipo.company?.legalName || '';
@@ -1467,15 +1502,94 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     async function archiveCurrentIpo() {
       const id = document.getElementById('form-ipo-id').value;
       if (!id) return;
+      await archiveManualIpoDirect(id);
+    }
+
+    async function archiveManualIpoDirect(id) {
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/archive', { method: 'POST' });
         if (res.ok) {
-          alert('IPO archived.');
+          alert('📦 IPO archived successfully.\n(Status set to ARCHIVED. Data remains in database but is hidden from mobile app)');
           if (document.getElementById('form-ipo-id').value === id) editManualIpo(id);
           else fetchManualIpos();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert('Archive failed: ' + (err.error?.message || err.message || res.statusText));
         }
       } catch (err) {
         console.error('Archive error:', err);
+      }
+    }
+
+    async function unarchiveCurrentIpo() {
+      const id = document.getElementById('form-ipo-id').value;
+      if (!id) return;
+      await unarchiveManualIpoDirect(id);
+    }
+
+    async function unarchiveManualIpoDirect(id) {
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/' + id + '/unarchive', { method: 'POST' });
+        if (res.ok) {
+          alert('↩️ IPO unarchived (reverted to DRAFT status).');
+          if (document.getElementById('form-ipo-id').value === id) editManualIpo(id);
+          else fetchManualIpos();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert('Unarchive failed: ' + (err.error?.message || err.message || res.statusText));
+        }
+      } catch (err) {
+        console.error('Unarchive error:', err);
+      }
+    }
+
+    async function deleteCurrentIpo() {
+      const id = document.getElementById('form-ipo-id').value;
+      const name = document.getElementById('form-legalName').value || document.getElementById('form-displayName').value || 'this IPO';
+      if (!id) return;
+
+      const confirmed = confirm(
+        '⚠️ PERMANENT HARD DELETE WARNING:\n\n' +
+        'Are you sure you want to PERMANENTLY DELETE "' + name + '"?\n\n' +
+        'This will PERMANENTLY ERASE this IPO and all associated records from the database.\n\n' +
+        'This action is PERMANENT and CANNOT be undone. Proceed?'
+      );
+
+      if (!confirmed) return;
+
+      const deleted = await deleteManualIpoDirect(id, name, false);
+      if (deleted) {
+        openCreateModal();
+        switchTab('manual');
+      }
+    }
+
+    async function deleteManualIpoDirect(id, name, promptConfirm = true) {
+      if (promptConfirm) {
+        const confirmed = confirm(
+          '⚠️ PERMANENT HARD DELETE WARNING:\n\n' +
+          'Are you sure you want to PERMANENTLY DELETE "' + (name || 'this IPO') + '"?\n\n' +
+          'This will PERMANENTLY ERASE this IPO and all associated records from the database.\n\n' +
+          'This action is PERMANENT and CANNOT be undone. Proceed?'
+        );
+        if (!confirmed) return false;
+      }
+
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/' + id, { method: 'DELETE' });
+        if (res.ok) {
+          alert('🗑️ IPO permanently deleted from the database.');
+          fetchManualIpos();
+          return true;
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert('Delete failed: ' + (err.error?.message || err.message || res.statusText));
+          return false;
+        }
+      } catch (err) {
+        console.error('Delete error:', err);
+        alert('Delete failed: ' + (err.message || err));
+        return false;
       }
     }
 
