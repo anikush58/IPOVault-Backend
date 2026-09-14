@@ -1052,6 +1052,8 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       } catch (err) {
         console.error('Error fetching manual IPOs:', err);
       }
+    }
+
     function updateLogoPreview() {
       const url = (document.getElementById('form-logoUrl')?.value || '').trim();
       const img = document.getElementById('form-logo-preview');
