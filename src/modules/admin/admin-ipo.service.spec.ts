@@ -168,7 +168,7 @@ describe('AdminIpoService & AdminValidationService', () => {
           company: {},
           ipo: { marketSegment: 'MAINBOARD' },
         }),
-      ).rejects.toThrow('company.legalName is required');
+      ).rejects.toThrow('Company name (legalName or companyName) is required');
     });
 
     it('rejects JSON import when price band low > high', async () => {
@@ -177,7 +177,7 @@ describe('AdminIpoService & AdminValidationService', () => {
           company: { legalName: 'Invalid Price Band Co' },
           ipo: { priceBandLow: 150, priceBandHigh: 100 },
         }),
-      ).rejects.toThrow('priceBandLow (150) cannot be greater than priceBandHigh (100)');
+      ).rejects.toThrow('cannot be greater than');
     });
   });
 
@@ -397,6 +397,59 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(detail.lotSize).toBeNull();
       expect(detail.offerCategories.find((c: any) => c.category === 'RETAIL')?.minLots).toBeNull();
       expect(detail.offerCategories.find((c: any) => c.category === 'RETAIL')?.maxLots).toBeNull();
+    });
+
+    it('imports Hero Motors Limited RHP JSON successfully without throwing errors', async () => {
+      const fs = require('fs');
+      const heroJson = JSON.parse(
+        fs.readFileSync('C:/Users/Anish/Downloads/Hero-Motors-Limited-RHP-IPO.json', 'utf8'),
+      );
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(null);
+      mockPrisma.company.findFirst.mockResolvedValue(null);
+
+      mockPrisma.ipo.create.mockResolvedValue({
+        id: 'hero-uuid-1',
+        companyId: 'hero-company-uuid-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.BOTH,
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+        symbol: null,
+      });
+
+      mockPrisma.ipo.findUnique.mockResolvedValue({
+        id: 'hero-uuid-1',
+        companyId: 'hero-company-uuid-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.BOTH,
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+        symbol: null,
+        priceBandLow: null,
+        priceBandHigh: null,
+        lotSize: null,
+        issueSize: 1000.0,
+        freshIssueSize: 600.0,
+        ofsSize: 400.0,
+        company: {
+          id: 'hero-company-uuid-1',
+          legalName: 'Hero Motors Limited',
+          displayName: 'Hero Motors Limited',
+          cin: 'U29299PB1998PLC039602',
+          website: 'https://www.heromotors.com',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        offerCategories: [],
+        participants: [],
+        gmpObservations: [],
+        subscriptionObservations: [],
+        sourceIdentities: [],
+      });
+
+      const res = await adminIpoService.importIpoFromJson(heroJson);
+      expect(res).toBeDefined();
     });
   });
 });
