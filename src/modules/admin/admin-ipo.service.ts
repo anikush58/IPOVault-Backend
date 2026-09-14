@@ -1540,12 +1540,14 @@ export class AdminIpoService {
       throw new NotFoundException(`IPO with ID ${id} not found.`);
     }
 
-    await this.prisma.ipoGmpObservation.deleteMany({ where: { ipoId: id } });
-    await this.prisma.ipoSubscription.deleteMany({ where: { ipoId: id } });
+    await this.prisma.gmpObservation.deleteMany({ where: { ipoId: id } });
+    await this.prisma.subscriptionObservation.deleteMany({ where: { ipoId: id } });
     await this.prisma.ipoLifecycleEvent.deleteMany({ where: { ipoId: id } });
     await this.prisma.ipoOfferCategory.deleteMany({ where: { ipoId: id } });
     await this.prisma.ipoParticipant.deleteMany({ where: { ipoId: id } });
-    await this.prisma.adminDataSource.deleteMany({ where: { ipoId: id } });
+    await this.prisma.ipoSourceIdentity.deleteMany({ where: { ipoId: id } });
+    await this.prisma.ipoDocument.deleteMany({ where: { ipoId: id } });
+    await this.prisma.ipoAllotmentConfig.deleteMany({ where: { ipoId: id } });
 
     await this.prisma.ipo.delete({ where: { id } });
 
