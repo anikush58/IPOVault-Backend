@@ -206,6 +206,7 @@ export class AdminIpoService {
     if (dto.subscription && dto.subscription.length > 0) {
       await this.saveSubscriptionObservations(ipo.id, dto.subscription, adminSourceId);
     }
+    await this.saveDocuments(ipo.id, dto);
 
     // Save field provenance for created fields
     await this.recordFieldProvenance(
@@ -404,6 +405,7 @@ export class AdminIpoService {
     if (dto.subscription !== undefined) {
       await this.saveSubscriptionObservations(id, dto.subscription, adminSourceId);
     }
+    await this.saveDocuments(id, dto);
 
     await this.recordFieldProvenance(
       id,
@@ -1657,5 +1659,86 @@ export class AdminIpoService {
       publicationStatus: updated.publicationStatus,
       message: 'IPO unarchived (reverted to DRAFT).',
     };
+  }
+
+  private async saveDocuments(
+    ipoId: string,
+    dto: {
+      drhpUrl?: string | null;
+      rhpUrl?: string | null;
+      prospectusUrl?: string | null;
+      anchorListUrl?: string | null;
+      anchorPortion?: number | null;
+      anchorBidDate?: string | null;
+      anchorLockIn?: string | null;
+      anchorDetails?: string | null;
+    },
+  ) {
+    const docs = [
+      { type: DocumentType.DRHP, url: dto.drhpUrl, title: 'DRHP Prospectus' },
+      { type: DocumentType.RHP, url: dto.rhpUrl, title: 'RHP Prospectus' },
+      { type: DocumentType.PROSPECTUS, url: dto.prospectusUrl, title: 'Final Prospectus' },
+      {
+        type: DocumentType.ANCHOR_LIST,
+        url: dto.anchorListUrl,
+        title: 'Anchor List',
+        extractionData: {
+          anchorPortion: dto.anchorPortion ?? null,
+          anchorBidDate: dto.anchorBidDate ?? null,
+          anchorLockIn: dto.anchorLockIn ?? null,
+          anchorDetails: dto.anchorDetails ?? null,
+        },
+      },
+    ];
+
+    for (const doc of docs) {
+      const hasUrl = doc.url !== undefined;
+      const hasAnchorData =
+        doc.type === DocumentType.ANCHOR_LIST &&
+        (dto.anchorPortion !== undefined ||
+          dto.anchorBidDate !== undefined ||
+          dto.anchorLockIn !== undefined ||
+          dto.anchorDetails !== undefined);
+
+      if (hasUrl || hasAnchorData) {
+        const cleanUrl = doc.url?.trim() || null;
+        const existing = await this.prisma.ipoDocument.findFirst({
+          where: { ipoId, documentType: doc.type },
+        });
+
+        const currentExtraction = (existing?.extractionData as object) || {};
+        const extraction = doc.extractionData
+          ? {
+              ...currentExtraction,
+              ...doc.extractionData,
+            }
+          : existing?.extractionData;
+
+        if (cleanUrl || hasAnchorData) {
+          if (existing) {
+            await this.prisma.ipoDocument.update({
+              where: { id: existing.id },
+              data: {
+                ...(cleanUrl ? { sourceUrl: cleanUrl } : {}),
+                fileName: doc.title,
+                ...(doc.extractionData ? { extractionData: extraction as any } : {}),
+              },
+            });
+          } else {
+            await this.prisma.ipoDocument.create({
+              data: {
+                ipoId,
+                documentType: doc.type,
+                sourceUrl: cleanUrl,
+                fileName: doc.title,
+                source: 'MANUAL_UPLOAD',
+                parsingStatus: 'PARSED',
+                ...(doc.extractionData ? { extractionData: extraction as any } : {}),
+              },
+            });
+          }
+        }
+      }
+    }
   }
 }

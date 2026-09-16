@@ -299,6 +299,22 @@ export function toIpoResponseDto(
       website: p.website,
       displayOrder: p.displayOrder,
     })),
+    drhpUrl: (ipo.documents ?? []).find((d) => d.documentType === 'DRHP')?.sourceUrl ?? null,
+    rhpUrl: (ipo.documents ?? []).find((d) => d.documentType === 'RHP')?.sourceUrl ?? null,
+    prospectusUrl: (ipo.documents ?? []).find((d) => d.documentType === 'PROSPECTUS')?.sourceUrl ?? null,
+    anchorListUrl: (ipo.documents ?? []).find((d) => d.documentType === 'ANCHOR_LIST')?.sourceUrl ?? null,
+    anchorDetails: (() => {
+      const anchorDoc = (ipo.documents ?? []).find((d) => d.documentType === 'ANCHOR_LIST');
+      const ext = (anchorDoc?.extractionData as any) || {};
+      if (!anchorDoc && !ext.anchorPortion && !ext.anchorDetails) return null;
+      return {
+        portion: ext.anchorPortion ?? null,
+        bidDate: ext.anchorBidDate ?? null,
+        lockIn: ext.anchorLockIn ?? null,
+        details: ext.anchorDetails ?? null,
+        documentUrl: anchorDoc?.sourceUrl ?? null,
+      };
+    })(),
     documents: (ipo.documents ?? []).map((d) => ({
       id: d.id,
       documentType: d.documentType,

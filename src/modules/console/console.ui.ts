@@ -566,6 +566,56 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
 
             <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
+              <strong style="color:var(--primary); font-size:14px;">Document & Prospectus URLs</strong>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>DRHP Prospectus URL</label>
+                <input type="url" id="form-drhpUrl" placeholder="https://.../drhp.pdf" />
+              </div>
+              <div class="form-group">
+                <label>RHP Prospectus URL</label>
+                <input type="url" id="form-rhpUrl" placeholder="https://.../rhp.pdf" />
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Final Prospectus URL</label>
+                <input type="url" id="form-prospectusUrl" placeholder="https://.../prospectus.pdf" />
+              </div>
+              <div class="form-group">
+                <label>Anchor List URL</label>
+                <input type="url" id="form-anchorListUrl" placeholder="https://.../anchor-list.pdf" />
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
+              <strong style="color:var(--primary); font-size:14px;">Anchor Investor Details</strong>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Anchor Portion (₹ Cr)</label>
+                <input type="number" step="0.01" id="form-anchorPortion" placeholder="e.g. 150.00" />
+              </div>
+              <div class="form-group">
+                <label>Anchor Bid Date</label>
+                <input type="date" id="form-anchorBidDate" />
+              </div>
+              <div class="form-group">
+                <label>Anchor Lock-in Period</label>
+                <input type="text" id="form-anchorLockIn" placeholder="e.g. 30 Days (50%), 90 Days (50%)" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Anchor Investors Summary / Breakdown</label>
+              <textarea id="form-anchorDetails" rows="3" placeholder="Enter key anchor investors allocated shares..." style="background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text); font-family:inherit; font-size:13px;"></textarea>
+            </div>
+
+            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
               <strong style="color:var(--primary); font-size:14px;">Offer Breakup & Retail Category Terms</strong>
             </div>
 
@@ -1113,6 +1163,15 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       document.getElementById('form-aboutDescription').value = '';
       updateLogoPreview();
 
+      document.getElementById('form-drhpUrl').value = '';
+      document.getElementById('form-rhpUrl').value = '';
+      document.getElementById('form-prospectusUrl').value = '';
+      document.getElementById('form-anchorListUrl').value = '';
+      document.getElementById('form-anchorPortion').value = '';
+      document.getElementById('form-anchorBidDate').value = '';
+      document.getElementById('form-anchorLockIn').value = '';
+      document.getElementById('form-anchorDetails').value = '';
+
       document.getElementById('cat-qib-pct').value = '';
       document.getElementById('cat-nii-pct').value = '';
       document.getElementById('cat-retail-pct').value = '';
@@ -1239,6 +1298,22 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-contactPerson').value = ipo.company?.contactPerson || '';
         document.getElementById('form-aboutDescription').value = ipo.company?.aboutDescription || '';
         updateLogoPreview();
+
+        const drhpDoc = ipo.documents?.find(d => d.documentType === 'DRHP');
+        const rhpDoc = ipo.documents?.find(d => d.documentType === 'RHP');
+        const prospectusDoc = ipo.documents?.find(d => d.documentType === 'PROSPECTUS');
+        const anchorDoc = ipo.documents?.find(d => d.documentType === 'ANCHOR_LIST');
+        const anchorExt = anchorDoc?.extractionData || {};
+
+        document.getElementById('form-drhpUrl').value = ipo.drhpUrl || drhpDoc?.sourceUrl || '';
+        document.getElementById('form-rhpUrl').value = ipo.rhpUrl || rhpDoc?.sourceUrl || '';
+        document.getElementById('form-prospectusUrl').value = ipo.prospectusUrl || prospectusDoc?.sourceUrl || '';
+        document.getElementById('form-anchorListUrl').value = ipo.anchorListUrl || anchorDoc?.sourceUrl || '';
+
+        document.getElementById('form-anchorPortion').value = ipo.anchorDetails?.portion ?? anchorExt.anchorPortion ?? '';
+        document.getElementById('form-anchorBidDate').value = ipo.anchorDetails?.bidDate ?? anchorExt.anchorBidDate ?? '';
+        document.getElementById('form-anchorLockIn').value = ipo.anchorDetails?.lockIn ?? anchorExt.anchorLockIn ?? '';
+        document.getElementById('form-anchorDetails').value = ipo.anchorDetails?.details ?? anchorExt.anchorDetails ?? '';
 
         // Categories
         const qib = ipo.offerCategories?.find(c => c.category === 'QIB');
@@ -1426,6 +1501,16 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         email: document.getElementById('form-email').value || undefined,
         contactPerson: document.getElementById('form-contactPerson').value || undefined,
         aboutDescription: document.getElementById('form-aboutDescription').value || undefined,
+
+        drhpUrl: document.getElementById('form-drhpUrl').value.trim() || undefined,
+        rhpUrl: document.getElementById('form-rhpUrl').value.trim() || undefined,
+        prospectusUrl: document.getElementById('form-prospectusUrl').value.trim() || undefined,
+        anchorListUrl: document.getElementById('form-anchorListUrl').value.trim() || undefined,
+
+        anchorPortion: parseFloat(document.getElementById('form-anchorPortion').value) || undefined,
+        anchorBidDate: document.getElementById('form-anchorBidDate').value.trim() || undefined,
+        anchorLockIn: document.getElementById('form-anchorLockIn').value.trim() || undefined,
+        anchorDetails: document.getElementById('form-anchorDetails').value.trim() || undefined,
 
         offerCategories: offerCategories.length > 0 ? offerCategories : undefined,
         participants: participants.length > 0 ? participants : undefined,

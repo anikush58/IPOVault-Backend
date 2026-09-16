@@ -91,6 +91,12 @@ export class CreateAdminIpoDto {
   logoUrl?: string;
   rhpUrl?: string;
   drhpUrl?: string;
+  prospectusUrl?: string;
+  anchorListUrl?: string;
+  anchorPortion?: number;
+  anchorBidDate?: string;
+  anchorLockIn?: string;
+  anchorDetails?: string;
   offerCategories?: OfferCategoryDto[];
   financials?: CompanyFinancialDto[];
   participants?: ParticipantDto[];
@@ -132,6 +138,12 @@ export class UpdateAdminIpoDto {
   logoUrl?: string;
   rhpUrl?: string;
   drhpUrl?: string;
+  prospectusUrl?: string;
+  anchorListUrl?: string;
+  anchorPortion?: number;
+  anchorBidDate?: string;
+  anchorLockIn?: string;
+  anchorDetails?: string;
   offerCategories?: OfferCategoryDto[];
   financials?: CompanyFinancialDto[];
   participants?: ParticipantDto[];

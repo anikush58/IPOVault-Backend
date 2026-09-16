@@ -491,6 +491,17 @@ export type IpoResponseDto = {
   lifecycle: IpoLifecycleDto;
   offerCategories?: IpoOfferCategoryDto[];
   participants?: IpoParticipantDto[];
+  drhpUrl?: string | null;
+  rhpUrl?: string | null;
+  prospectusUrl?: string | null;
+  anchorListUrl?: string | null;
+  anchorDetails?: {
+    portion?: number | null;
+    bidDate?: string | null;
+    lockIn?: string | null;
+    details?: string | null;
+    documentUrl?: string | null;
+  } | null;
   documents?: IpoDocumentSummaryDto[];
   allotment?: IpoAllotmentSummaryDto | null;
   currentGmp?: CurrentGmpSnapshotDto | null;

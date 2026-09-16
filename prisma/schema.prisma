@@ -41,6 +41,7 @@ enum DocumentType {
   DRHP
   RHP
   PROSPECTUS
+  ANCHOR_LIST
   OTHER
 }
 
