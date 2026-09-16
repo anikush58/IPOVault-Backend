@@ -1,3 +1,5 @@
+import express from 'express';
+import { join } from 'path';
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -29,6 +31,10 @@ export function configureApp(app: INestApplication): void {
       next();
     },
   );
+
+  // Serve static Web Admin Portal at /admin
+  app.use('/admin', express.static(join(process.cwd(), 'public', 'admin')));
+
   app.setGlobalPrefix('api/v1');
   const isDev = config.get('NODE_ENV', { infer: true }) === 'development';
   app.enableCors({

@@ -58,6 +58,14 @@ export class ManualSubscriptionDto {
   observedAt?: string;
 }
 
+export class AnchorInvestorRowDto {
+  anchorName!: string;
+  sharesAllotted?: number;
+  amtCr?: number;
+  pctAllocated?: number;
+  pctOfIssue?: number;
+}
+
 export class CreateAdminIpoDto {
   legalName!: string;
   displayName?: string;
@@ -97,6 +105,11 @@ export class CreateAdminIpoDto {
   anchorBidDate?: string;
   anchorLockIn?: string;
   anchorDetails?: string;
+  anchorPrice?: number;
+  anchorQibPct?: number;
+  anchorLockIn30?: string;
+  anchorLockIn90?: string;
+  anchorInvestors?: AnchorInvestorRowDto[];
   offerCategories?: OfferCategoryDto[];
   financials?: CompanyFinancialDto[];
   participants?: ParticipantDto[];
@@ -144,6 +157,11 @@ export class UpdateAdminIpoDto {
   anchorBidDate?: string;
   anchorLockIn?: string;
   anchorDetails?: string;
+  anchorPrice?: number;
+  anchorQibPct?: number;
+  anchorLockIn30?: string;
+  anchorLockIn90?: string;
+  anchorInvestors?: AnchorInvestorRowDto[];
   offerCategories?: OfferCategoryDto[];
   financials?: CompanyFinancialDto[];
   participants?: ParticipantDto[];

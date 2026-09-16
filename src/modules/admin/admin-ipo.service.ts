@@ -1672,6 +1672,17 @@ export class AdminIpoService {
       anchorBidDate?: string | null;
       anchorLockIn?: string | null;
       anchorDetails?: string | null;
+      anchorPrice?: number | null;
+      anchorQibPct?: number | null;
+      anchorLockIn30?: string | null;
+      anchorLockIn90?: string | null;
+      anchorInvestors?: Array<{
+        anchorName: string;
+        sharesAllotted?: number | null;
+        amtCr?: number | null;
+        pctAllocated?: number | null;
+        pctOfIssue?: number | null;
+      }> | null;
     },
   ) {
     const docs = [
@@ -1687,6 +1698,11 @@ export class AdminIpoService {
           anchorBidDate: dto.anchorBidDate ?? null,
           anchorLockIn: dto.anchorLockIn ?? null,
           anchorDetails: dto.anchorDetails ?? null,
+          anchorPrice: dto.anchorPrice ?? null,
+          anchorQibPct: dto.anchorQibPct ?? null,
+          anchorLockIn30: dto.anchorLockIn30 ?? null,
+          anchorLockIn90: dto.anchorLockIn90 ?? null,
+          anchorInvestors: dto.anchorInvestors ?? [],
         },
       },
     ];
@@ -1698,7 +1714,12 @@ export class AdminIpoService {
         (dto.anchorPortion !== undefined ||
           dto.anchorBidDate !== undefined ||
           dto.anchorLockIn !== undefined ||
-          dto.anchorDetails !== undefined);
+          dto.anchorDetails !== undefined ||
+          dto.anchorPrice !== undefined ||
+          dto.anchorQibPct !== undefined ||
+          dto.anchorLockIn30 !== undefined ||
+          dto.anchorLockIn90 !== undefined ||
+          dto.anchorInvestors !== undefined);
 
       if (hasUrl || hasAnchorData) {
         const cleanUrl = doc.url?.trim() || null;

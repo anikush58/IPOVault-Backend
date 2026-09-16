@@ -501,6 +501,17 @@ export type IpoResponseDto = {
     lockIn?: string | null;
     details?: string | null;
     documentUrl?: string | null;
+    price?: number | null;
+    qibPct?: number | null;
+    lockIn30?: string | null;
+    lockIn90?: string | null;
+    investors?: Array<{
+      anchorName: string;
+      sharesAllotted?: number | null;
+      amtCr?: number | null;
+      pctAllocated?: number | null;
+      pctOfIssue?: number | null;
+    }>;
   } | null;
   documents?: IpoDocumentSummaryDto[];
   allotment?: IpoAllotmentSummaryDto | null;

@@ -592,7 +592,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
 
             <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
-              <strong style="color:var(--primary); font-size:14px;">Anchor Investor Details</strong>
+              <strong style="color:var(--primary); font-size:14px;">Anchor Investor Allocation</strong>
             </div>
 
             <div class="form-grid">
@@ -605,14 +605,67 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                 <input type="date" id="form-anchorBidDate" />
               </div>
               <div class="form-group">
-                <label>Anchor Lock-in Period</label>
+                <label>Anchor Price (₹)</label>
+                <input type="number" step="0.01" id="form-anchorPrice" placeholder="e.g. 43.00" />
+              </div>
+              <div class="form-group">
+                <label>% of QIBs</label>
+                <input type="number" step="0.01" id="form-anchorQibPct" placeholder="e.g. 60.00" />
+              </div>
+              <div class="form-group">
+                <label>Shares Locked (30 Days)</label>
+                <input type="text" id="form-anchorLockIn30" placeholder="e.g. 43,77,907" />
+              </div>
+              <div class="form-group">
+                <label>Shares Locked (90 Days)</label>
+                <input type="text" id="form-anchorLockIn90" placeholder="e.g. 43,77,907" />
+              </div>
+              <div class="form-group">
+                <label>General Lock-in Summary</label>
                 <input type="text" id="form-anchorLockIn" placeholder="e.g. 30 Days (50%), 90 Days (50%)" />
               </div>
             </div>
 
-            <div class="form-group">
-              <label>Anchor Investors Summary / Breakdown</label>
-              <textarea id="form-anchorDetails" rows="3" placeholder="Enter key anchor investors allocated shares..." style="background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text); font-family:inherit; font-size:13px;"></textarea>
+            <div style="margin-top:12px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <label style="font-weight:600; color:var(--text); font-size:13px;">Anchor Investors Allocation List</label>
+                <button type="button" class="btn btn-secondary" style="font-size:12px; padding:4px 10px;" onclick="addAnchorRow()">+ Add Investor Row</button>
+              </div>
+
+              <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px; text-align:left;" id="anchor-investors-table">
+                  <thead>
+                    <tr style="background:#131b2e; border-bottom:1px solid var(--card-border); color:var(--text-muted);">
+                      <th style="padding:8px; width:35px; text-align:center;">#</th>
+                      <th style="padding:8px;">Anchor Investor Name</th>
+                      <th style="padding:8px; width:130px;">Shares Allotted</th>
+                      <th style="padding:8px; width:110px;">Amt (₹ Cr)</th>
+                      <th style="padding:8px; width:110px;">% Allocated</th>
+                      <th style="padding:8px; width:110px;">% of Issue</th>
+                      <th style="padding:8px; width:40px; text-align:center;"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="anchor-investors-tbody">
+                    <!-- Dynamic Rows -->
+                  </tbody>
+                  <tfoot>
+                    <tr style="background:#0f172a; font-weight:600; border-top:2px solid var(--card-border); color:var(--text);">
+                      <td style="padding:8px; text-align:center;">Total</td>
+                      <td style="padding:8px;">-</td>
+                      <td style="padding:8px;" id="total-anchor-shares">0</td>
+                      <td style="padding:8px;" id="total-anchor-amt">₹0.00</td>
+                      <td style="padding:8px;" id="total-anchor-pct-alloc">0%</td>
+                      <td style="padding:8px;" id="total-anchor-pct-issue">0%</td>
+                      <td style="padding:8px;"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top:12px;">
+              <label>Additional Notes / Breakdown Text</label>
+              <textarea id="form-anchorDetails" rows="2" placeholder="Optional notes or text breakdown..." style="background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text); font-family:inherit; font-size:13px;"></textarea>
             </div>
 
             <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
@@ -1114,6 +1167,94 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    function addAnchorRow(data) {
+      data = data || {};
+      const tbody = document.getElementById('anchor-investors-tbody');
+      if (!tbody) return;
+      const rowCount = tbody.children.length + 1;
+      const tr = document.createElement('tr');
+      tr.className = 'anchor-row';
+      tr.style.borderBottom = '1px solid var(--card-border)';
+      const safeName = (data.anchorName || '').replace(/"/g, '&quot;');
+      const sharesVal = data.sharesAllotted != null ? data.sharesAllotted : '';
+      const amtVal = data.amtCr != null ? data.amtCr : '';
+      const allocVal = data.pctAllocated != null ? data.pctAllocated : '';
+      const issueVal = data.pctOfIssue != null ? data.pctOfIssue : '';
+
+      tr.innerHTML =
+        '<td style="padding:6px; text-align:center; color:var(--text-muted);" class="row-num">' + rowCount + '</td>' +
+        '<td style="padding:6px;"><input type="text" class="anchor-name" value="' + safeName + '" placeholder="e.g. BHARAT VALUE FUND" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
+        '<td style="padding:6px;"><input type="number" class="anchor-shares" value="' + sharesVal + '" placeholder="e.g. 4104199" oninput="calculateAnchorTotals()" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
+        '<td style="padding:6px;"><input type="number" step="0.01" class="anchor-amt" value="' + amtVal + '" placeholder="e.g. 17.65" oninput="calculateAnchorTotals()" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
+        '<td style="padding:6px;"><input type="number" step="0.01" class="anchor-pct-alloc" value="' + allocVal + '" placeholder="e.g. 46.87" oninput="calculateAnchorTotals()" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
+        '<td style="padding:6px;"><input type="number" step="0.01" class="anchor-pct-issue" value="' + issueVal + '" placeholder="e.g. 14.06" oninput="calculateAnchorTotals()" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
+        '<td style="padding:6px; text-align:center;"><button type="button" onclick="removeAnchorRow(this)" style="background:#ef4444; color:#fff; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:12px;">&times;</button></td>';
+
+      tbody.appendChild(tr);
+      calculateAnchorTotals();
+    }
+
+    function removeAnchorRow(btn) {
+      const tr = btn.closest('tr');
+      if (tr) {
+        tr.remove();
+        const rows = document.querySelectorAll('#anchor-investors-tbody tr');
+        rows.forEach((row, idx) => {
+          const numCell = row.querySelector('.row-num');
+          if (numCell) numCell.textContent = idx + 1;
+        });
+        calculateAnchorTotals();
+      }
+    }
+
+    function calculateAnchorTotals() {
+      const rows = document.querySelectorAll('#anchor-investors-tbody tr');
+      let totalShares = 0;
+      let totalAmt = 0;
+      let totalAlloc = 0;
+      let totalIssue = 0;
+
+      rows.forEach(row => {
+        const shares = parseFloat(row.querySelector('.anchor-shares')?.value) || 0;
+        const amt = parseFloat(row.querySelector('.anchor-amt')?.value) || 0;
+        const alloc = parseFloat(row.querySelector('.anchor-pct-alloc')?.value) || 0;
+        const issue = parseFloat(row.querySelector('.anchor-pct-issue')?.value) || 0;
+
+        totalShares += shares;
+        totalAmt += amt;
+        totalAlloc += alloc;
+        totalIssue += issue;
+      });
+
+      const sharesEl = document.getElementById('total-anchor-shares');
+      const amtEl = document.getElementById('total-anchor-amt');
+      const allocEl = document.getElementById('total-anchor-pct-alloc');
+      const issueEl = document.getElementById('total-anchor-pct-issue');
+
+      if (sharesEl) sharesEl.textContent = totalShares ? totalShares.toLocaleString('en-IN') : '0';
+      if (amtEl) amtEl.textContent = totalAmt ? '₹' + totalAmt.toFixed(2) : '₹0.00';
+      if (allocEl) allocEl.textContent = totalAlloc ? totalAlloc.toFixed(2) + '%' : '0%';
+      if (issueEl) issueEl.textContent = totalIssue ? totalIssue.toFixed(2) + '%' : '0%';
+    }
+
+    function getAnchorInvestorsFromForm() {
+      const rows = document.querySelectorAll('#anchor-investors-tbody tr');
+      const list = [];
+      rows.forEach(row => {
+        const name = (row.querySelector('.anchor-name')?.value || '').trim();
+        if (name) {
+          list.push({
+            anchorName: name,
+            sharesAllotted: parseFloat(row.querySelector('.anchor-shares')?.value) || undefined,
+            amtCr: parseFloat(row.querySelector('.anchor-amt')?.value) || undefined,
+            pctAllocated: parseFloat(row.querySelector('.anchor-pct-alloc')?.value) || undefined,
+            pctOfIssue: parseFloat(row.querySelector('.anchor-pct-issue')?.value) || undefined,
+          });
+        }
+      });
+      return list;
+    }
+
     function updateLogoPreview() {
       const url = (document.getElementById('form-logoUrl')?.value || '').trim();
       const img = document.getElementById('form-logo-preview');
@@ -1171,6 +1312,13 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       document.getElementById('form-anchorBidDate').value = '';
       document.getElementById('form-anchorLockIn').value = '';
       document.getElementById('form-anchorDetails').value = '';
+      document.getElementById('form-anchorPrice').value = '';
+      document.getElementById('form-anchorQibPct').value = '';
+      document.getElementById('form-anchorLockIn30').value = '';
+      document.getElementById('form-anchorLockIn90').value = '';
+      const anchorTbody = document.getElementById('anchor-investors-tbody');
+      if (anchorTbody) anchorTbody.innerHTML = '';
+      addAnchorRow();
 
       document.getElementById('cat-qib-pct').value = '';
       document.getElementById('cat-nii-pct').value = '';
@@ -1314,6 +1462,19 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-anchorBidDate').value = ipo.anchorDetails?.bidDate ?? anchorExt.anchorBidDate ?? '';
         document.getElementById('form-anchorLockIn').value = ipo.anchorDetails?.lockIn ?? anchorExt.anchorLockIn ?? '';
         document.getElementById('form-anchorDetails').value = ipo.anchorDetails?.details ?? anchorExt.anchorDetails ?? '';
+        document.getElementById('form-anchorPrice').value = ipo.anchorDetails?.price ?? anchorExt.anchorPrice ?? '';
+        document.getElementById('form-anchorQibPct').value = ipo.anchorDetails?.qibPct ?? anchorExt.anchorQibPct ?? '';
+        document.getElementById('form-anchorLockIn30').value = ipo.anchorDetails?.lockIn30 ?? anchorExt.anchorLockIn30 ?? '';
+        document.getElementById('form-anchorLockIn90').value = ipo.anchorDetails?.lockIn90 ?? anchorExt.anchorLockIn90 ?? '';
+
+        const anchorTbody = document.getElementById('anchor-investors-tbody');
+        if (anchorTbody) anchorTbody.innerHTML = '';
+        const invList = ipo.anchorDetails?.investors || anchorExt.anchorInvestors || [];
+        if (Array.isArray(invList) && invList.length > 0) {
+          invList.forEach(inv => addAnchorRow(inv));
+        } else {
+          addAnchorRow();
+        }
 
         // Categories
         const qib = ipo.offerCategories?.find(c => c.category === 'QIB');
@@ -1511,6 +1672,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         anchorBidDate: document.getElementById('form-anchorBidDate').value.trim() || undefined,
         anchorLockIn: document.getElementById('form-anchorLockIn').value.trim() || undefined,
         anchorDetails: document.getElementById('form-anchorDetails').value.trim() || undefined,
+        anchorPrice: parseFloat(document.getElementById('form-anchorPrice').value) || undefined,
+        anchorQibPct: parseFloat(document.getElementById('form-anchorQibPct').value) || undefined,
+        anchorLockIn30: document.getElementById('form-anchorLockIn30').value.trim() || undefined,
+        anchorLockIn90: document.getElementById('form-anchorLockIn90').value.trim() || undefined,
+        anchorInvestors: getAnchorInvestorsFromForm(),
 
         offerCategories: offerCategories.length > 0 ? offerCategories : undefined,
         participants: participants.length > 0 ? participants : undefined,

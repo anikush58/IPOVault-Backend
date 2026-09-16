@@ -306,13 +306,19 @@ export function toIpoResponseDto(
     anchorDetails: (() => {
       const anchorDoc = (ipo.documents ?? []).find((d) => d.documentType === 'ANCHOR_LIST');
       const ext = (anchorDoc?.extractionData as any) || {};
-      if (!anchorDoc && !ext.anchorPortion && !ext.anchorDetails) return null;
+      const hasInvestors = Array.isArray(ext.anchorInvestors) && ext.anchorInvestors.length > 0;
+      if (!anchorDoc && !ext.anchorPortion && !ext.anchorDetails && !hasInvestors && !ext.anchorBidDate) return null;
       return {
         portion: ext.anchorPortion ?? null,
         bidDate: ext.anchorBidDate ?? null,
         lockIn: ext.anchorLockIn ?? null,
         details: ext.anchorDetails ?? null,
         documentUrl: anchorDoc?.sourceUrl ?? null,
+        price: ext.anchorPrice ?? null,
+        qibPct: ext.anchorQibPct ?? null,
+        lockIn30: ext.anchorLockIn30 ?? null,
+        lockIn90: ext.anchorLockIn90 ?? null,
+        investors: Array.isArray(ext.anchorInvestors) ? ext.anchorInvestors : [],
       };
     })(),
     documents: (ipo.documents ?? []).map((d) => ({
