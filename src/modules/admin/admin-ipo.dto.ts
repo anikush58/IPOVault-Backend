@@ -93,6 +93,7 @@ export class CreateAdminIpoDto {
   closeDate?: string;
   listingDate?: string;
   allotmentDate?: string;
+  refundDate?: string;
   website?: string;
   industry?: string;
   sector?: string;
@@ -149,6 +150,7 @@ export class UpdateAdminIpoDto {
   closeDate?: string;
   listingDate?: string;
   allotmentDate?: string;
+  refundDate?: string;
   website?: string;
   industry?: string;
   sector?: string;

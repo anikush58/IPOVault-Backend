@@ -216,6 +216,7 @@ export class AdminIpoService {
       closeDate: dto.closeDate,
       listingDate: dto.listingDate,
       allotmentDate: dto.allotmentDate,
+      refundDate: dto.refundDate,
     });
 
     if (dto.offerCategories && dto.offerCategories.length > 0) {
@@ -269,8 +270,8 @@ export class AdminIpoService {
 
     // Update company if any company field is provided
     if (
-      dto.legalName ||
-      dto.displayName ||
+      (dto.legalName && dto.legalName.trim() !== '') ||
+      (dto.displayName && dto.displayName.trim() !== '') ||
       dto.cin !== undefined ||
       dto.website !== undefined ||
       dto.industry !== undefined ||
@@ -284,8 +285,8 @@ export class AdminIpoService {
       await this.prisma.company.update({
         where: { id: existing.companyId },
         data: {
-          ...(dto.legalName ? { legalName: dto.legalName.trim() } : {}),
-          ...(dto.displayName ? { displayName: dto.displayName.trim() } : {}),
+          ...(dto.legalName && dto.legalName.trim() !== '' ? { legalName: dto.legalName.trim() } : {}),
+          ...(dto.displayName && dto.displayName.trim() !== '' ? { displayName: dto.displayName.trim() } : {}),
           ...(dto.cin !== undefined ? { cin: dto.cin?.trim() || null } : {}),
           ...(dto.website !== undefined ? { website: dto.website?.trim() || null } : {}),
           ...(dto.industry !== undefined ? { industry: dto.industry?.trim() || null } : {}),
@@ -455,13 +456,15 @@ export class AdminIpoService {
       dto.openDate !== undefined ||
       dto.closeDate !== undefined ||
       dto.listingDate !== undefined ||
-      dto.allotmentDate !== undefined
+      dto.allotmentDate !== undefined ||
+      dto.refundDate !== undefined
     ) {
       await this.updateLifecycleEvents(id, {
         openDate: dto.openDate,
         closeDate: dto.closeDate,
         listingDate: dto.listingDate,
         allotmentDate: dto.allotmentDate,
+        refundDate: dto.refundDate,
       });
     }
 
@@ -543,35 +546,22 @@ export class AdminIpoService {
     const allotmentEvent = ipo.lifecycleEvents.find(
       (e) => e.eventType === 'BASIS_OF_ALLOTMENT',
     );
+    const refundEvent = ipo.lifecycleEvents.find(
+      (e) => e.eventType === 'REFUND_INITIATION',
+    );
 
-    const validationReport = this.validationService.validateIpo({
-      legalName: ipo.company.legalName,
-      displayName: ipo.company.displayName,
-      cin: ipo.company.cin,
-      symbol: ipo.symbol,
-      marketSegment: ipo.marketSegment,
-      status: ipo.status,
-      publicationStatus: ipo.publicationStatus,
-      priceBandLow: ipo.priceBandLow ? Number(ipo.priceBandLow) : null,
-      priceBandHigh: ipo.priceBandHigh ? Number(ipo.priceBandHigh) : null,
-      lotSize: ipo.lotSize,
-      issueSize: ipo.issueSize ? Number(ipo.issueSize) : null,
-      freshIssueSize: ipo.freshIssueSize ? Number(ipo.freshIssueSize) : null,
-      ofsSize: ipo.ofsSize ? Number(ipo.ofsSize) : null,
-      issueShareCount: ipo.issueShareCount ? Number(ipo.issueShareCount) : null,
-      freshIssueShareCount: ipo.freshIssueShareCount
-        ? Number(ipo.freshIssueShareCount)
-        : null,
-      ofsShareCount: ipo.ofsShareCount ? Number(ipo.ofsShareCount) : null,
-      openDate: openEvent ? openEvent.eventDate.toISOString() : null,
-      closeDate: closeEvent ? closeEvent.eventDate.toISOString() : null,
-      listingDate: listingEvent ? listingEvent.eventDate.toISOString() : null,
-      allotmentDate: allotmentEvent ? allotmentEvent.eventDate.toISOString() : null,
-    });
+    const anchorDoc = ipo.documents.find((d) => d.documentType === 'ANCHOR_LIST');
+    const anchorExt = (anchorDoc?.extractionData as any) || {};
+    const anchorInvestors = Array.isArray(anchorExt.anchorInvestors) ? anchorExt.anchorInvestors : [];
 
     return {
       id: ipo.id,
       companyId: ipo.companyId,
+      legalName: ipo.company.legalName,
+      displayName: ipo.company.displayName,
+      cin: ipo.company.cin,
+      logoUrl: ipo.company.logoUrl,
+      website: ipo.company.website,
       company: {
         legalName: ipo.company.legalName,
         displayName: ipo.company.displayName,
@@ -615,6 +605,10 @@ export class AdminIpoService {
       allotmentDate: allotmentEvent
         ? allotmentEvent.eventDate.toISOString().slice(0, 10)
         : null,
+      refundDate: refundEvent
+        ? refundEvent.eventDate.toISOString().slice(0, 10)
+        : null,
+      anchorInvestors,
       documents: ipo.documents,
       allotmentConfig: ipo.allotmentConfig,
       offerCategories: ipo.offerCategories,
@@ -623,7 +617,30 @@ export class AdminIpoService {
       gmpObservations: ipo.gmpObservations,
       subscriptionObservations: ipo.subscriptionObservations,
       sourceIdentities: ipo.sourceIdentities,
-      validation: validationReport,
+      validation: this.validationService.validateIpo({
+        legalName: ipo.company.legalName,
+        displayName: ipo.company.displayName,
+        cin: ipo.company.cin,
+        symbol: ipo.symbol,
+        marketSegment: ipo.marketSegment,
+        status: ipo.status,
+        publicationStatus: ipo.publicationStatus,
+        priceBandLow: ipo.priceBandLow ? Number(ipo.priceBandLow) : null,
+        priceBandHigh: ipo.priceBandHigh ? Number(ipo.priceBandHigh) : null,
+        lotSize: ipo.lotSize,
+        issueSize: ipo.issueSize ? Number(ipo.issueSize) : null,
+        freshIssueSize: ipo.freshIssueSize ? Number(ipo.freshIssueSize) : null,
+        ofsSize: ipo.ofsSize ? Number(ipo.ofsSize) : null,
+        issueShareCount: ipo.issueShareCount ? Number(ipo.issueShareCount) : null,
+        freshIssueShareCount: ipo.freshIssueShareCount
+          ? Number(ipo.freshIssueShareCount)
+          : null,
+        ofsShareCount: ipo.ofsShareCount ? Number(ipo.ofsShareCount) : null,
+        openDate: openEvent ? openEvent.eventDate.toISOString() : null,
+        closeDate: closeEvent ? closeEvent.eventDate.toISOString() : null,
+        listingDate: listingEvent ? listingEvent.eventDate.toISOString() : null,
+        allotmentDate: allotmentEvent ? allotmentEvent.eventDate.toISOString() : null,
+      }),
       createdAt: ipo.createdAt,
       updatedAt: ipo.updatedAt,
     };
@@ -1512,13 +1529,14 @@ export class AdminIpoService {
 
   private async updateLifecycleEvents(
     ipoId: string,
-    dates: { openDate?: string; closeDate?: string; listingDate?: string; allotmentDate?: string },
+    dates: { openDate?: string; closeDate?: string; listingDate?: string; allotmentDate?: string; refundDate?: string },
   ) {
-    const updates: Array<{ eventType: 'OPEN' | 'CLOSE' | 'LISTING' | 'BASIS_OF_ALLOTMENT'; dateStr?: string }> = [
+    const updates: Array<{ eventType: 'OPEN' | 'CLOSE' | 'LISTING' | 'BASIS_OF_ALLOTMENT' | 'REFUND_INITIATION'; dateStr?: string }> = [
       { eventType: 'OPEN', dateStr: dates.openDate },
       { eventType: 'CLOSE', dateStr: dates.closeDate },
       { eventType: 'LISTING', dateStr: dates.listingDate },
       { eventType: 'BASIS_OF_ALLOTMENT', dateStr: dates.allotmentDate },
+      { eventType: 'REFUND_INITIATION', dateStr: dates.refundDate },
     ];
 
     for (const item of updates) {

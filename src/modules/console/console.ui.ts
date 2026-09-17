@@ -769,6 +769,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                   <input type="date" id="form-allotmentDate" />
                 </div>
                 <div class="form-group">
+                  <label>Refund Initiation Date</label>
+                  <input type="date" id="form-refundDate" />
+                </div>
+                <div class="form-group">
                   <label>Listing Date</label>
                   <input type="date" id="form-listingDate" />
                 </div>
@@ -922,6 +926,31 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                     <label>Est Profit (%)</label>
                     <input type="number" step="0.01" id="form-profitPercentage" placeholder="e.g. 25.00" />
                   </div>
+                </div>
+              </div>
+
+              <!-- Anchor Investors Allocation List -->
+              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                  <strong style="color:var(--primary); font-size:14px;">Anchor Investors Allocation List</strong>
+                  <button type="button" class="btn-secondary" onclick="addAnchorInvestorRow()" style="font-size:12px; padding:4px 10px;">+ Add Anchor Investor</button>
+                </div>
+
+                <div class="grid-table-box" style="margin-bottom:12px;">
+                  <table id="anchor-investors-table" style="min-width:500px;">
+                    <thead>
+                      <tr>
+                        <th style="width:40px; text-align:center;">#</th>
+                        <th>Anchor Investor Name</th>
+                        <th style="text-align:right;">Shares Allotted</th>
+                        <th style="text-align:right;">Amt (₹ Cr)</th>
+                        <th style="width:70px; text-align:center;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="anchor-investors-tbody">
+                      <tr id="no-anchor-row"><td colspan="5" style="text-align:center; padding:16px; color:var(--text-muted); font-size:12px;">No anchor investors added yet. Click "+ Add Anchor Investor".</td></tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -1222,10 +1251,90 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/"/g, '&quot;');
+    }
+
+    function addAnchorInvestorRow(anchorName = '', sharesAllotted = '', amtCr = '') {
+      const tbody = document.getElementById('anchor-investors-tbody');
+      if (!tbody) return;
+
+      const noRow = document.getElementById('no-anchor-row');
+      if (noRow) noRow.style.display = 'none';
+
+      const rowCount = tbody.querySelectorAll('.anchor-row').length + 1;
+      const tr = document.createElement('tr');
+      tr.className = 'anchor-row';
+      tr.innerHTML = \`
+        <td style="text-align:center; font-weight:600; font-size:12px;" class="anchor-idx">\${rowCount}</td>
+        <td>
+          <input type="text" class="anchor-input-name" value="\${escapeHtml(anchorName)}" placeholder="e.g. KOTAK SPECIAL OPPORTUNITIES FUND" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main);" />
+        </td>
+        <td>
+          <input type="number" class="anchor-input-shares" value="\${sharesAllotted ?? ''}" placeholder="e.g. 117898" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); text-align:right;" />
+        </td>
+        <td>
+          <input type="number" step="0.01" class="anchor-input-amt" value="\${amtCr ?? ''}" placeholder="e.g. 7.97" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); text-align:right;" />
+        </td>
+        <td style="text-align:center;">
+          <button type="button" class="btn-danger" onclick="removeAnchorInvestorRow(this)" style="padding:3px 8px; font-size:11px;">Delete</button>
+        </td>
+      \`;
+      tbody.appendChild(tr);
+      reindexAnchorRows();
+    }
+
+    function removeAnchorInvestorRow(btn) {
+      const tr = btn.closest('tr');
+      if (tr) tr.remove();
+      reindexAnchorRows();
+    }
+
+    function reindexAnchorRows() {
+      const tbody = document.getElementById('anchor-investors-tbody');
+      if (!tbody) return;
+      const rows = tbody.querySelectorAll('.anchor-row');
+      const noRow = document.getElementById('no-anchor-row');
+
+      if (rows.length === 0) {
+        if (noRow) noRow.style.display = 'table-row';
+      } else {
+        if (noRow) noRow.style.display = 'none';
+        rows.forEach((row, idx) => {
+          const idxCell = row.querySelector('.anchor-idx');
+          if (idxCell) idxCell.textContent = idx + 1;
+        });
+      }
+    }
+
+    function getAnchorInvestorsFromForm() {
+      const rows = document.querySelectorAll('#anchor-investors-tbody .anchor-row');
+      const list = [];
+      rows.forEach(row => {
+        const nameVal = row.querySelector('.anchor-input-name')?.value?.trim();
+        const sharesVal = parseInt(row.querySelector('.anchor-input-shares')?.value, 10);
+        const amtVal = parseFloat(row.querySelector('.anchor-input-amt')?.value);
+        if (nameVal) {
+          list.push({
+            anchorName: nameVal,
+            sharesAllotted: !isNaN(sharesVal) ? sharesVal : undefined,
+            amtCr: !isNaN(amtVal) ? amtVal : undefined,
+          });
+        }
+      });
+      return list;
+    }
+
     function openCreateModal() {
       currentIpoData = null;
       document.getElementById('manual-ipo-form').reset();
       document.getElementById('form-ipo-id').value = '';
+      const tbody = document.getElementById('anchor-investors-tbody');
+      if (tbody) {
+        tbody.querySelectorAll('.anchor-row').forEach(r => r.remove());
+      }
+      reindexAnchorRows();
       updateFormStatusSections();
       switchTab('manual-edit');
     }
@@ -1237,9 +1346,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         currentIpoData = json.data || json;
         
         document.getElementById('form-ipo-id').value = currentIpoData.id;
-        document.getElementById('form-legalName').value = currentIpoData.legalName || '';
-        document.getElementById('form-displayName').value = currentIpoData.displayName || '';
-        document.getElementById('form-cin').value = currentIpoData.cin || '';
+        document.getElementById('form-legalName').value = currentIpoData.legalName || currentIpoData.company?.legalName || '';
+        document.getElementById('form-displayName').value = currentIpoData.displayName || currentIpoData.company?.displayName || '';
+        document.getElementById('form-cin').value = currentIpoData.cin || currentIpoData.company?.cin || '';
         document.getElementById('form-symbol').value = currentIpoData.symbol || '';
         document.getElementById('form-marketSegment').value = currentIpoData.marketSegment || 'MAINBOARD';
         document.getElementById('form-exchange').value = currentIpoData.exchange || 'NSE';
@@ -1252,8 +1361,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-openDate').value = currentIpoData.openDate ? currentIpoData.openDate.split('T')[0] : '';
         document.getElementById('form-closeDate').value = currentIpoData.closeDate ? currentIpoData.closeDate.split('T')[0] : '';
         document.getElementById('form-allotmentDate').value = currentIpoData.allotmentDate ? currentIpoData.allotmentDate.split('T')[0] : '';
+        document.getElementById('form-refundDate').value = currentIpoData.refundDate ? currentIpoData.refundDate.split('T')[0] : '';
         document.getElementById('form-listingDate').value = currentIpoData.listingDate ? currentIpoData.listingDate.split('T')[0] : '';
-        document.getElementById('form-logoUrl').value = currentIpoData.logoUrl || '';
+        document.getElementById('form-logoUrl').value = currentIpoData.logoUrl || currentIpoData.company?.logoUrl || '';
         document.getElementById('form-listingPrice').value = currentIpoData.listingPrice ?? '';
         document.getElementById('form-listingGainPct').value = currentIpoData.listingGainPct ?? '';
         document.getElementById('form-profitAmount').value = currentIpoData.profitAmount ?? '';
@@ -1267,6 +1377,18 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           document.getElementById('gmp-amount').value = '';
           document.getElementById('gmp-percentage').value = '';
           document.getElementById('gmp-est-profit').value = '';
+        }
+
+        // Populate Anchor Investors Table
+        const tbody = document.getElementById('anchor-investors-tbody');
+        if (tbody) {
+          tbody.querySelectorAll('.anchor-row').forEach(r => r.remove());
+        }
+        const anchors = currentIpoData.anchorInvestors || (currentIpoData.documents?.find(d => d.documentType === 'ANCHOR_LIST')?.extractionData)?.anchorInvestors || [];
+        if (Array.isArray(anchors) && anchors.length > 0) {
+          anchors.forEach(a => addAnchorInvestorRow(a.anchorName, a.sharesAllotted, a.amtCr));
+        } else {
+          reindexAnchorRows();
         }
 
         updateFormStatusSections();
@@ -1298,8 +1420,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         openDate: document.getElementById('form-openDate').value || undefined,
         closeDate: document.getElementById('form-closeDate').value || undefined,
         allotmentDate: document.getElementById('form-allotmentDate').value || undefined,
+        refundDate: document.getElementById('form-refundDate').value || undefined,
         listingDate: document.getElementById('form-listingDate').value || undefined,
         logoUrl: document.getElementById('form-logoUrl').value || undefined,
+        anchorInvestors: getAnchorInvestorsFromForm(),
       };
 
       const gmpVal = parseFloat(document.getElementById('gmp-amount').value);
