@@ -14,6 +14,10 @@ export class ResponseEnvelopeInterceptor implements NestInterceptor {
   ): Observable<unknown> {
     return next.handle().pipe(
       map((body: unknown) => {
+        if (typeof body === 'string') {
+          return body;
+        }
+
         if (
           body !== null &&
           typeof body === 'object' &&
