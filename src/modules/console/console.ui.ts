@@ -1086,14 +1086,20 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     let currentTab = 'dashboard';
     let currentIpoData = null;
 
-    document.addEventListener('DOMContentLoaded', () => {
+    function initConsoleApp() {
       if (localStorage.getItem('sidebar-collapsed') === 'true') {
         const sidebar = document.querySelector('.sidebar');
         if (sidebar) sidebar.classList.add('collapsed');
       }
       if (window.feather) feather.replace();
       loadDashboard();
-    });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initConsoleApp);
+    } else {
+      initConsoleApp();
+    }
 
     function toggleSidebar() {
       const sidebar = document.querySelector('.sidebar');
@@ -1751,8 +1757,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
-    // Init
-    loadDashboard();
+    // Init handled by readyState check
   </script>
 </body>
 </html>`;
