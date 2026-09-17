@@ -6,10 +6,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IPOVault — Backend Admin Console</title>
   
-  <!-- Google Fonts: Inter, Outfit, JetBrains Mono -->
+  <!-- Google Fonts: Google Sans Flex, JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@300;400;500;600;700&family=Google+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
   
   <!-- Feather Icons CDN -->
   <script src="https://unpkg.com/feather-icons"></script>
@@ -71,13 +71,14 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, button, input, select, textarea {
+      font-family: 'Google Sans Flex', 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
 
     html, body {
       width: 100%;
       height: 100vh;
       overflow: hidden;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       background-color: var(--bg-app);
       color: var(--text-main);
     }
@@ -113,9 +114,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       align-items: center;
       justify-content: center;
       font-weight: 700;
-      font-family: 'Outfit', sans-serif;
+      font-family: 'Google Sans Flex', 'Google Sans', sans-serif;
     }
-    .brand-title { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 18px; color: #F8FAFC; letter-spacing: -0.3px; }
+    .brand-title { font-family: 'Google Sans Flex', 'Google Sans', sans-serif; font-weight: 700; font-size: 18px; color: #F8FAFC; letter-spacing: -0.3px; }
 
     .workspace-picker {
       display: flex;
@@ -452,7 +453,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           </button>
           <button class="btn-primary" onclick="openCreateModal()">
             <i data-feather="plus"></i>
-            <span>+ Add Manual IPO</span>
+            <span>Add Manual IPO</span>
           </button>
         </div>
       </div>
@@ -509,8 +510,8 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         <div id="tab-manual" class="section-view">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <div style="display:flex; gap:10px;">
-              <button class="btn-primary" onclick="openCreateModal()">+ Add Manual IPO</button>
-              <button class="btn-secondary" onclick="triggerJsonImport()">📥 Import JSON</button>
+              <button class="btn-primary" onclick="openCreateModal()"><i data-feather="plus"></i> <span>Add Manual IPO</span></button>
+              <button class="btn-secondary" onclick="triggerJsonImport()">Import JSON</button>
               <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
             </div>
             <div style="display:flex; gap:10px;">
@@ -554,12 +555,13 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         <!-- 3. MANUAL IPO EDIT / CREATE TAB -->
         <div id="tab-manual-edit" class="section-view">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <button class="btn-secondary" onclick="switchTab('manual')">← Back to Manual IPOs</button>
+            <button class="btn-secondary" onclick="switchTab('manual')">Back to Manual IPOs</button>
             <div style="display:flex; gap:10px;">
-              <button class="btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">🚀 PUBLISH TO MOBILE</button>
-              <button class="btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">⏸️ Unpublish</button>
-              <button class="btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">📦 Archive IPO</button>
-              <button class="btn-danger" id="btn-delete-action" onclick="deleteCurrentIpo()">🗑️ PERMANENTLY DELETE</button>
+              <button class="btn-primary" id="btn-save-action" onclick="saveManualIpo()">Save</button>
+              <button class="btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">Publish</button>
+              <button class="btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">Unpublish</button>
+              <button class="btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">Archive</button>
+              <button class="btn-danger" id="btn-delete-action" onclick="deleteCurrentIpo()">Delete</button>
             </div>
           </div>
 
@@ -790,7 +792,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
               <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:16px;">
                 <button type="button" class="btn-secondary" onclick="switchTab('manual')">Cancel</button>
-                <button type="submit" class="btn-primary">💾 Save Canonical IPO</button>
+                <button type="submit" class="btn-primary">Save</button>
               </div>
             </form>
           </div>
@@ -1003,7 +1005,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         const tbody = document.getElementById('manual-ipos-table-body');
         
         if (items.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color:var(--text-muted);">No Manual IPOs found. Click "+ Add Manual IPO" to create one.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color:var(--text-muted);">No Manual IPOs found. Click "Add Manual IPO" to create one.</td></tr>';
           return;
         }
 
