@@ -38,6 +38,21 @@ export function configureApp(app: INestApplication): void {
   app.setGlobalPrefix('api/v1');
   const isDev = config.get('NODE_ENV', { infer: true }) === 'development';
   app.enableCors({
-    origin: isDev ? true : origins.length === 1 ? origins[0] : origins,
+    origin: (
+      requestOrigin: string | undefined,
+      callback: (err: Error | null, origin?: boolean | string) => void,
+    ) => {
+      if (!requestOrigin || isDev) {
+        return callback(null, true);
+      }
+      if (origins.includes('*') || origins.includes(requestOrigin)) {
+        return callback(null, requestOrigin);
+      }
+      if (/^https?:\/\/([a-z0-9-]+\.)*getipovault\.in(:[0-9]+)?$/i.test(requestOrigin)) {
+        return callback(null, requestOrigin);
+      }
+      return callback(null, origins.length === 1 ? origins[0] : false);
+    },
+    credentials: true,
   });
 }
