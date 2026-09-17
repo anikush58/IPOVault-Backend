@@ -937,19 +937,31 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                 </div>
 
                 <div class="grid-table-box" style="margin-bottom:12px;">
-                  <table id="anchor-investors-table" style="min-width:500px;">
+                  <table id="anchor-investors-table" style="min-width:650px;">
                     <thead>
                       <tr>
                         <th style="width:40px; text-align:center;">#</th>
                         <th>Anchor Investor Name</th>
                         <th style="text-align:right;">Shares Allotted</th>
                         <th style="text-align:right;">Amt (₹ Cr)</th>
+                        <th style="text-align:right;">% Allocated</th>
+                        <th style="text-align:right;">% of Issue</th>
                         <th style="width:70px; text-align:center;">Action</th>
                       </tr>
                     </thead>
                     <tbody id="anchor-investors-tbody">
-                      <tr id="no-anchor-row"><td colspan="5" style="text-align:center; padding:16px; color:var(--text-muted); font-size:12px;">No anchor investors added yet. Click "+ Add Anchor Investor".</td></tr>
+                      <tr id="no-anchor-row"><td colspan="7" style="text-align:center; padding:16px; color:var(--text-muted); font-size:12px;">No anchor investors added yet. Click "+ Add Anchor Investor".</td></tr>
                     </tbody>
+                    <tfoot id="anchor-investors-tfoot" style="background-color:var(--bg-hover); font-weight:700;">
+                      <tr>
+                        <td colspan="2" style="padding:10px 12px; font-weight:700; color:var(--primary);">Total</td>
+                        <td id="anchor-total-shares" style="text-align:right; padding:10px 12px; color:var(--primary);">0</td>
+                        <td id="anchor-total-amt" style="text-align:right; padding:10px 12px; color:var(--primary);">₹0.00</td>
+                        <td id="anchor-total-pct-allocated" style="text-align:right; padding:10px 12px; color:var(--primary);">0.00%</td>
+                        <td id="anchor-total-pct-issue" style="text-align:right; padding:10px 12px; color:var(--primary);">0.00%</td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </div>
@@ -1256,7 +1268,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       return String(str).replace(/"/g, '&quot;');
     }
 
-    function addAnchorInvestorRow(anchorName = '', sharesAllotted = '', amtCr = '') {
+    function addAnchorInvestorRow(anchorName = '', sharesAllotted = '', amtCr = '', pctAllocated = '', pctOfIssue = '') {
       const tbody = document.getElementById('anchor-investors-tbody');
       if (!tbody) return;
 
@@ -1272,10 +1284,16 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           <input type="text" class="anchor-input-name" value="\${escapeHtml(anchorName)}" placeholder="e.g. KOTAK SPECIAL OPPORTUNITIES FUND" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main);" />
         </td>
         <td>
-          <input type="number" class="anchor-input-shares" value="\${sharesAllotted ?? ''}" placeholder="e.g. 117898" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); text-align:right;" />
+          <input type="number" class="anchor-input-shares" value="\${sharesAllotted ?? ''}" placeholder="e.g. 117898" oninput="calculateAnchorTotals()" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); text-align:right;" />
         </td>
         <td>
-          <input type="number" step="0.01" class="anchor-input-amt" value="\${amtCr ?? ''}" placeholder="e.g. 7.97" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); text-align:right;" />
+          <input type="number" step="0.01" class="anchor-input-amt" value="\${amtCr ?? ''}" placeholder="e.g. 7.97" oninput="calculateAnchorTotals()" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); text-align:right;" />
+        </td>
+        <td>
+          <input type="number" step="0.01" class="anchor-input-pct-allocated" value="\${pctAllocated ?? ''}" placeholder="e.g. 11.04" oninput="calculateAnchorTotals()" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); text-align:right;" />
+        </td>
+        <td>
+          <input type="number" step="0.01" class="anchor-input-pct-issue" value="\${pctOfIssue ?? ''}" placeholder="e.g. 4.97" oninput="calculateAnchorTotals()" style="width:100%; padding:6px 10px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); text-align:right;" />
         </td>
         <td style="text-align:center;">
           <button type="button" class="btn-danger" onclick="removeAnchorInvestorRow(this)" style="padding:3px 8px; font-size:11px;">Delete</button>
@@ -1289,6 +1307,36 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       const tr = btn.closest('tr');
       if (tr) tr.remove();
       reindexAnchorRows();
+    }
+
+    function calculateAnchorTotals() {
+      const rows = document.querySelectorAll('#anchor-investors-tbody .anchor-row');
+      let totalShares = 0;
+      let totalAmt = 0;
+      let totalPctAllocated = 0;
+      let totalPctIssue = 0;
+
+      rows.forEach(row => {
+        const shares = parseInt(row.querySelector('.anchor-input-shares')?.value, 10);
+        const amt = parseFloat(row.querySelector('.anchor-input-amt')?.value);
+        const pctAlloc = parseFloat(row.querySelector('.anchor-input-pct-allocated')?.value);
+        const pctIssue = parseFloat(row.querySelector('.anchor-input-pct-issue')?.value);
+
+        if (!isNaN(shares)) totalShares += shares;
+        if (!isNaN(amt)) totalAmt += amt;
+        if (!isNaN(pctAlloc)) totalPctAllocated += pctAlloc;
+        if (!isNaN(pctIssue)) totalPctIssue += pctIssue;
+      });
+
+      const elShares = document.getElementById('anchor-total-shares');
+      const elAmt = document.getElementById('anchor-total-amt');
+      const elPctAlloc = document.getElementById('anchor-total-pct-allocated');
+      const elPctIssue = document.getElementById('anchor-total-pct-issue');
+
+      if (elShares) elShares.textContent = totalShares ? totalShares.toLocaleString('en-IN') : '0';
+      if (elAmt) elAmt.textContent = '₹' + totalAmt.toFixed(2);
+      if (elPctAlloc) elPctAlloc.textContent = totalPctAllocated.toFixed(2) + '%';
+      if (elPctIssue) elPctIssue.textContent = totalPctIssue.toFixed(2) + '%';
     }
 
     function reindexAnchorRows() {
@@ -1306,6 +1354,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           if (idxCell) idxCell.textContent = idx + 1;
         });
       }
+      calculateAnchorTotals();
     }
 
     function getAnchorInvestorsFromForm() {
@@ -1315,11 +1364,15 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         const nameVal = row.querySelector('.anchor-input-name')?.value?.trim();
         const sharesVal = parseInt(row.querySelector('.anchor-input-shares')?.value, 10);
         const amtVal = parseFloat(row.querySelector('.anchor-input-amt')?.value);
+        const pctAllocVal = parseFloat(row.querySelector('.anchor-input-pct-allocated')?.value);
+        const pctIssueVal = parseFloat(row.querySelector('.anchor-input-pct-issue')?.value);
         if (nameVal) {
           list.push({
             anchorName: nameVal,
             sharesAllotted: !isNaN(sharesVal) ? sharesVal : undefined,
             amtCr: !isNaN(amtVal) ? amtVal : undefined,
+            pctAllocated: !isNaN(pctAllocVal) ? pctAllocVal : undefined,
+            pctOfIssue: !isNaN(pctIssueVal) ? pctIssueVal : undefined,
           });
         }
       });
@@ -1386,7 +1439,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         }
         const anchors = currentIpoData.anchorInvestors || (currentIpoData.documents?.find(d => d.documentType === 'ANCHOR_LIST')?.extractionData)?.anchorInvestors || [];
         if (Array.isArray(anchors) && anchors.length > 0) {
-          anchors.forEach(a => addAnchorInvestorRow(a.anchorName, a.sharesAllotted, a.amtCr));
+          anchors.forEach(a => addAnchorInvestorRow(a.anchorName, a.sharesAllotted, a.amtCr, a.pctAllocated, a.pctOfIssue));
         } else {
           reindexAnchorRows();
         }
