@@ -1082,7 +1082,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
   </div>
 
   <script>
-    const API_BASE = window.location.pathname.replace(/\/$/, '') + '/api';
+    const API_BASE = window.location.pathname.replace(new RegExp('/+$'), '') + '/api';
     let currentTab = 'dashboard';
     let currentIpoData = null;
 
@@ -1459,7 +1459,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
 
     function parseAndAppendAnchorCsv(csvText) {
-      const rawLines = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+      const rawLines = csvText.split(new RegExp('\\r?\\n')).filter(line => line.trim().length > 0);
       if (rawLines.length === 0) return;
 
       const headers = parseCsvLine(rawLines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9%]/g, ''));
@@ -1511,6 +1511,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       currentIpoData = null;
       document.getElementById('manual-ipo-form').reset();
       document.getElementById('form-ipo-id').value = '';
+      document.getElementById('allot-registrar-code').value = '';
+      document.getElementById('allot-registrar-ipo-code').value = '';
       const tbody = document.getElementById('anchor-investors-tbody');
       if (tbody) {
         tbody.querySelectorAll('.anchor-row').forEach(r => r.remove());
@@ -1560,6 +1562,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           document.getElementById('gmp-est-profit').value = '';
         }
 
+        document.getElementById('allot-registrar-code').value = currentIpoData.allotmentConfig?.registrarCode || currentIpoData.allotmentRegistrarCode || '';
+        document.getElementById('allot-registrar-ipo-code').value = currentIpoData.allotmentConfig?.registrarIpoCode || currentIpoData.allotmentRegistrarIpoCode || '';
+
         // Populate Anchor Investors Table
         const tbody = document.getElementById('anchor-investors-tbody');
         if (tbody) {
@@ -1576,6 +1581,28 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         switchTab('manual-edit');
       } catch (err) {
         console.error('Error fetching manual IPO detail:', err);
+      }
+    }
+
+    async function saveAllotmentConfig() {
+      const id = document.getElementById('form-ipo-id').value;
+      if (!id) { alert('Please save or select an IPO first before configuring allotment.'); return; }
+      const registrarCode = document.getElementById('allot-registrar-code').value?.trim();
+      const registrarIpoCode = document.getElementById('allot-registrar-ipo-code').value?.trim();
+      if (!registrarCode || !registrarIpoCode) {
+        alert('Please enter both Registrar Code and Registrar IPO Code');
+        return;
+      }
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/' + id + '/allotment-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ registrarCode, registrarIpoCode })
+        });
+        if (!res.ok) throw new Error('Status ' + res.status);
+        alert('Allotment checker configuration saved!');
+      } catch (err) {
+        alert('Failed to save allotment config: ' + err.message);
       }
     }
 
