@@ -126,8 +126,17 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     }
 
     .sidebar.collapsed .nav-item {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      margin: 2px auto;
       justify-content: center;
-      padding: 10px 0;
+      border-radius: 10px;
+    }
+
+    .sidebar.collapsed .nav-item i {
+      width: 18px;
+      height: 18px;
     }
 
     .sidebar.collapsed .user-profile {
@@ -172,7 +181,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 10px 12px;
+      padding: 9px 12px;
       border-radius: 8px;
       color: #94A3B8;
       text-decoration: none;
@@ -185,9 +194,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       width: 100%;
       text-align: left;
     }
-    .nav-item:hover { background-color: rgba(255, 255, 255, 0.06); color: #F8FAFC; }
-    .nav-item.active { background-color: var(--primary); color: #FFFFFF; font-weight: 600; }
-    .nav-item i { width: 16px; height: 16px; }
+    .nav-item:hover { background-color: rgba(255, 255, 255, 0.07); color: #F8FAFC; }
+    .nav-item.active { background-color: var(--primary); color: #FFFFFF; font-weight: 600; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3); }
+    .nav-item i { width: 17px; height: 17px; min-width: 17px; flex-shrink: 0; }
 
     .nav-group-title {
       font-size: 11px;
@@ -475,16 +484,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     <!-- Left Sidebar Navigation -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="brand-logo" style="display:flex; align-items:center; justify-content:space-between; width:100%;">
-          <div style="display:flex; align-items:center; gap:10px;">
-            <div class="logo-box">
-              <span>IV</span>
-            </div>
-            <span class="brand-title">IPOVault</span>
+        <div class="brand-logo" style="display:flex; align-items:center; gap:10px;">
+          <div class="logo-box">
+            <span>IV</span>
           </div>
-          <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle Menu" style="background:none; border:none; color:#94A3B8; cursor:pointer; padding:4px; border-radius:6px; display:flex; align-items:center;">
-            <i data-feather="sidebar"></i>
-          </button>
+          <span class="brand-title">IPOVault</span>
         </div>
         <div class="workspace-picker">
           <span>Production API (v1)</span>
@@ -557,10 +561,6 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           </div>
           <button class="icon-btn" id="themeToggleBtn" title="Toggle Theme" onclick="toggleTheme()">
             <i data-feather="moon"></i>
-          </button>
-          <button class="btn-primary" onclick="openCreateModal()">
-            <i data-feather="plus"></i>
-            <span>Add Manual IPO</span>
           </button>
         </div>
       </div>
