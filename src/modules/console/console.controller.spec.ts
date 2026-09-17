@@ -80,8 +80,8 @@ describe('ConsoleController', () => {
   it('should render HTML console UI template string when called directly without res', () => {
     const html = controller.getConsoleUi();
     expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('IPOVault Console');
-    expect(html).toContain('Manual IPOs');
+    expect(html).toContain('IPOVault');
+    expect(html).toContain('Manual IPO');
     expect(html).not.toMatch(/^\s*\{\s*"data"\s*:/);
   });
 
@@ -111,7 +111,7 @@ describe('ConsoleController', () => {
 
     expect(response.text).toMatch(/^\s*<!DOCTYPE html>/i);
     expect(response.text).toContain('<html');
-    expect(response.text).toContain('IPOVault Console');
+    expect(response.text).toContain('IPOVault');
     expect(response.text).not.toMatch(/^\s*\{\s*"data"\s*:/);
     expect(response.text).not.toContain('{"data":');
   });

@@ -30,6 +30,10 @@ function buildIpo(
     priceBandHigh: new Prisma.Decimal('126.00'),
     lotSize: 120,
     minimumLots: 1,
+    listingPrice: null,
+    listingGainPct: null,
+    profitAmount: null,
+    profitPercentage: null,
     createdAt: now,
     updatedAt: now,
     company: {

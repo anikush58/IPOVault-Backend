@@ -30,7 +30,15 @@ export type IpoWithRelations = Omit<
   | 'allotmentConfig'
   | 'gmpObservations'
   | 'subscriptionObservations'
+  | 'listingPrice'
+  | 'listingGainPct'
+  | 'profitAmount'
+  | 'profitPercentage'
 > & {
+  listingPrice?: BaseIpoWithRelations['listingPrice'];
+  listingGainPct?: BaseIpoWithRelations['listingGainPct'];
+  profitAmount?: BaseIpoWithRelations['profitAmount'];
+  profitPercentage?: BaseIpoWithRelations['profitPercentage'];
   company: Partial<BaseIpoWithRelations['company']> & {
     id: string;
     legalName: string;

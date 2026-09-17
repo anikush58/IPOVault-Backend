@@ -346,7 +346,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
     .form-group { display: flex; flex-direction: column; gap: 6px; }
-    .form-group label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+    .form-group label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
     .form-group input, .form-group select, .form-group textarea {
       background: var(--bg-hover);
       border: 1px solid var(--border-color);
@@ -609,7 +609,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                 </div>
                 <div class="form-group">
                   <label>Lifecycle Status</label>
-                  <select id="form-status">
+                  <select id="form-status" onchange="updateFormStatusSections()">
                     <option value="DRAFT">DRAFT</option>
                     <option value="UPCOMING">UPCOMING</option>
                     <option value="OPEN">OPEN</option>
@@ -752,65 +752,69 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
               </div>
 
               <!-- Manual GMP & Subscriptions -->
-              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
-                <strong style="color:var(--primary); font-size:14px;">Manual GMP & Subscription Observations</strong>
-              </div>
+              <div id="section-gmp-box">
+                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                  <strong style="color:var(--primary); font-size:14px;">Manual GMP & Subscription Observations</strong>
+                </div>
 
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>GMP Amount (₹)</label>
-                  <input type="number" step="0.01" id="gmp-amount" placeholder="e.g. 25.00" />
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>GMP Amount (₹)</label>
+                    <input type="number" step="0.01" id="gmp-amount" placeholder="e.g. 25.00" />
+                  </div>
+                  <div class="form-group">
+                    <label>GMP Percentage (%)</label>
+                    <input type="number" step="0.01" id="gmp-percentage" placeholder="e.g. 23.15" />
+                  </div>
+                  <div class="form-group">
+                    <label>Est Profit / Lot (₹)</label>
+                    <input type="number" step="0.01" id="gmp-est-profit" placeholder="e.g. 3500.00" />
+                  </div>
                 </div>
-                <div class="form-group">
-                  <label>GMP Percentage (%)</label>
-                  <input type="number" step="0.01" id="gmp-percentage" placeholder="e.g. 23.15" />
-                </div>
-                <div class="form-group">
-                  <label>Est Profit / Lot (₹)</label>
-                  <input type="number" step="0.01" id="gmp-est-profit" placeholder="e.g. 3500.00" />
-                </div>
-              </div>
 
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>QIB Sub (x)</label>
-                  <input type="number" step="0.01" id="sub-qib" placeholder="e.g. 4.5" />
-                </div>
-                <div class="form-group">
-                  <label>NII Sub (x)</label>
-                  <input type="number" step="0.01" id="sub-nii" placeholder="e.g. 12.3" />
-                </div>
-                <div class="form-group">
-                  <label>Retail Sub (x)</label>
-                  <input type="number" step="0.01" id="sub-retail" placeholder="e.g. 8.1" />
-                </div>
-                <div class="form-group">
-                  <label>Total Sub (x)</label>
-                  <input type="number" step="0.01" id="sub-total" placeholder="e.g. 7.9" />
+                <div class="form-grid" style="margin-top:12px;">
+                  <div class="form-group">
+                    <label>QIB Sub (x)</label>
+                    <input type="number" step="0.01" id="sub-qib" placeholder="e.g. 4.5" />
+                  </div>
+                  <div class="form-group">
+                    <label>NII Sub (x)</label>
+                    <input type="number" step="0.01" id="sub-nii" placeholder="e.g. 12.3" />
+                  </div>
+                  <div class="form-group">
+                    <label>Retail Sub (x)</label>
+                    <input type="number" step="0.01" id="sub-retail" placeholder="e.g. 8.1" />
+                  </div>
+                  <div class="form-group">
+                    <label>Total Sub (x)</label>
+                    <input type="number" step="0.01" id="sub-total" placeholder="e.g. 7.9" />
+                  </div>
                 </div>
               </div>
 
               <!-- Listing Performance (For Listed IPOs) -->
-              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
-                <strong style="color:var(--primary); font-size:14px;">Listing Performance Details (For LISTED IPOs)</strong>
-              </div>
+              <div id="section-listing-box" style="display:none;">
+                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                  <strong style="color:var(--primary); font-size:14px;">Listing Performance Details</strong>
+                </div>
 
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>Listing Price (₹)</label>
-                  <input type="number" step="0.01" id="form-listingPrice" placeholder="e.g. 150.00" />
-                </div>
-                <div class="form-group">
-                  <label>Listing Gain (%)</label>
-                  <input type="number" step="0.01" id="form-listingGainPct" placeholder="e.g. 25.00" />
-                </div>
-                <div class="form-group">
-                  <label>Est Profit Amount (₹)</label>
-                  <input type="number" step="0.01" id="form-profitAmount" placeholder="e.g. 3500.00" />
-                </div>
-                <div class="form-group">
-                  <label>Est Profit (%)</label>
-                  <input type="number" step="0.01" id="form-profitPercentage" placeholder="e.g. 25.00" />
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Listing Price (₹)</label>
+                    <input type="number" step="0.01" id="form-listingPrice" placeholder="e.g. 150.00" />
+                  </div>
+                  <div class="form-group">
+                    <label>Listing Gain (%)</label>
+                    <input type="number" step="0.01" id="form-listingGainPct" placeholder="e.g. 25.00" />
+                  </div>
+                  <div class="form-group">
+                    <label>Est Profit Amount (₹)</label>
+                    <input type="number" step="0.01" id="form-profitAmount" placeholder="e.g. 3500.00" />
+                  </div>
+                  <div class="form-group">
+                    <label>Est Profit (%)</label>
+                    <input type="number" step="0.01" id="form-profitPercentage" placeholder="e.g. 25.00" />
+                  </div>
                 </div>
               </div>
 
@@ -1084,10 +1088,26 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       debounceTimer = setTimeout(fetchExplorerIpos, 300);
     }
 
+    function updateFormStatusSections() {
+      const statusSelect = document.getElementById('form-status');
+      const status = statusSelect ? statusSelect.value : '';
+      const gmpBox = document.getElementById('section-gmp-box');
+      const listingBox = document.getElementById('section-listing-box');
+
+      if (status === 'LISTED') {
+        if (gmpBox) gmpBox.style.display = 'none';
+        if (listingBox) listingBox.style.display = 'block';
+      } else {
+        if (gmpBox) gmpBox.style.display = 'block';
+        if (listingBox) listingBox.style.display = 'none';
+      }
+    }
+
     function openCreateModal() {
       currentIpoData = null;
       document.getElementById('manual-ipo-form').reset();
       document.getElementById('form-ipo-id').value = '';
+      updateFormStatusSections();
       switchTab('manual-edit');
     }
 
@@ -1120,6 +1140,17 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-profitAmount').value = currentIpoData.profitAmount ?? '';
         document.getElementById('form-profitPercentage').value = currentIpoData.profitPercentage ?? '';
 
+        if (currentIpoData.latestGmp) {
+          document.getElementById('gmp-amount').value = currentIpoData.latestGmp.gmpAmount ?? '';
+          document.getElementById('gmp-percentage').value = currentIpoData.latestGmp.gmpPercentage ?? '';
+          document.getElementById('gmp-est-profit').value = currentIpoData.latestGmp.estProfitPerLot ?? '';
+        } else {
+          document.getElementById('gmp-amount').value = '';
+          document.getElementById('gmp-percentage').value = '';
+          document.getElementById('gmp-est-profit').value = '';
+        }
+
+        updateFormStatusSections();
         switchTab('manual-edit');
       } catch (err) {
         console.error('Error fetching manual IPO detail:', err);
@@ -1151,6 +1182,15 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         listingDate: document.getElementById('form-listingDate').value || undefined,
         logoUrl: document.getElementById('form-logoUrl').value || undefined,
       };
+
+      const gmpVal = parseFloat(document.getElementById('gmp-amount').value);
+      if (!isNaN(gmpVal)) {
+        payload.gmp = {
+          gmpAmount: gmpVal,
+          gmpPercentage: parseFloat(document.getElementById('gmp-percentage').value) || undefined,
+          estProfitPerLot: parseFloat(document.getElementById('gmp-est-profit').value) || undefined,
+        };
+      }
 
       try {
         const method = id ? 'PATCH' : 'POST';
