@@ -71,6 +71,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
     html, body, button, input, select, textarea {
       font-family: 'Google Sans Flex', 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
@@ -218,21 +222,24 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
     /* Top Breadcrumb & Actions Bar */
     .top-bar {
-      height: 60px;
+      min-height: 60px;
+      height: auto;
       background-color: var(--bg-surface);
       border-bottom: 1px solid var(--border-color);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 28px;
+      padding: 10px 24px;
       flex-shrink: 0;
+      flex-wrap: wrap;
+      gap: 12px;
     }
 
-    .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text-muted); }
+    .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text-muted); flex-wrap: wrap; }
     .breadcrumb-active { color: var(--text-main); font-weight: 600; }
     .breadcrumbs i { width: 14px; height: 14px; color: var(--text-subtle); }
 
-    .top-actions { display: flex; align-items: center; gap: 12px; }
+    .top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
     .search-input-box {
       display: flex;
@@ -242,7 +249,8 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       border: 1px solid var(--border-color);
       border-radius: 8px;
       padding: 7px 14px;
-      width: 260px;
+      width: 220px;
+      max-width: 100%;
     }
     .search-input-box i { width: 14px; height: 14px; color: var(--text-muted); }
     .search-input-box input {
@@ -371,8 +379,24 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     .btn-danger { background-color: #EF4444; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
     .btn-warning { background-color: #F59E0B; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 
-    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    /* Form Header Actions Bar */
+    .form-header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .form-header-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; width: 100%; }
     .form-group label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
     .form-group input, .form-group select, .form-group textarea {
       background: var(--bg-hover);
@@ -382,6 +406,8 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       color: var(--text-main);
       font-size: 13px;
       outline: none;
+      width: 100%;
+      box-sizing: border-box;
     }
     .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); }
 
@@ -390,6 +416,52 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     .alert-box.danger { background: #FEF2F2; border: 1px solid #EF4444; color: #991B1B; }
 
     .mono { font-family: 'JetBrains Mono', monospace; }
+
+    .grid-table-box {
+      width: 100%;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow-x: auto;
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-card);
+    }
+    table { width: 100%; border-collapse: collapse; text-align: left; min-width: 600px; }
+
+    /* Split-View & Mobile Responsive Breakpoints */
+    @media (max-width: 1100px) {
+      .workspace-content { padding: 18px 16px; gap: 16px; }
+      .top-bar { padding: 10px 16px; }
+      .search-input-box { width: 160px; }
+      .form-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+    }
+
+    @media (max-width: 800px) {
+      .sidebar {
+        width: 72px;
+        padding: 20px 10px;
+      }
+      .sidebar .brand-title,
+      .sidebar .workspace-picker,
+      .sidebar .nav-group-title,
+      .sidebar .nav-item span,
+      .sidebar .user-info {
+        display: none !important;
+      }
+      .sidebar .brand-logo { justify-content: center; }
+      .sidebar .nav-item { justify-content: center; padding: 10px 0; }
+      .sidebar .user-profile { justify-content: center; padding: 6px 0; }
+
+      .top-bar { padding: 8px 12px; gap: 8px; }
+      .search-input-box { width: 100%; }
+      .form-grid { grid-template-columns: 1fr; gap: 12px; }
+      .form-header-bar { flex-direction: column; align-items: stretch; gap: 10px; }
+      .form-header-buttons { width: 100%; justify-content: flex-start; }
+      .stat-card { padding: 16px; }
+      .btn-primary, .btn-secondary, .btn-success, .btn-danger, .btn-warning {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+    }
     
     /* Strict Tab Section Display */
     .section-view { display: none !important; }
@@ -589,9 +661,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
         <!-- 3. MANUAL IPO EDIT / CREATE TAB -->
         <div id="tab-manual-edit" class="section-view">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="form-header-bar">
             <button class="btn-secondary" onclick="switchTab('manual')">Back to Manual IPOs</button>
-            <div style="display:flex; gap:10px;">
+            <div class="form-header-buttons">
               <button class="btn-primary" id="btn-save-action" onclick="saveManualIpo()">Save</button>
               <button class="btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">Publish</button>
               <button class="btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">Unpublish</button>
