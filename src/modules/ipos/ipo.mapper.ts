@@ -59,6 +59,14 @@ export function decimalToNumber(
   return Number(value);
 }
 
+export function toClickableUrl(url?: string | null): string | null {
+  if (!url || !url.trim()) return null;
+  const clean = url.trim();
+  if (/^https?:\/\//i.test(clean)) return clean;
+  if (/^mailto:/i.test(clean)) return clean;
+  return `https://${clean}`;
+}
+
 export function emptyLifecycle(): IpoLifecycleDto {
   return {
     drhpDate: null,
@@ -241,7 +249,7 @@ export function toIpoResponseDto(
       displayName: ipo.company.displayName,
       logoUrl: ipo.company.logoUrl ?? null,
       cin: ipo.company.cin ?? null,
-      website: ipo.company.website ?? null,
+      website: toClickableUrl(ipo.company.website),
       industry: ipo.company.industry ?? null,
       sector: ipo.company.sector ?? null,
       aboutDescription: ipo.company.aboutDescription ?? null,
@@ -261,6 +269,11 @@ export function toIpoResponseDto(
         rocePercentage: decimalToString(f.rocePercentage),
         eps: decimalToString(f.eps),
         patMarginPercent: decimalToString(f.patMarginPercent),
+        ebitdaMarginPercent: decimalToString(f.ebitdaMarginPercent) ?? (
+          f.ebitda != null && f.totalRevenue != null && Number(f.totalRevenue) > 0
+            ? ((Number(f.ebitda) / Number(f.totalRevenue)) * 100).toFixed(2)
+            : null
+        ),
         createdAt: f.createdAt.toISOString(),
         updatedAt: f.updatedAt.toISOString(),
       })),
@@ -304,7 +317,7 @@ export function toIpoResponseDto(
       name: p.name,
       phone: p.phone,
       email: p.email,
-      website: p.website,
+      website: toClickableUrl(p.website),
       displayOrder: p.displayOrder,
     })),
     drhpUrl: (ipo.documents ?? []).find((d) => d.documentType === 'DRHP' && d.sourceUrl?.trim())?.sourceUrl?.trim() ?? null,

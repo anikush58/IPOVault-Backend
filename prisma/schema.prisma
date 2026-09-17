@@ -591,7 +591,8 @@ model CompanyFinancial {
   roePercentage    Decimal? @map("roe_percentage") @db.Decimal(6, 2)
   rocePercentage   Decimal? @map("roce_percentage") @db.Decimal(6, 2)
   eps              Decimal? @map("eps") @db.Decimal(10, 2)
-  patMarginPercent Decimal? @map("pat_margin_percent") @db.Decimal(6, 2)
+  patMarginPercent    Decimal? @map("pat_margin_percent") @db.Decimal(6, 2)
+  ebitdaMarginPercent Decimal? @map("ebitda_margin_percent") @db.Decimal(6, 2)
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

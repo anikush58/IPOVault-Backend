@@ -32,6 +32,7 @@ export class CompanyFinancialDto {
   rocePercentage?: number;
   eps?: number;
   patMarginPercent?: number;
+  ebitdaMarginPercent?: number;
 }
 
 export class ParticipantDto {

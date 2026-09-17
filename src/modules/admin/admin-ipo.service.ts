@@ -1685,6 +1685,7 @@ export class AdminIpoService {
           rocePercentage: fin.rocePercentage !== undefined && fin.rocePercentage !== null ? new Prisma.Decimal(fin.rocePercentage) : null,
           eps: fin.eps !== undefined && fin.eps !== null ? new Prisma.Decimal(fin.eps) : null,
           patMarginPercent: fin.patMarginPercent !== undefined && fin.patMarginPercent !== null ? new Prisma.Decimal(fin.patMarginPercent) : null,
+          ebitdaMarginPercent: fin.ebitdaMarginPercent !== undefined && fin.ebitdaMarginPercent !== null ? new Prisma.Decimal(fin.ebitdaMarginPercent) : null,
         },
       });
     }

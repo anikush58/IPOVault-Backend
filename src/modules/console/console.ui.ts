@@ -925,6 +925,64 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <input type="text" id="part-brlm-name" placeholder="e.g. ICICI Securities, Axis Capital (comma-separated)" />
               </div>
 
+              <!-- Company Financial Ratios & Performance -->
+              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                <strong style="color:var(--primary); font-size:14px;">Company Financial Ratios & Performance</strong>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Fiscal Period</label>
+                  <input type="text" id="fin-period" placeholder="e.g. FY24 / 31 Mar 2024" />
+                </div>
+                <div class="form-group">
+                  <label>ROE (%)</label>
+                  <input type="number" step="0.01" id="fin-roe-pct" placeholder="e.g. 18.5" />
+                </div>
+                <div class="form-group">
+                  <label>PAT Margin (%)</label>
+                  <input type="number" step="0.01" id="fin-pat-margin-pct" placeholder="e.g. 12.4" />
+                </div>
+                <div class="form-group">
+                  <label>EBITDA Margin (%)</label>
+                  <input type="number" step="0.01" id="fin-ebitda-margin-pct" placeholder="e.g. 21.0" />
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>EPS (₹)</label>
+                  <input type="number" step="0.01" id="fin-eps" placeholder="e.g. 8.50" />
+                </div>
+                <div class="form-group">
+                  <label>ROCE (%)</label>
+                  <input type="number" step="0.01" id="fin-roce-pct" placeholder="e.g. 22.1" />
+                </div>
+                <div class="form-group">
+                  <label>Total Assets (₹ Cr)</label>
+                  <input type="number" step="0.01" id="fin-assets" placeholder="e.g. 450.00" />
+                </div>
+                <div class="form-group">
+                  <label>Total Revenue (₹ Cr)</label>
+                  <input type="number" step="0.01" id="fin-revenue" placeholder="e.g. 620.00" />
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>PAT / Net Profit (₹ Cr)</label>
+                  <input type="number" step="0.01" id="fin-pat" placeholder="e.g. 76.80" />
+                </div>
+                <div class="form-group">
+                  <label>EBITDA (₹ Cr)</label>
+                  <input type="number" step="0.01" id="fin-ebitda" placeholder="e.g. 130.20" />
+                </div>
+                <div class="form-group">
+                  <label>Net Worth (₹ Cr)</label>
+                  <input type="number" step="0.01" id="fin-networth" placeholder="e.g. 415.00" />
+                </div>
+              </div>
+
               <!-- Manual GMP & Subscriptions -->
               <div id="section-gmp-box">
                 <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
@@ -1688,6 +1746,52 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    function getFinancialsFromForm() {
+      const periodEl = document.getElementById('fin-period');
+      const roeEl = document.getElementById('fin-roe-pct');
+      const patMarginEl = document.getElementById('fin-pat-margin-pct');
+      const ebitdaMarginEl = document.getElementById('fin-ebitda-margin-pct');
+      const epsEl = document.getElementById('fin-eps');
+      const roceEl = document.getElementById('fin-roce-pct');
+      const assetsEl = document.getElementById('fin-assets');
+      const revenueEl = document.getElementById('fin-revenue');
+      const patEl = document.getElementById('fin-pat');
+      const ebitdaEl = document.getElementById('fin-ebitda');
+      const netWorthEl = document.getElementById('fin-networth');
+
+      if (!periodEl || !roeEl) return undefined;
+
+      const period = periodEl.value.trim();
+      const roe = parseFloat(roeEl.value);
+      const patMargin = parseFloat(patMarginEl.value);
+      const ebitdaMargin = parseFloat(ebitdaMarginEl.value);
+      const eps = parseFloat(epsEl.value);
+      const roce = parseFloat(roceEl.value);
+      const assets = parseFloat(assetsEl.value);
+      const revenue = parseFloat(revenueEl.value);
+      const pat = parseFloat(patEl.value);
+      const ebitda = parseFloat(ebitdaEl.value);
+      const netWorth = parseFloat(netWorthEl.value);
+
+      const hasAnyValue = [roe, patMargin, ebitdaMargin, eps, roce, assets, revenue, pat, ebitda, netWorth].some(v => !isNaN(v));
+      if (!hasAnyValue && !period) return undefined;
+
+      return [{
+        fiscalPeriod: period || 'FY24',
+        periodType: 'ANNUAL',
+        roePercentage: !isNaN(roe) ? roe : undefined,
+        patMarginPercent: !isNaN(patMargin) ? patMargin : undefined,
+        ebitdaMarginPercent: !isNaN(ebitdaMargin) ? ebitdaMargin : undefined,
+        eps: !isNaN(eps) ? eps : undefined,
+        rocePercentage: !isNaN(roce) ? roce : undefined,
+        totalAssets: !isNaN(assets) ? assets : undefined,
+        totalRevenue: !isNaN(revenue) ? revenue : undefined,
+        pat: !isNaN(pat) ? pat : undefined,
+        ebitda: !isNaN(ebitda) ? ebitda : undefined,
+        netWorth: !isNaN(netWorth) ? netWorth : undefined,
+      }];
+    }
+
     function getDocumentsFromForm() {
       const tbody = document.getElementById('documents-tbody');
       if (!tbody) return [];
@@ -1786,6 +1890,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       document.getElementById('sub-nii').value = '';
       document.getElementById('sub-retail').value = '';
       document.getElementById('sub-total').value = '';
+      document.getElementById('fin-period').value = '';
+      document.getElementById('fin-roe-pct').value = '';
+      document.getElementById('fin-pat-margin-pct').value = '';
+      document.getElementById('fin-ebitda-margin-pct').value = '';
+      document.getElementById('fin-eps').value = '';
+      document.getElementById('fin-roce-pct').value = '';
+      document.getElementById('fin-assets').value = '';
+      document.getElementById('fin-revenue').value = '';
+      document.getElementById('fin-pat').value = '';
+      document.getElementById('fin-ebitda').value = '';
+      document.getElementById('fin-networth').value = '';
       const tbody = document.getElementById('anchor-investors-tbody');
       if (tbody) {
         tbody.querySelectorAll('.anchor-row').forEach(r => r.remove());
@@ -1852,6 +1967,38 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         document.getElementById('part-reg-email').value = regPart?.email ?? '';
         document.getElementById('part-reg-website').value = regPart?.website ?? '';
         document.getElementById('part-brlm-name').value = brlmParts.length > 0 ? brlmParts.map(b => b.name).join(', ') : '';
+
+        // Populate Company Financials & Ratios
+        const fin = (currentIpoData.financials && currentIpoData.financials[0]) || (currentIpoData.company?.financials && currentIpoData.company.financials[0]);
+        if (fin) {
+          document.getElementById('fin-period').value = fin.fiscalPeriod || 'FY24';
+          document.getElementById('fin-roe-pct').value = fin.roePercentage ?? '';
+          document.getElementById('fin-pat-margin-pct').value = fin.patMarginPercent ?? '';
+          document.getElementById('fin-ebitda-margin-pct').value = fin.ebitdaMarginPercent ?? (
+            fin.ebitda != null && fin.totalRevenue != null && Number(fin.totalRevenue) > 0
+              ? ((Number(fin.ebitda) / Number(fin.totalRevenue)) * 100).toFixed(2)
+              : ''
+          );
+          document.getElementById('fin-eps').value = fin.eps ?? '';
+          document.getElementById('fin-roce-pct').value = fin.rocePercentage ?? '';
+          document.getElementById('fin-assets').value = fin.totalAssets ?? '';
+          document.getElementById('fin-revenue').value = fin.totalRevenue ?? '';
+          document.getElementById('fin-pat').value = fin.pat ?? '';
+          document.getElementById('fin-ebitda').value = fin.ebitda ?? '';
+          document.getElementById('fin-networth').value = fin.netWorth ?? '';
+        } else {
+          document.getElementById('fin-period').value = '';
+          document.getElementById('fin-roe-pct').value = '';
+          document.getElementById('fin-pat-margin-pct').value = '';
+          document.getElementById('fin-ebitda-margin-pct').value = '';
+          document.getElementById('fin-eps').value = '';
+          document.getElementById('fin-roce-pct').value = '';
+          document.getElementById('fin-assets').value = '';
+          document.getElementById('fin-revenue').value = '';
+          document.getElementById('fin-pat').value = '';
+          document.getElementById('fin-ebitda').value = '';
+          document.getElementById('fin-networth').value = '';
+        }
 
         // Populate Subscription Observations
         const subs = currentIpoData.subscriptionObservations || [];
@@ -1950,6 +2097,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         listingDate: document.getElementById('form-listingDate').value || undefined,
         logoUrl: document.getElementById('form-logoUrl').value || undefined,
         anchorInvestors: getAnchorInvestorsFromForm(),
+        financials: getFinancialsFromForm(),
       };
 
       const docsFromForm = getDocumentsFromForm();

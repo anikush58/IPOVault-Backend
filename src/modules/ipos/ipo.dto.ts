@@ -340,6 +340,7 @@ export type CompanyFinancialDto = {
   rocePercentage: string | null;
   eps: string | null;
   patMarginPercent: string | null;
+  ebitdaMarginPercent: string | null;
   createdAt: string;
   updatedAt: string;
 };
