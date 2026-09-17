@@ -260,7 +260,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       gap: 6px;
       box-shadow: var(--shadow-card);
     }
-    .stat-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-title { font-size: 12px; font-weight: 600; color: var(--text-muted); }
     .stat-value { font-size: 28px; font-weight: 700; color: var(--text-main); }
 
     /* Status Pills & Badges */
@@ -292,11 +292,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     th {
       background: var(--bg-hover);
       padding: 12px 18px;
-      font-size: 11px;
+      font-size: 12px;
       color: var(--text-muted);
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
       border-bottom: 1px solid var(--border-color);
     }
     td {
