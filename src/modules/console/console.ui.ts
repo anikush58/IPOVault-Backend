@@ -134,9 +134,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       border-radius: 10px;
     }
 
-    .sidebar.collapsed .nav-item i {
-      width: 18px;
-      height: 18px;
+    .sidebar.collapsed .nav-item i,
+    .sidebar.collapsed .nav-item svg {
+      width: 12px;
+      height: 12px;
     }
 
     .sidebar.collapsed .user-profile {
@@ -173,7 +174,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       font-weight: 600;
       color: #E2E8F0;
     }
-    .workspace-picker i { width: 14px; height: 14px; color: #94A3B8; }
+    .workspace-picker i,
+    .workspace-picker svg { width: 10px; height: 10px; color: #94A3B8; }
 
     /* Navigation Menu */
     .sidebar-nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
@@ -196,7 +198,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
     .nav-item:hover { background-color: rgba(255, 255, 255, 0.07); color: #F8FAFC; }
     .nav-item.active { background-color: var(--primary); color: #FFFFFF; font-weight: 600; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3); }
-    .nav-item i { width: 17px; height: 17px; min-width: 17px; flex-shrink: 0; }
+    .nav-item i,
+    .nav-item svg { width: 12px; height: 12px; min-width: 12px; flex-shrink: 0; }
 
     .nav-group-title {
       font-size: 11px;
@@ -246,7 +249,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text-muted); flex-wrap: wrap; }
     .breadcrumb-active { color: var(--text-main); font-weight: 600; }
-    .breadcrumbs i { width: 14px; height: 14px; color: var(--text-subtle); }
+    .breadcrumbs i,
+    .breadcrumbs svg { width: 10px; height: 10px; color: var(--text-subtle); }
 
     .top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
@@ -261,7 +265,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       width: 220px;
       max-width: 100%;
     }
-    .search-input-box i { width: 14px; height: 14px; color: var(--text-muted); }
+    .search-input-box i,
+    .search-input-box svg { width: 10px; height: 10px; color: var(--text-muted); }
     .search-input-box input {
       border: none;
       background: none;
@@ -282,6 +287,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       align-items: center;
       justify-content: center;
     }
+    .icon-btn i,
+    .icon-btn svg { width: 11px; height: 11px; }
     .icon-btn:hover { background-color: var(--bg-active); color: var(--text-main); }
 
     /* Section View Tab Switching */
