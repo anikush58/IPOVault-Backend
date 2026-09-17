@@ -4,7 +4,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AutomatePro — IPOVault Backend Console</title>
+  <title>IPOVault — Backend Admin Console</title>
   
   <!-- Google Fonts: Inter & Outfit & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -15,7 +15,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
   <script src="https://unpkg.com/feather-icons"></script>
   
   <style>
-    /* AutomatePro Dashboard CSS System */
+    /* IPOVault Console Design System (AutomatePro Light & Dark Themes) */
     :root {
       --bg-app: #ECEFF1;
       --bg-window: #FFFFFF;
@@ -35,23 +35,25 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       --primary-light: #EEF2FF;
       
       /* Status Colors */
-      --status-in-progress-bg: #FEF3C7;
-      --status-in-progress-fg: #D97706;
+      --status-open-bg: #DCFCE7;
+      --status-open-fg: #15803D;
       
-      --status-ready-bg: #F3E8FF;
-      --status-ready-fg: #7C3AED;
+      --status-upcoming-bg: #FEF3C7;
+      --status-upcoming-fg: #D97706;
       
-      /* Priority Colors */
-      --priority-urgent-bg: #FEF2F2;
-      --priority-urgent-fg: #DC2626;
+      --status-closed-bg: #F1F5F9;
+      --status-closed-fg: #64748B;
+
+      --status-published-bg: #EEF2FF;
+      --status-published-fg: #4F46E5;
       
-      --priority-normal-bg: #F0FDF4;
-      --priority-normal-fg: #16A34A;
+      /* Priority & Badge Colors */
+      --badge-pub-bg: #E0E7FF;
+      --badge-pub-fg: #3730A3;
       
-      --priority-low-bg: #EFF6FF;
-      --priority-low-fg: #2563EB;
-      
-      --progress-fill: #6366F1;
+      --badge-draft-bg: #FEF3C7;
+      --badge-draft-fg: #92400E;
+
       --shadow-window: 0 20px 50px rgba(0, 0, 0, 0.08);
       --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.04);
     }
@@ -95,7 +97,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     /* Window Frame Container */
     .window-frame {
       width: 100%;
-      max-width: 1400px;
+      max-width: 1420px;
       background-color: var(--bg-window);
       border-radius: 16px;
       border: 1px solid var(--border-color);
@@ -130,11 +132,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       align-items: center;
       gap: 8px;
       background-color: var(--bg-hover);
-      padding: 4px 16px;
+      padding: 4px 18px;
       border-radius: 20px;
       font-size: 12px;
       color: var(--text-muted);
-      width: 340px;
+      width: 360px;
       justify-content: center;
     }
     .url-bar i { width: 12px; height: 12px; }
@@ -170,24 +172,24 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     .sidebar-brand { margin-bottom: 20px; }
     .brand-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
     .logo-box {
-      width: 30px;
-      height: 30px;
-      background-color: #000000;
+      width: 32px;
+      height: 32px;
+      background-color: var(--primary);
       color: #FFFFFF;
       border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
+      font-weight: 700;
     }
-    body.dark-mode .logo-box { background-color: #FFFFFF; color: #000000; }
-    .logo-box i { width: 16px; height: 16px; }
-    .brand-title { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 16px; color: var(--text-main); }
+    .logo-box i { width: 18px; height: 18px; }
+    .brand-title { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 17px; color: var(--text-main); letter-spacing: -0.3px; }
 
     .workspace-picker {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 10px;
+      padding: 8px 12px;
       background-color: var(--bg-surface);
       border: 1px solid var(--border-color);
       border-radius: 10px;
@@ -203,7 +205,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 8px 10px;
+      padding: 9px 12px;
       border-radius: 8px;
       color: var(--text-muted);
       text-decoration: none;
@@ -217,30 +219,33 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       text-align: left;
     }
     .nav-item:hover { background-color: var(--bg-hover); color: var(--text-main); }
-    .nav-item.active { background-color: var(--bg-surface); color: var(--text-main); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
+    .nav-item.active { background-color: var(--bg-surface); color: var(--primary); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
     .nav-item i { width: 16px; height: 16px; }
 
-    .nav-group { margin-top: 16px; }
-    .group-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 6px 10px;
+    .nav-group-title {
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--text-subtle);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.6px;
+      padding: 12px 10px 6px 10px;
     }
-    .group-actions { display: flex; align-items: center; gap: 6px; }
-    .group-actions i { width: 12px; height: 12px; cursor: pointer; }
-    .group-items { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 
-    /* Sidebar User Profile Footbar */
+    /* Sidebar Footer */
     .sidebar-footer { border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 8px; }
-    .user-profile { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; cursor: pointer; }
-    .user-profile:hover { background-color: var(--bg-hover); }
-    .user-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #e2e8f0; }
+    .user-profile { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; }
+    .user-avatar-box {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background-color: var(--primary);
+      color: #FFFFFF;
+      font-weight: 700;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
     .user-info { display: flex; flex-direction: column; flex: 1; }
     .user-name { font-size: 12px; font-weight: 600; color: var(--text-main); }
     .user-email { font-size: 11px; color: var(--text-subtle); }
@@ -273,7 +278,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       border: 1px solid var(--border-color);
       border-radius: 8px;
       padding: 6px 12px;
-      width: 220px;
+      width: 240px;
     }
     .search-input-box i { width: 14px; height: 14px; color: var(--text-muted); }
     .search-input-box input {
@@ -301,64 +306,6 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     .action-btn-outlined:hover { background-color: var(--bg-hover); }
     .action-btn-outlined i { width: 14px; height: 14px; }
 
-    .notification-btn { position: relative; }
-    .notification-badge {
-      position: absolute;
-      top: 2px;
-      right: 2px;
-      width: 14px;
-      height: 14px;
-      background-color: #EF4444;
-      color: #FFFFFF;
-      font-size: 9px;
-      font-weight: 700;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    /* Sub Navigation Tabs Bar */
-    .view-tabs-bar {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 0 24px;
-      border-bottom: 1px solid var(--border-color);
-      height: 44px;
-      flex-shrink: 0;
-    }
-
-    .view-tab {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text-muted);
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.15s ease;
-    }
-    .view-tab:hover { color: var(--text-main); }
-    .view-tab.active { background-color: var(--primary-light); color: var(--primary); font-weight: 600; }
-    .view-tab i { width: 14px; height: 14px; }
-
-    .add-tab-btn {
-      width: 24px;
-      height: 24px;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--text-muted);
-      cursor: pointer;
-      border: 1px solid var(--border-color);
-    }
-    .add-tab-btn i { width: 14px; height: 14px; }
-
     /* Content Area */
     .workspace-content {
       flex: 1;
@@ -369,140 +316,65 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       gap: 24px;
     }
 
-    /* Group Banner Header */
-    .group-section { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
-    .group-banner { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
-    
-    .status-pill {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    .status-pill.in-progress { background-color: var(--status-in-progress-bg); color: var(--status-in-progress-fg); }
-    .status-pill.ready { background-color: var(--status-ready-bg); color: var(--status-ready-fg); }
-
-    .group-count-badge {
-      background-color: rgba(0, 0, 0, 0.06);
-      padding: 1px 6px;
-      border-radius: 10px;
-      font-size: 11px;
-    }
-
-    /* Grid Table System */
-    .grid-table {
-      width: 100%;
-      border-collapse: collapse;
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      overflow: hidden;
-      background: var(--bg-surface);
-    }
-    .grid-header {
-      display: grid;
-      grid-template-columns: 2.2fr 2fr 1.2fr 1.2fr 1fr 1.2fr 0.8fr;
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--border-color);
-      background-color: var(--bg-hover);
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .grid-row {
-      display: grid;
-      grid-template-columns: 2.2fr 2fr 1.2fr 1.2fr 1fr 1.2fr 0.8fr;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border-subtle);
-      align-items: center;
-      font-size: 13px;
-      transition: background 0.15s ease;
-    }
-    .grid-row:hover { background-color: var(--bg-hover); }
-
-    .col-task { display: flex; align-items: center; gap: 8px; }
-    .tree-toggle { color: var(--text-subtle); cursor: pointer; transition: transform 0.2s ease; }
-    .tree-toggle i { width: 14px; height: 14px; }
-    .task-checkbox { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
-    .task-title { font-weight: 500; color: var(--text-main); }
-    .task-title.text-checked { text-decoration: line-through; color: var(--text-subtle); }
-    .task-comment-count { font-size: 11px; color: var(--text-subtle); display: flex; align-items: center; gap: 3px; }
-    .task-comment-count i { width: 11px; height: 11px; }
-
-    .col-desc { color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 12px; }
-    
-    /* Assignee Avatars */
-    .avatar-group { display: flex; align-items: center; }
-    .avatar-circle {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      background-color: #818CF8;
-      color: #FFFFFF;
-      font-size: 10px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 2px solid var(--bg-surface);
-      margin-left: -6px;
-    }
-    .avatar-circle:first-child { margin-left: 0; }
-
-    /* Priority Badges */
-    .priority-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 600;
-    }
-    .priority-badge.urgent { background-color: var(--priority-urgent-bg); color: var(--priority-urgent-fg); }
-    .priority-badge.normal { background-color: var(--priority-normal-bg); color: var(--priority-normal-fg); }
-    .priority-badge.low { background-color: var(--priority-low-bg); color: var(--priority-low-fg); }
-    .priority-badge i { width: 11px; height: 11px; }
-
-    /* Progress Bar */
-    .progress-cell { display: flex; align-items: center; gap: 8px; width: 100%; }
-    .progress-bar-track { flex: 1; height: 5px; background-color: var(--border-color); border-radius: 4px; overflow: hidden; }
-    .progress-bar-fill { height: 100%; background-color: var(--progress-fill); border-radius: 4px; transition: width 0.3s ease; }
-    .progress-text { font-size: 11px; font-weight: 600; color: var(--text-muted); width: 30px; text-align: right; }
-
-    /* Created Tag */
-    .created-tag {
-      width: 20px;
-      height: 20px;
-      border-radius: 4px;
-      background-color: #0284C7;
-      color: #FFFFFF;
-      font-size: 10px;
-      font-weight: 800;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
     /* KPI Grid */
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 8px; }
     .stat-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-color);
       border-radius: 12px;
-      padding: 16px;
+      padding: 18px;
       display: flex;
       flex-direction: column;
       gap: 6px;
       box-shadow: var(--shadow-card);
     }
-    .stat-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+    .stat-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
     .stat-value { font-size: 26px; font-weight: 700; color: var(--text-main); }
+
+    /* Status Pills & Badges */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .status-pill.open { background-color: var(--status-open-bg); color: var(--status-open-fg); }
+    .status-pill.upcoming { background-color: var(--status-upcoming-bg); color: var(--status-upcoming-fg); }
+    .status-pill.closed { background-color: var(--status-closed-bg); color: var(--status-closed-fg); }
+    .status-pill.published { background-color: var(--status-published-bg); color: var(--status-published-fg); }
+
+    /* Grid Table System */
+    .grid-table-box {
+      width: 100%;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-card);
+    }
+
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th {
+      background: var(--bg-hover);
+      padding: 12px 18px;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    td {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 13px;
+      color: var(--text-main);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background-color: var(--bg-hover); }
 
     /* Controls & Buttons */
     .btn-primary {
@@ -517,8 +389,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      transition: all 0.15s ease;
     }
-    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
 
     .btn-secondary {
       background-color: var(--bg-hover);
@@ -546,21 +419,20 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       background: var(--bg-hover);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 8px 12px;
+      padding: 9px 12px;
       color: var(--text-main);
       font-size: 13px;
       outline: none;
     }
-    .form-group input:focus, .form-group select:focus { border-color: var(--primary); }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); }
 
     .alert-box { padding: 12px 16px; border-radius: 8px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
     .alert-box.success { background: #ECFDF5; border: 1px solid #10B981; color: #065F46; }
     .alert-box.danger { background: #FEF2F2; border: 1px solid #EF4444; color: #991B1B; }
-    .alert-box.warning { background: #FFFBEB; border: 1px solid #F59E0B; color: #92400E; }
 
     .mono { font-family: 'JetBrains Mono', monospace; }
     
-    /* Strict Tab Visibility Section */
+    /* Strict Tab Section Display */
     .section-view { display: none !important; }
     .section-view.active { display: flex !important; flex-direction: column; gap: 20px; }
   </style>
@@ -569,7 +441,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
   <!-- Window Frame -->
   <div class="window-frame">
-    <!-- Window Control Header -->
+    <!-- Window Top Header Chrome -->
     <header class="window-header">
       <div class="window-controls">
         <span class="control-btn close"></span>
@@ -578,7 +450,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       </div>
       <div class="url-bar">
         <i data-feather="lock"></i>
-        <span class="url-text">app.automatepro.com</span>
+        <span class="url-text">api.getipovault.in/api/v1/console</span>
         <i data-feather="rotate-cw"></i>
       </div>
       <div class="header-right-actions">
@@ -588,340 +460,155 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       </div>
     </header>
 
-    <!-- App Layout -->
+    <!-- Main Layout -->
     <div class="app-layout">
       <!-- Left Sidebar -->
       <aside class="sidebar">
-        <!-- Brand & Workspace -->
         <div class="sidebar-brand">
           <div class="brand-logo">
             <div class="logo-box">
-              <i data-feather="box"></i>
+              <span>IV</span>
             </div>
-            <span class="brand-title">AutomatePro</span>
+            <span class="brand-title">IPOVault</span>
           </div>
           <div class="workspace-picker">
-            <span>Keitoto Studio</span>
+            <span>Production API (v1)</span>
             <i data-feather="chevron-down"></i>
           </div>
         </div>
 
-        <!-- Navigation Menu -->
+        <!-- Sidebar Navigation Menu -->
         <nav class="sidebar-nav">
-          <button class="nav-item" onclick="switchTab('dashboard')">
+          <div class="nav-group-title">Console Modules</div>
+
+          <button class="nav-item active" id="nav-btn-dashboard" onclick="switchTab('dashboard')">
             <i data-feather="grid"></i>
             <span>Dashboard</span>
           </button>
-          <button class="nav-item" onclick="switchTab('manual')">
-            <i data-feather="inbox"></i>
-            <span>Inbox</span>
+          <button class="nav-item" id="nav-btn-manual" onclick="switchTab('manual')">
+            <i data-feather="edit-3"></i>
+            <span>Manual IPO Manager</span>
           </button>
-          <button class="nav-item" onclick="switchTab('explorer')">
-            <i data-feather="users"></i>
-            <span>Teams</span>
+          <button class="nav-item" id="nav-btn-explorer" onclick="switchTab('explorer')">
+            <i data-feather="search"></i>
+            <span>IPO Explorer</span>
           </button>
-          <button class="nav-item" onclick="switchTab('quality')">
-            <i data-feather="user-check"></i>
-            <span>Assigned to me</span>
+          <button class="nav-item" id="nav-btn-quality" onclick="switchTab('quality')">
+            <i data-feather="shield"></i>
+            <span>Data Quality</span>
           </button>
-          <button class="nav-item" onclick="switchTab('sources')">
-            <i data-feather="plus-circle"></i>
-            <span>Created by me</span>
+          <button class="nav-item" id="nav-btn-sources" onclick="switchTab('sources')">
+            <i data-feather="server"></i>
+            <span>Source Health</span>
           </button>
-
-          <!-- Favorites Category -->
-          <div class="nav-group">
-            <div class="group-header">
-              <span>Favorites</span>
-              <div class="group-actions">
-                <i data-feather="more-horizontal"></i>
-                <i data-feather="plus"></i>
-              </div>
-            </div>
-          </div>
-
-          <!-- Projects Category -->
-          <div class="nav-group">
-            <div class="group-header">
-              <span>Projects</span>
-              <div class="group-actions">
-                <i data-feather="more-horizontal"></i>
-                <i data-feather="plus"></i>
-              </div>
-            </div>
-            <div class="group-items">
-              <button class="nav-item active" id="nav-btn-dashboard" onclick="switchTab('dashboard')">
-                <i data-feather="list"></i>
-                <span>Adrian Bert - CRM Da...</span>
-              </button>
-              <button class="nav-item" id="nav-btn-manual" onclick="switchTab('manual')">
-                <i data-feather="list"></i>
-                <span>Manual IPO Manager</span>
-              </button>
-              <button class="nav-item" id="nav-btn-explorer" onclick="switchTab('explorer')">
-                <i data-feather="list"></i>
-                <span>IPO Explorer</span>
-              </button>
-              <button class="nav-item" id="nav-btn-quality" onclick="switchTab('quality')">
-                <i data-feather="list"></i>
-                <span>Data Quality</span>
-              </button>
-              <button class="nav-item" id="nav-btn-sources" onclick="switchTab('sources')">
-                <i data-feather="list"></i>
-                <span>Source Health</span>
-              </button>
-              <button class="nav-item" id="nav-btn-notifications" onclick="switchTab('notifications')">
-                <i data-feather="list"></i>
-                <span>Notifications Ops</span>
-              </button>
-              <button class="nav-item" id="nav-btn-allotment" onclick="switchTab('allotment')">
-                <i data-feather="list"></i>
-                <span>Allotment Ops</span>
-              </button>
-            </div>
-          </div>
+          <button class="nav-item" id="nav-btn-notifications" onclick="switchTab('notifications')">
+            <i data-feather="bell"></i>
+            <span>Notification Ops</span>
+          </button>
+          <button class="nav-item" id="nav-btn-allotment" onclick="switchTab('allotment')">
+            <i data-feather="check-square"></i>
+            <span>Allotment Ops</span>
+          </button>
         </nav>
 
-        <!-- Sidebar Footer -->
+        <!-- Sidebar User Profile Footer -->
         <div class="sidebar-footer">
-          <div class="nav-item" style="margin-bottom: 4px;">
-            <i data-feather="settings"></i>
-            <span>Settings</span>
-          </div>
-          <div class="nav-item" style="margin-bottom: 8px;">
-            <i data-feather="help-circle"></i>
-            <span>Help Center</span>
-          </div>
           <div class="user-profile">
-            <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80" class="user-avatar" alt="Darlene Robertson" />
+            <div class="user-avatar-box">ADM</div>
             <div class="user-info">
-              <span class="user-name">Darlene Robertson</span>
-              <span class="user-email">darlene@gmail.com</span>
+              <span class="user-name">IPOVault Admin</span>
+              <span class="user-email">admin@getipovault.in</span>
             </div>
           </div>
         </div>
       </aside>
 
-      <!-- Main Content Area -->
+      <!-- Main Workspace Container -->
       <main class="main-workspace">
-        <!-- Top Breadcrumb & Actions Bar -->
+        <!-- Top Breadcrumb & Action Bar -->
         <div class="top-bar">
           <div class="breadcrumbs">
-            <span>Projects</span>
+            <span>Console</span>
             <i data-feather="chevron-right"></i>
-            <span class="breadcrumb-active" id="active-breadcrumb-title">Adrian Bert - CRM Dashboard</span>
+            <span class="breadcrumb-active" id="active-breadcrumb-title">Dashboard</span>
           </div>
           <div class="top-actions">
             <div class="search-input-box">
               <i data-feather="search"></i>
-              <input type="text" id="global-search-input" placeholder="Search task..." />
+              <input type="text" id="global-search-input" placeholder="Search IPOs or symbols..." oninput="debounceFetchManualIpos()" />
             </div>
-            <button class="action-btn-outlined">
-              <i data-feather="filter"></i>
-              <span>Filter</span>
-            </button>
-            <button class="icon-btn notification-btn">
-              <i data-feather="bell"></i>
-              <span class="notification-badge">1</span>
-            </button>
             <button class="btn-primary" onclick="openCreateModal()">
               <i data-feather="plus"></i>
-              <span>+ Add Task</span>
+              <span>+ Add Manual IPO</span>
             </button>
           </div>
         </div>
 
-        <!-- View Sub Tabs Bar -->
-        <div class="view-tabs-bar">
-          <a href="#" class="view-tab active">
-            <i data-feather="layout"></i>
-            <span>Spreadsheet</span>
-          </a>
-          <a href="#" class="view-tab">
-            <i data-feather="clock"></i>
-            <span>Timeline</span>
-          </a>
-          <a href="#" class="view-tab">
-            <i data-feather="calendar"></i>
-            <span>Calendar</span>
-          </a>
-          <a href="#" class="view-tab">
-            <i data-feather="columns"></i>
-            <span>Board</span>
-          </a>
-          <div class="add-tab-btn">
-            <i data-feather="plus"></i>
-          </div>
-        </div>
-
-        <!-- Scrollable Workspace Content -->
+        <!-- Workspace Content Area -->
         <div class="workspace-content">
 
-          <!-- 1. DASHBOARD TAB -->
+          <!-- 1. DASHBOARD OVERVIEW TAB -->
           <div id="tab-dashboard" class="section-view active">
             <div class="stats-grid">
               <div class="stat-card">
-                <div class="stat-title">Total IPOs</div>
+                <div class="stat-title">Total Canonical IPOs</div>
                 <div class="stat-value" id="kpi-total">-</div>
               </div>
               <div class="stat-card">
-                <div class="stat-title">Published to Mobile</div>
+                <div class="stat-title">Published to Mobile App</div>
                 <div class="stat-value" style="color:#10B981" id="kpi-published">-</div>
               </div>
               <div class="stat-card">
-                <div class="stat-title">Open IPOs</div>
+                <div class="stat-title">Currently Open IPOs</div>
                 <div class="stat-value" style="color:#4F46E5" id="kpi-open">-</div>
               </div>
               <div class="stat-card">
-                <div class="stat-title">Drafts</div>
+                <div class="stat-title">Drafts & Pending</div>
                 <div class="stat-value" style="color:#F59E0B" id="kpi-drafts">-</div>
               </div>
             </div>
 
-            <!-- Group Section 1: In Progress -->
-            <div class="group-section">
-              <div class="group-banner">
-                <span class="status-pill in-progress">
-                  <i data-feather="pie-chart" style="width:12px;height:12px;"></i>
-                  <span>In Progress</span>
-                </span>
-                <span class="group-count-badge" id="in-progress-count">3</span>
+            <div class="grid-table-box">
+              <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:600; font-size:14px; color:var(--text-main);">Recent Manual & Canonical IPOs</span>
+                <button class="btn-secondary" onclick="switchTab('manual')" style="font-size:12px; padding:4px 10px;">Manage All IPOs →</button>
               </div>
-              <div class="grid-table">
-                <div class="grid-header">
-                  <div>Task / IPO Name</div>
-                  <div>Description</div>
-                  <div>Assignee</div>
-                  <div>Due Date</div>
-                  <div>Priority</div>
-                  <div>Progress</div>
-                  <div>Created</div>
-                </div>
-                <div class="grid-row">
-                  <div class="col-task">
-                    <span class="tree-toggle"><i data-feather="chevron-down"></i></span>
-                    <input type="checkbox" class="task-checkbox" />
-                    <span class="task-title">Wireframing</span>
-                    <span class="task-comment-count"><i data-feather="message-square"></i> 3</span>
-                  </div>
-                  <div class="col-desc">-</div>
-                  <div class="avatar-group">
-                    <div class="avatar-circle" style="background-color:#818CF8">GT</div>
-                    <div class="avatar-circle" style="background-color:#F43F5E">HG</div>
-                    <div class="avatar-circle" style="background-color:#06B6D4">TB</div>
-                  </div>
-                  <div style="font-size:12px; color:var(--text-muted)">February 12, 2024</div>
-                  <div><span class="priority-badge urgent"><i data-feather="flag"></i> Urgent</span></div>
-                  <div class="progress-cell">
-                    <div class="progress-bar-track"><div class="progress-bar-fill" style="width: 85%;"></div></div>
-                    <span class="progress-text">85%</span>
-                  </div>
-                  <div><span class="created-tag">X</span></div>
-                </div>
-                <div class="grid-row">
-                  <div class="col-task" style="padding-left:16px;">
-                    <span class="tree-toggle" style="opacity:0;"><i data-feather="chevron-down"></i></span>
-                    <input type="checkbox" class="task-checkbox" checked />
-                    <span class="task-title text-checked">Dashboard</span>
-                  </div>
-                  <div class="col-desc">Create wireframe for Dashboard page</div>
-                  <div class="avatar-group">
-                    <div class="avatar-circle" style="background-color:#EF4444">AN</div>
-                    <div class="avatar-circle" style="background-color:#F59E0B">HG</div>
-                  </div>
-                  <div style="font-size:12px; color:var(--text-muted)">February 12, 2024</div>
-                  <div><span class="priority-badge urgent"><i data-feather="flag"></i> Urgent</span></div>
-                  <div class="progress-cell">
-                    <div class="progress-bar-track"><div class="progress-bar-fill" style="width: 95%;"></div></div>
-                    <span class="progress-text">95%</span>
-                  </div>
-                  <div><span class="created-tag">X</span></div>
-                </div>
-                <div class="grid-row">
-                  <div class="col-task" style="padding-left:16px;">
-                    <span class="tree-toggle" style="opacity:0;"><i data-feather="chevron-down"></i></span>
-                    <input type="checkbox" class="task-checkbox" checked />
-                    <span class="task-title text-checked">Analytics</span>
-                  </div>
-                  <div class="col-desc">Create wireframe for analytics page</div>
-                  <div class="avatar-group">
-                    <div class="avatar-circle" style="background-color:#6366F1">GT</div>
-                    <div class="avatar-circle" style="background-color:#EC4899">HG</div>
-                    <div class="avatar-circle" style="background-color:#14B8A6">TB</div>
-                  </div>
-                  <div style="font-size:12px; color:var(--text-muted)">February 12, 2024</div>
-                  <div><span class="priority-badge urgent"><i data-feather="flag"></i> Urgent</span></div>
-                  <div class="progress-cell">
-                    <div class="progress-bar-track"><div class="progress-bar-fill" style="width: 100%;"></div></div>
-                    <span class="progress-text">100%</span>
-                  </div>
-                  <div><span class="created-tag">X</span></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Group Section 2: Ready to check -->
-            <div class="group-section">
-              <div class="group-banner">
-                <span class="status-pill ready">
-                  <i data-feather="check-circle" style="width:12px;height:12px;"></i>
-                  <span>Ready to check by PM</span>
-                </span>
-                <span class="group-count-badge">2</span>
-              </div>
-              <div class="grid-table">
-                <div class="grid-header">
-                  <div>Task / IPO Name</div>
-                  <div>Description</div>
-                  <div>Assignee</div>
-                  <div>Due Date</div>
-                  <div>Priority</div>
-                  <div>Progress</div>
-                  <div>Created</div>
-                </div>
-                <div class="grid-row">
-                  <div class="col-task">
-                    <span class="tree-toggle"><i data-feather="chevron-down"></i></span>
-                    <input type="checkbox" class="task-checkbox" checked />
-                    <span class="task-title text-checked">Hi-Fi Design</span>
-                    <span class="task-comment-count"><i data-feather="message-square"></i> 3</span>
-                  </div>
-                  <div class="col-desc">Create hi-fi design 3 main screen</div>
-                  <div class="avatar-group">
-                    <div class="avatar-circle" style="background-color:#94A3B8">NZ</div>
-                    <div class="avatar-circle" style="background-color:#818CF8">RW</div>
-                    <div class="avatar-circle" style="background-color:#38BDF8">FG</div>
-                    <div class="avatar-circle" style="background-color:#C084FC">RO</div>
-                  </div>
-                  <div style="font-size:12px; color:var(--text-muted)">February 14, 2024</div>
-                  <div><span class="priority-badge low"><i data-feather="flag"></i> Low</span></div>
-                  <div class="progress-cell">
-                    <div class="progress-bar-track"><div class="progress-bar-fill" style="width: 100%;"></div></div>
-                    <span class="progress-text">100%</span>
-                  </div>
-                  <div><span class="created-tag">X</span></div>
-                </div>
-              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Symbol / Legal Name</th>
+                    <th>Segment</th>
+                    <th>Lifecycle Status</th>
+                    <th>Publication Status</th>
+                    <th>Price Band</th>
+                    <th>Bidding Dates</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboard-recent-table-body">
+                  <tr><td colspan="7" style="text-align:center; padding: 24px;">Loading IPO Vault records...</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <!-- 2. MANUAL IPOs TAB -->
+          <!-- 2. MANUAL IPOs MANAGER TAB -->
           <div id="tab-manual" class="section-view">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
               <div style="display:flex; gap:10px;">
                 <button class="btn-primary" onclick="openCreateModal()">+ Add Manual IPO</button>
                 <button class="btn-secondary" onclick="triggerJsonImport()">📥 Import JSON</button>
                 <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
               </div>
               <div style="display:flex; gap:10px;">
-                <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
-                <select id="man-filter-pub" onchange="fetchManualIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
+                <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
+                <select id="man-filter-pub" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
                   <option value="">All Publication States</option>
                   <option value="PUBLISHED">Published</option>
                   <option value="DRAFT">Draft</option>
                   <option value="ARCHIVED">Archived</option>
                 </select>
-                <select id="man-filter-status" onchange="fetchManualIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
+                <select id="man-filter-status" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
                   <option value="">All Lifecycle Statuses</option>
                   <option value="OPEN">Open</option>
                   <option value="UPCOMING">Upcoming</option>
@@ -931,17 +618,17 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
               </div>
             </div>
 
-            <div class="grid-table" style="margin-top:12px;">
-              <table style="width:100%; border-collapse:collapse;">
+            <div class="grid-table-box" style="margin-top:8px;">
+              <table>
                 <thead>
-                  <tr style="background:var(--bg-hover); font-size:11px; text-transform:uppercase; color:var(--text-muted); text-align:left;">
-                    <th style="padding:12px 16px;">Symbol / Company</th>
-                    <th style="padding:12px 16px;">Segment</th>
-                    <th style="padding:12px 16px;">Lifecycle Status</th>
-                    <th style="padding:12px 16px;">Publication Status</th>
-                    <th style="padding:12px 16px;">Price Band</th>
-                    <th style="padding:12px 16px;">Open / Close Dates</th>
-                    <th style="padding:12px 16px;">Actions</th>
+                  <tr>
+                    <th>Symbol / Company Name</th>
+                    <th>Segment</th>
+                    <th>Lifecycle Status</th>
+                    <th>Publication Status</th>
+                    <th>Price Band</th>
+                    <th>Open / Close Dates</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="manual-ipos-table-body">
@@ -951,7 +638,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
           </div>
 
-          <!-- 3. MANUAL IPO EDIT TAB (FORM CONTAINER) -->
+          <!-- 3. MANUAL IPO EDIT / CREATE TAB -->
           <div id="tab-manual-edit" class="section-view">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <button class="btn-secondary" onclick="switchTab('manual')">← Back to Manual IPOs</button>
@@ -959,7 +646,6 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                 <button class="btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">🚀 PUBLISH TO MOBILE</button>
                 <button class="btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">⏸️ Unpublish</button>
                 <button class="btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">📦 Archive IPO</button>
-                <button class="btn-secondary" id="btn-unarchive-action" onclick="unarchiveCurrentIpo()" style="display:none;">↩️ Unarchive IPO</button>
                 <button class="btn-danger" id="btn-delete-action" onclick="deleteCurrentIpo()">🗑️ PERMANENTLY DELETE</button>
               </div>
             </div>
@@ -1021,8 +707,8 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                   <div class="form-group">
                     <label>Publication Status</label>
                     <select id="form-publicationStatus">
-                      <option value="DRAFT">DRAFT (Hidden from Mobile)</option>
-                      <option value="PUBLISHED">PUBLISHED (Live on Mobile)</option>
+                      <option value="DRAFT">DRAFT (Hidden from Mobile App)</option>
+                      <option value="PUBLISHED">PUBLISHED (Live on Mobile App)</option>
                       <option value="ARCHIVED">ARCHIVED</option>
                     </select>
                   </div>
@@ -1150,14 +836,6 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                   <input type="text" id="part-brlm-name" placeholder="e.g. ICICI Securities, Axis Capital (comma-separated)" />
                 </div>
 
-                <!-- Financial History -->
-                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
-                  <strong style="color:var(--primary); font-size:14px;">Financial History</strong>
-                  <button type="button" class="btn-secondary" onclick="addFinancialRow()" style="padding:4px 10px; font-size:12px;">+ Add Period</button>
-                </div>
-
-                <div id="financial-rows-container"></div>
-
                 <!-- Manual GMP & Subscriptions -->
                 <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
                   <strong style="color:var(--primary); font-size:14px;">Manual GMP & Subscription Observations</strong>
@@ -1225,23 +903,23 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
           <!-- 4. IPO EXPLORER TAB -->
           <div id="tab-explorer" class="section-view">
-            <div class="grid-table" style="padding:16px;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                <span style="font-weight:600;">Canonical IPO Explorer</span>
-                <input type="text" id="exp-search-q" placeholder="Search symbol or name..." oninput="debounceFetchExplorerIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main);" />
+            <div class="grid-table-box">
+              <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:600; font-size:14px;">Canonical IPO Explorer</span>
+                <input type="text" id="exp-search-q" placeholder="Search symbol or name..." oninput="debounceFetchExplorerIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
               </div>
-              <table style="width:100%; border-collapse:collapse;">
+              <table>
                 <thead>
-                  <tr style="background:var(--bg-hover); font-size:11px; text-transform:uppercase; color:var(--text-muted); text-align:left;">
-                    <th style="padding:10px 16px;">Company / Symbol</th>
-                    <th style="padding:10px 16px;">Segment</th>
-                    <th style="padding:10px 16px;">Status</th>
-                    <th style="padding:10px 16px;">Price Band</th>
-                    <th style="padding:10px 16px;">Actions</th>
+                  <tr>
+                    <th>Company / Symbol</th>
+                    <th>Segment</th>
+                    <th>Status</th>
+                    <th>Price Band</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="explorer-ipos-table-body">
-                  <tr><td colspan="5" style="text-align:center; padding:16px;">Loading IPO Explorer...</td></tr>
+                  <tr><td colspan="5" style="text-align:center; padding:24px;">Loading IPO Explorer...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1258,19 +936,19 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
           <!-- 6. SOURCE HEALTH TAB -->
           <div id="tab-sources" class="section-view">
-            <div class="grid-table" style="padding:16px;">
-              <div style="font-weight:600; margin-bottom:12px;">Upstream Data Sources</div>
-              <table style="width:100%; border-collapse:collapse;">
+            <div class="grid-table-box">
+              <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); font-weight:600; font-size:14px;">Upstream Data Sources</div>
+              <table>
                 <thead>
-                  <tr style="background:var(--bg-hover); font-size:11px; text-transform:uppercase; color:var(--text-muted); text-align:left;">
-                    <th style="padding:10px 16px;">Source Name</th>
-                    <th style="padding:10px 16px;">Type</th>
-                    <th style="padding:10px 16px;">Records</th>
-                    <th style="padding:10px 16px;">Health</th>
+                  <tr>
+                    <th>Source Name</th>
+                    <th>Type</th>
+                    <th>Records Ingested</th>
+                    <th>Health Status</th>
                   </tr>
                 </thead>
                 <tbody id="sources-table-body">
-                  <tr><td colspan="4" style="text-align:center; padding:16px;">Loading source health...</td></tr>
+                  <tr><td colspan="4" style="text-align:center; padding:24px;">Loading source health...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1326,12 +1004,12 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       const target = document.getElementById('tab-' + tabId);
       if (target) target.classList.add('active');
 
-      document.querySelectorAll('.group-items .nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       const activeNavBtn = document.getElementById('nav-btn-' + tabId);
       if (activeNavBtn) activeNavBtn.classList.add('active');
 
       const titleMap = {
-        'dashboard': 'Adrian Bert - CRM Dashboard',
+        'dashboard': 'Dashboard',
         'manual': 'Manual IPO Manager',
         'explorer': 'IPO Explorer',
         'quality': 'Data Quality Overview',
@@ -1340,7 +1018,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         'allotment': 'Allotment Check Ops'
       };
       const breadcrumbEl = document.getElementById('active-breadcrumb-title');
-      if (breadcrumbEl) breadcrumbEl.textContent = titleMap[tabId] || 'Console Dashboard';
+      if (breadcrumbEl) breadcrumbEl.textContent = titleMap[tabId] || 'Dashboard';
 
       if (tabId === 'dashboard') loadDashboard();
       if (tabId === 'manual') fetchManualIpos();
@@ -1360,8 +1038,41 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('kpi-published').textContent = data.publishedIpos ?? 0;
         document.getElementById('kpi-open').textContent = data.openIpos ?? 0;
         document.getElementById('kpi-drafts').textContent = data.draftIpos ?? 0;
+
+        // Populate recent IPOs table in dashboard
+        fetchRecentDashboardIpos();
       } catch (err) {
         console.error('Dashboard load error:', err);
+      }
+    }
+
+    async function fetchRecentDashboardIpos() {
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos?limit=10');
+        const json = await res.json();
+        const items = json.data?.items || json.items || [];
+        const tbody = document.getElementById('dashboard-recent-table-body');
+
+        if (items.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color:var(--text-muted);">No recent IPO records found.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = items.map(item => \`
+          <tr>
+            <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
+            <td>\${item.marketSegment || 'MAINBOARD'}</td>
+            <td><span class="status-pill \${(item.status || 'DRAFT').toLowerCase()}">\${item.status || 'DRAFT'}</span></td>
+            <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
+            <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
+            <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
+            <td>
+              <button class="btn-secondary" onclick="editManualIpo('\${item.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
+            </td>
+          </tr>
+        \`).join('');
+      } catch (err) {
+        console.error('Dashboard recent fetch error:', err);
       }
     }
 
@@ -1386,14 +1097,14 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         }
 
         tbody.innerHTML = items.map(item => \`
-          <tr style="border-bottom:1px solid var(--border-subtle);">
-            <td style="padding:12px 16px;"><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
-            <td style="padding:12px 16px;">\${item.marketSegment || 'MAINBOARD'}</td>
-            <td style="padding:12px 16px;"><span class="priority-badge normal">\${item.status || 'DRAFT'}</span></td>
-            <td style="padding:12px 16px;"><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'in-progress' : 'ready'}">\${item.publicationStatus || 'DRAFT'}</span></td>
-            <td style="padding:12px 16px;">₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
-            <td style="padding:12px 16px; font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
-            <td style="padding:12px 16px;">
+          <tr>
+            <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
+            <td>\${item.marketSegment || 'MAINBOARD'}</td>
+            <td><span class="status-pill \${(item.status || 'DRAFT').toLowerCase()}">\${item.status || 'DRAFT'}</span></td>
+            <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
+            <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
+            <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
+            <td>
               <button class="btn-secondary" onclick="editManualIpo('\${item.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
             </td>
           </tr>
@@ -1418,12 +1129,12 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         const tbody = document.getElementById('explorer-ipos-table-body');
         
         tbody.innerHTML = items.map(i => \`
-          <tr style="border-bottom:1px solid var(--border-subtle);">
-            <td style="padding:10px 16px;"><strong>\${i.companyName || i.legalName}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${i.symbol || ''}</span></td>
-            <td style="padding:10px 16px;">\${i.marketSegment || 'MAINBOARD'}</td>
-            <td style="padding:10px 16px;"><span class="priority-badge low">\${i.status}</span></td>
-            <td style="padding:10px 16px;">₹\${i.priceBandLow || 0} - ₹\${i.priceBandHigh || 0}</td>
-            <td style="padding:10px 16px;"><button class="btn-secondary" style="padding:4px 8px; font-size:11px;">View Detail</button></td>
+          <tr>
+            <td><strong>\${i.companyName || i.legalName}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${i.symbol || ''}</span></td>
+            <td>\${i.marketSegment || 'MAINBOARD'}</td>
+            <td><span class="status-pill open">\${i.status}</span></td>
+            <td>₹\${i.priceBandLow || 0} - ₹\${i.priceBandHigh || 0}</td>
+            <td><button class="btn-secondary" style="padding:4px 8px; font-size:11px;">View Detail</button></td>
           </tr>
         \`).join('');
       } catch (err) {
@@ -1597,11 +1308,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         const sources = json.data?.sources || json.sources || [];
         const tbody = document.getElementById('sources-table-body');
         tbody.innerHTML = sources.map(s => \`
-          <tr style="border-bottom:1px solid var(--border-subtle);">
-            <td style="padding:10px 16px;"><strong>\${s.name}</strong> (\${s.code})</td>
-            <td style="padding:10px 16px;">\${s.sourceType}</td>
-            <td style="padding:10px 16px;" class="mono">\${s.totalRecords}</td>
-            <td style="padding:10px 16px;"><span class="status-pill in-progress">\${s.healthState}</span></td>
+          <tr>
+            <td><strong>\${s.name}</strong> (\${s.code})</td>
+            <td>\${s.sourceType}</td>
+            <td class="mono">\${s.totalRecords}</td>
+            <td><span class="status-pill open">\${s.healthState}</span></td>
           </tr>
         \`).join('');
       } catch (err) {
