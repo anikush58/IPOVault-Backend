@@ -992,6 +992,31 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 </div>
               </div>
 
+              <!-- IPO Document Links -->
+              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                  <strong style="color:var(--primary); font-size:14px;">IPO Document Links</strong>
+                  <button type="button" class="btn-secondary" onclick="addDocumentRow()" style="font-size:12px; padding:4px 10px;">+ Add Document</button>
+                </div>
+
+                <div class="grid-table-box" style="margin-bottom:12px;">
+                  <table id="documents-table" style="min-width:650px;">
+                    <thead>
+                      <tr>
+                        <th style="width:40px; text-align:center;">#</th>
+                        <th style="width:180px;">Document Type</th>
+                        <th>Document Title</th>
+                        <th>Document URL</th>
+                        <th style="width:70px; text-align:center;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="documents-tbody">
+                      <tr id="no-documents-row"><td colspan="5" style="text-align:center; padding:16px; color:var(--text-muted); font-size:12px;">No documents added yet. Click "+ Add Document".</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               <!-- Anchor Investors Allocation List -->
               <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
@@ -1602,6 +1627,138 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    function addDocumentRow(docType = 'DRHP', title = '', sourceUrl = '', id = '') {
+      const tbody = document.getElementById('documents-tbody');
+      if (!tbody) return;
+      const noRow = document.getElementById('no-documents-row');
+      if (noRow) noRow.style.display = 'none';
+
+      const row = document.createElement('tr');
+      row.className = 'doc-row';
+      if (id) row.setAttribute('data-id', String(id));
+
+      const escAttr = (val) => String(val || '').replace(/"/g, '&quot;');
+
+      const docTypes = [
+        { value: 'DRHP', label: 'DRHP' },
+        { value: 'RHP', label: 'RHP' },
+        { value: 'PROSPECTUS', label: 'Prospectus' },
+        { value: 'ANCHOR_LIST', label: 'Anchor Allocation' },
+        { value: 'BASIS_OF_ALLOTMENT', label: 'Basis of Allotment' },
+        { value: 'OTHER', label: 'Other' },
+      ];
+
+      const selType = String(docType || 'DRHP').toUpperCase();
+      const typeOptionsHtml = docTypes.map(function(t) {
+        return '<option value="' + t.value + '" ' + (selType === t.value ? 'selected' : '') + '>' + t.label + '</option>';
+      }).join('');
+
+      row.innerHTML =
+        '<td class="doc-row-index" style="text-align:center; font-weight:600; font-size:12px; color:var(--text-muted);">1</td>' +
+        '<td><select class="doc-type-select" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%;">' +
+        typeOptionsHtml +
+        '</select></td>' +
+        '<td><input type="text" class="doc-title-input" value="' + escAttr(title) + '" placeholder="e.g. Red Herring Prospectus" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%;" /></td>' +
+        '<td><input type="url" class="doc-url-input" value="' + escAttr(sourceUrl) + '" placeholder="https://..." style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%;" /></td>' +
+        '<td style="text-align:center;"><button type="button" onclick="removeDocumentRow(this)" style="background:none; border:none; color:var(--danger); cursor:pointer; padding:4px;" title="Remove Document">✕</button></td>';
+
+      tbody.appendChild(row);
+      reindexDocumentRows();
+    }
+
+    function removeDocumentRow(btn) {
+      const row = btn.closest('.doc-row');
+      if (row) row.remove();
+      reindexDocumentRows();
+    }
+
+    function reindexDocumentRows() {
+      const tbody = document.getElementById('documents-tbody');
+      if (!tbody) return;
+      const rows = tbody.querySelectorAll('.doc-row');
+      const noRow = document.getElementById('no-documents-row');
+      if (rows.length === 0) {
+        if (noRow) noRow.style.display = '';
+      } else {
+        if (noRow) noRow.style.display = 'none';
+        rows.forEach((row, idx) => {
+          const idxEl = row.querySelector('.doc-row-index');
+          if (idxEl) idxEl.textContent = String(idx + 1);
+        });
+      }
+    }
+
+    function getDocumentsFromForm() {
+      const tbody = document.getElementById('documents-tbody');
+      if (!tbody) return [];
+      const rows = tbody.querySelectorAll('.doc-row');
+      const docs = [];
+      rows.forEach(r => {
+        const docId = r.getAttribute('data-id') || undefined;
+        const typeSelect = r.querySelector('.doc-type-select');
+        const titleInput = r.querySelector('.doc-title-input');
+        const urlInput = r.querySelector('.doc-url-input');
+        const documentType = typeSelect ? typeSelect.value : 'OTHER';
+        const fileName = titleInput ? titleInput.value.trim() : '';
+        const sourceUrl = urlInput ? urlInput.value.trim() : '';
+        if (sourceUrl) {
+          docs.push({
+            id: docId,
+            documentType,
+            fileName: fileName || undefined,
+            title: fileName || undefined,
+            sourceUrl,
+            url: sourceUrl
+          });
+        }
+      });
+      return docs;
+    }
+
+    function renderDocumentsTable(ipoData) {
+      const tbody = document.getElementById('documents-tbody');
+      if (tbody) {
+        tbody.querySelectorAll('.doc-row').forEach(r => r.remove());
+      }
+      const docs = ipoData && Array.isArray(ipoData.documents) ? ipoData.documents : [];
+      let loadedAny = false;
+      if (docs.length > 0) {
+        docs.forEach(d => {
+          const url = d.sourceUrl || d.fileUrl || d.documentUrl || d.url;
+          if (url && String(url).trim()) {
+            const title = d.title || d.fileName || (
+              d.documentType === 'DRHP' ? 'DRHP Prospectus' :
+              d.documentType === 'RHP' ? 'RHP Prospectus' :
+              d.documentType === 'PROSPECTUS' ? 'Final Prospectus' :
+              d.documentType === 'ANCHOR_LIST' ? 'Anchor Allocation' :
+              d.documentType === 'BASIS_OF_ALLOTMENT' ? 'Basis of Allotment' : ''
+            );
+            addDocumentRow(d.documentType || 'OTHER', title, String(url).trim(), d.id || '');
+            loadedAny = true;
+          }
+        });
+      }
+      if (!loadedAny && ipoData) {
+        if (ipoData.drhpUrl && String(ipoData.drhpUrl).trim()) {
+          addDocumentRow('DRHP', 'DRHP Prospectus', String(ipoData.drhpUrl).trim());
+          loadedAny = true;
+        }
+        if (ipoData.rhpUrl && String(ipoData.rhpUrl).trim()) {
+          addDocumentRow('RHP', 'RHP Prospectus', String(ipoData.rhpUrl).trim());
+          loadedAny = true;
+        }
+        if (ipoData.prospectusUrl && String(ipoData.prospectusUrl).trim()) {
+          addDocumentRow('PROSPECTUS', 'Final Prospectus', String(ipoData.prospectusUrl).trim());
+          loadedAny = true;
+        }
+        if (ipoData.anchorListUrl && String(ipoData.anchorListUrl).trim()) {
+          addDocumentRow('ANCHOR_LIST', 'Anchor Allocation', String(ipoData.anchorListUrl).trim());
+          loadedAny = true;
+        }
+      }
+      reindexDocumentRows();
+    }
+
     function openCreateModal() {
       currentIpoData = null;
       document.getElementById('manual-ipo-form').reset();
@@ -1634,6 +1791,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         tbody.querySelectorAll('.anchor-row').forEach(r => r.remove());
       }
       reindexAnchorRows();
+      renderDocumentsTable(null);
       updateFormStatusSections();
       switchTab('manual-edit');
     }
@@ -1736,6 +1894,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           reindexAnchorRows();
         }
 
+        renderDocumentsTable(currentIpoData);
         updateFormStatusSections();
         switchTab('manual-edit');
       } catch (err) {
@@ -1792,6 +1951,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         logoUrl: document.getElementById('form-logoUrl').value || undefined,
         anchorInvestors: getAnchorInvestorsFromForm(),
       };
+
+      const docsFromForm = getDocumentsFromForm();
+      payload.documents = docsFromForm;
+      const drhpDoc = docsFromForm.find(d => d.documentType === 'DRHP');
+      if (drhpDoc) payload.drhpUrl = drhpDoc.sourceUrl;
+      const rhpDoc = docsFromForm.find(d => d.documentType === 'RHP');
+      if (rhpDoc) payload.rhpUrl = rhpDoc.sourceUrl;
+      const prospectusDoc = docsFromForm.find(d => d.documentType === 'PROSPECTUS');
+      if (prospectusDoc) payload.prospectusUrl = prospectusDoc.sourceUrl;
+      const anchorDoc = docsFromForm.find(d => d.documentType === 'ANCHOR_LIST');
+      if (anchorDoc) payload.anchorListUrl = anchorDoc.sourceUrl;
 
       // Offer Categories
       const offerCategories = [];

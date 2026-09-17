@@ -60,6 +60,10 @@ describe('AdminIpoService & AdminValidationService', () => {
     },
     ipoDocument: {
       create: jest.fn().mockResolvedValue({ id: 'doc-uuid-1', parsingStatus: 'PARSED' }),
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ id: 'doc-uuid-1' }),
+      delete: jest.fn().mockResolvedValue({}),
     },
     gmpObservation: {
       create: jest.fn().mockResolvedValue({}),
@@ -549,6 +553,103 @@ describe('AdminIpoService & AdminValidationService', () => {
           'archived-ipo-id',
         ),
       ).rejects.toThrow('Cannot overwrite a ARCHIVED IPO via JSON import. Unpublish first.');
+    });
+  });
+
+  describe('IPO Document Link Management & Safety', () => {
+    it('saves valid documents and skips documents with empty URLs during update', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'ipo-doc-test-1',
+        companyId: 'company-uuid-1',
+        lifecycleEvents: [],
+      });
+      mockPrisma.ipoDocument.findMany.mockResolvedValueOnce([
+        { id: 'old-doc-1', documentType: 'DRHP', sourceUrl: 'https://example.com/old-drhp.pdf', fileName: 'Old DRHP' },
+      ]);
+
+      await adminIpoService.updateIpo('ipo-doc-test-1', {
+        documents: [
+          { id: 'old-doc-1', documentType: 'DRHP', title: 'Updated DRHP', url: 'https://example.com/new-drhp.pdf' },
+          { documentType: 'RHP', title: 'New RHP', url: 'https://example.com/rhp.pdf' },
+          { documentType: 'PROSPECTUS', title: 'Empty Prospectus', url: '   ' }, // Should be skipped
+        ],
+      });
+
+      expect(mockPrisma.ipoDocument.update).toHaveBeenCalledWith({
+        where: { id: 'old-doc-1' },
+        data: expect.objectContaining({
+          documentType: 'DRHP',
+          sourceUrl: 'https://example.com/new-drhp.pdf',
+          fileName: 'Updated DRHP',
+        }),
+      });
+
+      expect(mockPrisma.ipoDocument.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          ipoId: 'ipo-doc-test-1',
+          documentType: 'RHP',
+          sourceUrl: 'https://example.com/rhp.pdf',
+          fileName: 'New RHP',
+          source: 'MANUAL_UPLOAD',
+        }),
+      });
+
+      // Verification: 2 valid docs processed, 0 empty doc records created
+      const createCalls = mockPrisma.ipoDocument.create.mock.calls;
+      const createdEmptyUrl = createCalls.some((call: any) => !call[0]?.data?.sourceUrl?.trim());
+      expect(createdEmptyUrl).toBe(false);
+    });
+
+    it('removes documents when omitted from submitted document list', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'ipo-doc-test-2',
+        companyId: 'company-uuid-1',
+        lifecycleEvents: [],
+      });
+      mockPrisma.ipoDocument.findMany.mockResolvedValueOnce([
+        { id: 'doc-to-keep', documentType: 'DRHP', sourceUrl: 'https://example.com/drhp.pdf' },
+        { id: 'doc-to-delete', documentType: 'OTHER', sourceUrl: 'https://example.com/other.pdf' },
+      ]);
+      mockPrisma.ipoDocument.delete = jest.fn().mockResolvedValue({});
+
+      await adminIpoService.updateIpo('ipo-doc-test-2', {
+        documents: [
+          { id: 'doc-to-keep', documentType: 'DRHP', title: 'DRHP', url: 'https://example.com/drhp.pdf' },
+        ],
+      });
+
+      expect(mockPrisma.ipoDocument.delete).toHaveBeenCalledWith({
+        where: { id: 'doc-to-delete' },
+      });
+    });
+
+    it('skips empty URLs in JSON import documents', async () => {
+      mockPrisma.company.findFirst.mockResolvedValueOnce({ id: 'c-1', legalName: 'Doc Corp' });
+      mockPrisma.company.update.mockResolvedValueOnce({ id: 'c-1' });
+      mockPrisma.ipo.create.mockResolvedValueOnce({
+        id: 'ipo-json-doc-1',
+        companyId: 'c-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.NSE,
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+      });
+
+      mockPrisma.ipoDocument.findFirst.mockResolvedValue(null);
+
+      await adminIpoService.importIpoFromJson({
+        companyName: 'Doc Corp',
+        drhpUrl: 'https://example.com/import-drhp.pdf',
+        documents: [
+          { documentType: 'DRHP', title: 'Duplicate DRHP', url: 'https://example.com/import-drhp.pdf' },
+          { documentType: 'RHP', title: 'Valid RHP', url: 'https://example.com/import-rhp.pdf' },
+          { documentType: 'OTHER', title: 'No URL Doc', url: '' }, // empty URL should be skipped
+        ],
+      });
+
+      const docCreateCalls = mockPrisma.ipoDocument.create.mock.calls;
+      const createdEmptyUrl = docCreateCalls.some((call: any) => !call[0]?.data?.sourceUrl?.trim());
+      expect(createdEmptyUrl).toBe(false);
     });
   });
 });

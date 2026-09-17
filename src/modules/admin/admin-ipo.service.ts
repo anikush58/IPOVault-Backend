@@ -550,7 +550,7 @@ export class AdminIpoService {
       (e) => e.eventType === 'REFUND_INITIATION',
     );
 
-    const anchorDoc = ipo.documents.find((d) => d.documentType === 'ANCHOR_LIST');
+    const anchorDoc = (ipo.documents ?? []).find((d) => d.documentType === 'ANCHOR_LIST');
     const anchorExt = (anchorDoc?.extractionData as any) || {};
     const anchorInvestors = Array.isArray(anchorExt.anchorInvestors) ? anchorExt.anchorInvestors : [];
 
@@ -609,7 +609,7 @@ export class AdminIpoService {
         ? refundEvent.eventDate.toISOString().slice(0, 10)
         : null,
       anchorInvestors,
-      documents: ipo.documents,
+      documents: ipo.documents ?? [],
       allotmentConfig: ipo.allotmentConfig,
       offerCategories: ipo.offerCategories,
       financials: ipo.company.financials,
@@ -1477,13 +1477,20 @@ export class AdminIpoService {
             docType = docTypeStr as DocumentType;
           }
 
-          const sourceUrl = doc.sourceUrl || doc.url;
+          const sourceUrl = (doc.sourceUrl || doc.url || '').trim();
+          if (!sourceUrl) continue;
+
+          const existingDoc = await tx.ipoDocument.findFirst({
+            where: { ipoId: ipo.id, documentType: docType, sourceUrl },
+          });
+          if (existingDoc) continue;
+
           await tx.ipoDocument.create({
             data: {
               ipoId: ipo.id,
               documentType: docType,
               fileName: doc.fileName?.trim() || doc.title?.trim() || null,
-              sourceUrl: sourceUrl?.trim() || null,
+              sourceUrl,
               source: 'MANUAL_IMPORT',
               parsingStatus: 'PARSED',
             },
@@ -1870,17 +1877,29 @@ export class AdminIpoService {
         pctAllocated?: number | null;
         pctOfIssue?: number | null;
       }> | null;
+      documents?: Array<{
+        id?: string | null;
+        documentType?: DocumentType | string;
+        fileName?: string | null;
+        title?: string | null;
+        sourceUrl?: string | null;
+        url?: string | null;
+      }> | null;
     },
   ) {
-    const docs = [
-      { type: DocumentType.DRHP, url: dto.drhpUrl, title: 'DRHP Prospectus' },
-      { type: DocumentType.RHP, url: dto.rhpUrl, title: 'RHP Prospectus' },
-      { type: DocumentType.PROSPECTUS, url: dto.prospectusUrl, title: 'Final Prospectus' },
-      {
-        type: DocumentType.ANCHOR_LIST,
-        url: dto.anchorListUrl,
-        title: 'Anchor List',
-        extractionData: {
+    const hasAnchorData =
+      dto.anchorPortion !== undefined ||
+      dto.anchorBidDate !== undefined ||
+      dto.anchorLockIn !== undefined ||
+      dto.anchorDetails !== undefined ||
+      dto.anchorPrice !== undefined ||
+      dto.anchorQibPct !== undefined ||
+      dto.anchorLockIn30 !== undefined ||
+      dto.anchorLockIn90 !== undefined ||
+      dto.anchorInvestors !== undefined;
+
+    const anchorData = hasAnchorData
+      ? {
           anchorPortion: dto.anchorPortion ?? null,
           anchorBidDate: dto.anchorBidDate ?? null,
           anchorLockIn: dto.anchorLockIn ?? null,
@@ -1890,25 +1909,107 @@ export class AdminIpoService {
           anchorLockIn30: dto.anchorLockIn30 ?? null,
           anchorLockIn90: dto.anchorLockIn90 ?? null,
           anchorInvestors: dto.anchorInvestors ?? [],
-        },
+        }
+      : null;
+
+    if (Array.isArray(dto.documents)) {
+      const validIncomingDocs = dto.documents
+        .map((d) => {
+          const url = (d.sourceUrl || d.url || '').trim();
+          if (!url) return null;
+          const typeStr = (d.documentType || 'OTHER').toString().toUpperCase();
+          let type: DocumentType = DocumentType.OTHER;
+          if (typeStr.includes('DRHP')) type = DocumentType.DRHP;
+          else if (typeStr.includes('RHP')) type = DocumentType.RHP;
+          else if (typeStr.includes('PROSPECTUS')) type = DocumentType.PROSPECTUS;
+          else if (typeStr.includes('ANCHOR')) type = DocumentType.ANCHOR_LIST;
+          else if (typeStr.includes('BASIS')) type = DocumentType.BASIS_OF_ALLOTMENT;
+          else if (Object.values(DocumentType).includes(typeStr as DocumentType)) {
+            type = typeStr as DocumentType;
+          }
+          return {
+            id: (d.id || '').trim() || undefined,
+            type,
+            title: (d.fileName || d.title || '').trim() || null,
+            url,
+          };
+        })
+        .filter((d): d is { id: string | undefined; type: DocumentType; title: string | null; url: string } => d !== null);
+
+      const existingDocs = await this.prisma.ipoDocument.findMany({
+        where: { ipoId },
+      });
+
+      const processedIds = new Set<string>();
+
+      for (const inDoc of validIncomingDocs) {
+        let existing = inDoc.id
+          ? existingDocs.find((e) => !processedIds.has(e.id) && e.id === inDoc.id)
+          : undefined;
+
+        if (!existing) {
+          existing = existingDocs.find(
+            (e) => !processedIds.has(e.id) && e.documentType === inDoc.type,
+          );
+        }
+
+        const extraction = inDoc.type === DocumentType.ANCHOR_LIST && anchorData
+          ? { ...((existing?.extractionData as object) || {}), ...anchorData }
+          : existing?.extractionData;
+
+        if (existing) {
+          processedIds.add(existing.id);
+          await this.prisma.ipoDocument.update({
+            where: { id: existing.id },
+            data: {
+              documentType: inDoc.type,
+              sourceUrl: inDoc.url,
+              fileName: inDoc.title,
+              parsingStatus: 'PARSED',
+              ...(extraction ? { extractionData: extraction as any } : {}),
+            },
+          });
+        } else {
+          const created = await this.prisma.ipoDocument.create({
+            data: {
+              ipoId,
+              documentType: inDoc.type,
+              sourceUrl: inDoc.url,
+              fileName: inDoc.title,
+              source: 'MANUAL_UPLOAD',
+              parsingStatus: 'PARSED',
+              ...(extraction ? { extractionData: extraction as any } : {}),
+            },
+          });
+          processedIds.add(created.id);
+        }
+      }
+
+      const toDelete = existingDocs.filter((e) => !processedIds.has(e.id));
+      for (const delDoc of toDelete) {
+        await this.prisma.ipoDocument.delete({ where: { id: delDoc.id } });
+      }
+
+      return;
+    }
+
+    const docs = [
+      { type: DocumentType.DRHP, url: dto.drhpUrl, title: 'DRHP Prospectus' },
+      { type: DocumentType.RHP, url: dto.rhpUrl, title: 'RHP Prospectus' },
+      { type: DocumentType.PROSPECTUS, url: dto.prospectusUrl, title: 'Final Prospectus' },
+      {
+        type: DocumentType.ANCHOR_LIST,
+        url: dto.anchorListUrl,
+        title: 'Anchor List',
+        extractionData: anchorData,
       },
     ];
 
     for (const doc of docs) {
       const hasUrl = doc.url !== undefined;
-      const hasAnchorData =
-        doc.type === DocumentType.ANCHOR_LIST &&
-        (dto.anchorPortion !== undefined ||
-          dto.anchorBidDate !== undefined ||
-          dto.anchorLockIn !== undefined ||
-          dto.anchorDetails !== undefined ||
-          dto.anchorPrice !== undefined ||
-          dto.anchorQibPct !== undefined ||
-          dto.anchorLockIn30 !== undefined ||
-          dto.anchorLockIn90 !== undefined ||
-          dto.anchorInvestors !== undefined);
+      const isAnchorWithData = doc.type === DocumentType.ANCHOR_LIST && anchorData !== null;
 
-      if (hasUrl || hasAnchorData) {
+      if (hasUrl || isAnchorWithData) {
         const cleanUrl = doc.url?.trim() || null;
         const existing = await this.prisma.ipoDocument.findFirst({
           where: { ipoId, documentType: doc.type },
@@ -1916,13 +2017,10 @@ export class AdminIpoService {
 
         const currentExtraction = (existing?.extractionData as object) || {};
         const extraction = doc.extractionData
-          ? {
-              ...currentExtraction,
-              ...doc.extractionData,
-            }
+          ? { ...currentExtraction, ...doc.extractionData }
           : existing?.extractionData;
 
-        if (cleanUrl || hasAnchorData) {
+        if (cleanUrl || isAnchorWithData) {
           if (existing) {
             await this.prisma.ipoDocument.update({
               where: { id: existing.id },

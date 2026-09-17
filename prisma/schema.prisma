@@ -42,6 +42,7 @@ enum DocumentType {
   RHP
   PROSPECTUS
   ANCHOR_LIST
+  BASIS_OF_ALLOTMENT
   OTHER
 }
 

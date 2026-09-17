@@ -313,4 +313,142 @@ describe('toIpoResponseDto', () => {
       expect(res.changes[1].source).toBeNull();
     });
   });
+
+  describe('Document Link Mapping & Public API Filtering', () => {
+    it('returns only RHP when IPO has only RHP with a valid URL', () => {
+      const ipo = buildIpo({
+        documents: [
+          {
+            id: 'doc-rhp-1',
+            ipoId: '11111111-1111-4111-8111-111111111111',
+            documentType: 'RHP',
+            sourceUrl: 'https://example.com/rhp.pdf',
+            fileName: 'Red Herring Prospectus',
+            filePath: null,
+            mimeType: 'application/pdf',
+            fileSizeBytes: 1024,
+            source: 'MANUAL_UPLOAD',
+            parsingStatus: 'PARSED',
+            parserVersion: null,
+            extractionData: null,
+            errorMessage: null,
+            uploadedAt: new Date('2026-09-10T10:00:00Z'),
+            createdAt: new Date('2026-09-10T10:00:00Z'),
+            updatedAt: new Date('2026-09-10T10:00:00Z'),
+          },
+        ],
+      });
+
+      const dto = toIpoResponseDto(ipo);
+      expect(dto.rhpUrl).toBe('https://example.com/rhp.pdf');
+      expect(dto.drhpUrl).toBeNull();
+      expect(dto.documents).toHaveLength(1);
+      expect(dto.documents![0]).toMatchObject({
+        id: 'doc-rhp-1',
+        documentType: 'RHP',
+        title: 'Red Herring Prospectus',
+        sourceUrl: 'https://example.com/rhp.pdf',
+        fileUrl: 'https://example.com/rhp.pdf',
+        documentUrl: 'https://example.com/rhp.pdf',
+      });
+    });
+
+    it('returns both DRHP and RHP when IPO has both DRHP and RHP with valid URLs', () => {
+      const ipo = buildIpo({
+        documents: [
+          {
+            id: 'doc-drhp-1',
+            ipoId: '11111111-1111-4111-8111-111111111111',
+            documentType: 'DRHP',
+            sourceUrl: 'https://example.com/drhp.pdf',
+            fileName: 'Draft Red Herring Prospectus',
+            filePath: null,
+            mimeType: 'application/pdf',
+            fileSizeBytes: 2048,
+            source: 'MANUAL_UPLOAD',
+            parsingStatus: 'PARSED',
+            parserVersion: null,
+            extractionData: null,
+            errorMessage: null,
+            uploadedAt: new Date('2026-09-10T10:00:00Z'),
+            createdAt: new Date('2026-09-10T10:00:00Z'),
+            updatedAt: new Date('2026-09-10T10:00:00Z'),
+          },
+          {
+            id: 'doc-rhp-1',
+            ipoId: '11111111-1111-4111-8111-111111111111',
+            documentType: 'RHP',
+            sourceUrl: 'https://example.com/rhp.pdf',
+            fileName: 'Red Herring Prospectus',
+            filePath: null,
+            mimeType: 'application/pdf',
+            fileSizeBytes: 1024,
+            source: 'MANUAL_UPLOAD',
+            parsingStatus: 'PARSED',
+            parserVersion: null,
+            extractionData: null,
+            errorMessage: null,
+            uploadedAt: new Date('2026-09-10T10:00:00Z'),
+            createdAt: new Date('2026-09-10T10:00:00Z'),
+            updatedAt: new Date('2026-09-10T10:00:00Z'),
+          },
+        ],
+      });
+
+      const dto = toIpoResponseDto(ipo);
+      expect(dto.drhpUrl).toBe('https://example.com/drhp.pdf');
+      expect(dto.rhpUrl).toBe('https://example.com/rhp.pdf');
+      expect(dto.documents).toHaveLength(2);
+    });
+
+    it('filters out documents with empty or whitespace URLs', () => {
+      const ipo = buildIpo({
+        documents: [
+          {
+            id: 'doc-empty-1',
+            ipoId: '11111111-1111-4111-8111-111111111111',
+            documentType: 'DRHP',
+            sourceUrl: '   ',
+            fileName: 'Empty DRHP',
+            filePath: null,
+            mimeType: null,
+            fileSizeBytes: null,
+            source: 'MANUAL_UPLOAD',
+            parsingStatus: 'PENDING',
+            parserVersion: null,
+            extractionData: null,
+            errorMessage: null,
+            uploadedAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+          {
+            id: 'doc-valid-1',
+            ipoId: '11111111-1111-4111-8111-111111111111',
+            documentType: 'RHP',
+            sourceUrl: 'https://example.com/rhp.pdf',
+            fileName: null,
+            filePath: null,
+            mimeType: null,
+            fileSizeBytes: null,
+            source: 'MANUAL_UPLOAD',
+            parsingStatus: 'PARSED',
+            parserVersion: null,
+            extractionData: null,
+            errorMessage: null,
+            uploadedAt: new Date('2026-09-10T10:00:00Z'),
+            createdAt: new Date('2026-09-10T10:00:00Z'),
+            updatedAt: new Date('2026-09-10T10:00:00Z'),
+          },
+        ],
+      });
+
+      const dto = toIpoResponseDto(ipo);
+      expect(dto.drhpUrl).toBeNull();
+      expect(dto.rhpUrl).toBe('https://example.com/rhp.pdf');
+      expect(dto.documents).toHaveLength(1);
+      expect(dto.documents![0].title).toBe('Red Herring Prospectus (RHP)');
+      expect(dto.documents![0].sourceUrl).toBe('https://example.com/rhp.pdf');
+    });
+  });
 });

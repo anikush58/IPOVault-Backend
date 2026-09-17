@@ -307,10 +307,10 @@ export function toIpoResponseDto(
       website: p.website,
       displayOrder: p.displayOrder,
     })),
-    drhpUrl: (ipo.documents ?? []).find((d) => d.documentType === 'DRHP')?.sourceUrl ?? null,
-    rhpUrl: (ipo.documents ?? []).find((d) => d.documentType === 'RHP')?.sourceUrl ?? null,
-    prospectusUrl: (ipo.documents ?? []).find((d) => d.documentType === 'PROSPECTUS')?.sourceUrl ?? null,
-    anchorListUrl: (ipo.documents ?? []).find((d) => d.documentType === 'ANCHOR_LIST')?.sourceUrl ?? null,
+    drhpUrl: (ipo.documents ?? []).find((d) => d.documentType === 'DRHP' && d.sourceUrl?.trim())?.sourceUrl?.trim() ?? null,
+    rhpUrl: (ipo.documents ?? []).find((d) => d.documentType === 'RHP' && d.sourceUrl?.trim())?.sourceUrl?.trim() ?? null,
+    prospectusUrl: (ipo.documents ?? []).find((d) => d.documentType === 'PROSPECTUS' && d.sourceUrl?.trim())?.sourceUrl?.trim() ?? null,
+    anchorListUrl: (ipo.documents ?? []).find((d) => d.documentType === 'ANCHOR_LIST' && d.sourceUrl?.trim())?.sourceUrl?.trim() ?? null,
     anchorDetails: (() => {
       const anchorDoc = (ipo.documents ?? []).find((d) => d.documentType === 'ANCHOR_LIST');
       const ext = (anchorDoc?.extractionData as any) || {};
@@ -321,7 +321,7 @@ export function toIpoResponseDto(
         bidDate: ext.anchorBidDate ?? null,
         lockIn: ext.anchorLockIn ?? null,
         details: ext.anchorDetails ?? null,
-        documentUrl: anchorDoc?.sourceUrl ?? null,
+        documentUrl: anchorDoc?.sourceUrl?.trim() ?? null,
         price: ext.anchorPrice ?? null,
         qibPct: ext.anchorQibPct ?? null,
         lockIn30: ext.anchorLockIn30 ?? null,
@@ -329,19 +329,35 @@ export function toIpoResponseDto(
         investors: Array.isArray(ext.anchorInvestors) ? ext.anchorInvestors : [],
       };
     })(),
-    documents: (ipo.documents ?? []).map((d) => ({
-      id: d.id,
-      documentType: d.documentType,
-      title: d.fileName,
-      fileName: d.fileName,
-      sourceUrl: d.sourceUrl,
-      fileUrl: d.sourceUrl,
-      documentUrl: d.sourceUrl,
-      mimeType: d.mimeType,
-      fileSizeBytes: d.fileSizeBytes,
-      parsingStatus: d.parsingStatus,
-      uploadedAt: d.uploadedAt.toISOString(),
-    })),
+    documents: (ipo.documents ?? [])
+      .filter((d) => d.sourceUrl && d.sourceUrl.trim() !== '')
+      .map((d) => {
+        const cleanUrl = d.sourceUrl!.trim();
+        let displayTitle = d.fileName?.trim() || '';
+        if (!displayTitle) {
+          switch (d.documentType) {
+            case 'DRHP': displayTitle = 'Draft Red Herring Prospectus (DRHP)'; break;
+            case 'RHP': displayTitle = 'Red Herring Prospectus (RHP)'; break;
+            case 'PROSPECTUS': displayTitle = 'Final Prospectus'; break;
+            case 'ANCHOR_LIST': displayTitle = 'Anchor Allocation List'; break;
+            case 'BASIS_OF_ALLOTMENT': displayTitle = 'Basis of Allotment'; break;
+            default: displayTitle = 'IPO Document'; break;
+          }
+        }
+        return {
+          id: d.id,
+          documentType: d.documentType,
+          title: displayTitle,
+          fileName: d.fileName?.trim() || null,
+          sourceUrl: cleanUrl,
+          fileUrl: cleanUrl,
+          documentUrl: cleanUrl,
+          mimeType: d.mimeType || null,
+          fileSizeBytes: d.fileSizeBytes || null,
+          parsingStatus: d.parsingStatus,
+          uploadedAt: d.uploadedAt.toISOString(),
+        };
+      }),
     allotment: ipo.allotmentConfig
       ? {
           registrar: ipo.allotmentConfig.registrar,

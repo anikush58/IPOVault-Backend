@@ -66,6 +66,15 @@ export class AnchorInvestorRowDto {
   pctOfIssue?: number;
 }
 
+export class DocumentDto {
+  id?: string;
+  documentType!: DocumentType | string;
+  fileName?: string;
+  title?: string;
+  sourceUrl?: string;
+  url?: string;
+}
+
 export class CreateAdminIpoDto {
   legalName!: string;
   displayName?: string;
@@ -115,6 +124,7 @@ export class CreateAdminIpoDto {
   anchorLockIn30?: string;
   anchorLockIn90?: string;
   anchorInvestors?: AnchorInvestorRowDto[];
+  documents?: DocumentDto[];
   offerCategories?: OfferCategoryDto[];
   financials?: CompanyFinancialDto[];
   participants?: ParticipantDto[];
@@ -172,6 +182,7 @@ export class UpdateAdminIpoDto {
   anchorLockIn30?: string;
   anchorLockIn90?: string;
   anchorInvestors?: AnchorInvestorRowDto[];
+  documents?: DocumentDto[];
   offerCategories?: OfferCategoryDto[];
   financials?: CompanyFinancialDto[];
   participants?: ParticipantDto[];
