@@ -6,7 +6,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AutomatePro — IPOVault Backend Console</title>
   
-  <!-- Google Fonts: Inter & Outfit -->
+  <!-- Google Fonts: Inter & Outfit & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
@@ -95,7 +95,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     /* Window Frame Container */
     .window-frame {
       width: 100%;
-      max-width: 1380px;
+      max-width: 1400px;
       background-color: var(--bg-window);
       border-radius: 16px;
       border: 1px solid var(--border-color);
@@ -104,7 +104,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       display: flex;
       flex-direction: column;
       height: 92vh;
-      max-height: 940px;
+      max-height: 960px;
     }
 
     /* Window Top Control Bar */
@@ -116,6 +116,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       align-items: center;
       justify-content: space-between;
       padding: 0 16px;
+      flex-shrink: 0;
     }
 
     .window-controls { display: flex; align-items: center; gap: 8px; }
@@ -558,8 +559,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     .alert-box.warning { background: #FFFBEB; border: 1px solid #F59E0B; color: #92400E; }
 
     .mono { font-family: 'JetBrains Mono', monospace; }
-    .section-view { display: none; }
-    .section-view.active { display: flex; flex-direction: column; gap: 20px; }
+    
+    /* Strict Tab Visibility Section */
+    .section-view { display: none !important; }
+    .section-view.active { display: flex !important; flex-direction: column; gap: 20px; }
   </style>
 </head>
 <body>
@@ -711,7 +714,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
           <div class="top-actions">
             <div class="search-input-box">
               <i data-feather="search"></i>
-              <input type="text" id="global-search-input" placeholder="Search task..." oninput="handleGlobalSearch(event)" />
+              <input type="text" id="global-search-input" placeholder="Search task..." />
             </div>
             <button class="action-btn-outlined">
               <i data-feather="filter"></i>
@@ -754,7 +757,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         <!-- Scrollable Workspace Content -->
         <div class="workspace-content">
 
-          <!-- DASHBOARD TAB -->
+          <!-- 1. DASHBOARD TAB -->
           <div id="tab-dashboard" class="section-view active">
             <div class="stats-grid">
               <div class="stat-card">
@@ -902,7 +905,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
           </div>
 
-          <!-- MANUAL IPOs TAB -->
+          <!-- 2. MANUAL IPOs TAB -->
           <div id="tab-manual" class="section-view">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <div style="display:flex; gap:10px;">
@@ -948,7 +951,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
           </div>
 
-          <!-- MANUAL IPO EDIT TAB -->
+          <!-- 3. MANUAL IPO EDIT TAB (FORM CONTAINER) -->
           <div id="tab-manual-edit" class="section-view">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <button class="btn-secondary" onclick="switchTab('manual')">← Back to Manual IPOs</button>
@@ -964,7 +967,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             <div id="validation-banner" style="display:none;" class="alert-box"></div>
 
             <div class="stat-card" style="padding:24px;">
-              <div class="stat-title" style="margin-bottom:16px; font-size:14px;">Canonical IPO Information</div>
+              <div class="stat-title" style="margin-bottom:16px; font-size:14px; color:var(--primary);">Canonical IPO Information</div>
               <form id="manual-ipo-form" autocomplete="off" onsubmit="event.preventDefault(); saveManualIpo();" style="display:flex; flex-direction:column; gap:16px;">
                 <input type="hidden" id="form-ipo-id" />
 
@@ -979,11 +982,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                   </div>
                   <div class="form-group">
                     <label>CIN</label>
-                    <input type="text" id="form-cin" autocomplete="off" />
+                    <input type="text" id="form-cin" autocomplete="off" placeholder="e.g. U12345MH2024PLC000001" />
                   </div>
                   <div class="form-group">
                     <label>Trading Symbol</label>
-                    <input type="text" id="form-symbol" autocomplete="off" />
+                    <input type="text" id="form-symbol" autocomplete="off" placeholder="e.g. SYMBOL" />
                   </div>
                 </div>
 
@@ -1012,13 +1015,14 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                       <option value="CLOSED">CLOSED</option>
                       <option value="ALLOTMENT_COMPLETED">ALLOTMENT_COMPLETED</option>
                       <option value="LISTED">LISTED</option>
+                      <option value="CANCELLED">CANCELLED</option>
                     </select>
                   </div>
                   <div class="form-group">
                     <label>Publication Status</label>
                     <select id="form-publicationStatus">
-                      <option value="DRAFT">DRAFT (Hidden)</option>
-                      <option value="PUBLISHED">PUBLISHED (Live)</option>
+                      <option value="DRAFT">DRAFT (Hidden from Mobile)</option>
+                      <option value="PUBLISHED">PUBLISHED (Live on Mobile)</option>
                       <option value="ARCHIVED">ARCHIVED</option>
                     </select>
                   </div>
@@ -1067,15 +1071,159 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                   <input type="url" id="form-logoUrl" placeholder="https://example.com/logo.png" />
                 </div>
 
+                <!-- Offer Breakup & Retail Category Terms -->
+                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                  <strong style="color:var(--primary); font-size:14px;">Offer Breakup & Retail Category Terms</strong>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>QIB Allocation (%)</label>
+                    <input type="number" step="0.01" id="cat-qib-pct" placeholder="e.g. 50" />
+                  </div>
+                  <div class="form-group">
+                    <label>NII Allocation (%)</label>
+                    <input type="number" step="0.01" id="cat-nii-pct" placeholder="e.g. 15" />
+                  </div>
+                  <div class="form-group">
+                    <label>Retail Allocation (%)</label>
+                    <input type="number" step="0.01" id="cat-retail-pct" placeholder="e.g. 35" />
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Retail Min Lots</label>
+                    <input type="number" id="cat-retail-min-lots" placeholder="e.g. 1" />
+                  </div>
+                  <div class="form-group">
+                    <label>Retail Max Lots</label>
+                    <input type="number" id="cat-retail-max-lots" placeholder="e.g. 13" />
+                  </div>
+                  <div class="form-group">
+                    <label>Retail Min Shares</label>
+                    <input type="number" id="cat-retail-min-shares" placeholder="e.g. 100" />
+                  </div>
+                  <div class="form-group">
+                    <label>Retail Max Shares</label>
+                    <input type="number" id="cat-retail-max-shares" placeholder="e.g. 1300" />
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Retail Min Amount (₹)</label>
+                    <input type="number" step="0.01" id="cat-retail-min-amount" placeholder="e.g. 14800" />
+                  </div>
+                  <div class="form-group">
+                    <label>Retail Max Amount (₹)</label>
+                    <input type="number" step="0.01" id="cat-retail-max-amount" placeholder="e.g. 192400" />
+                  </div>
+                </div>
+
+                <!-- Participants (Registrar & Lead Managers) -->
+                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                  <strong style="color:var(--primary); font-size:14px;">Participants (Registrar & Lead Managers)</strong>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Registrar Name</label>
+                    <input type="text" id="part-reg-name" placeholder="e.g. MUFG Intime India Pvt Ltd / KFintech" />
+                  </div>
+                  <div class="form-group">
+                    <label>Registrar Phone</label>
+                    <input type="text" id="part-reg-phone" placeholder="e.g. +91 22 4918 6270" />
+                  </div>
+                  <div class="form-group">
+                    <label>Registrar Email</label>
+                    <input type="email" id="part-reg-email" placeholder="e.g. ipo@linkintime.co.in" />
+                  </div>
+                  <div class="form-group">
+                    <label>Registrar Website</label>
+                    <input type="url" id="part-reg-website" placeholder="https://..." />
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>Lead Manager / BRLM Name(s)</label>
+                  <input type="text" id="part-brlm-name" placeholder="e.g. ICICI Securities, Axis Capital (comma-separated)" />
+                </div>
+
+                <!-- Financial History -->
+                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
+                  <strong style="color:var(--primary); font-size:14px;">Financial History</strong>
+                  <button type="button" class="btn-secondary" onclick="addFinancialRow()" style="padding:4px 10px; font-size:12px;">+ Add Period</button>
+                </div>
+
+                <div id="financial-rows-container"></div>
+
+                <!-- Manual GMP & Subscriptions -->
+                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                  <strong style="color:var(--primary); font-size:14px;">Manual GMP & Subscription Observations</strong>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>GMP Amount (₹)</label>
+                    <input type="number" step="0.01" id="gmp-amount" placeholder="e.g. 25.00" />
+                  </div>
+                  <div class="form-group">
+                    <label>GMP Percentage (%)</label>
+                    <input type="number" step="0.01" id="gmp-percentage" placeholder="e.g. 23.15" />
+                  </div>
+                  <div class="form-group">
+                    <label>Est Profit / Lot (₹)</label>
+                    <input type="number" step="0.01" id="gmp-est-profit" placeholder="e.g. 3500.00" />
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>QIB Sub (x)</label>
+                    <input type="number" step="0.01" id="sub-qib" placeholder="e.g. 4.5" />
+                  </div>
+                  <div class="form-group">
+                    <label>NII Sub (x)</label>
+                    <input type="number" step="0.01" id="sub-nii" placeholder="e.g. 12.3" />
+                  </div>
+                  <div class="form-group">
+                    <label>Retail Sub (x)</label>
+                    <input type="number" step="0.01" id="sub-retail" placeholder="e.g. 8.1" />
+                  </div>
+                  <div class="form-group">
+                    <label>Total Sub (x)</label>
+                    <input type="number" step="0.01" id="sub-total" placeholder="e.g. 7.9" />
+                  </div>
+                </div>
+
                 <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:16px;">
                   <button type="button" class="btn-secondary" onclick="switchTab('manual')">Cancel</button>
                   <button type="submit" class="btn-primary">💾 Save Canonical IPO</button>
                 </div>
               </form>
             </div>
+
+            <!-- Allotment Configuration Form -->
+            <div class="stat-card" style="padding:24px; margin-top:20px;">
+              <div class="stat-title" style="margin-bottom:12px; font-size:14px; color:var(--primary);">Allotment Checker Mapping Configuration</div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Registrar Code</label>
+                  <input type="text" id="allot-registrar-code" placeholder="kfintech / linkintime / bigshare" />
+                </div>
+                <div class="form-group">
+                  <label>Registrar IPO Code / ID</label>
+                  <input type="text" id="allot-registrar-ipo-code" placeholder="e.g. REGISTRAR_IPO_CODE" />
+                </div>
+              </div>
+              <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+                <button class="btn-secondary" onclick="saveAllotmentConfig()">Save Allotment Config</button>
+              </div>
+            </div>
           </div>
 
-          <!-- IPO EXPLORER TAB -->
+          <!-- 4. IPO EXPLORER TAB -->
           <div id="tab-explorer" class="section-view">
             <div class="grid-table" style="padding:16px;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
@@ -1099,7 +1247,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
           </div>
 
-          <!-- DATA QUALITY TAB -->
+          <!-- 5. DATA QUALITY TAB -->
           <div id="tab-quality" class="section-view">
             <div class="stat-card">
               <div class="stat-title">Overall Data Quality Gate</div>
@@ -1108,7 +1256,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             <div class="stats-grid" id="qual-breakdown-grid"></div>
           </div>
 
-          <!-- SOURCE HEALTH TAB -->
+          <!-- 6. SOURCE HEALTH TAB -->
           <div id="tab-sources" class="section-view">
             <div class="grid-table" style="padding:16px;">
               <div style="font-weight:600; margin-bottom:12px;">Upstream Data Sources</div>
@@ -1128,7 +1276,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
           </div>
 
-          <!-- NOTIFICATIONS OPS TAB -->
+          <!-- 7. NOTIFICATIONS OPS TAB -->
           <div id="tab-notifications" class="section-view">
             <div class="stats-grid">
               <div class="stat-card"><div class="stat-title">Total Deliveries</div><div class="stat-value" id="notif-total">-</div></div>
@@ -1138,7 +1286,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
             </div>
           </div>
 
-          <!-- ALLOTMENT OPS TAB -->
+          <!-- 8. ALLOTMENT OPS TAB -->
           <div id="tab-allotment" class="section-view">
             <div class="stats-grid">
               <div class="stat-card"><div class="stat-title">Total Allotment Jobs</div><div class="stat-value" id="allot-jobs">-</div></div>
@@ -1153,480 +1301,50 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     </div>
   </div>
 
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Anchor Portion (₹ Cr)</label>
-                <input type="number" step="0.01" id="form-anchorPortion" placeholder="e.g. 150.00" />
-              </div>
-              <div class="form-group">
-                <label>Anchor Bid Date</label>
-                <input type="date" id="form-anchorBidDate" />
-              </div>
-              <div class="form-group">
-                <label>Anchor Price (₹)</label>
-                <input type="number" step="0.01" id="form-anchorPrice" placeholder="e.g. 43.00" />
-              </div>
-              <div class="form-group">
-                <label>% of QIBs</label>
-                <input type="number" step="0.01" id="form-anchorQibPct" placeholder="e.g. 60.00" />
-              </div>
-              <div class="form-group">
-                <label>Shares Locked (30 Days)</label>
-                <input type="text" id="form-anchorLockIn30" placeholder="e.g. 43,77,907" />
-              </div>
-              <div class="form-group">
-                <label>Shares Locked (90 Days)</label>
-                <input type="text" id="form-anchorLockIn90" placeholder="e.g. 43,77,907" />
-              </div>
-              <div class="form-group">
-                <label>General Lock-in Summary</label>
-                <input type="text" id="form-anchorLockIn" placeholder="e.g. 30 Days (50%), 90 Days (50%)" />
-              </div>
-            </div>
-
-            <div style="margin-top:12px;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <label style="font-weight:600; color:var(--text); font-size:13px;">Anchor Investors Allocation List</label>
-                <button type="button" class="btn btn-secondary" style="font-size:12px; padding:4px 10px;" onclick="addAnchorRow()">+ Add Investor Row</button>
-              </div>
-
-              <div style="overflow-x:auto;">
-                <table style="width:100%; border-collapse:collapse; font-size:12px; text-align:left;" id="anchor-investors-table">
-                  <thead>
-                    <tr style="background:#131b2e; border-bottom:1px solid var(--card-border); color:var(--text-muted);">
-                      <th style="padding:8px; width:35px; text-align:center;">#</th>
-                      <th style="padding:8px;">Anchor Investor Name</th>
-                      <th style="padding:8px; width:130px;">Shares Allotted</th>
-                      <th style="padding:8px; width:110px;">Amt (₹ Cr)</th>
-                      <th style="padding:8px; width:110px;">% Allocated</th>
-                      <th style="padding:8px; width:110px;">% of Issue</th>
-                      <th style="padding:8px; width:40px; text-align:center;"></th>
-                    </tr>
-                  </thead>
-                  <tbody id="anchor-investors-tbody">
-                    <!-- Dynamic Rows -->
-                  </tbody>
-                  <tfoot>
-                    <tr style="background:#0f172a; font-weight:600; border-top:2px solid var(--card-border); color:var(--text);">
-                      <td style="padding:8px; text-align:center;">Total</td>
-                      <td style="padding:8px;">-</td>
-                      <td style="padding:8px;" id="total-anchor-shares">0</td>
-                      <td style="padding:8px;" id="total-anchor-amt">₹0.00</td>
-                      <td style="padding:8px;" id="total-anchor-pct-alloc">0%</td>
-                      <td style="padding:8px;" id="total-anchor-pct-issue">0%</td>
-                      <td style="padding:8px;"></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-
-            <div class="form-group" style="margin-top:12px;">
-              <label>Additional Notes / Breakdown Text</label>
-              <textarea id="form-anchorDetails" rows="2" placeholder="Optional notes or text breakdown..." style="background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text); font-family:inherit; font-size:13px;"></textarea>
-            </div>
-
-            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
-              <strong style="color:var(--primary); font-size:14px;">Offer Breakup & Retail Category Terms</strong>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>QIB Allocation (%)</label>
-                <input type="number" step="0.01" id="cat-qib-pct" placeholder="e.g. 50" />
-              </div>
-              <div class="form-group">
-                <label>NII Allocation (%)</label>
-                <input type="number" step="0.01" id="cat-nii-pct" placeholder="e.g. 15" />
-              </div>
-              <div class="form-group">
-                <label>Retail Allocation (%)</label>
-                <input type="number" step="0.01" id="cat-retail-pct" placeholder="e.g. 35" />
-              </div>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Retail Min Lots</label>
-                <input type="number" id="cat-retail-min-lots" placeholder="e.g. 1" />
-              </div>
-              <div class="form-group">
-                <label>Retail Max Lots</label>
-                <input type="number" id="cat-retail-max-lots" placeholder="e.g. 13" />
-              </div>
-              <div class="form-group">
-                <label>Retail Min Shares</label>
-                <input type="number" id="cat-retail-min-shares" placeholder="e.g. 100" />
-              </div>
-              <div class="form-group">
-                <label>Retail Max Shares</label>
-                <input type="number" id="cat-retail-max-shares" placeholder="e.g. 1300" />
-              </div>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Retail Min Amount (₹)</label>
-                <input type="number" step="0.01" id="cat-retail-min-amount" placeholder="e.g. 14800" />
-              </div>
-              <div class="form-group">
-                <label>Retail Max Amount (₹)</label>
-                <input type="number" step="0.01" id="cat-retail-max-amount" placeholder="e.g. 192400" />
-              </div>
-            </div>
-
-            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
-              <strong style="color:var(--primary); font-size:14px;">Participants (Registrar & Lead Managers)</strong>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Registrar Name</label>
-                <input type="text" id="part-reg-name" placeholder="e.g. MUFG Intime India Pvt Ltd / KFintech" />
-              </div>
-              <div class="form-group">
-                <label>Registrar Phone</label>
-                <input type="text" id="part-reg-phone" placeholder="e.g. +91 22 4918 6270" />
-              </div>
-              <div class="form-group">
-                <label>Registrar Email</label>
-                <input type="email" id="part-reg-email" placeholder="e.g. ipo@linkintime.co.in" />
-              </div>
-              <div class="form-group">
-                <label>Registrar Website</label>
-                <input type="url" id="part-reg-website" placeholder="https://..." />
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label>Lead Manager / BRLM Name(s)</label>
-              <input type="text" id="part-brlm-name" placeholder="e.g. ICICI Securities, Axis Capital (comma-separated)" />
-            </div>
-
-            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px; display:flex; justify-content:space-between; align-items:center;">
-              <strong style="color:var(--primary); font-size:14px;">Financial History</strong>
-              <button type="button" class="btn btn-secondary" onclick="addFinancialRow()" style="padding:4px 10px; font-size:12px;">+ Add Period</button>
-            </div>
-
-            <div id="financial-rows-container"></div>
-            <input type="hidden" id="fin-period" />
-            <input type="hidden" id="fin-assets" />
-            <input type="hidden" id="fin-revenue" />
-            <input type="hidden" id="fin-pat" />
-            <input type="hidden" id="fin-ebitda" />
-            <input type="hidden" id="fin-networth" />
-            <input type="hidden" id="fin-eps" />
-
-            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
-              <strong style="color:var(--primary); font-size:14px;">Manual GMP & Subscription Observations</strong>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>GMP Amount (₹)</label>
-                <input type="number" step="0.01" id="gmp-amount" placeholder="e.g. 25.00" />
-              </div>
-              <div class="form-group">
-                <label>GMP Percentage (%)</label>
-                <input type="number" step="0.01" id="gmp-percentage" placeholder="e.g. 23.15" />
-              </div>
-              <div class="form-group">
-                <label>Est Profit / Lot (₹)</label>
-                <input type="number" step="0.01" id="gmp-est-profit" placeholder="e.g. 3500.00" />
-              </div>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>QIB Sub (x)</label>
-                <input type="number" step="0.01" id="sub-qib" placeholder="e.g. 4.5" />
-              </div>
-              <div class="form-group">
-                <label>NII Sub (x)</label>
-                <input type="number" step="0.01" id="sub-nii" placeholder="e.g. 12.3" />
-              </div>
-              <div class="form-group">
-                <label>Retail Sub (x)</label>
-                <input type="number" step="0.01" id="sub-retail" placeholder="e.g. 8.1" />
-              </div>
-              <div class="form-group">
-                <label>Total Sub (x)</label>
-                <input type="number" step="0.01" id="sub-total" placeholder="e.g. 7.9" />
-              </div>
-            </div>
-
-            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:8px;">
-              <button type="submit" class="btn">Save Changes</button>
-            </div>
-          </form>
-        </div>
-
-        <!-- Allotment Configuration Form -->
-        <div class="card">
-          <div class="card-title">Allotment Checker Mapping Configuration</div>
-          <div class="form-grid" style="margin-top:12px;">
-            <div class="form-group">
-              <label>Registrar Code</label>
-              <input type="text" id="allot-registrar-code" placeholder="kfintech / linkintime / bigshare" />
-            </div>
-            <div class="form-group">
-              <label>Registrar IPO Code / ID</label>
-              <input type="text" id="allot-registrar-ipo-code" placeholder="e.g. REGISTRAR_IPO_CODE" />
-            </div>
-          </div>
-          <div style="display:flex; justify-content:flex-end; margin-top:12px;">
-            <button class="btn btn-secondary" onclick="saveAllotmentConfig()">Save Allotment Config</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- EXPLORER TAB -->
-      <div id="tab-explorer" class="section-view">
-        <div class="table-container">
-          <div class="table-header">
-            <div class="table-title">Canonical IPO Records Explorer</div>
-            <div class="search-box">
-              <input type="text" id="search-q" placeholder="Search symbol or company..." oninput="debounceFetchIpos()" />
-              <select id="filter-segment" onchange="fetchIpos()">
-                <option value="">All Segments</option>
-                <option value="MAINBOARD">Mainboard</option>
-                <option value="SME">SME</option>
-              </select>
-              <select id="filter-status" onchange="fetchIpos()">
-                <option value="">All Statuses</option>
-                <option value="OPEN">Open</option>
-                <option value="UPCOMING">Upcoming</option>
-                <option value="CLOSED">Closed</option>
-                <option value="LISTED">Listed</option>
-              </select>
-            </div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Symbol / Company</th>
-                <th>Segment</th>
-                <th>Status</th>
-                <th>Price Band</th>
-                <th>Issue Size</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="ipos-table-body">
-              <tr><td colspan="6" style="text-align:center; padding: 24px;">Loading canonical IPOs...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- DETAIL MODAL / VIEW -->
-      <div id="tab-detail" class="section-view">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <button class="btn btn-secondary" onclick="switchTab('explorer')">← Back to Explorer</button>
-          <div class="badge badge-upcoming" id="det-ipo-status">OPEN</div>
-        </div>
-        <div class="card">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
-              <div style="font-size:22px; font-weight:700;" id="det-company-name">-</div>
-              <div style="color:var(--muted); font-size:13px;" id="det-symbol-exchange">-</div>
-            </div>
-            <div class="mono" style="font-size:12px; color:var(--muted);" id="det-ipo-id">ID: -</div>
-          </div>
-        </div>
-
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-          <div class="card">
-            <div class="card-title">Issue Structure</div>
-            <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
-              <div>Price Band: <strong id="det-price-band">-</strong></div>
-              <div>Total Issue Size: <strong id="det-issue-size">-</strong></div>
-              <div>Lot Size: <strong id="det-lot-size">-</strong></div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-title">Data Quality Gate</div>
-            <div style="font-size:18px; font-weight:700; margin-top:8px;" id="det-quality-status">-</div>
-            <div class="card-sub" id="det-quality-score">-</div>
-          </div>
-        </div>
-
-        <!-- Lineage / Field Provenance -->
-        <div class="table-container">
-          <div class="table-header"><div class="table-title">Field Provenance & Lineage</div></div>
-          <table>
-            <thead>
-              <tr><th>Field</th><th>Value</th><th>Source</th><th>Observed At</th></tr>
-            </thead>
-            <tbody id="lineage-table-body">
-              <tr><td colspan="4" style="text-align:center; padding: 16px;">Loading field provenance...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- DATA QUALITY TAB -->
-      <div id="tab-quality" class="section-view">
-        <div class="card">
-          <div class="card-title">Data Quality Telemetry Summary</div>
-          <div style="font-size:24px; font-weight:700; margin-top:8px;" id="qual-overall-status">Evaluating...</div>
-          <div class="card-sub">Evaluated against completeness, freshness, and source health gates</div>
-        </div>
-        <div class="stats-grid" id="qual-breakdown-grid"></div>
-      </div>
-
-      <!-- SOURCE HEALTH TAB -->
-      <div id="tab-sources" class="section-view">
-        <div class="table-container">
-          <div class="table-header"><div class="table-title">Source Health & Discovery Adapters</div></div>
-          <table>
-            <thead>
-              <tr><th>Source</th><th>Type</th><th>Records</th><th>Status</th></tr>
-            </thead>
-            <tbody id="sources-table-body">
-              <tr><td colspan="4" style="text-align:center; padding:16px;">Loading source health...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- NOTIFICATION OPS TAB -->
-      <div id="tab-notifications" class="section-view">
-        <div class="stats-grid" id="notif-stats-grid">
-          <div class="card"><div class="card-title">Total Deliveries</div><div class="card-value" id="notif-total">-</div></div>
-          <div class="card"><div class="card-title">Delivered</div><div class="card-value" style="color:var(--success)" id="notif-delivered">-</div></div>
-          <div class="card"><div class="card-title">Failed</div><div class="card-value" style="color:var(--danger)" id="notif-failed">-</div></div>
-          <div class="card"><div class="card-title">Success Rate</div><div class="card-value" style="color:var(--primary)" id="notif-rate">-</div></div>
-        </div>
-      </div>
-
-      <!-- ALLOTMENT OPS TAB -->
-      <div id="tab-allotment" class="section-view">
-        <div class="stats-grid" id="allot-stats-grid">
-          <div class="card"><div class="card-title">Total Check Jobs</div><div class="card-value" id="allot-jobs">-</div></div>
-          <div class="card"><div class="card-title">Completed Jobs</div><div class="card-value" style="color:var(--success)" id="allot-completed">-</div></div>
-          <div class="card"><div class="card-title">Total Observations</div><div class="card-value" id="allot-observations">-</div></div>
-          <div class="card"><div class="card-title">Positive Allotments</div><div class="card-value" style="color:var(--primary)" id="allot-positive">-</div></div>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
   <script>
     const API_BASE = '${baseUrl}';
-    let searchTimeout = null;
-    let manualSearchTimeout = null;
-    let lastExtractionReview = null;
+    let currentTab = 'dashboard';
+    let currentIpoData = null;
 
-    function formatCrores(val) {
-      if (val === null || val === undefined || val === '') return '';
-      const num = Number(val);
-      if (isNaN(num)) return '';
-      const inCrores = num >= 100000 ? num / 10000000 : num;
-      return Number.isInteger(inCrores) ? inCrores.toString() : inCrores.toFixed(2);
-    }
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.feather) feather.replace();
+    });
 
-    function renderFinancialRows(list) {
-      const container = document.getElementById('financial-rows-container');
-      if (!container) return;
-      const items = (Array.isArray(list) && list.length > 0) ? list : [{}];
-      container.innerHTML = items.map((fin, idx) => \`
-        <div class="fin-row" style="background:rgba(255,255,255,0.02); border:1px solid var(--card-border); border-radius:8px; padding:12px; margin-bottom:12px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <span style="font-size:12px; font-weight:600; color:var(--text-muted);">Financial Period #\${idx + 1}</span>
-            \${items.length > 1 ? \`<button type="button" onclick="removeFinancialRow(\${idx})" style="background:transparent; border:none; color:#ef4444; cursor:pointer; font-size:12px;">✕ Remove</button>\` : ''}
-          </div>
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Fiscal Period</label>
-              <input type="text" class="fin-period-input" value="\${fin.fiscalPeriod || ''}" placeholder="e.g. FY24" />
-            </div>
-            <div class="form-group">
-              <label>Total Assets (₹ Cr)</label>
-              <input type="number" step="0.01" class="fin-assets-input" value="\${fin.totalAssets ?? ''}" />
-            </div>
-            <div class="form-group">
-              <label>Total Revenue (₹ Cr)</label>
-              <input type="number" step="0.01" class="fin-revenue-input" value="\${fin.totalRevenue ?? ''}" />
-            </div>
-            <div class="form-group">
-              <label>PAT (₹ Cr)</label>
-              <input type="number" step="0.01" class="fin-pat-input" value="\${fin.pat ?? ''}" />
-            </div>
-          </div>
-          <div class="form-grid" style="margin-top:8px;">
-            <div class="form-group">
-              <label>EBITDA (₹ Cr)</label>
-              <input type="number" step="0.01" class="fin-ebitda-input" value="\${fin.ebitda ?? ''}" />
-            </div>
-            <div class="form-group">
-              <label>Net Worth (₹ Cr)</label>
-              <input type="number" step="0.01" class="fin-networth-input" value="\${fin.netWorth ?? ''}" />
-            </div>
-            <div class="form-group">
-              <label>EPS (₹)</label>
-              <input type="number" step="0.01" class="fin-eps-input" value="\${fin.eps ?? ''}" />
-            </div>
-          </div>
-        </div>
-      \`).join('');
-    }
-
-    function addFinancialRow() {
-      const current = getFinancialsFromForm();
-      current.push({});
-      renderFinancialRows(current);
-    }
-
-    function removeFinancialRow(idx) {
-      const current = getFinancialsFromForm();
-      current.splice(idx, 1);
-      renderFinancialRows(current.length > 0 ? current : [{}]);
-    }
-
-    function getFinancialsFromForm() {
-      const rows = document.querySelectorAll('.fin-row');
-      const financials = [];
-      rows.forEach(row => {
-        const period = row.querySelector('.fin-period-input')?.value?.trim();
-        const assets = parseFloat(row.querySelector('.fin-assets-input')?.value);
-        const revenue = parseFloat(row.querySelector('.fin-revenue-input')?.value);
-        const pat = parseFloat(row.querySelector('.fin-pat-input')?.value);
-        const ebitda = parseFloat(row.querySelector('.fin-ebitda-input')?.value);
-        const networth = parseFloat(row.querySelector('.fin-networth-input')?.value);
-        const eps = parseFloat(row.querySelector('.fin-eps-input')?.value);
-        if (period || !isNaN(assets) || !isNaN(revenue) || !isNaN(pat) || !isNaN(ebitda) || !isNaN(networth) || !isNaN(eps)) {
-          financials.push({
-            fiscalPeriod: period || '',
-            totalAssets: !isNaN(assets) ? assets : undefined,
-            totalRevenue: !isNaN(revenue) ? revenue : undefined,
-            pat: !isNaN(pat) ? pat : undefined,
-            ebitda: !isNaN(ebitda) ? ebitda : undefined,
-            netWorth: !isNaN(networth) ? networth : undefined,
-            eps: !isNaN(eps) ? eps : undefined,
-          });
-        }
-      });
-      return financials;
+    function toggleTheme() {
+      document.body.classList.toggle('dark-mode');
+      const isDark = document.body.classList.contains('dark-mode');
+      const btn = document.getElementById('themeToggleBtn');
+      if (btn) {
+        btn.innerHTML = isDark ? '<i data-feather="sun"></i>' : '<i data-feather="moon"></i>';
+        if (window.feather) feather.replace();
+      }
     }
 
     function switchTab(tabId) {
-      document.querySelectorAll('.nav-item button').forEach(btn => btn.classList.remove('active'));
-      document.querySelectorAll('.section-view').forEach(sec => sec.classList.remove('active'));
+      currentTab = tabId;
+      document.querySelectorAll('.section-view').forEach(el => el.classList.remove('active'));
+      const target = document.getElementById('tab-' + tabId);
+      if (target) target.classList.add('active');
 
-      const targetBtn = Array.from(document.querySelectorAll('.nav-item button')).find(b => b.textContent.toLowerCase().includes(tabId));
-      if (targetBtn) targetBtn.classList.add('active');
+      document.querySelectorAll('.group-items .nav-item').forEach(el => el.classList.remove('active'));
+      const activeNavBtn = document.getElementById('nav-btn-' + tabId);
+      if (activeNavBtn) activeNavBtn.classList.add('active');
 
-      const targetSec = document.getElementById('tab-' + tabId);
-      if (targetSec) targetSec.classList.add('active');
-
-      document.getElementById('page-title').textContent = tabId.toUpperCase() + ' — Backend Data Console';
+      const titleMap = {
+        'dashboard': 'Adrian Bert - CRM Dashboard',
+        'manual': 'Manual IPO Manager',
+        'explorer': 'IPO Explorer',
+        'quality': 'Data Quality Overview',
+        'sources': 'Upstream Source Health',
+        'notifications': 'Notification Delivery Ops',
+        'allotment': 'Allotment Check Ops'
+      };
+      const breadcrumbEl = document.getElementById('active-breadcrumb-title');
+      if (breadcrumbEl) breadcrumbEl.textContent = titleMap[tabId] || 'Console Dashboard';
 
       if (tabId === 'dashboard') loadDashboard();
       if (tabId === 'manual') fetchManualIpos();
-      if (tabId === 'explorer') fetchIpos();
+      if (tabId === 'explorer') fetchExplorerIpos();
       if (tabId === 'quality') loadQuality();
       if (tabId === 'sources') loadSources();
       if (tabId === 'notifications') loadNotifications();
@@ -1638,562 +1356,131 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         const res = await fetch(API_BASE + '/dashboard');
         const json = await res.json();
         const data = json.data || json;
-
-        document.getElementById('kpi-total').textContent = data.ipoCounts?.total ?? 0;
-        document.getElementById('kpi-published').textContent = data.publicationBreakdown?.published ?? 0;
-        document.getElementById('kpi-open').textContent = data.ipoCounts?.open ?? 0;
-        document.getElementById('kpi-drafts').textContent = data.publicationBreakdown?.draft ?? 0;
-        document.getElementById('dash-quality-status').textContent = 'Evaluated (' + (data.dataQuality?.complete ?? 0) + ' Complete)';
+        document.getElementById('kpi-total').textContent = data.totalCanonicalIpos ?? 0;
+        document.getElementById('kpi-published').textContent = data.publishedIpos ?? 0;
+        document.getElementById('kpi-open').textContent = data.openIpos ?? 0;
+        document.getElementById('kpi-drafts').textContent = data.draftIpos ?? 0;
       } catch (err) {
         console.error('Dashboard load error:', err);
       }
     }
 
-    function debounceFetchManualIpos() {
-      clearTimeout(manualSearchTimeout);
-      manualSearchTimeout = setTimeout(fetchManualIpos, 300);
-    }
-
     async function fetchManualIpos() {
-      const q = document.getElementById('man-search-q').value;
-      const pub = document.getElementById('man-filter-pub').value;
-      const status = document.getElementById('man-filter-status').value;
-      const params = new URLSearchParams();
-      if (q) params.append('q', q);
-      if (pub) params.append('publicationStatus', pub);
-      if (status) params.append('status', status);
-
       try {
-        const res = await fetch(API_BASE + '/manual-ipos?' + params.toString());
+        const q = document.getElementById('man-search-q').value;
+        const pub = document.getElementById('man-filter-pub').value;
+        const st = document.getElementById('man-filter-status').value;
+        const query = new URLSearchParams({ page: 1, limit: 50 });
+        if (q) query.set('q', q);
+        if (pub) query.set('publicationStatus', pub);
+        if (st) query.set('status', st);
+
+        const res = await fetch(API_BASE + '/manual-ipos?' + query.toString());
         const json = await res.json();
-        const data = json.data || json;
-        const items = data.items || [];
-
-        // Count stats
-        let publishedCnt = 0, draftCnt = 0, archivedCnt = 0;
-        items.forEach(i => {
-          if (i.publicationStatus === 'PUBLISHED') publishedCnt++;
-          else if (i.publicationStatus === 'DRAFT') draftCnt++;
-          else if (i.publicationStatus === 'ARCHIVED') archivedCnt++;
-        });
-
-        document.getElementById('man-total').textContent = data.pagination?.total ?? items.length;
-        document.getElementById('man-published').textContent = publishedCnt;
-        document.getElementById('man-drafts').textContent = draftCnt;
-        document.getElementById('man-archived').textContent = archivedCnt;
-
+        const items = json.data?.items || json.items || [];
         const tbody = document.getElementById('manual-ipos-table-body');
+        
         if (items.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px;">No Manual IPOs found</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color:var(--text-muted);">No Manual IPOs found. Click "+ Add Manual IPO" to create one.</td></tr>';
           return;
         }
 
-        tbody.innerHTML = items.map(ipo => {
-          const pubClass = (ipo.publicationStatus || 'DRAFT').toLowerCase();
-          const pubBtnHtml = ipo.publicationStatus !== 'PUBLISHED'
-            ? '<button class="btn btn-success" onclick="publishManualIpoDirect(\\\'' + ipo.id + '\\\')">Publish</button>'
-            : '<button class="btn btn-warning" onclick="unpublishManualIpoDirect(\\\'' + ipo.id + '\\\')">Unpublish</button>';
-          const arcBtnHtml = ipo.publicationStatus === 'ARCHIVED'
-            ? '<button class="btn btn-secondary" onclick="unarchiveManualIpoDirect(\\\'' + ipo.id + '\\\')" title="Revert to DRAFT status">↩️ Unarchive</button>'
-            : '<button class="btn btn-secondary" onclick="archiveManualIpoDirect(\\\'' + ipo.id + '\\\')" title="Set status to ARCHIVED">📦 Archive</button>';
-          const safeName = (ipo.legalName || ipo.displayName || ipo.symbol || '').replace(/'/g, "\\\\'");
-          const delBtnHtml = '<button class="btn btn-danger" onclick="deleteManualIpoDirect(\\\'' + ipo.id + '\\\', \\\'' + safeName + '\\\')" title="PERMANENTLY delete from database">🗑️ Delete</button>';
-
-          return \`
-            <tr>
-              <td>
-                <strong>\${ipo.legalName || ipo.displayName || ipo.symbol}</strong>
-                <div style="font-size:11px; color:var(--muted)">\${ipo.symbol || 'N/A'}</div>
-              </td>
-              <td><span class="badge">\${ipo.marketSegment} / \${ipo.exchange}</span></td>
-              <td><span class="badge badge-\${(ipo.status||'').toLowerCase()}">\${ipo.status}</span></td>
-              <td><span class="badge badge-\${pubClass}">\${ipo.publicationStatus}</span></td>
-              <td>\${ipo.priceBandLow ? '₹' + ipo.priceBandLow + ' - ₹' + ipo.priceBandHigh : 'N/A'}</td>
-              <td>\${ipo.openDate || 'Pending'} to \${ipo.closeDate || 'Pending'}</td>
-              <td>
-                <div style="display:flex; gap:6px;">
-                  <button class="btn btn-secondary" onclick="editManualIpo('\${ipo.id}')">Inspect/Edit</button>
-                  \${pubBtnHtml}
-                  \${arcBtnHtml}
-                  \${delBtnHtml}
-                </div>
-              </td>
-            </tr>
-          \`;
-        }).join('');
+        tbody.innerHTML = items.map(item => \`
+          <tr style="border-bottom:1px solid var(--border-subtle);">
+            <td style="padding:12px 16px;"><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
+            <td style="padding:12px 16px;">\${item.marketSegment || 'MAINBOARD'}</td>
+            <td style="padding:12px 16px;"><span class="priority-badge normal">\${item.status || 'DRAFT'}</span></td>
+            <td style="padding:12px 16px;"><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'in-progress' : 'ready'}">\${item.publicationStatus || 'DRAFT'}</span></td>
+            <td style="padding:12px 16px;">₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
+            <td style="padding:12px 16px; font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
+            <td style="padding:12px 16px;">
+              <button class="btn-secondary" onclick="editManualIpo('\${item.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
+            </td>
+          </tr>
+        \`).join('');
       } catch (err) {
-        console.error('Error fetching manual IPOs:', err);
+        console.error('Fetch manual IPOs error:', err);
       }
     }
 
-    function addAnchorRow(data) {
-      data = data || {};
-      const tbody = document.getElementById('anchor-investors-tbody');
-      if (!tbody) return;
-      const rowCount = tbody.children.length + 1;
-      const tr = document.createElement('tr');
-      tr.className = 'anchor-row';
-      tr.style.borderBottom = '1px solid var(--card-border)';
-      const safeName = (data.anchorName || '').replace(/"/g, '&quot;');
-      const sharesVal = data.sharesAllotted != null ? data.sharesAllotted : '';
-      const amtVal = data.amtCr != null ? data.amtCr : '';
-      const allocVal = data.pctAllocated != null ? data.pctAllocated : '';
-      const issueVal = data.pctOfIssue != null ? data.pctOfIssue : '';
-
-      tr.innerHTML =
-        '<td style="padding:6px; text-align:center; color:var(--text-muted);" class="row-num">' + rowCount + '</td>' +
-        '<td style="padding:6px;"><input type="text" class="anchor-name" value="' + safeName + '" placeholder="e.g. BHARAT VALUE FUND" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
-        '<td style="padding:6px;"><input type="number" class="anchor-shares" value="' + sharesVal + '" placeholder="e.g. 4104199" oninput="calculateAnchorTotals()" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
-        '<td style="padding:6px;"><input type="number" step="0.01" class="anchor-amt" value="' + amtVal + '" placeholder="e.g. 17.65" oninput="calculateAnchorTotals()" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
-        '<td style="padding:6px;"><input type="number" step="0.01" class="anchor-pct-alloc" value="' + allocVal + '" placeholder="e.g. 46.87" oninput="calculateAnchorTotals()" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
-        '<td style="padding:6px;"><input type="number" step="0.01" class="anchor-pct-issue" value="' + issueVal + '" placeholder="e.g. 14.06" oninput="calculateAnchorTotals()" style="width:100%; background:#0b0f19; border:1px solid var(--card-border); border-radius:4px; padding:4px 8px; color:var(--text); font-size:12px;" /></td>' +
-        '<td style="padding:6px; text-align:center;"><button type="button" onclick="removeAnchorRow(this)" style="background:#ef4444; color:#fff; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:12px;">&times;</button></td>';
-
-      tbody.appendChild(tr);
-      calculateAnchorTotals();
+    let debounceTimer;
+    function debounceFetchManualIpos() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(fetchManualIpos, 300);
     }
 
-    function removeAnchorRow(btn) {
-      const tr = btn.closest('tr');
-      if (tr) {
-        tr.remove();
-        const rows = document.querySelectorAll('#anchor-investors-tbody tr');
-        rows.forEach((row, idx) => {
-          const numCell = row.querySelector('.row-num');
-          if (numCell) numCell.textContent = idx + 1;
-        });
-        calculateAnchorTotals();
+    async function fetchExplorerIpos() {
+      try {
+        const q = document.getElementById('exp-search-q').value;
+        const res = await fetch(API_BASE + '/ipos?limit=50' + (q ? '&q=' + encodeURIComponent(q) : ''));
+        const json = await res.json();
+        const items = json.data?.items || json.items || [];
+        const tbody = document.getElementById('explorer-ipos-table-body');
+        
+        tbody.innerHTML = items.map(i => \`
+          <tr style="border-bottom:1px solid var(--border-subtle);">
+            <td style="padding:10px 16px;"><strong>\${i.companyName || i.legalName}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${i.symbol || ''}</span></td>
+            <td style="padding:10px 16px;">\${i.marketSegment || 'MAINBOARD'}</td>
+            <td style="padding:10px 16px;"><span class="priority-badge low">\${i.status}</span></td>
+            <td style="padding:10px 16px;">₹\${i.priceBandLow || 0} - ₹\${i.priceBandHigh || 0}</td>
+            <td style="padding:10px 16px;"><button class="btn-secondary" style="padding:4px 8px; font-size:11px;">View Detail</button></td>
+          </tr>
+        \`).join('');
+      } catch (err) {
+        console.error('Explorer load error:', err);
       }
     }
 
-    function calculateAnchorTotals() {
-      const rows = document.querySelectorAll('#anchor-investors-tbody tr');
-      let totalShares = 0;
-      let totalAmt = 0;
-      let totalAlloc = 0;
-      let totalIssue = 0;
-
-      rows.forEach(row => {
-        const shares = parseFloat(row.querySelector('.anchor-shares')?.value) || 0;
-        const amt = parseFloat(row.querySelector('.anchor-amt')?.value) || 0;
-        const alloc = parseFloat(row.querySelector('.anchor-pct-alloc')?.value) || 0;
-        const issue = parseFloat(row.querySelector('.anchor-pct-issue')?.value) || 0;
-
-        totalShares += shares;
-        totalAmt += amt;
-        totalAlloc += alloc;
-        totalIssue += issue;
-      });
-
-      const sharesEl = document.getElementById('total-anchor-shares');
-      const amtEl = document.getElementById('total-anchor-amt');
-      const allocEl = document.getElementById('total-anchor-pct-alloc');
-      const issueEl = document.getElementById('total-anchor-pct-issue');
-
-      if (sharesEl) sharesEl.textContent = totalShares ? totalShares.toLocaleString('en-IN') : '0';
-      if (amtEl) amtEl.textContent = totalAmt ? '₹' + totalAmt.toFixed(2) : '₹0.00';
-      if (allocEl) allocEl.textContent = totalAlloc ? totalAlloc.toFixed(2) + '%' : '0%';
-      if (issueEl) issueEl.textContent = totalIssue ? totalIssue.toFixed(2) + '%' : '0%';
-    }
-
-    function getAnchorInvestorsFromForm() {
-      const rows = document.querySelectorAll('#anchor-investors-tbody tr');
-      const list = [];
-      rows.forEach(row => {
-        const name = (row.querySelector('.anchor-name')?.value || '').trim();
-        if (name) {
-          list.push({
-            anchorName: name,
-            sharesAllotted: parseFloat(row.querySelector('.anchor-shares')?.value) || undefined,
-            amtCr: parseFloat(row.querySelector('.anchor-amt')?.value) || undefined,
-            pctAllocated: parseFloat(row.querySelector('.anchor-pct-alloc')?.value) || undefined,
-            pctOfIssue: parseFloat(row.querySelector('.anchor-pct-issue')?.value) || undefined,
-          });
-        }
-      });
-      return list;
-    }
-
-    function updateLogoPreview() {
-      const url = (document.getElementById('form-logoUrl')?.value || '').trim();
-      const img = document.getElementById('form-logo-preview');
-      if (img) {
-        if (url) {
-          img.src = url;
-          img.style.display = 'inline-block';
-        } else {
-          img.style.display = 'none';
-          img.src = '';
-        }
-      }
+    function debounceFetchExplorerIpos() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(fetchExplorerIpos, 300);
     }
 
     function openCreateModal() {
+      currentIpoData = null;
+      document.getElementById('manual-ipo-form').reset();
       document.getElementById('form-ipo-id').value = '';
-      document.getElementById('form-legalName').value = '';
-      document.getElementById('form-displayName').value = '';
-      document.getElementById('form-cin').value = '';
-      document.getElementById('form-symbol').value = '';
-      document.getElementById('form-marketSegment').value = 'MAINBOARD';
-      document.getElementById('form-exchange').value = 'NSE';
-      document.getElementById('form-status').value = 'DRAFT';
-      document.getElementById('form-publicationStatus').value = 'DRAFT';
-      document.getElementById('form-priceBandLow').value = '';
-      document.getElementById('form-priceBandHigh').value = '';
-      document.getElementById('form-lotSize').value = '';
-      document.getElementById('form-faceValue').value = '';
-      document.getElementById('form-issueSize').value = '';
-      document.getElementById('form-freshIssueSize').value = '';
-      document.getElementById('form-ofsSize').value = '';
-      document.getElementById('form-issueShareCount').value = '';
-      document.getElementById('form-freshIssueShareCount').value = '';
-      document.getElementById('form-ofsShareCount').value = '';
-      document.getElementById('form-openDate').value = '';
-      document.getElementById('form-closeDate').value = '';
-      document.getElementById('form-allotmentDate').value = '';
-      document.getElementById('form-listingDate').value = '';
-
-      document.getElementById('form-logoUrl').value = '';
-      document.getElementById('form-website').value = '';
-      document.getElementById('form-industry').value = '';
-      document.getElementById('form-sector').value = '';
-      document.getElementById('form-phone').value = '';
-      document.getElementById('form-email').value = '';
-      document.getElementById('form-contactPerson').value = '';
-      document.getElementById('form-aboutDescription').value = '';
-      updateLogoPreview();
-
-      document.getElementById('form-drhpUrl').value = '';
-      document.getElementById('form-rhpUrl').value = '';
-      document.getElementById('form-prospectusUrl').value = '';
-      document.getElementById('form-anchorListUrl').value = '';
-      document.getElementById('form-anchorPortion').value = '';
-      document.getElementById('form-anchorBidDate').value = '';
-      document.getElementById('form-anchorLockIn').value = '';
-      document.getElementById('form-anchorDetails').value = '';
-      document.getElementById('form-anchorPrice').value = '';
-      document.getElementById('form-anchorQibPct').value = '';
-      document.getElementById('form-anchorLockIn30').value = '';
-      document.getElementById('form-anchorLockIn90').value = '';
-      const anchorTbody = document.getElementById('anchor-investors-tbody');
-      if (anchorTbody) anchorTbody.innerHTML = '';
-      addAnchorRow();
-
-      document.getElementById('cat-qib-pct').value = '';
-      document.getElementById('cat-nii-pct').value = '';
-      document.getElementById('cat-retail-pct').value = '';
-      document.getElementById('cat-retail-min-lots').value = '';
-      document.getElementById('cat-retail-max-lots').value = '';
-      document.getElementById('cat-retail-min-shares').value = '';
-      document.getElementById('cat-retail-max-shares').value = '';
-      document.getElementById('cat-retail-min-amount').value = '';
-      document.getElementById('cat-retail-max-amount').value = '';
-
-      document.getElementById('part-reg-name').value = '';
-      document.getElementById('part-reg-phone').value = '';
-      document.getElementById('part-reg-email').value = '';
-      document.getElementById('part-reg-website').value = '';
-      document.getElementById('part-brlm-name').value = '';
-
-      renderFinancialRows([]);
-
-      document.getElementById('gmp-amount').value = '';
-      document.getElementById('gmp-percentage').value = '';
-      document.getElementById('gmp-est-profit').value = '';
-
-      document.getElementById('sub-qib').value = '';
-      document.getElementById('sub-nii').value = '';
-      document.getElementById('sub-retail').value = '';
-      document.getElementById('sub-total').value = '';
-
-      document.getElementById('validation-banner').style.display = 'none';
-
-      document.getElementById('allot-registrar-code').value = '';
-      document.getElementById('allot-registrar-ipo-code').value = '';
-
-      const fileInput = document.getElementById('doc-file-input');
-      if (fileInput) fileInput.value = '';
-      const urlInput = document.getElementById('doc-url-input');
-      if (urlInput) urlInput.value = '';
-
-      lastExtractionReview = null;
-      const reviewContainer = document.getElementById('parser-review-container');
-      if (reviewContainer) reviewContainer.style.display = 'none';
-      const statusMsg = document.getElementById('upload-status-message');
-      if (statusMsg) { statusMsg.style.display = 'none'; statusMsg.textContent = ''; }
-
-      const btnPublish = document.getElementById('btn-publish-action');
-      const btnUnpublish = document.getElementById('btn-unpublish-action');
-      const btnArchive = document.getElementById('btn-archive-action');
-      const btnUnarchive = document.getElementById('btn-unarchive-action');
-      const btnDelete = document.getElementById('btn-delete-action');
-
-      if (btnPublish) btnPublish.style.display = 'none';
-      if (btnUnpublish) btnUnpublish.style.display = 'none';
-      if (btnArchive) btnArchive.style.display = 'none';
-      if (btnUnarchive) btnUnarchive.style.display = 'none';
-      if (btnDelete) btnDelete.style.display = 'none';
-
       switchTab('manual-edit');
     }
 
     async function editManualIpo(id) {
-      switchTab('manual-edit');
-
-      // Reset document upload & extraction review state when opening IPO for edit
-      const fileInput = document.getElementById('doc-file-input');
-      if (fileInput) fileInput.value = '';
-      const urlInput = document.getElementById('doc-url-input');
-      if (urlInput) urlInput.value = '';
-      lastExtractionReview = null;
-      const reviewContainer = document.getElementById('parser-review-container');
-      if (reviewContainer) reviewContainer.style.display = 'none';
-      const statusMsg = document.getElementById('upload-status-message');
-      if (statusMsg) { statusMsg.style.display = 'none'; statusMsg.textContent = ''; }
-
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id);
         const json = await res.json();
-        const ipo = json.data || json;
+        currentIpoData = json.data || json;
+        
+        document.getElementById('form-ipo-id').value = currentIpoData.id;
+        document.getElementById('form-legalName').value = currentIpoData.legalName || '';
+        document.getElementById('form-displayName').value = currentIpoData.displayName || '';
+        document.getElementById('form-cin').value = currentIpoData.cin || '';
+        document.getElementById('form-symbol').value = currentIpoData.symbol || '';
+        document.getElementById('form-marketSegment').value = currentIpoData.marketSegment || 'MAINBOARD';
+        document.getElementById('form-exchange').value = currentIpoData.exchange || 'NSE';
+        document.getElementById('form-status').value = currentIpoData.status || 'DRAFT';
+        document.getElementById('form-publicationStatus').value = currentIpoData.publicationStatus || 'DRAFT';
+        document.getElementById('form-priceBandLow').value = currentIpoData.priceBandLow || '';
+        document.getElementById('form-priceBandHigh').value = currentIpoData.priceBandHigh || '';
+        document.getElementById('form-lotSize').value = currentIpoData.lotSize || '';
+        document.getElementById('form-issueSize').value = currentIpoData.issueSize || '';
+        document.getElementById('form-openDate').value = currentIpoData.openDate ? currentIpoData.openDate.split('T')[0] : '';
+        document.getElementById('form-closeDate').value = currentIpoData.closeDate ? currentIpoData.closeDate.split('T')[0] : '';
+        document.getElementById('form-allotmentDate').value = currentIpoData.allotmentDate ? currentIpoData.allotmentDate.split('T')[0] : '';
+        document.getElementById('form-listingDate').value = currentIpoData.listingDate ? currentIpoData.listingDate.split('T')[0] : '';
+        document.getElementById('form-logoUrl').value = currentIpoData.logoUrl || '';
 
-        const pubStatus = ipo.publicationStatus || 'DRAFT';
-        const btnPublish = document.getElementById('btn-publish-action');
-        const btnUnpublish = document.getElementById('btn-unpublish-action');
-        const btnArchive = document.getElementById('btn-archive-action');
-        const btnUnarchive = document.getElementById('btn-unarchive-action');
-        const btnDelete = document.getElementById('btn-delete-action');
-
-        if (btnPublish) btnPublish.style.display = pubStatus === 'PUBLISHED' ? 'none' : 'inline-block';
-        if (btnUnpublish) btnUnpublish.style.display = pubStatus === 'PUBLISHED' ? 'inline-block' : 'none';
-        if (btnArchive) btnArchive.style.display = pubStatus === 'ARCHIVED' ? 'none' : 'inline-block';
-        if (btnUnarchive) btnUnarchive.style.display = pubStatus === 'ARCHIVED' ? 'inline-block' : 'none';
-        if (btnDelete) btnDelete.style.display = 'inline-block';
-
-        document.getElementById('form-ipo-id').value = ipo.id;
-        document.getElementById('form-legalName').value = ipo.company?.legalName || '';
-        document.getElementById('form-displayName').value = ipo.company?.displayName || '';
-        document.getElementById('form-cin').value = ipo.company?.cin || '';
-        document.getElementById('form-symbol').value = ipo.symbol || '';
-        document.getElementById('form-marketSegment').value = ipo.marketSegment || 'MAINBOARD';
-        document.getElementById('form-exchange').value = ipo.exchange || 'NSE';
-        document.getElementById('form-status').value = ipo.status || 'DRAFT';
-        document.getElementById('form-publicationStatus').value = ipo.publicationStatus || 'DRAFT';
-        document.getElementById('form-priceBandLow').value = ipo.priceBandLow ?? '';
-        document.getElementById('form-priceBandHigh').value = ipo.priceBandHigh ?? '';
-        document.getElementById('form-lotSize').value = ipo.lotSize ?? '';
-        document.getElementById('form-faceValue').value = ipo.faceValue ?? '';
-        document.getElementById('form-issueSize').value = formatCrores(ipo.issueSize);
-        document.getElementById('form-freshIssueSize').value = formatCrores(ipo.freshIssueSize);
-        document.getElementById('form-ofsSize').value = formatCrores(ipo.ofsSize);
-        document.getElementById('form-issueShareCount').value = ipo.issueShareCount ?? '';
-        document.getElementById('form-freshIssueShareCount').value = ipo.freshIssueShareCount ?? '';
-        document.getElementById('form-ofsShareCount').value = ipo.ofsShareCount ?? '';
-        document.getElementById('form-openDate').value = ipo.openDate || '';
-        document.getElementById('form-closeDate').value = ipo.closeDate || '';
-        document.getElementById('form-listingDate').value = ipo.listingDate || '';
-
-        const allotmentEv = ipo.lifecycleEvents?.find(e => e.eventType === 'BASIS_OF_ALLOTMENT');
-        document.getElementById('form-allotmentDate').value = ipo.allotmentDate || (allotmentEv ? allotmentEv.eventDate.slice(0, 10) : '');
-
-        // Company
-        document.getElementById('form-logoUrl').value = ipo.company?.logoUrl || ipo.logoUrl || '';
-        document.getElementById('form-website').value = ipo.company?.website || '';
-        document.getElementById('form-industry').value = ipo.company?.industry || '';
-        document.getElementById('form-sector').value = ipo.company?.sector || '';
-        document.getElementById('form-phone').value = ipo.company?.phone || '';
-        document.getElementById('form-email').value = ipo.company?.email || '';
-        document.getElementById('form-contactPerson').value = ipo.company?.contactPerson || '';
-        document.getElementById('form-aboutDescription').value = ipo.company?.aboutDescription || '';
-        updateLogoPreview();
-
-        const drhpDoc = ipo.documents?.find(d => d.documentType === 'DRHP');
-        const rhpDoc = ipo.documents?.find(d => d.documentType === 'RHP');
-        const prospectusDoc = ipo.documents?.find(d => d.documentType === 'PROSPECTUS');
-        const anchorDoc = ipo.documents?.find(d => d.documentType === 'ANCHOR_LIST');
-        const anchorExt = anchorDoc?.extractionData || {};
-
-        document.getElementById('form-drhpUrl').value = ipo.drhpUrl || drhpDoc?.sourceUrl || '';
-        document.getElementById('form-rhpUrl').value = ipo.rhpUrl || rhpDoc?.sourceUrl || '';
-        document.getElementById('form-prospectusUrl').value = ipo.prospectusUrl || prospectusDoc?.sourceUrl || '';
-        document.getElementById('form-anchorListUrl').value = ipo.anchorListUrl || anchorDoc?.sourceUrl || '';
-
-        document.getElementById('form-anchorPortion').value = ipo.anchorDetails?.portion ?? anchorExt.anchorPortion ?? '';
-        document.getElementById('form-anchorBidDate').value = ipo.anchorDetails?.bidDate ?? anchorExt.anchorBidDate ?? '';
-        document.getElementById('form-anchorLockIn').value = ipo.anchorDetails?.lockIn ?? anchorExt.anchorLockIn ?? '';
-        document.getElementById('form-anchorDetails').value = ipo.anchorDetails?.details ?? anchorExt.anchorDetails ?? '';
-        document.getElementById('form-anchorPrice').value = ipo.anchorDetails?.price ?? anchorExt.anchorPrice ?? '';
-        document.getElementById('form-anchorQibPct').value = ipo.anchorDetails?.qibPct ?? anchorExt.anchorQibPct ?? '';
-        document.getElementById('form-anchorLockIn30').value = ipo.anchorDetails?.lockIn30 ?? anchorExt.anchorLockIn30 ?? '';
-        document.getElementById('form-anchorLockIn90').value = ipo.anchorDetails?.lockIn90 ?? anchorExt.anchorLockIn90 ?? '';
-
-        const anchorTbody = document.getElementById('anchor-investors-tbody');
-        if (anchorTbody) anchorTbody.innerHTML = '';
-        const invList = ipo.anchorDetails?.investors || anchorExt.anchorInvestors || [];
-        if (Array.isArray(invList) && invList.length > 0) {
-          invList.forEach(inv => addAnchorRow(inv));
-        } else {
-          addAnchorRow();
-        }
-
-        // Categories
-        const qib = ipo.offerCategories?.find(c => c.category === 'QIB');
-        const nii = ipo.offerCategories?.find(c => c.category === 'NII');
-        const retail = ipo.offerCategories?.find(c => c.category === 'RETAIL');
-        document.getElementById('cat-qib-pct').value = qib?.allocationPct ?? '';
-        document.getElementById('cat-nii-pct').value = nii?.allocationPct ?? '';
-        document.getElementById('cat-retail-pct').value = retail?.allocationPct ?? '';
-        document.getElementById('cat-retail-min-lots').value = retail?.minLots ?? '';
-        document.getElementById('cat-retail-max-lots').value = retail?.maxLots ?? '';
-        document.getElementById('cat-retail-min-shares').value = retail?.minShares ?? '';
-        document.getElementById('cat-retail-max-shares').value = retail?.maxShares ?? '';
-        document.getElementById('cat-retail-min-amount').value = retail?.minAmount ?? '';
-        document.getElementById('cat-retail-max-amount').value = retail?.maxAmount ?? '';
-
-        // Participants
-        const reg = ipo.participants?.find(p => p.role === 'REGISTRAR');
-        const brlms = ipo.participants?.filter(p => p.role === 'BRLM' || p.role === 'CO_BRLM').map(p => p.name).join(', ');
-        document.getElementById('part-reg-name').value = reg?.name || ipo.allotmentConfig?.registrar || '';
-        document.getElementById('part-reg-phone').value = reg?.phone || '';
-        document.getElementById('part-reg-email').value = reg?.email || '';
-        document.getElementById('part-reg-website').value = reg?.website || ipo.allotmentConfig?.allotmentSourceUrl || '';
-        document.getElementById('part-brlm-name').value = brlms || '';
-
-        // Financials
-        renderFinancialRows(ipo.financials || ipo.company?.financials || []);
-
-        // GMP
-        const gmp = ipo.gmpObservations?.[0];
-        document.getElementById('gmp-amount').value = gmp?.gmpAmount ?? '';
-        document.getElementById('gmp-percentage').value = gmp?.gmpPercentage ?? '';
-        document.getElementById('gmp-est-profit').value = gmp?.estProfitPerLot ?? '';
-
-        // Subscription
-        const subs = ipo.subscriptionObservations || [];
-        const qibSub = subs.find(s => s.category === 'QIB');
-        const niiSub = subs.find(s => s.category === 'NII');
-        const retailSub = subs.find(s => s.category === 'RETAIL');
-        const totalSub = subs.find(s => s.category === 'OTHER');
-        document.getElementById('sub-qib').value = qibSub?.subscriptionMultiple ?? '';
-        document.getElementById('sub-nii').value = niiSub?.subscriptionMultiple ?? '';
-        document.getElementById('sub-retail').value = retailSub?.subscriptionMultiple ?? '';
-        document.getElementById('sub-total').value = totalSub?.subscriptionMultiple ?? '';
-
-        // Allotment config
-        if (ipo.allotmentConfig) {
-          document.getElementById('allot-registrar-code').value = ipo.allotmentConfig.registrar || '';
-          document.getElementById('allot-registrar-ipo-code').value = ipo.allotmentConfig.registrarIpoCode || '';
-        } else {
-          document.getElementById('allot-registrar-code').value = reg?.name ? reg.name.toLowerCase().replace(/\s+/g, '') : '';
-          document.getElementById('allot-registrar-ipo-code').value = '';
-        }
-
-        // Render validation banner
-        renderValidationBanner(ipo.validation);
+        switchTab('manual-edit');
       } catch (err) {
-        console.error('Error loading manual IPO:', err);
-      }
-    }
-
-    function renderValidationBanner(val) {
-      const banner = document.getElementById('validation-banner');
-      if (!val) { banner.style.display = 'none'; return; }
-
-      if (val.isValid && (!val.warnings || val.warnings.length === 0)) {
-        banner.className = 'alert-box success';
-        banner.innerHTML = '<strong>✅ Ready for Publication</strong><div>Pre-publication validation checks passed completely.</div>';
-        banner.style.display = 'flex';
-      } else if (val.isValid && val.warnings.length > 0) {
-        banner.className = 'alert-box warning';
-        banner.innerHTML = '<strong>⚠️ Ready with Warnings (' + val.warnings.length + ')</strong><div>' + val.warnings.map(w => w.message).join(' | ') + '</div>';
-        banner.style.display = 'flex';
-      } else {
-        banner.className = 'alert-box danger';
-        banner.innerHTML = '<strong>❌ Validation Errors Block Publication (' + val.errors.length + ')</strong><div>' + val.errors.map(e => e.message).join(' | ') + '</div>';
-        banner.style.display = 'flex';
+        console.error('Error fetching manual IPO detail:', err);
       }
     }
 
     async function saveManualIpo() {
       const id = document.getElementById('form-ipo-id').value;
-      const issueSizeVal = document.getElementById('form-issueSize').value;
-      const freshSizeVal = document.getElementById('form-freshIssueSize').value;
-      const ofsSizeVal = document.getElementById('form-ofsSize').value;
-
-      const offerCategories = [];
-      const qibPct = parseFloat(document.getElementById('cat-qib-pct').value);
-      const niiPct = parseFloat(document.getElementById('cat-nii-pct').value);
-      const retailPct = parseFloat(document.getElementById('cat-retail-pct').value);
-      if (!isNaN(qibPct)) offerCategories.push({ category: 'QIB', allocationPct: qibPct });
-      if (!isNaN(niiPct)) offerCategories.push({ category: 'NII', allocationPct: niiPct });
-      if (!isNaN(retailPct)) {
-        offerCategories.push({
-          category: 'RETAIL',
-          allocationPct: retailPct,
-          minLots: parseInt(document.getElementById('cat-retail-min-lots').value, 10) || undefined,
-          maxLots: parseInt(document.getElementById('cat-retail-max-lots').value, 10) || undefined,
-          minShares: parseInt(document.getElementById('cat-retail-min-shares').value, 10) || undefined,
-          maxShares: parseInt(document.getElementById('cat-retail-max-shares').value, 10) || undefined,
-          minAmount: parseFloat(document.getElementById('cat-retail-min-amount').value) || undefined,
-          maxAmount: parseFloat(document.getElementById('cat-retail-max-amount').value) || undefined,
-        });
-      }
-
-      const participants = [];
-      const regName = document.getElementById('part-reg-name').value.trim();
-      if (regName) {
-        participants.push({
-          role: 'REGISTRAR',
-          name: regName,
-          phone: document.getElementById('part-reg-phone').value.trim() || undefined,
-          email: document.getElementById('part-reg-email').value.trim() || undefined,
-          website: document.getElementById('part-reg-website').value.trim() || undefined,
-          displayOrder: 1,
-        });
-      }
-      const brlmLines = document.getElementById('part-brlm-name').value.split(',').map(s => s.trim()).filter(Boolean);
-      brlmLines.forEach((bName, idx) => {
-        participants.push({ role: 'BRLM', name: bName, displayOrder: idx + 2 });
-      });
-
-      const financials = [];
-      const finPeriod = document.getElementById('fin-period').value.trim();
-      if (finPeriod) {
-        financials.push({
-          fiscalPeriod: finPeriod,
-          totalAssets: parseFloat(document.getElementById('fin-assets').value) || undefined,
-          totalRevenue: parseFloat(document.getElementById('fin-revenue').value) || undefined,
-          pat: parseFloat(document.getElementById('fin-pat').value) || undefined,
-          ebitda: parseFloat(document.getElementById('fin-ebitda').value) || undefined,
-          netWorth: parseFloat(document.getElementById('fin-networth').value) || undefined,
-          eps: parseFloat(document.getElementById('fin-eps').value) || undefined,
-        });
-      }
-
-      let gmp = undefined;
-      const gmpVal = parseFloat(document.getElementById('gmp-amount').value);
-      if (!isNaN(gmpVal)) {
-        gmp = {
-          gmpAmount: gmpVal,
-          gmpPercentage: parseFloat(document.getElementById('gmp-percentage').value) || undefined,
-          estProfitPerLot: parseFloat(document.getElementById('gmp-est-profit').value) || undefined,
-        };
-      }
-
-      const subscription = [];
-      const subQib = parseFloat(document.getElementById('sub-qib').value);
-      const subNii = parseFloat(document.getElementById('sub-nii').value);
-      const subRetail = parseFloat(document.getElementById('sub-retail').value);
-      const subTotal = parseFloat(document.getElementById('sub-total').value);
-      if (!isNaN(subQib)) subscription.push({ category: 'QIB', subscriptionMultiple: subQib });
-      if (!isNaN(subNii)) subscription.push({ category: 'NII', subscriptionMultiple: subNii });
-      if (!isNaN(subRetail)) subscription.push({ category: 'RETAIL', subscriptionMultiple: subRetail });
-      if (!isNaN(subTotal)) subscription.push({ category: 'OTHER', subscriptionMultiple: subTotal });
-
-      const body = {
+      const payload = {
         legalName: document.getElementById('form-legalName').value,
-        displayName: document.getElementById('form-displayName').value || undefined,
-        cin: document.getElementById('form-cin').value || undefined,
-        symbol: document.getElementById('form-symbol').value || undefined,
+        displayName: document.getElementById('form-displayName').value,
+        cin: document.getElementById('form-cin').value,
+        symbol: document.getElementById('form-symbol').value,
         marketSegment: document.getElementById('form-marketSegment').value,
         exchange: document.getElementById('form-exchange').value,
         status: document.getElementById('form-status').value,
@@ -2201,378 +1488,87 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         priceBandLow: parseFloat(document.getElementById('form-priceBandLow').value) || undefined,
         priceBandHigh: parseFloat(document.getElementById('form-priceBandHigh').value) || undefined,
         lotSize: parseInt(document.getElementById('form-lotSize').value, 10) || undefined,
-        faceValue: parseFloat(document.getElementById('form-faceValue').value) || undefined,
-        issueSize: issueSizeVal ? parseFloat(issueSizeVal) : undefined,
-        freshIssueSize: freshSizeVal ? parseFloat(freshSizeVal) : undefined,
-        ofsSize: ofsSizeVal ? parseFloat(ofsSizeVal) : undefined,
-        issueShareCount: parseInt(document.getElementById('form-issueShareCount').value, 10) || undefined,
-        freshIssueShareCount: parseInt(document.getElementById('form-freshIssueShareCount').value, 10) || undefined,
-        ofsShareCount: parseInt(document.getElementById('form-ofsShareCount').value, 10) || undefined,
+        issueSize: parseFloat(document.getElementById('form-issueSize').value) || undefined,
         openDate: document.getElementById('form-openDate').value || undefined,
         closeDate: document.getElementById('form-closeDate').value || undefined,
-        listingDate: document.getElementById('form-listingDate').value || undefined,
         allotmentDate: document.getElementById('form-allotmentDate').value || undefined,
-
+        listingDate: document.getElementById('form-listingDate').value || undefined,
         logoUrl: document.getElementById('form-logoUrl').value || undefined,
-        website: document.getElementById('form-website').value || undefined,
-        industry: document.getElementById('form-industry').value || undefined,
-        sector: document.getElementById('form-sector').value || undefined,
-        phone: document.getElementById('form-phone').value || undefined,
-        email: document.getElementById('form-email').value || undefined,
-        contactPerson: document.getElementById('form-contactPerson').value || undefined,
-        aboutDescription: document.getElementById('form-aboutDescription').value || undefined,
-
-        drhpUrl: document.getElementById('form-drhpUrl').value.trim() || undefined,
-        rhpUrl: document.getElementById('form-rhpUrl').value.trim() || undefined,
-        prospectusUrl: document.getElementById('form-prospectusUrl').value.trim() || undefined,
-        anchorListUrl: document.getElementById('form-anchorListUrl').value.trim() || undefined,
-
-        anchorPortion: parseFloat(document.getElementById('form-anchorPortion').value) || undefined,
-        anchorBidDate: document.getElementById('form-anchorBidDate').value.trim() || undefined,
-        anchorLockIn: document.getElementById('form-anchorLockIn').value.trim() || undefined,
-        anchorDetails: document.getElementById('form-anchorDetails').value.trim() || undefined,
-        anchorPrice: parseFloat(document.getElementById('form-anchorPrice').value) || undefined,
-        anchorQibPct: parseFloat(document.getElementById('form-anchorQibPct').value) || undefined,
-        anchorLockIn30: document.getElementById('form-anchorLockIn30').value.trim() || undefined,
-        anchorLockIn90: document.getElementById('form-anchorLockIn90').value.trim() || undefined,
-        anchorInvestors: getAnchorInvestorsFromForm(),
-
-        offerCategories: offerCategories.length > 0 ? offerCategories : undefined,
-        participants: participants.length > 0 ? participants : undefined,
-        financials: getFinancialsFromForm().filter(f => f.fiscalPeriod),
-        gmp,
-        subscription: subscription.length > 0 ? subscription : undefined,
       };
 
       try {
         const method = id ? 'PATCH' : 'POST';
-        const url = id ? (API_BASE + '/manual-ipos/' + id) : (API_BASE + '/manual-ipos');
+        const url = id ? API_BASE + '/manual-ipos/' + id : API_BASE + '/manual-ipos';
         const res = await fetch(url, {
           method,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify(payload)
         });
 
-        if (!res.ok) {
-          const err = await res.json();
-          alert('Save failed: ' + (err.message || 'Unknown error'));
-          return;
-        }
-
-        const json = await res.json();
-        const saved = json.data || json;
-        alert('Manual IPO saved successfully.');
-        editManualIpo(saved.id);
+        if (!res.ok) throw new Error('Save failed with status ' + res.status);
+        alert('Manual IPO saved successfully!');
+        switchTab('manual');
       } catch (err) {
-        console.error('Save error:', err);
+        alert('Failed to save manual IPO: ' + err.message);
       }
     }
 
     async function publishCurrentIpo() {
       const id = document.getElementById('form-ipo-id').value;
-      if (!id) { alert('Save the IPO draft first before publishing.'); return; }
-      await publishManualIpoDirect(id);
-    }
-
-    async function publishManualIpoDirect(id) {
+      if (!id) return;
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/publish', { method: 'POST' });
-        if (!res.ok) {
-          const err = await res.json();
-          alert('Publish failed: ' + (err.message || 'Validation error'));
-          return;
-        }
-        alert('🚀 Published to Mobile successfully!');
-        if (document.getElementById('form-ipo-id').value === id) editManualIpo(id);
-        else fetchManualIpos();
-      } catch (err) {
-        console.error('Publish error:', err);
-      }
+        if (res.ok) { alert('Published to mobile live feed!'); switchTab('manual'); }
+      } catch (err) { alert('Publish error: ' + err.message); }
     }
 
     async function unpublishCurrentIpo() {
       const id = document.getElementById('form-ipo-id').value;
       if (!id) return;
-      await unpublishManualIpoDirect(id);
-    }
-
-    async function unpublishManualIpoDirect(id) {
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/unpublish', { method: 'POST' });
-        if (res.ok) {
-          alert('Unpublished successfully.');
-          if (document.getElementById('form-ipo-id').value === id) editManualIpo(id);
-          else fetchManualIpos();
-        }
-      } catch (err) {
-        console.error('Unpublish error:', err);
-      }
+        if (res.ok) { alert('Unpublished!'); switchTab('manual'); }
+      } catch (err) { alert('Unpublish error: ' + err.message); }
     }
 
     async function archiveCurrentIpo() {
       const id = document.getElementById('form-ipo-id').value;
       if (!id) return;
-      await archiveManualIpoDirect(id);
-    }
-
-    async function archiveManualIpoDirect(id) {
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/archive', { method: 'POST' });
-        if (res.ok) {
-          alert('📦 IPO archived successfully.\\n(Status set to ARCHIVED. Data remains in database but is hidden from mobile app)');
-          if (document.getElementById('form-ipo-id').value === id) editManualIpo(id);
-          else fetchManualIpos();
-        } else {
-          const err = await res.json().catch(() => ({}));
-          alert('Archive failed: ' + (err.error?.message || err.message || res.statusText));
-        }
-      } catch (err) {
-        console.error('Archive error:', err);
-      }
-    }
-
-    async function unarchiveCurrentIpo() {
-      const id = document.getElementById('form-ipo-id').value;
-      if (!id) return;
-      await unarchiveManualIpoDirect(id);
-    }
-
-    async function unarchiveManualIpoDirect(id) {
-      try {
-        const res = await fetch(API_BASE + '/manual-ipos/' + id + '/unarchive', { method: 'POST' });
-        if (res.ok) {
-          alert('↩️ IPO unarchived (reverted to DRAFT status).');
-          if (document.getElementById('form-ipo-id').value === id) editManualIpo(id);
-          else fetchManualIpos();
-        } else {
-          const err = await res.json().catch(() => ({}));
-          alert('Unarchive failed: ' + (err.error?.message || err.message || res.statusText));
-        }
-      } catch (err) {
-        console.error('Unarchive error:', err);
-      }
+        if (res.ok) { alert('Archived IPO!'); switchTab('manual'); }
+      } catch (err) { alert('Archive error: ' + err.message); }
     }
 
     async function deleteCurrentIpo() {
       const id = document.getElementById('form-ipo-id').value;
-      const name = document.getElementById('form-legalName').value || document.getElementById('form-displayName').value || 'this IPO';
-      if (!id) return;
-
-      const confirmed = confirm(
-        '⚠️ PERMANENT HARD DELETE WARNING:\\n\\n' +
-        'Are you sure you want to PERMANENTLY DELETE "' + name + '"?\\n\\n' +
-        'This will PERMANENTLY ERASE this IPO and all associated records from the database.\\n\\n' +
-        'This action is PERMANENT and CANNOT be undone. Proceed?'
-      );
-
-      if (!confirmed) return;
-
-      const deleted = await deleteManualIpoDirect(id, name, false);
-      if (deleted) {
-        openCreateModal();
-        switchTab('manual');
-      }
-    }
-
-    async function deleteManualIpoDirect(id, name, promptConfirm = true) {
-      if (promptConfirm) {
-        const confirmed = confirm(
-          '⚠️ PERMANENT HARD DELETE WARNING:\\n\\n' +
-          'Are you sure you want to PERMANENTLY DELETE "' + (name || 'this IPO') + '"?\\n\\n' +
-          'This will PERMANENTLY ERASE this IPO and all associated records from the database.\\n\\n' +
-          'This action is PERMANENT and CANNOT be undone. Proceed?'
-        );
-        if (!confirmed) return false;
-      }
-
+      if (!id || !confirm('Permanently delete this IPO?')) return;
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id, { method: 'DELETE' });
-        if (res.ok) {
-          alert('🗑️ IPO permanently deleted from the database.');
-          fetchManualIpos();
-          return true;
-        } else {
-          const err = await res.json().catch(() => ({}));
-          alert('Delete failed: ' + (err.error?.message || err.message || res.statusText));
-          return false;
-        }
-      } catch (err) {
-        console.error('Delete error:', err);
-        alert('Delete failed: ' + (err.message || err));
-        return false;
-      }
-    }
-
-    function showUploadStatus(text, type = 'info') {
-      const statusMsg = document.getElementById('upload-status-message');
-      if (!statusMsg) return;
-      statusMsg.style.display = 'block';
-      statusMsg.textContent = text;
-      if (type === 'error') {
-        statusMsg.style.background = 'rgba(248, 113, 113, 0.15)';
-        statusMsg.style.color = 'var(--danger)';
-        statusMsg.style.border = '1px solid rgba(248, 113, 113, 0.3)';
-      } else if (type === 'success') {
-        statusMsg.style.background = 'rgba(52, 211, 153, 0.15)';
-        statusMsg.style.color = 'var(--success)';
-        statusMsg.style.border = '1px solid rgba(52, 211, 153, 0.3)';
-      } else {
-        statusMsg.style.background = 'rgba(56, 189, 248, 0.15)';
-        statusMsg.style.color = 'var(--primary)';
-        statusMsg.style.border = '1px solid rgba(56, 189, 248, 0.3)';
-      }
+        if (res.ok) { alert('Deleted!'); switchTab('manual'); }
+      } catch (err) { alert('Delete error: ' + err.message); }
     }
 
     function triggerJsonImport() {
-      const fileInput = document.getElementById('json-file-input');
-      if (fileInput) fileInput.click();
+      document.getElementById('json-file-input').click();
     }
 
-    async function handleJsonFileSelect(event) {
-      const file = event.target.files?.[0];
+    function handleJsonFileSelect(evt) {
+      const file = evt.target.files[0];
       if (!file) return;
-
-      try {
-        const text = await file.text();
-        const jsonPayload = JSON.parse(text);
-
-        const currentIpoId = document.getElementById('form-ipo-id')?.value || undefined;
-        let url = API_BASE + '/manual-ipos/import-json';
-        if (currentIpoId) url += '?targetIpoId=' + encodeURIComponent(currentIpoId);
-
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(jsonPayload),
-        });
-
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          const errorMsg = data.error?.message || data.message || res.statusText || 'Invalid JSON format';
-          alert('JSON Import Failed: ' + errorMsg);
-          return;
-        }
-
-        alert('✅ Canonical JSON Import Successful!\\nIPO saved in DRAFT status with ID: ' + data.id);
-        fetchManualIpos();
-        editManualIpo(data.id);
-      } catch (err) {
-        console.error('JSON import error:', err);
-        alert('Invalid JSON file format: ' + (err.message || err));
-      } finally {
-        event.target.value = '';
-      }
-    }
-
-    async function saveAllotmentConfig() {
-      const id = document.getElementById('form-ipo-id').value;
-      if (!id) { alert('Save IPO draft first'); return; }
-
-      const registrar = document.getElementById('allot-registrar-code').value.trim();
-      const registrarIpoCode = document.getElementById('allot-registrar-ipo-code').value.trim();
-
-      try {
-        const res = await fetch(API_BASE + '/manual-ipos/' + id + '/allotment-config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ registrar, registrarIpoCode, enabled: true }),
-        });
-        if (res.ok) {
-          alert('Allotment registrar config saved successfully.');
-        }
-      } catch (err) {
-        console.error('Save allotment config error:', err);
-      }
-    }
-
-    function debounceFetchIpos() {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(fetchIpos, 300);
-    }
-
-    async function fetchIpos() {
-      const q = document.getElementById('search-q').value;
-      const segment = document.getElementById('filter-segment').value;
-      const status = document.getElementById('filter-status').value;
-      const params = new URLSearchParams();
-      if (q) params.append('q', q);
-      if (segment) params.append('marketSegment', segment);
-      if (status) params.append('status', status);
-
-      try {
-        const res = await fetch(API_BASE + '/ipos?' + params.toString());
-        const json = await res.json();
-        const ipos = json.data || [];
-        const tbody = document.getElementById('ipos-table-body');
-        
-        if (ipos.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 24px;">No matching canonical IPOs found</td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = ipos.map(ipo => \`
-          <tr>
-            <td>
-              <strong>\${ipo.companyName || ipo.symbol}</strong>
-              <div style="font-size:11px; color:var(--muted)">\${ipo.symbol}</div>
-            </td>
-            <td><span class="badge">\${ipo.marketSegment}</span></td>
-            <td><span class="badge badge-\${(ipo.status||'').toLowerCase()}">\${ipo.status}</span></td>
-            <td>\${ipo.priceBandLow ? '₹' + ipo.priceBandLow + ' - ₹' + ipo.priceBandHigh : 'N/A'}</td>
-            <td>\${ipo.issueSizeInr ? '₹' + (ipo.issueSizeInr / 10000000).toFixed(2) + ' Cr' : 'N/A'}</td>
-            <td><button class="btn btn-secondary" onclick="viewIpoDetail('\${ipo.id}')">Inspect</button></td>
-          </tr>
-        \`).join('');
-      } catch (err) {
-        console.error('Error fetching IPOs:', err);
-      }
-    }
-
-    async function viewIpoDetail(id) {
-      switchTab('detail');
-      try {
-        const res = await fetch(API_BASE + '/ipos/' + id);
-        const json = await res.json();
-        const ipo = json.data || json;
-
-        document.getElementById('det-company-name').textContent = ipo.companyName || ipo.symbol;
-        document.getElementById('det-symbol-exchange').textContent = (ipo.symbol || '') + ' | ' + (ipo.exchange || 'NSE/BSE');
-        document.getElementById('det-ipo-id').textContent = 'ID: ' + ipo.id;
-        document.getElementById('det-price-band').textContent = ipo.priceBandLow ? '₹' + ipo.priceBandLow + ' - ₹' + ipo.priceBandHigh : 'N/A';
-        document.getElementById('det-issue-size').textContent = ipo.issueSizeInr ? '₹' + (ipo.issueSizeInr / 10000000).toFixed(2) + ' Cr' : 'N/A';
-        document.getElementById('det-lot-size').textContent = ipo.lotSize ? ipo.lotSize + ' shares' : 'N/A';
-        document.getElementById('det-quality-status').textContent = ipo.qualityStatus || 'COMPLETE';
-
-        loadLineage(id);
-      } catch (err) {
-        console.error('Error loading IPO detail:', err);
-      }
-    }
-
-    async function loadLineage(id) {
-      try {
-        const res = await fetch(API_BASE + '/ipos/' + id + '/lineage');
-        const json = await res.json();
-        const lineage = json.data || json;
-        const provenances = lineage.provenances || [];
-
-        const tbody = document.getElementById('lineage-table-body');
-        if (provenances.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:16px;">No field provenance entries found</td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = provenances.map(p => \`
-          <tr>
-            <td><strong>\${p.fieldName}</strong></td>
-            <td>\${p.fieldValue || 'N/A'}</td>
-            <td><span class="badge">\${p.sourceCode || 'SYSTEM'}</span></td>
-            <td class="mono" style="font-size:11px">\${new Date(p.observedAt).toLocaleString()}</td>
-          </tr>
-        \`).join('');
-      } catch (err) {
-        console.error('Lineage load error:', err);
-      }
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const jsonPayload = JSON.parse(e.target.result);
+          const res = await fetch(API_BASE + '/manual-ipos/import-json', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(jsonPayload)
+          });
+          if (res.ok) { alert('JSON Imported successfully!'); fetchManualIpos(); }
+        } catch (err) { alert('JSON import failed: ' + err.message); }
+      };
+      reader.readAsText(file);
     }
 
     async function loadQuality() {
@@ -2584,9 +1580,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
         const grid = document.getElementById('qual-breakdown-grid');
         grid.innerHTML = Object.entries(data.statusBreakdown || {}).map(([st, cnt]) => \`
-          <div class="card">
-            <div class="card-title">\${st}</div>
-            <div class="card-value">\${cnt}</div>
+          <div class="stat-card">
+            <div class="stat-title">\${st}</div>
+            <div class="stat-value">\${cnt}</div>
           </div>
         \`).join('');
       } catch (err) {
@@ -2601,11 +1597,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         const sources = json.data?.sources || json.sources || [];
         const tbody = document.getElementById('sources-table-body');
         tbody.innerHTML = sources.map(s => \`
-          <tr>
-            <td><strong>\${s.name}</strong> (\${s.code})</td>
-            <td>\${s.sourceType}</td>
-            <td class="mono">\${s.totalRecords}</td>
-            <td><span class="badge badge-open">\${s.healthState}</span></td>
+          <tr style="border-bottom:1px solid var(--border-subtle);">
+            <td style="padding:10px 16px;"><strong>\${s.name}</strong> (\${s.code})</td>
+            <td style="padding:10px 16px;">\${s.sourceType}</td>
+            <td style="padding:10px 16px;" class="mono">\${s.totalRecords}</td>
+            <td style="padding:10px 16px;"><span class="status-pill in-progress">\${s.healthState}</span></td>
           </tr>
         \`).join('');
       } catch (err) {
