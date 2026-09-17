@@ -100,6 +100,35 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       padding: 20px 14px;
       flex-shrink: 0;
       color: #94A3B8;
+      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+
+    .sidebar.collapsed {
+      width: 72px;
+      padding: 20px 10px;
+    }
+
+    .sidebar.collapsed .brand-title,
+    .sidebar.collapsed .workspace-picker,
+    .sidebar.collapsed .nav-group-title,
+    .sidebar.collapsed .nav-item span,
+    .sidebar.collapsed .user-info {
+      display: none !important;
+    }
+
+    .sidebar.collapsed .brand-logo {
+      justify-content: center;
+    }
+
+    .sidebar.collapsed .nav-item {
+      justify-content: center;
+      padding: 10px 0;
+    }
+
+    .sidebar.collapsed .user-profile {
+      justify-content: center;
+      padding: 6px 0;
     }
 
     .sidebar-brand { margin-bottom: 24px; }
@@ -374,11 +403,16 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     <!-- Left Sidebar Navigation -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="brand-logo">
-          <div class="logo-box">
-            <span>IV</span>
+        <div class="brand-logo" style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div class="logo-box">
+              <span>IV</span>
+            </div>
+            <span class="brand-title">IPOVault</span>
           </div>
-          <span class="brand-title">IPOVault</span>
+          <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle Menu" style="background:none; border:none; color:#94A3B8; cursor:pointer; padding:4px; border-radius:6px; display:flex; align-items:center;">
+            <i data-feather="sidebar"></i>
+          </button>
         </div>
         <div class="workspace-picker">
           <span>Production API (v1)</span>
@@ -390,31 +424,31 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       <nav class="sidebar-nav">
         <div class="nav-group-title">Console Modules</div>
 
-        <button class="nav-item active" id="nav-btn-dashboard" onclick="switchTab('dashboard')">
+        <button class="nav-item active" id="nav-btn-dashboard" title="Dashboard" onclick="switchTab('dashboard')">
           <i data-feather="grid"></i>
           <span>Dashboard</span>
         </button>
-        <button class="nav-item" id="nav-btn-manual" onclick="switchTab('manual')">
+        <button class="nav-item" id="nav-btn-manual" title="Manual IPO Manager" onclick="switchTab('manual')">
           <i data-feather="edit-3"></i>
           <span>Manual IPO Manager</span>
         </button>
-        <button class="nav-item" id="nav-btn-explorer" onclick="switchTab('explorer')">
+        <button class="nav-item" id="nav-btn-explorer" title="IPO Explorer" onclick="switchTab('explorer')">
           <i data-feather="search"></i>
           <span>IPO Explorer</span>
         </button>
-        <button class="nav-item" id="nav-btn-quality" onclick="switchTab('quality')">
+        <button class="nav-item" id="nav-btn-quality" title="Data Quality" onclick="switchTab('quality')">
           <i data-feather="shield"></i>
           <span>Data Quality</span>
         </button>
-        <button class="nav-item" id="nav-btn-sources" onclick="switchTab('sources')">
+        <button class="nav-item" id="nav-btn-sources" title="Source Health" onclick="switchTab('sources')">
           <i data-feather="server"></i>
           <span>Source Health</span>
         </button>
-        <button class="nav-item" id="nav-btn-notifications" onclick="switchTab('notifications')">
+        <button class="nav-item" id="nav-btn-notifications" title="Notification Ops" onclick="switchTab('notifications')">
           <i data-feather="bell"></i>
           <span>Notification Ops</span>
         </button>
-        <button class="nav-item" id="nav-btn-allotment" onclick="switchTab('allotment')">
+        <button class="nav-item" id="nav-btn-allotment" title="Allotment Ops" onclick="switchTab('allotment')">
           <i data-feather="check-square"></i>
           <span>Allotment Ops</span>
         </button>
@@ -437,6 +471,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       <!-- Top Bar Header -->
       <div class="top-bar">
         <div class="breadcrumbs">
+          <button class="icon-btn" onclick="toggleSidebar()" title="Toggle Menu" style="margin-right:6px;">
+            <i data-feather="sidebar"></i>
+          </button>
           <span>Console</span>
           <i data-feather="chevron-right"></i>
           <span class="breadcrumb-active" id="active-breadcrumb-title">Dashboard</span>
@@ -925,8 +962,20 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
     let currentIpoData = null;
 
     document.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('sidebar-collapsed') === 'true') {
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar) sidebar.classList.add('collapsed');
+      }
       if (window.feather) feather.replace();
     });
+
+    function toggleSidebar() {
+      const sidebar = document.querySelector('.sidebar');
+      if (!sidebar) return;
+      sidebar.classList.toggle('collapsed');
+      const isCollapsed = sidebar.classList.contains('collapsed');
+      localStorage.setItem('sidebar-collapsed', isCollapsed ? 'true' : 'false');
+    }
 
     function toggleTheme() {
       document.body.classList.toggle('dark-mode');
