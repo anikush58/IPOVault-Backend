@@ -933,7 +933,11 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
               <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
                   <strong style="color:var(--primary); font-size:14px;">Anchor Investors Allocation List</strong>
-                  <button type="button" class="btn-secondary" onclick="addAnchorInvestorRow()" style="font-size:12px; padding:4px 10px;">+ Add Anchor Investor</button>
+                  <div style="display:flex; gap:8px;">
+                    <input type="file" id="anchor-csv-file-input" accept=".csv" style="display:none;" onchange="handleAnchorCsvFileSelect(event)" />
+                    <button type="button" class="btn-secondary" onclick="triggerAnchorCsvUpload()" style="font-size:12px; padding:4px 10px;">Upload CSV</button>
+                    <button type="button" class="btn-secondary" onclick="addAnchorInvestorRow()" style="font-size:12px; padding:4px 10px;">+ Add Anchor Investor</button>
+                  </div>
                 </div>
 
                 <div class="grid-table-box" style="margin-bottom:12px;">
@@ -1377,6 +1381,95 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         }
       });
       return list;
+    }
+
+    function triggerAnchorCsvUpload() {
+      const input = document.getElementById('anchor-csv-file-input');
+      if (input) input.click();
+    }
+
+    function handleAnchorCsvFileSelect(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const text = e.target.result;
+          parseAndAppendAnchorCsv(text);
+          evt.target.value = '';
+        } catch (err) {
+          alert('Failed to parse CSV file: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function parseCsvLine(text) {
+      const result = [];
+      let cell = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '"') {
+          inQuotes = !inQuotes;
+        } else if (c === ',' && !inQuotes) {
+          result.push(cell.trim());
+          cell = '';
+        } else {
+          cell += c;
+        }
+      }
+      result.push(cell.trim());
+      return result;
+    }
+
+    function parseAndAppendAnchorCsv(csvText) {
+      const rawLines = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+      if (rawLines.length === 0) return;
+
+      const headers = parseCsvLine(rawLines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9%]/g, ''));
+      
+      let nameIdx = headers.findIndex(h => h.includes('anchor') || h.includes('investor') || h.includes('name'));
+      let sharesIdx = headers.findIndex(h => h.includes('share'));
+      let amtIdx = headers.findIndex(h => h.includes('amt') || h.includes('amount') || h.includes('cr'));
+      let pctAllocIdx = headers.findIndex(h => h.includes('alloc'));
+      let pctIssueIdx = headers.findIndex(h => h.includes('issue'));
+
+      if (nameIdx === -1 && headers.length > 0) nameIdx = 0;
+      if (sharesIdx === -1 && headers.length > 1) sharesIdx = 1;
+      if (amtIdx === -1 && headers.length > 2) amtIdx = 2;
+      if (pctAllocIdx === -1 && headers.length > 3) pctAllocIdx = 3;
+      if (pctIssueIdx === -1 && headers.length > 4) pctIssueIdx = 4;
+
+      let addedCount = 0;
+      for (let i = 1; i < rawLines.length; i++) {
+        const cols = parseCsvLine(rawLines[i]);
+        if (cols.length === 0 || !cols[nameIdx]) continue;
+
+        const anchorName = cols[nameIdx].replace(/^["']|["']$/g, '').trim();
+        if (!anchorName || anchorName.toLowerCase() === 'total' || anchorName.toLowerCase() === 'total:') continue;
+
+        const parseCleanNum = (val) => {
+          if (!val) return '';
+          const cleaned = String(val).replace(/[^0-9.-]/g, '');
+          return cleaned !== '' ? cleaned : '';
+        };
+
+        const sharesAllotted = sharesIdx !== -1 && cols[sharesIdx] ? parseCleanNum(cols[sharesIdx]) : '';
+        const amtCr = amtIdx !== -1 && cols[amtIdx] ? parseCleanNum(cols[amtIdx]) : '';
+        const pctAllocated = pctAllocIdx !== -1 && cols[pctAllocIdx] ? parseCleanNum(cols[pctAllocIdx]) : '';
+        const pctOfIssue = pctIssueIdx !== -1 && cols[pctIssueIdx] ? parseCleanNum(cols[pctIssueIdx]) : '';
+
+        addAnchorInvestorRow(anchorName, sharesAllotted, amtCr, pctAllocated, pctOfIssue);
+        addedCount++;
+      }
+
+      if (addedCount > 0) {
+        calculateAnchorTotals();
+        alert('Successfully imported ' + addedCount + ' anchor investor(s) from CSV!');
+      } else {
+        alert('No valid anchor investor rows found in CSV file.');
+      }
     }
 
     function openCreateModal() {
