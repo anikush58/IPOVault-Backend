@@ -1,4 +1,4 @@
-export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
+export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -283,6 +283,14 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       justify-content: center;
     }
     .icon-btn:hover { background-color: var(--bg-active); color: var(--text-main); }
+
+    /* Section View Tab Switching */
+    .section-view {
+      display: none !important;
+    }
+    .section-view.active {
+      display: block !important;
+    }
 
     /* Content Area */
     .workspace-content {
@@ -1074,7 +1082,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
   </div>
 
   <script>
-    const API_BASE = '${baseUrl}';
+    const API_BASE = window.location.pathname.replace(/\/$/, '') + '/api';
     let currentTab = 'dashboard';
     let currentIpoData = null;
 
@@ -1118,6 +1126,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       const titleMap = {
         'dashboard': 'Dashboard',
         'manual': 'Manual IPO Manager',
+        'manual-edit': 'Edit IPO',
         'explorer': 'IPO Explorer',
         'quality': 'Data Quality Overview',
         'sources': 'Upstream Source Health',
@@ -1134,6 +1143,8 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       if (tabId === 'sources') loadSources();
       if (tabId === 'notifications') loadNotifications();
       if (tabId === 'allotment') loadAllotment();
+
+      if (window.feather) feather.replace();
     }
 
     async function loadDashboard() {
