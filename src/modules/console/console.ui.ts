@@ -816,6 +816,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <label>Total Issue Size (₹ Cr)</label>
                   <input type="number" step="0.01" id="form-issueSize" />
                 </div>
+                <div class="form-group">
+                  <label>Fresh Issue Size (₹ Cr)</label>
+                  <input type="number" step="0.01" id="form-freshIssueSize" placeholder="e.g. 500.00" />
+                </div>
+                <div class="form-group">
+                  <label>Offer for Sale Size (₹ Cr)</label>
+                  <input type="number" step="0.01" id="form-ofsSize" placeholder="e.g. 200.00" />
+                </div>
               </div>
 
               <div class="form-grid">
@@ -1867,6 +1875,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       currentIpoData = null;
       document.getElementById('manual-ipo-form').reset();
       document.getElementById('form-ipo-id').value = '';
+      document.getElementById('form-freshIssueSize').value = '';
+      document.getElementById('form-ofsSize').value = '';
       document.getElementById('allot-registrar-code').value = '';
       document.getElementById('allot-registrar-ipo-code').value = '';
       document.getElementById('cat-qib-pct').value = '';
@@ -1930,6 +1940,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-priceBandHigh').value = currentIpoData.priceBandHigh || '';
         document.getElementById('form-lotSize').value = currentIpoData.lotSize || '';
         document.getElementById('form-issueSize').value = currentIpoData.issueSize || '';
+        document.getElementById('form-freshIssueSize').value = currentIpoData.freshIssueSize ?? '';
+        document.getElementById('form-ofsSize').value = currentIpoData.ofsSize ?? '';
         document.getElementById('form-openDate').value = currentIpoData.openDate ? currentIpoData.openDate.split('T')[0] : '';
         document.getElementById('form-closeDate').value = currentIpoData.closeDate ? currentIpoData.closeDate.split('T')[0] : '';
         document.getElementById('form-allotmentDate').value = currentIpoData.allotmentDate ? currentIpoData.allotmentDate.split('T')[0] : '';
@@ -2090,6 +2102,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         profitAmount: parseFloat(document.getElementById('form-profitAmount').value) || undefined,
         profitPercentage: parseFloat(document.getElementById('form-profitPercentage').value) || undefined,
         issueSize: parseFloat(document.getElementById('form-issueSize').value) || undefined,
+        freshIssueSize: parseFloat(document.getElementById('form-freshIssueSize').value) || undefined,
+        ofsSize: parseFloat(document.getElementById('form-ofsSize').value) || undefined,
         openDate: document.getElementById('form-openDate').value || undefined,
         closeDate: document.getElementById('form-closeDate').value || undefined,
         allotmentDate: document.getElementById('form-allotmentDate').value || undefined,
