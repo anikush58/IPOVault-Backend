@@ -6,7 +6,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IPOVault — Backend Admin Console</title>
   
-  <!-- Google Fonts: Inter & Outfit & JetBrains Mono -->
+  <!-- Google Fonts: Inter, Outfit, JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
@@ -15,11 +15,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
   <script src="https://unpkg.com/feather-icons"></script>
   
   <style>
-    /* IPOVault Console Design System (AutomatePro Light & Dark Themes) */
+    /* IPOVault Modern SaaS Application Theme */
     :root {
-      --bg-app: #ECEFF1;
-      --bg-window: #FFFFFF;
-      --bg-sidebar: #F8FAFC;
+      --bg-app: #F8FAFC;
+      --bg-sidebar: #0F172A;
       --bg-surface: #FFFFFF;
       --bg-hover: #F1F5F9;
       --bg-active: #E2E8F0;
@@ -33,6 +32,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       
       --primary: #4F46E5;
       --primary-light: #EEF2FF;
+      --primary-hover: #4338CA;
       
       /* Status Colors */
       --status-open-bg: #DCFCE7;
@@ -46,28 +46,19 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 
       --status-published-bg: #EEF2FF;
       --status-published-fg: #4F46E5;
-      
-      /* Priority & Badge Colors */
-      --badge-pub-bg: #E0E7FF;
-      --badge-pub-fg: #3730A3;
-      
-      --badge-draft-bg: #FEF3C7;
-      --badge-draft-fg: #92400E;
 
-      --shadow-window: 0 20px 50px rgba(0, 0, 0, 0.08);
-      --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.04);
+      --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
     }
 
     body.dark-mode {
       --bg-app: #090D16;
-      --bg-window: #0F172A;
-      --bg-sidebar: #1E293B;
-      --bg-surface: #1E293B;
-      --bg-hover: #334155;
-      --bg-active: #475569;
+      --bg-sidebar: #0B0F19;
+      --bg-surface: #0F172A;
+      --bg-hover: #1E293B;
+      --bg-active: #334155;
       
-      --border-color: #334155;
-      --border-subtle: #1E293B;
+      --border-color: #1E293B;
+      --border-subtle: #0F172A;
       
       --text-main: #F8FAFC;
       --text-muted: #94A3B8;
@@ -75,102 +66,43 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       
       --primary: #818CF8;
       --primary-light: #1E1B4B;
+      --primary-hover: #6366F1;
       
-      --shadow-window: 0 20px 50px rgba(0, 0, 0, 0.5);
       --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
+    html, body {
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       background-color: var(--bg-app);
       color: var(--text-main);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      padding: 24px;
-      overflow-x: hidden;
     }
 
-    /* Window Frame Container */
-    .window-frame {
-      width: 100%;
-      max-width: 1420px;
-      background-color: var(--bg-window);
-      border-radius: 16px;
-      border: 1px solid var(--border-color);
-      box-shadow: var(--shadow-window);
+    /* SaaS Application Root Layout */
+    .app-root {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
       overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      height: 92vh;
-      max-height: 960px;
     }
 
-    /* Window Top Control Bar */
-    .window-header {
-      height: 44px;
-      background-color: var(--bg-window);
-      border-bottom: 1px solid var(--border-color);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      flex-shrink: 0;
-    }
-
-    .window-controls { display: flex; align-items: center; gap: 8px; }
-    .control-btn { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-    .control-btn.close { background-color: #FF5F56; }
-    .control-btn.minimize { background-color: #FFBD2E; }
-    .control-btn.maximize { background-color: #27C93F; }
-
-    .url-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background-color: var(--bg-hover);
-      padding: 4px 18px;
-      border-radius: 20px;
-      font-size: 12px;
-      color: var(--text-muted);
-      width: 360px;
-      justify-content: center;
-    }
-    .url-bar i { width: 12px; height: 12px; }
-
-    .header-right-actions { display: flex; align-items: center; gap: 12px; }
-    .icon-btn {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      padding: 6px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .icon-btn:hover { background-color: var(--bg-hover); color: var(--text-main); }
-
-    /* App Layout Grid */
-    .app-layout { display: flex; flex: 1; overflow: hidden; }
-
-    /* Sidebar Styling */
+    /* Sidebar Styling (Dark Modern SaaS Sidebar) */
     .sidebar {
       width: 250px;
       background-color: var(--bg-sidebar);
-      border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      padding: 16px 12px;
+      padding: 20px 14px;
       flex-shrink: 0;
+      color: #94A3B8;
     }
 
-    .sidebar-brand { margin-bottom: 20px; }
-    .brand-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .sidebar-brand { margin-bottom: 24px; }
+    .brand-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
     .logo-box {
       width: 32px;
       height: 32px;
@@ -181,23 +113,24 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       align-items: center;
       justify-content: center;
       font-weight: 700;
+      font-family: 'Outfit', sans-serif;
     }
-    .logo-box i { width: 18px; height: 18px; }
-    .brand-title { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 17px; color: var(--text-main); letter-spacing: -0.3px; }
+    .brand-title { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 18px; color: #F8FAFC; letter-spacing: -0.3px; }
 
     .workspace-picker {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 12px;
-      background-color: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
+      padding: 9px 12px;
+      background-color: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
+      color: #E2E8F0;
     }
-    .workspace-picker i { width: 14px; height: 14px; color: var(--text-muted); }
+    .workspace-picker i { width: 14px; height: 14px; color: #94A3B8; }
 
     /* Navigation Menu */
     .sidebar-nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
@@ -205,9 +138,9 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 9px 12px;
+      padding: 10px 12px;
       border-radius: 8px;
-      color: var(--text-muted);
+      color: #94A3B8;
       text-decoration: none;
       font-size: 13px;
       font-weight: 500;
@@ -218,21 +151,21 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       width: 100%;
       text-align: left;
     }
-    .nav-item:hover { background-color: var(--bg-hover); color: var(--text-main); }
-    .nav-item.active { background-color: var(--bg-surface); color: var(--primary); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
+    .nav-item:hover { background-color: rgba(255, 255, 255, 0.06); color: #F8FAFC; }
+    .nav-item.active { background-color: var(--primary); color: #FFFFFF; font-weight: 600; }
     .nav-item i { width: 16px; height: 16px; }
 
     .nav-group-title {
       font-size: 11px;
       font-weight: 700;
-      color: var(--text-subtle);
+      color: #64748B;
       text-transform: uppercase;
       letter-spacing: 0.6px;
-      padding: 12px 10px 6px 10px;
+      padding: 16px 10px 6px 10px;
     }
 
-    /* Sidebar Footer */
-    .sidebar-footer { border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 8px; }
+    /* Sidebar User Profile Footer */
+    .sidebar-footer { border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 14px; margin-top: 8px; }
     .user-profile { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; }
     .user-avatar-box {
       width: 32px;
@@ -247,24 +180,25 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       justify-content: center;
     }
     .user-info { display: flex; flex-direction: column; flex: 1; }
-    .user-name { font-size: 12px; font-weight: 600; color: var(--text-main); }
-    .user-email { font-size: 11px; color: var(--text-subtle); }
+    .user-name { font-size: 12px; font-weight: 600; color: #F8FAFC; }
+    .user-email { font-size: 11px; color: #64748B; }
 
-    /* Main Workspace Container */
-    .main-workspace { flex: 1; display: flex; flex-direction: column; background-color: var(--bg-surface); overflow: hidden; }
+    /* Main Workspace Area */
+    .main-workspace { flex: 1; display: flex; flex-direction: column; background-color: var(--bg-app); overflow: hidden; }
 
     /* Top Breadcrumb & Actions Bar */
     .top-bar {
-      height: 54px;
+      height: 60px;
+      background-color: var(--bg-surface);
       border-bottom: 1px solid var(--border-color);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 24px;
+      padding: 0 28px;
       flex-shrink: 0;
     }
 
-    .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--text-muted); }
+    .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text-muted); }
     .breadcrumb-active { color: var(--text-main); font-weight: 600; }
     .breadcrumbs i { width: 14px; height: 14px; color: var(--text-subtle); }
 
@@ -277,8 +211,8 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       background-color: var(--bg-hover);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 6px 12px;
-      width: 240px;
+      padding: 7px 14px;
+      width: 260px;
     }
     .search-input-box i { width: 14px; height: 14px; color: var(--text-muted); }
     .search-input-box input {
@@ -290,46 +224,43 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       width: 100%;
     }
 
-    .action-btn-outlined {
+    .icon-btn {
+      background: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      background-color: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text-main);
-      cursor: pointer;
+      justify-content: center;
     }
-    .action-btn-outlined:hover { background-color: var(--bg-hover); }
-    .action-btn-outlined i { width: 14px; height: 14px; }
+    .icon-btn:hover { background-color: var(--bg-active); color: var(--text-main); }
 
     /* Content Area */
     .workspace-content {
       flex: 1;
       overflow-y: auto;
-      padding: 24px;
+      padding: 28px;
       display: flex;
       flex-direction: column;
       gap: 24px;
     }
 
     /* KPI Grid */
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 8px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; margin-bottom: 8px; }
     .stat-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-color);
       border-radius: 12px;
-      padding: 18px;
+      padding: 20px;
       display: flex;
       flex-direction: column;
       gap: 6px;
       box-shadow: var(--shadow-card);
     }
     .stat-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 26px; font-weight: 700; color: var(--text-main); }
+    .stat-value { font-size: 28px; font-weight: 700; color: var(--text-main); }
 
     /* Status Pills & Badges */
     .status-pill {
@@ -381,7 +312,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       background-color: var(--primary);
       color: #FFFFFF;
       border: none;
-      padding: 8px 16px;
+      padding: 9px 18px;
       border-radius: 8px;
       font-size: 13px;
       font-weight: 600;
@@ -391,10 +322,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       gap: 6px;
       transition: all 0.15s ease;
     }
-    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-primary:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
 
     .btn-secondary {
-      background-color: var(--bg-hover);
+      background-color: var(--bg-surface);
       color: var(--text-main);
       border: 1px solid var(--border-color);
       padding: 8px 16px;
@@ -406,7 +337,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
       align-items: center;
       gap: 6px;
     }
-    .btn-secondary:hover { background-color: var(--bg-active); }
+    .btn-secondary:hover { background-color: var(--bg-hover); }
 
     .btn-success { background-color: #10B981; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
     .btn-danger { background-color: #EF4444; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -439,544 +370,525 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 </head>
 <body>
 
-  <!-- Window Frame -->
-  <div class="window-frame">
-    <!-- Window Top Header Chrome -->
-    <header class="window-header">
-      <div class="window-controls">
-        <span class="control-btn close"></span>
-        <span class="control-btn minimize"></span>
-        <span class="control-btn maximize"></span>
+  <!-- SaaS Root Container -->
+  <div class="app-root">
+    <!-- Left Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <div class="logo-box">
+            <span>IV</span>
+          </div>
+          <span class="brand-title">IPOVault</span>
+        </div>
+        <div class="workspace-picker">
+          <span>Production API (v1)</span>
+          <i data-feather="chevron-down"></i>
+        </div>
       </div>
-      <div class="url-bar">
-        <i data-feather="lock"></i>
-        <span class="url-text">api.getipovault.in/api/v1/console</span>
-        <i data-feather="rotate-cw"></i>
-      </div>
-      <div class="header-right-actions">
-        <button class="icon-btn" id="themeToggleBtn" title="Toggle Theme" onclick="toggleTheme()">
-          <i data-feather="moon"></i>
+
+      <!-- Navigation Menu -->
+      <nav class="sidebar-nav">
+        <div class="nav-group-title">Console Modules</div>
+
+        <button class="nav-item active" id="nav-btn-dashboard" onclick="switchTab('dashboard')">
+          <i data-feather="grid"></i>
+          <span>Dashboard</span>
         </button>
+        <button class="nav-item" id="nav-btn-manual" onclick="switchTab('manual')">
+          <i data-feather="edit-3"></i>
+          <span>Manual IPO Manager</span>
+        </button>
+        <button class="nav-item" id="nav-btn-explorer" onclick="switchTab('explorer')">
+          <i data-feather="search"></i>
+          <span>IPO Explorer</span>
+        </button>
+        <button class="nav-item" id="nav-btn-quality" onclick="switchTab('quality')">
+          <i data-feather="shield"></i>
+          <span>Data Quality</span>
+        </button>
+        <button class="nav-item" id="nav-btn-sources" onclick="switchTab('sources')">
+          <i data-feather="server"></i>
+          <span>Source Health</span>
+        </button>
+        <button class="nav-item" id="nav-btn-notifications" onclick="switchTab('notifications')">
+          <i data-feather="bell"></i>
+          <span>Notification Ops</span>
+        </button>
+        <button class="nav-item" id="nav-btn-allotment" onclick="switchTab('allotment')">
+          <i data-feather="check-square"></i>
+          <span>Allotment Ops</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar User Profile Footer -->
+      <div class="sidebar-footer">
+        <div class="user-profile">
+          <div class="user-avatar-box">ADM</div>
+          <div class="user-info">
+            <span class="user-name">IPOVault Admin</span>
+            <span class="user-email">admin@getipovault.in</span>
+          </div>
+        </div>
       </div>
-    </header>
+    </aside>
 
-    <!-- Main Layout -->
-    <div class="app-layout">
-      <!-- Left Sidebar -->
-      <aside class="sidebar">
-        <div class="sidebar-brand">
-          <div class="brand-logo">
-            <div class="logo-box">
-              <span>IV</span>
-            </div>
-            <span class="brand-title">IPOVault</span>
-          </div>
-          <div class="workspace-picker">
-            <span>Production API (v1)</span>
-            <i data-feather="chevron-down"></i>
-          </div>
+    <!-- Main Workspace Area -->
+    <main class="main-workspace">
+      <!-- Top Bar Header -->
+      <div class="top-bar">
+        <div class="breadcrumbs">
+          <span>Console</span>
+          <i data-feather="chevron-right"></i>
+          <span class="breadcrumb-active" id="active-breadcrumb-title">Dashboard</span>
         </div>
-
-        <!-- Sidebar Navigation Menu -->
-        <nav class="sidebar-nav">
-          <div class="nav-group-title">Console Modules</div>
-
-          <button class="nav-item active" id="nav-btn-dashboard" onclick="switchTab('dashboard')">
-            <i data-feather="grid"></i>
-            <span>Dashboard</span>
-          </button>
-          <button class="nav-item" id="nav-btn-manual" onclick="switchTab('manual')">
-            <i data-feather="edit-3"></i>
-            <span>Manual IPO Manager</span>
-          </button>
-          <button class="nav-item" id="nav-btn-explorer" onclick="switchTab('explorer')">
+        <div class="top-actions">
+          <div class="search-input-box">
             <i data-feather="search"></i>
-            <span>IPO Explorer</span>
+            <input type="text" id="global-search-input" placeholder="Search IPOs or symbols..." oninput="debounceFetchManualIpos()" />
+          </div>
+          <button class="icon-btn" id="themeToggleBtn" title="Toggle Theme" onclick="toggleTheme()">
+            <i data-feather="moon"></i>
           </button>
-          <button class="nav-item" id="nav-btn-quality" onclick="switchTab('quality')">
-            <i data-feather="shield"></i>
-            <span>Data Quality</span>
+          <button class="btn-primary" onclick="openCreateModal()">
+            <i data-feather="plus"></i>
+            <span>+ Add Manual IPO</span>
           </button>
-          <button class="nav-item" id="nav-btn-sources" onclick="switchTab('sources')">
-            <i data-feather="server"></i>
-            <span>Source Health</span>
-          </button>
-          <button class="nav-item" id="nav-btn-notifications" onclick="switchTab('notifications')">
-            <i data-feather="bell"></i>
-            <span>Notification Ops</span>
-          </button>
-          <button class="nav-item" id="nav-btn-allotment" onclick="switchTab('allotment')">
-            <i data-feather="check-square"></i>
-            <span>Allotment Ops</span>
-          </button>
-        </nav>
+        </div>
+      </div>
 
-        <!-- Sidebar User Profile Footer -->
-        <div class="sidebar-footer">
-          <div class="user-profile">
-            <div class="user-avatar-box">ADM</div>
-            <div class="user-info">
-              <span class="user-name">IPOVault Admin</span>
-              <span class="user-email">admin@getipovault.in</span>
+      <!-- Workspace Scrollable Content -->
+      <div class="workspace-content">
+
+        <!-- 1. DASHBOARD OVERVIEW TAB -->
+        <div id="tab-dashboard" class="section-view active">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-title">Total Canonical IPOs</div>
+              <div class="stat-value" id="kpi-total">-</div>
             </div>
+            <div class="stat-card">
+              <div class="stat-title">Published to Mobile App</div>
+              <div class="stat-value" style="color:#10B981" id="kpi-published">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-title">Currently Open IPOs</div>
+              <div class="stat-value" style="color:#4F46E5" id="kpi-open">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-title">Drafts & Pending</div>
+              <div class="stat-value" style="color:#F59E0B" id="kpi-drafts">-</div>
+            </div>
+          </div>
+
+          <div class="grid-table-box">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:600; font-size:14px; color:var(--text-main);">Recent Manual & Canonical IPOs</span>
+              <button class="btn-secondary" onclick="switchTab('manual')" style="font-size:12px; padding:4px 10px;">Manage All IPOs →</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Symbol / Legal Name</th>
+                  <th>Segment</th>
+                  <th>Lifecycle Status</th>
+                  <th>Publication Status</th>
+                  <th>Price Band</th>
+                  <th>Bidding Dates</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-recent-table-body">
+                <tr><td colspan="7" style="text-align:center; padding: 24px;">Loading IPO Vault records...</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
-      </aside>
 
-      <!-- Main Workspace Container -->
-      <main class="main-workspace">
-        <!-- Top Breadcrumb & Action Bar -->
-        <div class="top-bar">
-          <div class="breadcrumbs">
-            <span>Console</span>
-            <i data-feather="chevron-right"></i>
-            <span class="breadcrumb-active" id="active-breadcrumb-title">Dashboard</span>
-          </div>
-          <div class="top-actions">
-            <div class="search-input-box">
-              <i data-feather="search"></i>
-              <input type="text" id="global-search-input" placeholder="Search IPOs or symbols..." oninput="debounceFetchManualIpos()" />
+        <!-- 2. MANUAL IPOs MANAGER TAB -->
+        <div id="tab-manual" class="section-view">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div style="display:flex; gap:10px;">
+              <button class="btn-primary" onclick="openCreateModal()">+ Add Manual IPO</button>
+              <button class="btn-secondary" onclick="triggerJsonImport()">📥 Import JSON</button>
+              <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
             </div>
-            <button class="btn-primary" onclick="openCreateModal()">
-              <i data-feather="plus"></i>
-              <span>+ Add Manual IPO</span>
-            </button>
+            <div style="display:flex; gap:10px;">
+              <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
+              <select id="man-filter-pub" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
+                <option value="">All Publication States</option>
+                <option value="PUBLISHED">Published</option>
+                <option value="DRAFT">Draft</option>
+                <option value="ARCHIVED">Archived</option>
+              </select>
+              <select id="man-filter-status" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
+                <option value="">All Lifecycle Statuses</option>
+                <option value="OPEN">Open</option>
+                <option value="UPCOMING">Upcoming</option>
+                <option value="CLOSED">Closed</option>
+                <option value="ALLOTMENT_COMPLETED">Allotment Completed</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid-table-box" style="margin-top:8px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Symbol / Company Name</th>
+                  <th>Segment</th>
+                  <th>Lifecycle Status</th>
+                  <th>Publication Status</th>
+                  <th>Price Band</th>
+                  <th>Open / Close Dates</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="manual-ipos-table-body">
+                <tr><td colspan="7" style="text-align:center; padding: 24px;">Loading Manual IPOs...</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <!-- Workspace Content Area -->
-        <div class="workspace-content">
-
-          <!-- 1. DASHBOARD OVERVIEW TAB -->
-          <div id="tab-dashboard" class="section-view active">
-            <div class="stats-grid">
-              <div class="stat-card">
-                <div class="stat-title">Total Canonical IPOs</div>
-                <div class="stat-value" id="kpi-total">-</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-title">Published to Mobile App</div>
-                <div class="stat-value" style="color:#10B981" id="kpi-published">-</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-title">Currently Open IPOs</div>
-                <div class="stat-value" style="color:#4F46E5" id="kpi-open">-</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-title">Drafts & Pending</div>
-                <div class="stat-value" style="color:#F59E0B" id="kpi-drafts">-</div>
-              </div>
-            </div>
-
-            <div class="grid-table-box">
-              <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-weight:600; font-size:14px; color:var(--text-main);">Recent Manual & Canonical IPOs</span>
-                <button class="btn-secondary" onclick="switchTab('manual')" style="font-size:12px; padding:4px 10px;">Manage All IPOs →</button>
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Symbol / Legal Name</th>
-                    <th>Segment</th>
-                    <th>Lifecycle Status</th>
-                    <th>Publication Status</th>
-                    <th>Price Band</th>
-                    <th>Bidding Dates</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="dashboard-recent-table-body">
-                  <tr><td colspan="7" style="text-align:center; padding: 24px;">Loading IPO Vault records...</td></tr>
-                </tbody>
-              </table>
+        <!-- 3. MANUAL IPO EDIT / CREATE TAB -->
+        <div id="tab-manual-edit" class="section-view">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <button class="btn-secondary" onclick="switchTab('manual')">← Back to Manual IPOs</button>
+            <div style="display:flex; gap:10px;">
+              <button class="btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">🚀 PUBLISH TO MOBILE</button>
+              <button class="btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">⏸️ Unpublish</button>
+              <button class="btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">📦 Archive IPO</button>
+              <button class="btn-danger" id="btn-delete-action" onclick="deleteCurrentIpo()">🗑️ PERMANENTLY DELETE</button>
             </div>
           </div>
 
-          <!-- 2. MANUAL IPOs MANAGER TAB -->
-          <div id="tab-manual" class="section-view">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-              <div style="display:flex; gap:10px;">
-                <button class="btn-primary" onclick="openCreateModal()">+ Add Manual IPO</button>
-                <button class="btn-secondary" onclick="triggerJsonImport()">📥 Import JSON</button>
-                <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
-              </div>
-              <div style="display:flex; gap:10px;">
-                <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
-                <select id="man-filter-pub" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
-                  <option value="">All Publication States</option>
-                  <option value="PUBLISHED">Published</option>
-                  <option value="DRAFT">Draft</option>
-                  <option value="ARCHIVED">Archived</option>
-                </select>
-                <select id="man-filter-status" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
-                  <option value="">All Lifecycle Statuses</option>
-                  <option value="OPEN">Open</option>
-                  <option value="UPCOMING">Upcoming</option>
-                  <option value="CLOSED">Closed</option>
-                  <option value="ALLOTMENT_COMPLETED">Allotment Completed</option>
-                </select>
-              </div>
-            </div>
+          <div id="validation-banner" style="display:none;" class="alert-box"></div>
 
-            <div class="grid-table-box" style="margin-top:8px;">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Symbol / Company Name</th>
-                    <th>Segment</th>
-                    <th>Lifecycle Status</th>
-                    <th>Publication Status</th>
-                    <th>Price Band</th>
-                    <th>Open / Close Dates</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="manual-ipos-table-body">
-                  <tr><td colspan="7" style="text-align:center; padding: 24px;">Loading Manual IPOs...</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <div class="stat-card" style="padding:24px;">
+            <div class="stat-title" style="margin-bottom:16px; font-size:14px; color:var(--primary);">Canonical IPO Information</div>
+            <form id="manual-ipo-form" autocomplete="off" onsubmit="event.preventDefault(); saveManualIpo();" style="display:flex; flex-direction:column; gap:16px;">
+              <input type="hidden" id="form-ipo-id" />
 
-          <!-- 3. MANUAL IPO EDIT / CREATE TAB -->
-          <div id="tab-manual-edit" class="section-view">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <button class="btn-secondary" onclick="switchTab('manual')">← Back to Manual IPOs</button>
-              <div style="display:flex; gap:10px;">
-                <button class="btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">🚀 PUBLISH TO MOBILE</button>
-                <button class="btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">⏸️ Unpublish</button>
-                <button class="btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">📦 Archive IPO</button>
-                <button class="btn-danger" id="btn-delete-action" onclick="deleteCurrentIpo()">🗑️ PERMANENTLY DELETE</button>
-              </div>
-            </div>
-
-            <div id="validation-banner" style="display:none;" class="alert-box"></div>
-
-            <div class="stat-card" style="padding:24px;">
-              <div class="stat-title" style="margin-bottom:16px; font-size:14px; color:var(--primary);">Canonical IPO Information</div>
-              <form id="manual-ipo-form" autocomplete="off" onsubmit="event.preventDefault(); saveManualIpo();" style="display:flex; flex-direction:column; gap:16px;">
-                <input type="hidden" id="form-ipo-id" />
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>Legal Company Name *</label>
-                    <input type="text" id="form-legalName" autocomplete="off" required />
-                  </div>
-                  <div class="form-group">
-                    <label>Display Name</label>
-                    <input type="text" id="form-displayName" autocomplete="off" />
-                  </div>
-                  <div class="form-group">
-                    <label>CIN</label>
-                    <input type="text" id="form-cin" autocomplete="off" placeholder="e.g. U12345MH2024PLC000001" />
-                  </div>
-                  <div class="form-group">
-                    <label>Trading Symbol</label>
-                    <input type="text" id="form-symbol" autocomplete="off" placeholder="e.g. SYMBOL" />
-                  </div>
-                </div>
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>Market Segment</label>
-                    <select id="form-marketSegment">
-                      <option value="MAINBOARD">MAINBOARD</option>
-                      <option value="SME">SME</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label>Exchange Listing</label>
-                    <select id="form-exchange">
-                      <option value="NSE">NSE</option>
-                      <option value="BSE">BSE</option>
-                      <option value="BOTH">BOTH</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label>Lifecycle Status</label>
-                    <select id="form-status">
-                      <option value="DRAFT">DRAFT</option>
-                      <option value="UPCOMING">UPCOMING</option>
-                      <option value="OPEN">OPEN</option>
-                      <option value="CLOSED">CLOSED</option>
-                      <option value="ALLOTMENT_COMPLETED">ALLOTMENT_COMPLETED</option>
-                      <option value="LISTED">LISTED</option>
-                      <option value="CANCELLED">CANCELLED</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label>Publication Status</label>
-                    <select id="form-publicationStatus">
-                      <option value="DRAFT">DRAFT (Hidden from Mobile App)</option>
-                      <option value="PUBLISHED">PUBLISHED (Live on Mobile App)</option>
-                      <option value="ARCHIVED">ARCHIVED</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>Price Band Low (₹)</label>
-                    <input type="number" step="0.01" id="form-priceBandLow" />
-                  </div>
-                  <div class="form-group">
-                    <label>Price Band High (₹)</label>
-                    <input type="number" step="0.01" id="form-priceBandHigh" />
-                  </div>
-                  <div class="form-group">
-                    <label>Lot Size (Shares)</label>
-                    <input type="number" id="form-lotSize" />
-                  </div>
-                  <div class="form-group">
-                    <label>Total Issue Size (₹ Cr)</label>
-                    <input type="number" step="0.01" id="form-issueSize" />
-                  </div>
-                </div>
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>Issue Open Date</label>
-                    <input type="date" id="form-openDate" />
-                  </div>
-                  <div class="form-group">
-                    <label>Issue Close Date</label>
-                    <input type="date" id="form-closeDate" />
-                  </div>
-                  <div class="form-group">
-                    <label>Allotment Date</label>
-                    <input type="date" id="form-allotmentDate" />
-                  </div>
-                  <div class="form-group">
-                    <label>Listing Date</label>
-                    <input type="date" id="form-listingDate" />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label>Company Logo URL</label>
-                  <input type="url" id="form-logoUrl" placeholder="https://example.com/logo.png" />
-                </div>
-
-                <!-- Offer Breakup & Retail Category Terms -->
-                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
-                  <strong style="color:var(--primary); font-size:14px;">Offer Breakup & Retail Category Terms</strong>
-                </div>
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>QIB Allocation (%)</label>
-                    <input type="number" step="0.01" id="cat-qib-pct" placeholder="e.g. 50" />
-                  </div>
-                  <div class="form-group">
-                    <label>NII Allocation (%)</label>
-                    <input type="number" step="0.01" id="cat-nii-pct" placeholder="e.g. 15" />
-                  </div>
-                  <div class="form-group">
-                    <label>Retail Allocation (%)</label>
-                    <input type="number" step="0.01" id="cat-retail-pct" placeholder="e.g. 35" />
-                  </div>
-                </div>
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>Retail Min Lots</label>
-                    <input type="number" id="cat-retail-min-lots" placeholder="e.g. 1" />
-                  </div>
-                  <div class="form-group">
-                    <label>Retail Max Lots</label>
-                    <input type="number" id="cat-retail-max-lots" placeholder="e.g. 13" />
-                  </div>
-                  <div class="form-group">
-                    <label>Retail Min Shares</label>
-                    <input type="number" id="cat-retail-min-shares" placeholder="e.g. 100" />
-                  </div>
-                  <div class="form-group">
-                    <label>Retail Max Shares</label>
-                    <input type="number" id="cat-retail-max-shares" placeholder="e.g. 1300" />
-                  </div>
-                </div>
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>Retail Min Amount (₹)</label>
-                    <input type="number" step="0.01" id="cat-retail-min-amount" placeholder="e.g. 14800" />
-                  </div>
-                  <div class="form-group">
-                    <label>Retail Max Amount (₹)</label>
-                    <input type="number" step="0.01" id="cat-retail-max-amount" placeholder="e.g. 192400" />
-                  </div>
-                </div>
-
-                <!-- Participants (Registrar & Lead Managers) -->
-                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
-                  <strong style="color:var(--primary); font-size:14px;">Participants (Registrar & Lead Managers)</strong>
-                </div>
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>Registrar Name</label>
-                    <input type="text" id="part-reg-name" placeholder="e.g. MUFG Intime India Pvt Ltd / KFintech" />
-                  </div>
-                  <div class="form-group">
-                    <label>Registrar Phone</label>
-                    <input type="text" id="part-reg-phone" placeholder="e.g. +91 22 4918 6270" />
-                  </div>
-                  <div class="form-group">
-                    <label>Registrar Email</label>
-                    <input type="email" id="part-reg-email" placeholder="e.g. ipo@linkintime.co.in" />
-                  </div>
-                  <div class="form-group">
-                    <label>Registrar Website</label>
-                    <input type="url" id="part-reg-website" placeholder="https://..." />
-                  </div>
-                </div>
-
-                <div class="form-group">
-                  <label>Lead Manager / BRLM Name(s)</label>
-                  <input type="text" id="part-brlm-name" placeholder="e.g. ICICI Securities, Axis Capital (comma-separated)" />
-                </div>
-
-                <!-- Manual GMP & Subscriptions -->
-                <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
-                  <strong style="color:var(--primary); font-size:14px;">Manual GMP & Subscription Observations</strong>
-                </div>
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>GMP Amount (₹)</label>
-                    <input type="number" step="0.01" id="gmp-amount" placeholder="e.g. 25.00" />
-                  </div>
-                  <div class="form-group">
-                    <label>GMP Percentage (%)</label>
-                    <input type="number" step="0.01" id="gmp-percentage" placeholder="e.g. 23.15" />
-                  </div>
-                  <div class="form-group">
-                    <label>Est Profit / Lot (₹)</label>
-                    <input type="number" step="0.01" id="gmp-est-profit" placeholder="e.g. 3500.00" />
-                  </div>
-                </div>
-
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label>QIB Sub (x)</label>
-                    <input type="number" step="0.01" id="sub-qib" placeholder="e.g. 4.5" />
-                  </div>
-                  <div class="form-group">
-                    <label>NII Sub (x)</label>
-                    <input type="number" step="0.01" id="sub-nii" placeholder="e.g. 12.3" />
-                  </div>
-                  <div class="form-group">
-                    <label>Retail Sub (x)</label>
-                    <input type="number" step="0.01" id="sub-retail" placeholder="e.g. 8.1" />
-                  </div>
-                  <div class="form-group">
-                    <label>Total Sub (x)</label>
-                    <input type="number" step="0.01" id="sub-total" placeholder="e.g. 7.9" />
-                  </div>
-                </div>
-
-                <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:16px;">
-                  <button type="button" class="btn-secondary" onclick="switchTab('manual')">Cancel</button>
-                  <button type="submit" class="btn-primary">💾 Save Canonical IPO</button>
-                </div>
-              </form>
-            </div>
-
-            <!-- Allotment Configuration Form -->
-            <div class="stat-card" style="padding:24px; margin-top:20px;">
-              <div class="stat-title" style="margin-bottom:12px; font-size:14px; color:var(--primary);">Allotment Checker Mapping Configuration</div>
               <div class="form-grid">
                 <div class="form-group">
-                  <label>Registrar Code</label>
-                  <input type="text" id="allot-registrar-code" placeholder="kfintech / linkintime / bigshare" />
+                  <label>Legal Company Name *</label>
+                  <input type="text" id="form-legalName" autocomplete="off" required />
                 </div>
                 <div class="form-group">
-                  <label>Registrar IPO Code / ID</label>
-                  <input type="text" id="allot-registrar-ipo-code" placeholder="e.g. REGISTRAR_IPO_CODE" />
+                  <label>Display Name</label>
+                  <input type="text" id="form-displayName" autocomplete="off" />
+                </div>
+                <div class="form-group">
+                  <label>CIN</label>
+                  <input type="text" id="form-cin" autocomplete="off" placeholder="e.g. U12345MH2024PLC000001" />
+                </div>
+                <div class="form-group">
+                  <label>Trading Symbol</label>
+                  <input type="text" id="form-symbol" autocomplete="off" placeholder="e.g. SYMBOL" />
                 </div>
               </div>
-              <div style="display:flex; justify-content:flex-end; margin-top:12px;">
-                <button class="btn-secondary" onclick="saveAllotmentConfig()">Save Allotment Config</button>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Market Segment</label>
+                  <select id="form-marketSegment">
+                    <option value="MAINBOARD">MAINBOARD</option>
+                    <option value="SME">SME</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Exchange Listing</label>
+                  <select id="form-exchange">
+                    <option value="NSE">NSE</option>
+                    <option value="BSE">BSE</option>
+                    <option value="BOTH">BOTH</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Lifecycle Status</label>
+                  <select id="form-status">
+                    <option value="DRAFT">DRAFT</option>
+                    <option value="UPCOMING">UPCOMING</option>
+                    <option value="OPEN">OPEN</option>
+                    <option value="CLOSED">CLOSED</option>
+                    <option value="ALLOTMENT_COMPLETED">ALLOTMENT_COMPLETED</option>
+                    <option value="LISTED">LISTED</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Publication Status</label>
+                  <select id="form-publicationStatus">
+                    <option value="DRAFT">DRAFT (Hidden from Mobile App)</option>
+                    <option value="PUBLISHED">PUBLISHED (Live on Mobile App)</option>
+                    <option value="ARCHIVED">ARCHIVED</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Price Band Low (₹)</label>
+                  <input type="number" step="0.01" id="form-priceBandLow" />
+                </div>
+                <div class="form-group">
+                  <label>Price Band High (₹)</label>
+                  <input type="number" step="0.01" id="form-priceBandHigh" />
+                </div>
+                <div class="form-group">
+                  <label>Lot Size (Shares)</label>
+                  <input type="number" id="form-lotSize" />
+                </div>
+                <div class="form-group">
+                  <label>Total Issue Size (₹ Cr)</label>
+                  <input type="number" step="0.01" id="form-issueSize" />
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Issue Open Date</label>
+                  <input type="date" id="form-openDate" />
+                </div>
+                <div class="form-group">
+                  <label>Issue Close Date</label>
+                  <input type="date" id="form-closeDate" />
+                </div>
+                <div class="form-group">
+                  <label>Allotment Date</label>
+                  <input type="date" id="form-allotmentDate" />
+                </div>
+                <div class="form-group">
+                  <label>Listing Date</label>
+                  <input type="date" id="form-listingDate" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Company Logo URL</label>
+                <input type="url" id="form-logoUrl" placeholder="https://example.com/logo.png" />
+              </div>
+
+              <!-- Offer Breakup & Retail Category Terms -->
+              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                <strong style="color:var(--primary); font-size:14px;">Offer Breakup & Retail Category Terms</strong>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>QIB Allocation (%)</label>
+                  <input type="number" step="0.01" id="cat-qib-pct" placeholder="e.g. 50" />
+                </div>
+                <div class="form-group">
+                  <label>NII Allocation (%)</label>
+                  <input type="number" step="0.01" id="cat-nii-pct" placeholder="e.g. 15" />
+                </div>
+                <div class="form-group">
+                  <label>Retail Allocation (%)</label>
+                  <input type="number" step="0.01" id="cat-retail-pct" placeholder="e.g. 35" />
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Retail Min Lots</label>
+                  <input type="number" id="cat-retail-min-lots" placeholder="e.g. 1" />
+                </div>
+                <div class="form-group">
+                  <label>Retail Max Lots</label>
+                  <input type="number" id="cat-retail-max-lots" placeholder="e.g. 13" />
+                </div>
+                <div class="form-group">
+                  <label>Retail Min Shares</label>
+                  <input type="number" id="cat-retail-min-shares" placeholder="e.g. 100" />
+                </div>
+                <div class="form-group">
+                  <label>Retail Max Shares</label>
+                  <input type="number" id="cat-retail-max-shares" placeholder="e.g. 1300" />
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Retail Min Amount (₹)</label>
+                  <input type="number" step="0.01" id="cat-retail-min-amount" placeholder="e.g. 14800" />
+                </div>
+                <div class="form-group">
+                  <label>Retail Max Amount (₹)</label>
+                  <input type="number" step="0.01" id="cat-retail-max-amount" placeholder="e.g. 192400" />
+                </div>
+              </div>
+
+              <!-- Participants (Registrar & Lead Managers) -->
+              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                <strong style="color:var(--primary); font-size:14px;">Participants (Registrar & Lead Managers)</strong>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Registrar Name</label>
+                  <input type="text" id="part-reg-name" placeholder="e.g. MUFG Intime India Pvt Ltd / KFintech" />
+                </div>
+                <div class="form-group">
+                  <label>Registrar Phone</label>
+                  <input type="text" id="part-reg-phone" placeholder="e.g. +91 22 4918 6270" />
+                </div>
+                <div class="form-group">
+                  <label>Registrar Email</label>
+                  <input type="email" id="part-reg-email" placeholder="e.g. ipo@linkintime.co.in" />
+                </div>
+                <div class="form-group">
+                  <label>Registrar Website</label>
+                  <input type="url" id="part-reg-website" placeholder="https://..." />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Lead Manager / BRLM Name(s)</label>
+                <input type="text" id="part-brlm-name" placeholder="e.g. ICICI Securities, Axis Capital (comma-separated)" />
+              </div>
+
+              <!-- Manual GMP & Subscriptions -->
+              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                <strong style="color:var(--primary); font-size:14px;">Manual GMP & Subscription Observations</strong>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>GMP Amount (₹)</label>
+                  <input type="number" step="0.01" id="gmp-amount" placeholder="e.g. 25.00" />
+                </div>
+                <div class="form-group">
+                  <label>GMP Percentage (%)</label>
+                  <input type="number" step="0.01" id="gmp-percentage" placeholder="e.g. 23.15" />
+                </div>
+                <div class="form-group">
+                  <label>Est Profit / Lot (₹)</label>
+                  <input type="number" step="0.01" id="gmp-est-profit" placeholder="e.g. 3500.00" />
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>QIB Sub (x)</label>
+                  <input type="number" step="0.01" id="sub-qib" placeholder="e.g. 4.5" />
+                </div>
+                <div class="form-group">
+                  <label>NII Sub (x)</label>
+                  <input type="number" step="0.01" id="sub-nii" placeholder="e.g. 12.3" />
+                </div>
+                <div class="form-group">
+                  <label>Retail Sub (x)</label>
+                  <input type="number" step="0.01" id="sub-retail" placeholder="e.g. 8.1" />
+                </div>
+                <div class="form-group">
+                  <label>Total Sub (x)</label>
+                  <input type="number" step="0.01" id="sub-total" placeholder="e.g. 7.9" />
+                </div>
+              </div>
+
+              <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:16px;">
+                <button type="button" class="btn-secondary" onclick="switchTab('manual')">Cancel</button>
+                <button type="submit" class="btn-primary">💾 Save Canonical IPO</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Allotment Configuration Form -->
+          <div class="stat-card" style="padding:24px; margin-top:20px;">
+            <div class="stat-title" style="margin-bottom:12px; font-size:14px; color:var(--primary);">Allotment Checker Mapping Configuration</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Registrar Code</label>
+                <input type="text" id="allot-registrar-code" placeholder="kfintech / linkintime / bigshare" />
+              </div>
+              <div class="form-group">
+                <label>Registrar IPO Code / ID</label>
+                <input type="text" id="allot-registrar-ipo-code" placeholder="e.g. REGISTRAR_IPO_CODE" />
               </div>
             </div>
-          </div>
-
-          <!-- 4. IPO EXPLORER TAB -->
-          <div id="tab-explorer" class="section-view">
-            <div class="grid-table-box">
-              <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-weight:600; font-size:14px;">Canonical IPO Explorer</span>
-                <input type="text" id="exp-search-q" placeholder="Search symbol or name..." oninput="debounceFetchExplorerIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Company / Symbol</th>
-                    <th>Segment</th>
-                    <th>Status</th>
-                    <th>Price Band</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="explorer-ipos-table-body">
-                  <tr><td colspan="5" style="text-align:center; padding:24px;">Loading IPO Explorer...</td></tr>
-                </tbody>
-              </table>
+            <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+              <button class="btn-secondary" onclick="saveAllotmentConfig()">Save Allotment Config</button>
             </div>
           </div>
-
-          <!-- 5. DATA QUALITY TAB -->
-          <div id="tab-quality" class="section-view">
-            <div class="stat-card">
-              <div class="stat-title">Overall Data Quality Gate</div>
-              <div class="stat-value" id="qual-overall-status">COMPLETE</div>
-            </div>
-            <div class="stats-grid" id="qual-breakdown-grid"></div>
-          </div>
-
-          <!-- 6. SOURCE HEALTH TAB -->
-          <div id="tab-sources" class="section-view">
-            <div class="grid-table-box">
-              <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); font-weight:600; font-size:14px;">Upstream Data Sources</div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Source Name</th>
-                    <th>Type</th>
-                    <th>Records Ingested</th>
-                    <th>Health Status</th>
-                  </tr>
-                </thead>
-                <tbody id="sources-table-body">
-                  <tr><td colspan="4" style="text-align:center; padding:24px;">Loading source health...</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- 7. NOTIFICATIONS OPS TAB -->
-          <div id="tab-notifications" class="section-view">
-            <div class="stats-grid">
-              <div class="stat-card"><div class="stat-title">Total Deliveries</div><div class="stat-value" id="notif-total">-</div></div>
-              <div class="stat-card"><div class="stat-title">Delivered</div><div class="stat-value" style="color:#10B981" id="notif-delivered">-</div></div>
-              <div class="stat-card"><div class="stat-title">Failed</div><div class="stat-value" style="color:#EF4444" id="notif-failed">-</div></div>
-              <div class="stat-card"><div class="stat-title">Success Rate</div><div class="stat-value" style="color:#4F46E5" id="notif-rate">-</div></div>
-            </div>
-          </div>
-
-          <!-- 8. ALLOTMENT OPS TAB -->
-          <div id="tab-allotment" class="section-view">
-            <div class="stats-grid">
-              <div class="stat-card"><div class="stat-title">Total Allotment Jobs</div><div class="stat-value" id="allot-jobs">-</div></div>
-              <div class="stat-card"><div class="stat-title">Completed Jobs</div><div class="stat-value" style="color:#10B981" id="allot-completed">-</div></div>
-              <div class="stat-card"><div class="stat-title">Observations</div><div class="stat-value" id="allot-observations">-</div></div>
-              <div class="stat-card"><div class="stat-title">Positive Allotments</div><div class="stat-value" style="color:#4F46E5" id="allot-positive">-</div></div>
-            </div>
-          </div>
-
         </div>
-      </main>
-    </div>
+
+        <!-- 4. IPO EXPLORER TAB -->
+        <div id="tab-explorer" class="section-view">
+          <div class="grid-table-box">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:600; font-size:14px;">Canonical IPO Explorer</span>
+              <input type="text" id="exp-search-q" placeholder="Search symbol or name..." oninput="debounceFetchExplorerIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Company / Symbol</th>
+                  <th>Segment</th>
+                  <th>Status</th>
+                  <th>Price Band</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="explorer-ipos-table-body">
+                <tr><td colspan="5" style="text-align:center; padding:24px;">Loading IPO Explorer...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 5. DATA QUALITY TAB -->
+        <div id="tab-quality" class="section-view">
+          <div class="stat-card">
+            <div class="stat-title">Overall Data Quality Gate</div>
+            <div class="stat-value" id="qual-overall-status">COMPLETE</div>
+          </div>
+          <div class="stats-grid" id="qual-breakdown-grid"></div>
+        </div>
+
+        <!-- 6. SOURCE HEALTH TAB -->
+        <div id="tab-sources" class="section-view">
+          <div class="grid-table-box">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); font-weight:600; font-size:14px;">Upstream Data Sources</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Source Name</th>
+                  <th>Type</th>
+                  <th>Records Ingested</th>
+                  <th>Health Status</th>
+                </tr>
+              </thead>
+              <tbody id="sources-table-body">
+                <tr><td colspan="4" style="text-align:center; padding:24px;">Loading source health...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 7. NOTIFICATIONS OPS TAB -->
+        <div id="tab-notifications" class="section-view">
+          <div class="stats-grid">
+            <div class="stat-card"><div class="stat-title">Total Deliveries</div><div class="stat-value" id="notif-total">-</div></div>
+            <div class="stat-card"><div class="stat-title">Delivered</div><div class="stat-value" style="color:#10B981" id="notif-delivered">-</div></div>
+            <div class="stat-card"><div class="stat-title">Failed</div><div class="stat-value" style="color:#EF4444" id="notif-failed">-</div></div>
+            <div class="stat-card"><div class="stat-title">Success Rate</div><div class="stat-value" style="color:#4F46E5" id="notif-rate">-</div></div>
+          </div>
+        </div>
+
+        <!-- 8. ALLOTMENT OPS TAB -->
+        <div id="tab-allotment" class="section-view">
+          <div class="stats-grid">
+            <div class="stat-card"><div class="stat-title">Total Allotment Jobs</div><div class="stat-value" id="allot-jobs">-</div></div>
+            <div class="stat-card"><div class="stat-title">Completed Jobs</div><div class="stat-value" style="color:#10B981" id="allot-completed">-</div></div>
+            <div class="stat-card"><div class="stat-title">Observations</div><div class="stat-value" id="allot-observations">-</div></div>
+            <div class="stat-card"><div class="stat-title">Positive Allotments</div><div class="stat-value" style="color:#4F46E5" id="allot-positive">-</div></div>
+          </div>
+        </div>
+
+      </div>
+    </main>
   </div>
 
   <script>
@@ -1039,7 +951,6 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('kpi-open').textContent = data.openIpos ?? 0;
         document.getElementById('kpi-drafts').textContent = data.draftIpos ?? 0;
 
-        // Populate recent IPOs table in dashboard
         fetchRecentDashboardIpos();
       } catch (err) {
         console.error('Dashboard load error:', err);

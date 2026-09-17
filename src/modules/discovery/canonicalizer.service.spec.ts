@@ -311,5 +311,17 @@ describe('CanonicalizerService issue-structure contract', () => {
       });
       expect(status).toBe('DRAFT');
     });
+
+    it('J. Explicit status override takes precedence over protected current status', () => {
+      const status = deriveIpoStatus({
+        explicitStatus: 'CLOSED',
+        currentStatus: 'ALLOTMENT_COMPLETED',
+        openDate: '2026-09-01',
+        closeDate: '2026-09-03',
+        nowDate,
+      });
+      expect(status).toBe('CLOSED');
+    });
   });
 });
+

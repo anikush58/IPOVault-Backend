@@ -121,6 +121,11 @@ export function deriveIpoStatus(params: DeriveStatusParams): IpoStatus {
   const { explicitStatus, currentStatus, openDate, closeDate } = params;
   const nowStr = (params.nowDate ?? new Date()).toISOString().slice(0, 10);
 
+  // When explicit status is explicitly provided (e.g. Admin manual status change), respect the explicit status override
+  if (explicitStatus && explicitStatus !== currentStatus) {
+    return explicitStatus as IpoStatus;
+  }
+
   if (currentStatus && PROTECTED_IPO_STATUSES.has(currentStatus as IpoStatus)) {
     return currentStatus as IpoStatus;
   }
