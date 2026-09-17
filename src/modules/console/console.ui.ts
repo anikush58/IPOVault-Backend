@@ -4,596 +4,1155 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IPOVault — Backend Data Console</title>
+  <title>AutomatePro — IPOVault Backend Console</title>
+  
+  <!-- Google Fonts: Inter & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+  
+  <!-- Feather Icons CDN -->
+  <script src="https://unpkg.com/feather-icons"></script>
+  
   <style>
+    /* AutomatePro Dashboard CSS System */
     :root {
-      --bg: #0b0f19;
-      --card-bg: #111827;
-      --card-border: #1f293d;
-      --card-hover: #1e293b;
-      --text: #f3f4f6;
-      --muted: #9ca3af;
-      --primary: #38bdf8;
-      --primary-bg: rgba(56, 189, 248, 0.12);
-      --success: #34d399;
-      --warning: #fbbf24;
-      --danger: #f87171;
-      --border: #1f293d;
+      --bg-app: #ECEFF1;
+      --bg-window: #FFFFFF;
+      --bg-sidebar: #F8FAFC;
+      --bg-surface: #FFFFFF;
+      --bg-hover: #F1F5F9;
+      --bg-active: #E2E8F0;
+      
+      --border-color: #E2E8F0;
+      --border-subtle: #F1F5F9;
+      
+      --text-main: #0F172A;
+      --text-muted: #64748B;
+      --text-subtle: #94A3B8;
+      
+      --primary: #4F46E5;
+      --primary-light: #EEF2FF;
+      
+      /* Status Colors */
+      --status-in-progress-bg: #FEF3C7;
+      --status-in-progress-fg: #D97706;
+      
+      --status-ready-bg: #F3E8FF;
+      --status-ready-fg: #7C3AED;
+      
+      /* Priority Colors */
+      --priority-urgent-bg: #FEF2F2;
+      --priority-urgent-fg: #DC2626;
+      
+      --priority-normal-bg: #F0FDF4;
+      --priority-normal-fg: #16A34A;
+      
+      --priority-low-bg: #EFF6FF;
+      --priority-low-fg: #2563EB;
+      
+      --progress-fill: #6366F1;
+      --shadow-window: 0 20px 50px rgba(0, 0, 0, 0.08);
+      --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.04);
     }
+
+    body.dark-mode {
+      --bg-app: #090D16;
+      --bg-window: #0F172A;
+      --bg-sidebar: #1E293B;
+      --bg-surface: #1E293B;
+      --bg-hover: #334155;
+      --bg-active: #475569;
+      
+      --border-color: #334155;
+      --border-subtle: #1E293B;
+      
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --text-subtle: #64748B;
+      
+      --primary: #818CF8;
+      --primary-light: #1E1B4B;
+      
+      --shadow-window: 0 20px 50px rgba(0, 0, 0, 0.5);
+      --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      font-family: 'Inter', sans-serif;
-      background-color: var(--bg);
-      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-app);
+      color: var(--text-main);
       display: flex;
+      justify-content: center;
+      align-items: center;
       min-height: 100vh;
-      font-size: 14px;
+      padding: 24px;
+      overflow-x: hidden;
     }
-    /* Sidebar */
-    .sidebar {
-      width: 240px;
-      background: #0f172a;
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      padding: 20px 16px;
-      gap: 24px;
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      font-size: 16px;
-      letter-spacing: -0.5px;
-      color: var(--text);
-    }
-    .brand-badge {
-      background: var(--primary-bg);
-      color: var(--primary);
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 4px;
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      text-transform: uppercase;
-    }
-    .nav-list { display: flex; flex-direction: column; gap: 4px; list-style: none; }
-    .nav-item button {
+
+    /* Window Frame Container */
+    .window-frame {
       width: 100%;
+      max-width: 1380px;
+      background-color: var(--bg-window);
+      border-radius: 16px;
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-window);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 92vh;
+      max-height: 940px;
+    }
+
+    /* Window Top Control Bar */
+    .window-header {
+      height: 44px;
+      background-color: var(--bg-window);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+    }
+
+    .window-controls { display: flex; align-items: center; gap: 8px; }
+    .control-btn { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .control-btn.close { background-color: #FF5F56; }
+    .control-btn.minimize { background-color: #FFBD2E; }
+    .control-btn.maximize { background-color: #27C93F; }
+
+    .url-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background-color: var(--bg-hover);
+      padding: 4px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+      width: 340px;
+      justify-content: center;
+    }
+    .url-bar i { width: 12px; height: 12px; }
+
+    .header-right-actions { display: flex; align-items: center; gap: 12px; }
+    .icon-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .icon-btn:hover { background-color: var(--bg-hover); color: var(--text-main); }
+
+    /* App Layout Grid */
+    .app-layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* Sidebar Styling */
+    .sidebar {
+      width: 250px;
+      background-color: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 12px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-brand { margin-bottom: 20px; }
+    .brand-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .logo-box {
+      width: 30px;
+      height: 30px;
+      background-color: #000000;
+      color: #FFFFFF;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    body.dark-mode .logo-box { background-color: #FFFFFF; color: #000000; }
+    .logo-box i { width: 16px; height: 16px; }
+    .brand-title { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 16px; color: var(--text-main); }
+
+    .workspace-picker {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .workspace-picker i { width: 14px; height: 14px; color: var(--text-muted); }
+
+    /* Navigation Menu */
+    .sidebar-nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+    .nav-item {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 10px 12px;
+      padding: 8px 10px;
       border-radius: 8px;
-      background: transparent;
-      border: none;
-      color: var(--muted);
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
       font-weight: 500;
-      font-size: 13px;
       cursor: pointer;
-      text-align: left;
       transition: all 0.15s ease;
-    }
-    .nav-item button:hover { background: rgba(255,255,255,0.05); color: var(--text); }
-    .nav-item button.active {
-      background: var(--primary-bg);
-      color: var(--primary);
-      font-weight: 600;
-    }
-    /* Main Content */
-    .main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow-y: auto;
-    }
-    .header {
-      height: 64px;
-      border-bottom: 1px solid var(--border);
-      padding: 0 28px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: rgba(15, 23, 42, 0.6);
-      backdrop-filter: blur(8px);
-    }
-    .header-title { font-size: 16px; font-weight: 600; }
-    .header-tag {
-      font-size: 11px;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--success);
-      background: rgba(52, 211, 153, 0.1);
-      padding: 4px 10px;
-      border-radius: 9999px;
-      border: 1px solid rgba(52, 211, 153, 0.25);
-    }
-    .content { padding: 28px; display: flex; flex-direction: column; gap: 24px; }
-
-    /* Cards & Grids */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-    }
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .card-title { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
-    .card-value { font-size: 24px; font-weight: 700; color: var(--text); }
-    .card-sub { font-size: 11px; color: var(--muted); }
-
-    /* Tables */
-    .table-container {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .table-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--card-border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-    }
-    .table-title { font-size: 14px; font-weight: 600; }
-    .search-box {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: #0b0f19;
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 6px 12px;
-    }
-    .search-box input, .search-box select {
       background: transparent;
       border: none;
-      color: var(--text);
-      font-size: 13px;
-      outline: none;
+      width: 100%;
+      text-align: left;
     }
-    table { width: 100%; border-collapse: collapse; text-align: left; }
-    th {
-      background: rgba(255,255,255,0.02);
-      padding: 12px 20px;
+    .nav-item:hover { background-color: var(--bg-hover); color: var(--text-main); }
+    .nav-item.active { background-color: var(--bg-surface); color: var(--text-main); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
+    .nav-item i { width: 16px; height: 16px; }
+
+    .nav-group { margin-top: 16px; }
+    .group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
       font-size: 11px;
-      color: var(--muted);
       font-weight: 600;
+      color: var(--text-subtle);
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      border-bottom: 1px solid var(--card-border);
     }
-    td {
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--card-border);
-      font-size: 13px;
-    }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255,255,255,0.02); }
+    .group-actions { display: flex; align-items: center; gap: 6px; }
+    .group-actions i { width: 12px; height: 12px; cursor: pointer; }
+    .group-items { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 
-    /* Badges */
-    .badge {
+    /* Sidebar User Profile Footbar */
+    .sidebar-footer { border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 8px; }
+    .user-profile { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; cursor: pointer; }
+    .user-profile:hover { background-color: var(--bg-hover); }
+    .user-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #e2e8f0; }
+    .user-info { display: flex; flex-direction: column; flex: 1; }
+    .user-name { font-size: 12px; font-weight: 600; color: var(--text-main); }
+    .user-email { font-size: 11px; color: var(--text-subtle); }
+
+    /* Main Workspace Container */
+    .main-workspace { flex: 1; display: flex; flex-direction: column; background-color: var(--bg-surface); overflow: hidden; }
+
+    /* Top Breadcrumb & Actions Bar */
+    .top-bar {
+      height: 54px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      flex-shrink: 0;
+    }
+
+    .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--text-muted); }
+    .breadcrumb-active { color: var(--text-main); font-weight: 600; }
+    .breadcrumbs i { width: 14px; height: 14px; color: var(--text-subtle); }
+
+    .top-actions { display: flex; align-items: center; gap: 12px; }
+
+    .search-input-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background-color: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 6px 12px;
+      width: 220px;
+    }
+    .search-input-box i { width: 14px; height: 14px; color: var(--text-muted); }
+    .search-input-box input {
+      border: none;
+      background: none;
+      font-size: 13px;
+      color: var(--text-main);
+      outline: none;
+      width: 100%;
+    }
+
+    .action-btn-outlined {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-main);
+      cursor: pointer;
+    }
+    .action-btn-outlined:hover { background-color: var(--bg-hover); }
+    .action-btn-outlined i { width: 14px; height: 14px; }
+
+    .notification-btn { position: relative; }
+    .notification-badge {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 14px;
+      height: 14px;
+      background-color: #EF4444;
+      color: #FFFFFF;
+      font-size: 9px;
+      font-weight: 700;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Sub Navigation Tabs Bar */
+    .view-tabs-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border-color);
+      height: 44px;
+      flex-shrink: 0;
+    }
+
+    .view-tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+    .view-tab:hover { color: var(--text-main); }
+    .view-tab.active { background-color: var(--primary-light); color: var(--primary); font-weight: 600; }
+    .view-tab i { width: 14px; height: 14px; }
+
+    .add-tab-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      cursor: pointer;
+      border: 1px solid var(--border-color);
+    }
+    .add-tab-btn i { width: 14px; height: 14px; }
+
+    /* Content Area */
+    .workspace-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Group Banner Header */
+    .group-section { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+    .group-banner { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+    
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .status-pill.in-progress { background-color: var(--status-in-progress-bg); color: var(--status-in-progress-fg); }
+    .status-pill.ready { background-color: var(--status-ready-bg); color: var(--status-ready-fg); }
+
+    .group-count-badge {
+      background-color: rgba(0, 0, 0, 0.06);
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 11px;
+    }
+
+    /* Grid Table System */
+    .grid-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bg-surface);
+    }
+    .grid-header {
+      display: grid;
+      grid-template-columns: 2.2fr 2fr 1.2fr 1.2fr 1fr 1.2fr 0.8fr;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-color);
+      background-color: var(--bg-hover);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .grid-row {
+      display: grid;
+      grid-template-columns: 2.2fr 2fr 1.2fr 1.2fr 1fr 1.2fr 0.8fr;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      align-items: center;
+      font-size: 13px;
+      transition: background 0.15s ease;
+    }
+    .grid-row:hover { background-color: var(--bg-hover); }
+
+    .col-task { display: flex; align-items: center; gap: 8px; }
+    .tree-toggle { color: var(--text-subtle); cursor: pointer; transition: transform 0.2s ease; }
+    .tree-toggle i { width: 14px; height: 14px; }
+    .task-checkbox { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+    .task-title { font-weight: 500; color: var(--text-main); }
+    .task-title.text-checked { text-decoration: line-through; color: var(--text-subtle); }
+    .task-comment-count { font-size: 11px; color: var(--text-subtle); display: flex; align-items: center; gap: 3px; }
+    .task-comment-count i { width: 11px; height: 11px; }
+
+    .col-desc { color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 12px; }
+    
+    /* Assignee Avatars */
+    .avatar-group { display: flex; align-items: center; }
+    .avatar-circle {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background-color: #818CF8;
+      color: #FFFFFF;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid var(--bg-surface);
+      margin-left: -6px;
+    }
+    .avatar-circle:first-child { margin-left: 0; }
+
+    /* Priority Badges */
+    .priority-badge {
       display: inline-flex;
       align-items: center;
+      gap: 4px;
       padding: 3px 8px;
       border-radius: 6px;
       font-size: 11px;
       font-weight: 600;
-      text-transform: uppercase;
     }
-    .badge-open { background: rgba(52, 211, 153, 0.15); color: var(--success); }
-    .badge-upcoming { background: rgba(56, 189, 248, 0.15); color: var(--primary); }
-    .badge-closed { background: rgba(156, 163, 175, 0.15); color: var(--muted); }
-    .badge-warning { background: rgba(251, 191, 36, 0.15); color: var(--warning); }
-    .badge-danger { background: rgba(248, 113, 113, 0.15); color: var(--danger); }
-    .badge-published { background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4); }
-    .badge-draft { background: rgba(251, 191, 36, 0.2); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.4); }
-    .badge-archived { background: rgba(156, 163, 175, 0.2); color: #9ca3af; border: 1px solid rgba(156, 163, 175, 0.4); }
+    .priority-badge.urgent { background-color: var(--priority-urgent-bg); color: var(--priority-urgent-fg); }
+    .priority-badge.normal { background-color: var(--priority-normal-bg); color: var(--priority-normal-fg); }
+    .priority-badge.low { background-color: var(--priority-low-bg); color: var(--priority-low-fg); }
+    .priority-badge i { width: 11px; height: 11px; }
 
-    .btn {
-      background: var(--primary);
-      color: #000;
-      font-weight: 600;
+    /* Progress Bar */
+    .progress-cell { display: flex; align-items: center; gap: 8px; width: 100%; }
+    .progress-bar-track { flex: 1; height: 5px; background-color: var(--border-color); border-radius: 4px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background-color: var(--progress-fill); border-radius: 4px; transition: width 0.3s ease; }
+    .progress-text { font-size: 11px; font-weight: 600; color: var(--text-muted); width: 30px; text-align: right; }
+
+    /* Created Tag */
+    .created-tag {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      background-color: #0284C7;
+      color: #FFFFFF;
+      font-size: 10px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* KPI Grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: var(--shadow-card);
+    }
+    .stat-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+    .stat-value { font-size: 26px; font-weight: 700; color: var(--text-main); }
+
+    /* Controls & Buttons */
+    .btn-primary {
+      background-color: var(--primary);
+      color: #FFFFFF;
       border: none;
-      padding: 7px 14px;
-      border-radius: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
       cursor: pointer;
-      font-size: 12px;
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      transition: all 0.15s ease;
     }
-    .btn:hover { opacity: 0.9; transform: translateY(-1px); }
-    .btn-secondary { background: rgba(255,255,255,0.08); color: var(--text); }
-    .btn-success { background: var(--success); color: #000; }
-    .btn-danger { background: var(--danger); color: #fff; }
-    .btn-warning { background: var(--warning); color: #000; }
+    .btn-primary:hover { opacity: 0.9; }
 
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 16px;
-    }
-    .form-group {
-      display: flex;
-      flex-direction: column;
+    .btn-secondary {
+      background-color: var(--bg-hover);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
       gap: 6px;
     }
-    .form-group label {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-    }
-    .form-group input, .form-group select {
-      background: #0b0f19;
-      border: 1px solid var(--card-border);
+    .btn-secondary:hover { background-color: var(--bg-active); }
+
+    .btn-success { background-color: #10B981; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-danger { background-color: #EF4444; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-warning { background-color: #F59E0B; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+    .form-group input, .form-group select, .form-group textarea {
+      background: var(--bg-hover);
+      border: 1px solid var(--border-color);
       border-radius: 8px;
       padding: 8px 12px;
-      color: var(--text);
+      color: var(--text-main);
       font-size: 13px;
       outline: none;
     }
-    .form-group input:focus, .form-group select:focus {
-      border-color: var(--primary);
-    }
-    .alert-box {
-      padding: 12px 16px;
-      border-radius: 8px;
-      font-size: 13px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .alert-box.success { background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.3); color: var(--success); }
-    .alert-box.danger { background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.3); color: var(--danger); }
-    .alert-box.warning { background: rgba(251, 191, 36, 0.12); border: 1px solid rgba(251, 191, 36, 0.3); color: var(--warning); }
+    .form-group input:focus, .form-group select:focus { border-color: var(--primary); }
+
+    .alert-box { padding: 12px 16px; border-radius: 8px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+    .alert-box.success { background: #ECFDF5; border: 1px solid #10B981; color: #065F46; }
+    .alert-box.danger { background: #FEF2F2; border: 1px solid #EF4444; color: #991B1B; }
+    .alert-box.warning { background: #FFFBEB; border: 1px solid #F59E0B; color: #92400E; }
 
     .mono { font-family: 'JetBrains Mono', monospace; }
     .section-view { display: none; }
-    .section-view.active { display: flex; flex-direction: column; gap: 24px; }
+    .section-view.active { display: flex; flex-direction: column; gap: 20px; }
   </style>
 </head>
 <body>
 
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <div class="brand">
-      <span>IPOVault Console</span>
-      <span class="brand-badge">Admin Edition</span>
-    </div>
-    <ul class="nav-list">
-      <li class="nav-item"><button class="active" onclick="switchTab('dashboard')">📊 Dashboard</button></li>
-      <li class="nav-item"><button onclick="switchTab('manual')">📋 Manual IPOs</button></li>
-      <li class="nav-item"><button onclick="switchTab('explorer')">🔍 IPO Explorer</button></li>
-      <li class="nav-item"><button onclick="switchTab('quality')">🛡️ Data Quality</button></li>
-      <li class="nav-item"><button onclick="switchTab('sources')">🔌 Source Health</button></li>
-      <li class="nav-item"><button onclick="switchTab('notifications')">🔔 Notifications Ops</button></li>
-      <li class="nav-item"><button onclick="switchTab('allotment')">🎯 Allotment Ops</button></li>
-    </ul>
-  </div>
-
-  <!-- Main View -->
-  <div class="main">
-    <div class="header">
-      <div class="header-title" id="page-title">Backend Observability Dashboard</div>
-      <div class="header-tag">Live Admin Console</div>
-    </div>
-
-    <div class="content">
-
-      <!-- DASHBOARD TAB -->
-      <div id="tab-dashboard" class="section-view active">
-        <div class="stats-grid" id="dashboard-kpis">
-          <div class="card"><div class="card-title">Total IPOs</div><div class="card-value" id="kpi-total">-</div></div>
-          <div class="card"><div class="card-title">Published to Mobile</div><div class="card-value" style="color:var(--success)" id="kpi-published">-</div></div>
-          <div class="card"><div class="card-title">Open IPOs</div><div class="card-value" style="color:var(--primary)" id="kpi-open">-</div></div>
-          <div class="card"><div class="card-title">Drafts</div><div class="card-value" style="color:var(--warning)" id="kpi-drafts">-</div></div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-          <div class="card">
-            <div class="card-title">Data Quality Overview</div>
-            <div style="font-size: 20px; font-weight: 700; margin-top: 8px;" id="dash-quality-status">Evaluating...</div>
-            <div class="card-sub" id="dash-quality-sub">Canonical schema completeness & freshness</div>
-          </div>
-          <div class="card">
-            <div class="card-title">Pipeline Health Summary</div>
-            <div style="font-size: 20px; font-weight: 700; margin-top: 8px;" id="dash-pipeline-status">Healthy</div>
-            <div class="card-sub" id="dash-pipeline-sub">Notifications & Allotment check jobs</div>
-          </div>
-        </div>
+  <!-- Window Frame -->
+  <div class="window-frame">
+    <!-- Window Control Header -->
+    <header class="window-header">
+      <div class="window-controls">
+        <span class="control-btn close"></span>
+        <span class="control-btn minimize"></span>
+        <span class="control-btn maximize"></span>
       </div>
-
-      <!-- MANUAL IPOs TAB -->
-      <div id="tab-manual" class="section-view">
-        <div class="stats-grid">
-          <div class="card"><div class="card-title">Total Manual IPOs</div><div class="card-value" id="man-total">-</div></div>
-          <div class="card"><div class="card-title">Published to Mobile</div><div class="card-value" style="color:var(--success)" id="man-published">-</div></div>
-          <div class="card"><div class="card-title">Drafts</div><div class="card-value" style="color:var(--warning)" id="man-drafts">-</div></div>
-          <div class="card"><div class="card-title">Archived</div><div class="card-value" style="color:var(--muted)" id="man-archived">-</div></div>
-        </div>
-
-        <div class="table-container">
-          <div class="table-header">
-            <div style="display:flex; align-items:center; gap:12px;">
-              <div class="table-title">Manual IPO Management</div>
-              <button class="btn" onclick="openCreateModal()">+ Add Manual IPO</button>
-              <button class="btn btn-secondary" onclick="triggerJsonImport()">📥 Import JSON</button>
-              <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
-            </div>
-            <div class="search-box">
-              <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" />
-              <select id="man-filter-pub" onchange="fetchManualIpos()">
-                <option value="">All Publication States</option>
-                <option value="PUBLISHED">Published</option>
-                <option value="DRAFT">Draft</option>
-                <option value="ARCHIVED">Archived</option>
-              </select>
-              <select id="man-filter-status" onchange="fetchManualIpos()">
-                <option value="">All Lifecycle Statuses</option>
-                <option value="OPEN">Open</option>
-                <option value="UPCOMING">Upcoming</option>
-                <option value="CLOSED">Closed</option>
-                <option value="ALLOTMENT_COMPLETED">Allotment Completed</option>
-              </select>
-            </div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Symbol / Company</th>
-                <th>Segment</th>
-                <th>Lifecycle Status</th>
-                <th>Publication Status</th>
-                <th>Price Band</th>
-                <th>Open / Close Dates</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="manual-ipos-table-body">
-              <tr><td colspan="7" style="text-align:center; padding: 24px;">Loading Manual IPOs...</td></tr>
-            </tbody>
-          </table>
-        </div>
+      <div class="url-bar">
+        <i data-feather="lock"></i>
+        <span class="url-text">app.automatepro.com</span>
+        <i data-feather="rotate-cw"></i>
       </div>
+      <div class="header-right-actions">
+        <button class="icon-btn" id="themeToggleBtn" title="Toggle Theme" onclick="toggleTheme()">
+          <i data-feather="moon"></i>
+        </button>
+      </div>
+    </header>
 
-      <!-- MANUAL IPO DETAIL & EDITOR TAB -->
-      <div id="tab-manual-edit" class="section-view">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <button class="btn btn-secondary" onclick="switchTab('manual')">← Back to Manual IPOs</button>
-          <div style="display:flex; gap:10px;">
-            <button class="btn btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">🚀 PUBLISH TO MOBILE</button>
-            <button class="btn btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">⏸️ Unpublish</button>
-            <button class="btn btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">📦 Archive IPO</button>
-            <button class="btn btn-secondary" id="btn-unarchive-action" onclick="unarchiveCurrentIpo()" style="display:none;">↩️ Unarchive IPO</button>
-            <button class="btn btn-danger" id="btn-delete-action" onclick="deleteCurrentIpo()">🗑️ PERMANENTLY DELETE</button>
+    <!-- App Layout -->
+    <div class="app-layout">
+      <!-- Left Sidebar -->
+      <aside class="sidebar">
+        <!-- Brand & Workspace -->
+        <div class="sidebar-brand">
+          <div class="brand-logo">
+            <div class="logo-box">
+              <i data-feather="box"></i>
+            </div>
+            <span class="brand-title">AutomatePro</span>
+          </div>
+          <div class="workspace-picker">
+            <span>Keitoto Studio</span>
+            <i data-feather="chevron-down"></i>
           </div>
         </div>
 
-        <!-- Validation Banner -->
-        <div id="validation-banner" style="display:none;" class="alert-box"></div>
+        <!-- Navigation Menu -->
+        <nav class="sidebar-nav">
+          <button class="nav-item" onclick="switchTab('dashboard')">
+            <i data-feather="grid"></i>
+            <span>Dashboard</span>
+          </button>
+          <button class="nav-item" onclick="switchTab('manual')">
+            <i data-feather="inbox"></i>
+            <span>Inbox</span>
+          </button>
+          <button class="nav-item" onclick="switchTab('explorer')">
+            <i data-feather="users"></i>
+            <span>Teams</span>
+          </button>
+          <button class="nav-item" onclick="switchTab('quality')">
+            <i data-feather="user-check"></i>
+            <span>Assigned to me</span>
+          </button>
+          <button class="nav-item" onclick="switchTab('sources')">
+            <i data-feather="plus-circle"></i>
+            <span>Created by me</span>
+          </button>
 
-        <!-- Canonical IPO Editor Form -->
-        <div class="card">
-          <div class="card-title">Canonical IPO Information</div>
-          <form id="manual-ipo-form" autocomplete="off" onsubmit="event.preventDefault(); saveManualIpo();" style="display:flex; flex-direction:column; gap:16px; margin-top:12px;">
-            <input type="hidden" id="form-ipo-id" />
+          <!-- Favorites Category -->
+          <div class="nav-group">
+            <div class="group-header">
+              <span>Favorites</span>
+              <div class="group-actions">
+                <i data-feather="more-horizontal"></i>
+                <i data-feather="plus"></i>
+              </div>
+            </div>
+          </div>
 
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Legal Company Name *</label>
-                <input type="text" id="form-legalName" autocomplete="off" required />
+          <!-- Projects Category -->
+          <div class="nav-group">
+            <div class="group-header">
+              <span>Projects</span>
+              <div class="group-actions">
+                <i data-feather="more-horizontal"></i>
+                <i data-feather="plus"></i>
               </div>
-              <div class="form-group">
-                <label>Display Name</label>
-                <input type="text" id="form-displayName" autocomplete="off" />
+            </div>
+            <div class="group-items">
+              <button class="nav-item active" id="nav-btn-dashboard" onclick="switchTab('dashboard')">
+                <i data-feather="list"></i>
+                <span>Adrian Bert - CRM Da...</span>
+              </button>
+              <button class="nav-item" id="nav-btn-manual" onclick="switchTab('manual')">
+                <i data-feather="list"></i>
+                <span>Manual IPO Manager</span>
+              </button>
+              <button class="nav-item" id="nav-btn-explorer" onclick="switchTab('explorer')">
+                <i data-feather="list"></i>
+                <span>IPO Explorer</span>
+              </button>
+              <button class="nav-item" id="nav-btn-quality" onclick="switchTab('quality')">
+                <i data-feather="list"></i>
+                <span>Data Quality</span>
+              </button>
+              <button class="nav-item" id="nav-btn-sources" onclick="switchTab('sources')">
+                <i data-feather="list"></i>
+                <span>Source Health</span>
+              </button>
+              <button class="nav-item" id="nav-btn-notifications" onclick="switchTab('notifications')">
+                <i data-feather="list"></i>
+                <span>Notifications Ops</span>
+              </button>
+              <button class="nav-item" id="nav-btn-allotment" onclick="switchTab('allotment')">
+                <i data-feather="list"></i>
+                <span>Allotment Ops</span>
+              </button>
+            </div>
+          </div>
+        </nav>
+
+        <!-- Sidebar Footer -->
+        <div class="sidebar-footer">
+          <div class="nav-item" style="margin-bottom: 4px;">
+            <i data-feather="settings"></i>
+            <span>Settings</span>
+          </div>
+          <div class="nav-item" style="margin-bottom: 8px;">
+            <i data-feather="help-circle"></i>
+            <span>Help Center</span>
+          </div>
+          <div class="user-profile">
+            <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80" class="user-avatar" alt="Darlene Robertson" />
+            <div class="user-info">
+              <span class="user-name">Darlene Robertson</span>
+              <span class="user-email">darlene@gmail.com</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content Area -->
+      <main class="main-workspace">
+        <!-- Top Breadcrumb & Actions Bar -->
+        <div class="top-bar">
+          <div class="breadcrumbs">
+            <span>Projects</span>
+            <i data-feather="chevron-right"></i>
+            <span class="breadcrumb-active" id="active-breadcrumb-title">Adrian Bert - CRM Dashboard</span>
+          </div>
+          <div class="top-actions">
+            <div class="search-input-box">
+              <i data-feather="search"></i>
+              <input type="text" id="global-search-input" placeholder="Search task..." oninput="handleGlobalSearch(event)" />
+            </div>
+            <button class="action-btn-outlined">
+              <i data-feather="filter"></i>
+              <span>Filter</span>
+            </button>
+            <button class="icon-btn notification-btn">
+              <i data-feather="bell"></i>
+              <span class="notification-badge">1</span>
+            </button>
+            <button class="btn-primary" onclick="openCreateModal()">
+              <i data-feather="plus"></i>
+              <span>+ Add Task</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- View Sub Tabs Bar -->
+        <div class="view-tabs-bar">
+          <a href="#" class="view-tab active">
+            <i data-feather="layout"></i>
+            <span>Spreadsheet</span>
+          </a>
+          <a href="#" class="view-tab">
+            <i data-feather="clock"></i>
+            <span>Timeline</span>
+          </a>
+          <a href="#" class="view-tab">
+            <i data-feather="calendar"></i>
+            <span>Calendar</span>
+          </a>
+          <a href="#" class="view-tab">
+            <i data-feather="columns"></i>
+            <span>Board</span>
+          </a>
+          <div class="add-tab-btn">
+            <i data-feather="plus"></i>
+          </div>
+        </div>
+
+        <!-- Scrollable Workspace Content -->
+        <div class="workspace-content">
+
+          <!-- DASHBOARD TAB -->
+          <div id="tab-dashboard" class="section-view active">
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-title">Total IPOs</div>
+                <div class="stat-value" id="kpi-total">-</div>
               </div>
-              <div class="form-group">
-                <label>CIN</label>
-                <input type="text" id="form-cin" autocomplete="off" placeholder="e.g. U12345MH2024PLC000001" />
+              <div class="stat-card">
+                <div class="stat-title">Published to Mobile</div>
+                <div class="stat-value" style="color:#10B981" id="kpi-published">-</div>
               </div>
-              <div class="form-group">
-                <label>Trading Symbol</label>
-                <input type="text" id="form-symbol" autocomplete="off" placeholder="e.g. SYMBOL" />
+              <div class="stat-card">
+                <div class="stat-title">Open IPOs</div>
+                <div class="stat-value" style="color:#4F46E5" id="kpi-open">-</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-title">Drafts</div>
+                <div class="stat-value" style="color:#F59E0B" id="kpi-drafts">-</div>
               </div>
             </div>
 
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Market Segment</label>
-                <select id="form-marketSegment">
-                  <option value="MAINBOARD">MAINBOARD</option>
-                  <option value="SME">SME</option>
-                </select>
+            <!-- Group Section 1: In Progress -->
+            <div class="group-section">
+              <div class="group-banner">
+                <span class="status-pill in-progress">
+                  <i data-feather="pie-chart" style="width:12px;height:12px;"></i>
+                  <span>In Progress</span>
+                </span>
+                <span class="group-count-badge" id="in-progress-count">3</span>
               </div>
-              <div class="form-group">
-                <label>Exchange Listing</label>
-                <select id="form-exchange">
-                  <option value="NSE">NSE</option>
-                  <option value="BSE">BSE</option>
-                  <option value="BOTH">BOTH</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Lifecycle Status</label>
-                <select id="form-status">
-                  <option value="DRAFT">DRAFT</option>
-                  <option value="UPCOMING">UPCOMING</option>
-                  <option value="OPEN">OPEN</option>
-                  <option value="CLOSED">CLOSED</option>
-                  <option value="ALLOTMENT_COMPLETED">ALLOTMENT_COMPLETED</option>
-                  <option value="LISTED">LISTED</option>
-                  <option value="CANCELLED">CANCELLED</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Publication Status</label>
-                <select id="form-publicationStatus">
-                  <option value="DRAFT">DRAFT (Hidden from Mobile)</option>
-                  <option value="PUBLISHED">PUBLISHED (Live on Mobile)</option>
-                  <option value="ARCHIVED">ARCHIVED</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Price Band Low (₹)</label>
-                <input type="number" step="0.01" id="form-priceBandLow" />
-              </div>
-              <div class="form-group">
-                <label>Price Band High (₹)</label>
-                <input type="number" step="0.01" id="form-priceBandHigh" />
-              </div>
-              <div class="form-group">
-                <label>Lot Size (Shares)</label>
-                <input type="number" id="form-lotSize" />
-              </div>
-              <div class="form-group">
-                <label>Face Value (₹)</label>
-                <input type="number" step="0.01" id="form-faceValue" />
-              </div>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Total Issue Size (₹ Cr)</label>
-                <input type="number" step="0.01" id="form-issueSize" />
-              </div>
-              <div class="form-group">
-                <label>Fresh Issue Size (₹ Cr)</label>
-                <input type="number" step="0.01" id="form-freshIssueSize" />
-              </div>
-              <div class="form-group">
-                <label>OFS Size (₹ Cr)</label>
-                <input type="number" step="0.01" id="form-ofsSize" />
-              </div>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Total Issue Shares</label>
-                <input type="number" id="form-issueShareCount" placeholder="e.g. 10000000" />
-              </div>
-              <div class="form-group">
-                <label>Fresh Issue Shares</label>
-                <input type="number" id="form-freshIssueShareCount" placeholder="e.g. 6000000" />
-              </div>
-              <div class="form-group">
-                <label>OFS Shares</label>
-                <input type="number" id="form-ofsShareCount" placeholder="e.g. 4000000" />
-              </div>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Issue Open Date</label>
-                <input type="date" id="form-openDate" />
-              </div>
-              <div class="form-group">
-                <label>Issue Close Date</label>
-                <input type="date" id="form-closeDate" />
-              </div>
-              <div class="form-group">
-                <label>Allotment Date</label>
-                <input type="date" id="form-allotmentDate" />
-              </div>
-              <div class="form-group">
-                <label>Listing Date</label>
-                <input type="date" id="form-listingDate" />
-              </div>
-            </div>
-
-            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
-              <strong style="color:var(--primary); font-size:14px;">Company Information & Contact</strong>
-            </div>
-
-            <div class="form-grid">
-              <div class="form-group" style="grid-column: span 2;">
-                <label>Company Logo URL</label>
-                <div style="display:flex; gap:8px; align-items:center;">
-                  <input type="url" id="form-logoUrl" placeholder="https://example.com/logo.png" oninput="updateLogoPreview()" style="flex:1;" />
-                  <img id="form-logo-preview" style="display:none; max-height:36px; max-width:100px; border-radius:6px; border:1px solid var(--card-border); background:#fff; padding:2px; object-fit:contain;" alt="Logo Preview" onerror="this.style.display='none'" />
+              <div class="grid-table">
+                <div class="grid-header">
+                  <div>Task / IPO Name</div>
+                  <div>Description</div>
+                  <div>Assignee</div>
+                  <div>Due Date</div>
+                  <div>Priority</div>
+                  <div>Progress</div>
+                  <div>Created</div>
+                </div>
+                <div class="grid-row">
+                  <div class="col-task">
+                    <span class="tree-toggle"><i data-feather="chevron-down"></i></span>
+                    <input type="checkbox" class="task-checkbox" />
+                    <span class="task-title">Wireframing</span>
+                    <span class="task-comment-count"><i data-feather="message-square"></i> 3</span>
+                  </div>
+                  <div class="col-desc">-</div>
+                  <div class="avatar-group">
+                    <div class="avatar-circle" style="background-color:#818CF8">GT</div>
+                    <div class="avatar-circle" style="background-color:#F43F5E">HG</div>
+                    <div class="avatar-circle" style="background-color:#06B6D4">TB</div>
+                  </div>
+                  <div style="font-size:12px; color:var(--text-muted)">February 12, 2024</div>
+                  <div><span class="priority-badge urgent"><i data-feather="flag"></i> Urgent</span></div>
+                  <div class="progress-cell">
+                    <div class="progress-bar-track"><div class="progress-bar-fill" style="width: 85%;"></div></div>
+                    <span class="progress-text">85%</span>
+                  </div>
+                  <div><span class="created-tag">X</span></div>
+                </div>
+                <div class="grid-row">
+                  <div class="col-task" style="padding-left:16px;">
+                    <span class="tree-toggle" style="opacity:0;"><i data-feather="chevron-down"></i></span>
+                    <input type="checkbox" class="task-checkbox" checked />
+                    <span class="task-title text-checked">Dashboard</span>
+                  </div>
+                  <div class="col-desc">Create wireframe for Dashboard page</div>
+                  <div class="avatar-group">
+                    <div class="avatar-circle" style="background-color:#EF4444">AN</div>
+                    <div class="avatar-circle" style="background-color:#F59E0B">HG</div>
+                  </div>
+                  <div style="font-size:12px; color:var(--text-muted)">February 12, 2024</div>
+                  <div><span class="priority-badge urgent"><i data-feather="flag"></i> Urgent</span></div>
+                  <div class="progress-cell">
+                    <div class="progress-bar-track"><div class="progress-bar-fill" style="width: 95%;"></div></div>
+                    <span class="progress-text">95%</span>
+                  </div>
+                  <div><span class="created-tag">X</span></div>
+                </div>
+                <div class="grid-row">
+                  <div class="col-task" style="padding-left:16px;">
+                    <span class="tree-toggle" style="opacity:0;"><i data-feather="chevron-down"></i></span>
+                    <input type="checkbox" class="task-checkbox" checked />
+                    <span class="task-title text-checked">Analytics</span>
+                  </div>
+                  <div class="col-desc">Create wireframe for analytics page</div>
+                  <div class="avatar-group">
+                    <div class="avatar-circle" style="background-color:#6366F1">GT</div>
+                    <div class="avatar-circle" style="background-color:#EC4899">HG</div>
+                    <div class="avatar-circle" style="background-color:#14B8A6">TB</div>
+                  </div>
+                  <div style="font-size:12px; color:var(--text-muted)">February 12, 2024</div>
+                  <div><span class="priority-badge urgent"><i data-feather="flag"></i> Urgent</span></div>
+                  <div class="progress-cell">
+                    <div class="progress-bar-track"><div class="progress-bar-fill" style="width: 100%;"></div></div>
+                    <span class="progress-text">100%</span>
+                  </div>
+                  <div><span class="created-tag">X</span></div>
                 </div>
               </div>
-              <div class="form-group">
-                <label>Website</label>
-                <input type="url" id="form-website" placeholder="https://..." />
+            </div>
+
+            <!-- Group Section 2: Ready to check -->
+            <div class="group-section">
+              <div class="group-banner">
+                <span class="status-pill ready">
+                  <i data-feather="check-circle" style="width:12px;height:12px;"></i>
+                  <span>Ready to check by PM</span>
+                </span>
+                <span class="group-count-badge">2</span>
+              </div>
+              <div class="grid-table">
+                <div class="grid-header">
+                  <div>Task / IPO Name</div>
+                  <div>Description</div>
+                  <div>Assignee</div>
+                  <div>Due Date</div>
+                  <div>Priority</div>
+                  <div>Progress</div>
+                  <div>Created</div>
+                </div>
+                <div class="grid-row">
+                  <div class="col-task">
+                    <span class="tree-toggle"><i data-feather="chevron-down"></i></span>
+                    <input type="checkbox" class="task-checkbox" checked />
+                    <span class="task-title text-checked">Hi-Fi Design</span>
+                    <span class="task-comment-count"><i data-feather="message-square"></i> 3</span>
+                  </div>
+                  <div class="col-desc">Create hi-fi design 3 main screen</div>
+                  <div class="avatar-group">
+                    <div class="avatar-circle" style="background-color:#94A3B8">NZ</div>
+                    <div class="avatar-circle" style="background-color:#818CF8">RW</div>
+                    <div class="avatar-circle" style="background-color:#38BDF8">FG</div>
+                    <div class="avatar-circle" style="background-color:#C084FC">RO</div>
+                  </div>
+                  <div style="font-size:12px; color:var(--text-muted)">February 14, 2024</div>
+                  <div><span class="priority-badge low"><i data-feather="flag"></i> Low</span></div>
+                  <div class="progress-cell">
+                    <div class="progress-bar-track"><div class="progress-bar-fill" style="width: 100%;"></div></div>
+                    <span class="progress-text">100%</span>
+                  </div>
+                  <div><span class="created-tag">X</span></div>
+                </div>
               </div>
             </div>
-              <div class="form-group">
-                <label>Industry</label>
-                <input type="text" id="form-industry" placeholder="e.g. Electrical Equipment" />
+          </div>
+
+          <!-- MANUAL IPOs TAB -->
+          <div id="tab-manual" class="section-view">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="display:flex; gap:10px;">
+                <button class="btn-primary" onclick="openCreateModal()">+ Add Manual IPO</button>
+                <button class="btn-secondary" onclick="triggerJsonImport()">📥 Import JSON</button>
+                <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
               </div>
-              <div class="form-group">
-                <label>Sector</label>
-                <input type="text" id="form-sector" placeholder="e.g. Capital Goods" />
+              <div style="display:flex; gap:10px;">
+                <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
+                <select id="man-filter-pub" onchange="fetchManualIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
+                  <option value="">All Publication States</option>
+                  <option value="PUBLISHED">Published</option>
+                  <option value="DRAFT">Draft</option>
+                  <option value="ARCHIVED">Archived</option>
+                </select>
+                <select id="man-filter-status" onchange="fetchManualIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
+                  <option value="">All Lifecycle Statuses</option>
+                  <option value="OPEN">Open</option>
+                  <option value="UPCOMING">Upcoming</option>
+                  <option value="CLOSED">Closed</option>
+                  <option value="ALLOTMENT_COMPLETED">Allotment Completed</option>
+                </select>
               </div>
             </div>
 
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Phone</label>
-                <input type="text" id="form-phone" placeholder="e.g. +91 120 1234567" />
-              </div>
-              <div class="form-group">
-                <label>Email</label>
-                <input type="email" id="form-email" placeholder="investors@company.com" />
-              </div>
-              <div class="form-group">
-                <label>Contact Person</label>
-                <input type="text" id="form-contactPerson" placeholder="Company Secretary / CS" />
+            <div class="grid-table" style="margin-top:12px;">
+              <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                  <tr style="background:var(--bg-hover); font-size:11px; text-transform:uppercase; color:var(--text-muted); text-align:left;">
+                    <th style="padding:12px 16px;">Symbol / Company</th>
+                    <th style="padding:12px 16px;">Segment</th>
+                    <th style="padding:12px 16px;">Lifecycle Status</th>
+                    <th style="padding:12px 16px;">Publication Status</th>
+                    <th style="padding:12px 16px;">Price Band</th>
+                    <th style="padding:12px 16px;">Open / Close Dates</th>
+                    <th style="padding:12px 16px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="manual-ipos-table-body">
+                  <tr><td colspan="7" style="text-align:center; padding: 24px;">Loading Manual IPOs...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- MANUAL IPO EDIT TAB -->
+          <div id="tab-manual-edit" class="section-view">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <button class="btn-secondary" onclick="switchTab('manual')">← Back to Manual IPOs</button>
+              <div style="display:flex; gap:10px;">
+                <button class="btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">🚀 PUBLISH TO MOBILE</button>
+                <button class="btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">⏸️ Unpublish</button>
+                <button class="btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">📦 Archive IPO</button>
+                <button class="btn-secondary" id="btn-unarchive-action" onclick="unarchiveCurrentIpo()" style="display:none;">↩️ Unarchive IPO</button>
+                <button class="btn-danger" id="btn-delete-action" onclick="deleteCurrentIpo()">🗑️ PERMANENTLY DELETE</button>
               </div>
             </div>
 
-            <div class="form-group">
-              <label>About Company Description</label>
-              <textarea id="form-aboutDescription" rows="3" placeholder="Enter company background and business overview..." style="background:#0b0f19; border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; color:var(--text); font-family:inherit; font-size:13px;"></textarea>
-            </div>
+            <div id="validation-banner" style="display:none;" class="alert-box"></div>
 
-            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
-              <strong style="color:var(--primary); font-size:14px;">Document & Prospectus URLs</strong>
-            </div>
+            <div class="stat-card" style="padding:24px;">
+              <div class="stat-title" style="margin-bottom:16px; font-size:14px;">Canonical IPO Information</div>
+              <form id="manual-ipo-form" autocomplete="off" onsubmit="event.preventDefault(); saveManualIpo();" style="display:flex; flex-direction:column; gap:16px;">
+                <input type="hidden" id="form-ipo-id" />
 
-            <div class="form-grid">
-              <div class="form-group">
-                <label>DRHP Prospectus URL</label>
-                <input type="url" id="form-drhpUrl" placeholder="https://.../drhp.pdf" />
-              </div>
-              <div class="form-group">
-                <label>RHP Prospectus URL</label>
-                <input type="url" id="form-rhpUrl" placeholder="https://.../rhp.pdf" />
-              </div>
-            </div>
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Legal Company Name *</label>
+                    <input type="text" id="form-legalName" autocomplete="off" required />
+                  </div>
+                  <div class="form-group">
+                    <label>Display Name</label>
+                    <input type="text" id="form-displayName" autocomplete="off" />
+                  </div>
+                  <div class="form-group">
+                    <label>CIN</label>
+                    <input type="text" id="form-cin" autocomplete="off" />
+                  </div>
+                  <div class="form-group">
+                    <label>Trading Symbol</label>
+                    <input type="text" id="form-symbol" autocomplete="off" />
+                  </div>
+                </div>
 
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Final Prospectus URL</label>
-                <input type="url" id="form-prospectusUrl" placeholder="https://.../prospectus.pdf" />
-              </div>
-              <div class="form-group">
-                <label>Anchor List URL</label>
-                <input type="url" id="form-anchorListUrl" placeholder="https://.../anchor-list.pdf" />
-              </div>
-            </div>
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Market Segment</label>
+                    <select id="form-marketSegment">
+                      <option value="MAINBOARD">MAINBOARD</option>
+                      <option value="SME">SME</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Exchange Listing</label>
+                    <select id="form-exchange">
+                      <option value="NSE">NSE</option>
+                      <option value="BSE">BSE</option>
+                      <option value="BOTH">BOTH</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Lifecycle Status</label>
+                    <select id="form-status">
+                      <option value="DRAFT">DRAFT</option>
+                      <option value="UPCOMING">UPCOMING</option>
+                      <option value="OPEN">OPEN</option>
+                      <option value="CLOSED">CLOSED</option>
+                      <option value="ALLOTMENT_COMPLETED">ALLOTMENT_COMPLETED</option>
+                      <option value="LISTED">LISTED</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Publication Status</label>
+                    <select id="form-publicationStatus">
+                      <option value="DRAFT">DRAFT (Hidden)</option>
+                      <option value="PUBLISHED">PUBLISHED (Live)</option>
+                      <option value="ARCHIVED">ARCHIVED</option>
+                    </select>
+                  </div>
+                </div>
 
-            <div style="border-top:1px solid var(--card-border); margin:12px 0; padding-top:12px;">
-              <strong style="color:var(--primary); font-size:14px;">Anchor Investor Allocation</strong>
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Price Band Low (₹)</label>
+                    <input type="number" step="0.01" id="form-priceBandLow" />
+                  </div>
+                  <div class="form-group">
+                    <label>Price Band High (₹)</label>
+                    <input type="number" step="0.01" id="form-priceBandHigh" />
+                  </div>
+                  <div class="form-group">
+                    <label>Lot Size (Shares)</label>
+                    <input type="number" id="form-lotSize" />
+                  </div>
+                  <div class="form-group">
+                    <label>Total Issue Size (₹ Cr)</label>
+                    <input type="number" step="0.01" id="form-issueSize" />
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label>Issue Open Date</label>
+                    <input type="date" id="form-openDate" />
+                  </div>
+                  <div class="form-group">
+                    <label>Issue Close Date</label>
+                    <input type="date" id="form-closeDate" />
+                  </div>
+                  <div class="form-group">
+                    <label>Allotment Date</label>
+                    <input type="date" id="form-allotmentDate" />
+                  </div>
+                  <div class="form-group">
+                    <label>Listing Date</label>
+                    <input type="date" id="form-listingDate" />
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>Company Logo URL</label>
+                  <input type="url" id="form-logoUrl" placeholder="https://example.com/logo.png" />
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:16px;">
+                  <button type="button" class="btn-secondary" onclick="switchTab('manual')">Cancel</button>
+                  <button type="submit" class="btn-primary">💾 Save Canonical IPO</button>
+                </div>
+              </form>
             </div>
+          </div>
+
+          <!-- IPO EXPLORER TAB -->
+          <div id="tab-explorer" class="section-view">
+            <div class="grid-table" style="padding:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <span style="font-weight:600;">Canonical IPO Explorer</span>
+                <input type="text" id="exp-search-q" placeholder="Search symbol or name..." oninput="debounceFetchExplorerIpos()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main);" />
+              </div>
+              <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                  <tr style="background:var(--bg-hover); font-size:11px; text-transform:uppercase; color:var(--text-muted); text-align:left;">
+                    <th style="padding:10px 16px;">Company / Symbol</th>
+                    <th style="padding:10px 16px;">Segment</th>
+                    <th style="padding:10px 16px;">Status</th>
+                    <th style="padding:10px 16px;">Price Band</th>
+                    <th style="padding:10px 16px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="explorer-ipos-table-body">
+                  <tr><td colspan="5" style="text-align:center; padding:16px;">Loading IPO Explorer...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- DATA QUALITY TAB -->
+          <div id="tab-quality" class="section-view">
+            <div class="stat-card">
+              <div class="stat-title">Overall Data Quality Gate</div>
+              <div class="stat-value" id="qual-overall-status">COMPLETE</div>
+            </div>
+            <div class="stats-grid" id="qual-breakdown-grid"></div>
+          </div>
+
+          <!-- SOURCE HEALTH TAB -->
+          <div id="tab-sources" class="section-view">
+            <div class="grid-table" style="padding:16px;">
+              <div style="font-weight:600; margin-bottom:12px;">Upstream Data Sources</div>
+              <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                  <tr style="background:var(--bg-hover); font-size:11px; text-transform:uppercase; color:var(--text-muted); text-align:left;">
+                    <th style="padding:10px 16px;">Source Name</th>
+                    <th style="padding:10px 16px;">Type</th>
+                    <th style="padding:10px 16px;">Records</th>
+                    <th style="padding:10px 16px;">Health</th>
+                  </tr>
+                </thead>
+                <tbody id="sources-table-body">
+                  <tr><td colspan="4" style="text-align:center; padding:16px;">Loading source health...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- NOTIFICATIONS OPS TAB -->
+          <div id="tab-notifications" class="section-view">
+            <div class="stats-grid">
+              <div class="stat-card"><div class="stat-title">Total Deliveries</div><div class="stat-value" id="notif-total">-</div></div>
+              <div class="stat-card"><div class="stat-title">Delivered</div><div class="stat-value" style="color:#10B981" id="notif-delivered">-</div></div>
+              <div class="stat-card"><div class="stat-title">Failed</div><div class="stat-value" style="color:#EF4444" id="notif-failed">-</div></div>
+              <div class="stat-card"><div class="stat-title">Success Rate</div><div class="stat-value" style="color:#4F46E5" id="notif-rate">-</div></div>
+            </div>
+          </div>
+
+          <!-- ALLOTMENT OPS TAB -->
+          <div id="tab-allotment" class="section-view">
+            <div class="stats-grid">
+              <div class="stat-card"><div class="stat-title">Total Allotment Jobs</div><div class="stat-value" id="allot-jobs">-</div></div>
+              <div class="stat-card"><div class="stat-title">Completed Jobs</div><div class="stat-value" style="color:#10B981" id="allot-completed">-</div></div>
+              <div class="stat-card"><div class="stat-title">Observations</div><div class="stat-value" id="allot-observations">-</div></div>
+              <div class="stat-card"><div class="stat-title">Positive Allotments</div><div class="stat-value" style="color:#4F46E5" id="allot-positive">-</div></div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
 
             <div class="form-grid">
               <div class="form-group">
