@@ -1520,6 +1520,27 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       document.getElementById('form-ipo-id').value = '';
       document.getElementById('allot-registrar-code').value = '';
       document.getElementById('allot-registrar-ipo-code').value = '';
+      document.getElementById('cat-qib-pct').value = '';
+      document.getElementById('cat-nii-pct').value = '';
+      document.getElementById('cat-retail-pct').value = '';
+      document.getElementById('cat-retail-min-lots').value = '';
+      document.getElementById('cat-retail-max-lots').value = '';
+      document.getElementById('cat-retail-min-shares').value = '';
+      document.getElementById('cat-retail-max-shares').value = '';
+      document.getElementById('cat-retail-min-amount').value = '';
+      document.getElementById('cat-retail-max-amount').value = '';
+      document.getElementById('part-reg-name').value = '';
+      document.getElementById('part-reg-phone').value = '';
+      document.getElementById('part-reg-email').value = '';
+      document.getElementById('part-reg-website').value = '';
+      document.getElementById('part-brlm-name').value = '';
+      document.getElementById('gmp-amount').value = '';
+      document.getElementById('gmp-percentage').value = '';
+      document.getElementById('gmp-est-profit').value = '';
+      document.getElementById('sub-qib').value = '';
+      document.getElementById('sub-nii').value = '';
+      document.getElementById('sub-retail').value = '';
+      document.getElementById('sub-total').value = '';
       const tbody = document.getElementById('anchor-investors-tbody');
       if (tbody) {
         tbody.querySelectorAll('.anchor-row').forEach(r => r.remove());
@@ -1558,6 +1579,45 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-listingGainPct').value = currentIpoData.listingGainPct ?? '';
         document.getElementById('form-profitAmount').value = currentIpoData.profitAmount ?? '';
         document.getElementById('form-profitPercentage').value = currentIpoData.profitPercentage ?? '';
+
+        // Populate Offer Breakup & Retail Category Terms
+        const offerCats = currentIpoData.offerCategories || [];
+        const catQib = offerCats.find(c => c.category === 'QIB');
+        const catNii = offerCats.find(c => c.category === 'NII');
+        const catRetail = offerCats.find(c => c.category === 'RETAIL');
+
+        document.getElementById('cat-qib-pct').value = catQib?.allocationPct ?? '';
+        document.getElementById('cat-nii-pct').value = catNii?.allocationPct ?? '';
+        document.getElementById('cat-retail-pct').value = catRetail?.allocationPct ?? '';
+        document.getElementById('cat-retail-min-lots').value = catRetail?.minLots ?? '';
+        document.getElementById('cat-retail-max-lots').value = catRetail?.maxLots ?? '';
+        document.getElementById('cat-retail-min-shares').value = catRetail?.minShares ?? '';
+        document.getElementById('cat-retail-max-shares').value = catRetail?.maxShares ?? '';
+        document.getElementById('cat-retail-min-amount').value = catRetail?.minAmount ?? '';
+        document.getElementById('cat-retail-max-amount').value = catRetail?.maxAmount ?? '';
+
+        // Populate Participants (Registrar & Lead Managers)
+        const participants = currentIpoData.participants || [];
+        const regPart = participants.find(p => p.role === 'REGISTRAR');
+        const brlmParts = participants.filter(p => p.role === 'BRLM' || p.role === 'CO_BRLM' || p.role === 'LEAD_MANAGER');
+
+        document.getElementById('part-reg-name').value = regPart?.name ?? '';
+        document.getElementById('part-reg-phone').value = regPart?.phone ?? '';
+        document.getElementById('part-reg-email').value = regPart?.email ?? '';
+        document.getElementById('part-reg-website').value = regPart?.website ?? '';
+        document.getElementById('part-brlm-name').value = brlmParts.length > 0 ? brlmParts.map(b => b.name).join(', ') : '';
+
+        // Populate Subscription Observations
+        const subs = currentIpoData.subscriptionObservations || [];
+        const subQib = subs.find(s => s.category === 'QIB');
+        const subNii = subs.find(s => s.category === 'NII');
+        const subRetail = subs.find(s => s.category === 'RETAIL');
+        const subTotal = subs.find(s => s.category === 'OTHER' || s.category === 'TOTAL');
+
+        document.getElementById('sub-qib').value = subQib?.subscriptionMultiple ?? '';
+        document.getElementById('sub-nii').value = subNii?.subscriptionMultiple ?? '';
+        document.getElementById('sub-retail').value = subRetail?.subscriptionMultiple ?? '';
+        document.getElementById('sub-total').value = subTotal?.subscriptionMultiple ?? '';
 
         const latestGmp = currentIpoData.latestGmp || currentIpoData.currentGmp || currentIpoData.gmp || (currentIpoData.gmpObservations && currentIpoData.gmpObservations[0]);
         if (latestGmp) {
@@ -1644,6 +1704,77 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         logoUrl: document.getElementById('form-logoUrl').value || undefined,
         anchorInvestors: getAnchorInvestorsFromForm(),
       };
+
+      // Offer Categories
+      const offerCategories = [];
+      const qibPctVal = parseFloat(document.getElementById('cat-qib-pct').value);
+      const niiPctVal = parseFloat(document.getElementById('cat-nii-pct').value);
+      const retailPctVal = parseFloat(document.getElementById('cat-retail-pct').value);
+      const retMinLotsVal = parseInt(document.getElementById('cat-retail-min-lots').value, 10);
+      const retMaxLotsVal = parseInt(document.getElementById('cat-retail-max-lots').value, 10);
+      const retMinSharesVal = parseInt(document.getElementById('cat-retail-min-shares').value, 10);
+      const retMaxSharesVal = parseInt(document.getElementById('cat-retail-max-shares').value, 10);
+      const retMinAmtVal = parseFloat(document.getElementById('cat-retail-min-amount').value);
+      const retMaxAmtVal = parseFloat(document.getElementById('cat-retail-max-amount').value);
+
+      if (!isNaN(qibPctVal)) offerCategories.push({ category: 'QIB', allocationPct: qibPctVal });
+      if (!isNaN(niiPctVal)) offerCategories.push({ category: 'NII', allocationPct: niiPctVal });
+      if (!isNaN(retailPctVal) || !isNaN(retMinLotsVal) || !isNaN(retMaxLotsVal) || !isNaN(retMinSharesVal) || !isNaN(retMaxSharesVal) || !isNaN(retMinAmtVal) || !isNaN(retMaxAmtVal)) {
+        offerCategories.push({
+          category: 'RETAIL',
+          allocationPct: !isNaN(retailPctVal) ? retailPctVal : undefined,
+          minLots: !isNaN(retMinLotsVal) ? retMinLotsVal : undefined,
+          maxLots: !isNaN(retMaxLotsVal) ? retMaxLotsVal : undefined,
+          minShares: !isNaN(retMinSharesVal) ? retMinSharesVal : undefined,
+          maxShares: !isNaN(retMaxSharesVal) ? retMaxSharesVal : undefined,
+          minAmount: !isNaN(retMinAmtVal) ? retMinAmtVal : undefined,
+          maxAmount: !isNaN(retMaxAmtVal) ? retMaxAmtVal : undefined,
+        });
+      }
+      payload.offerCategories = offerCategories;
+
+      // Participants
+      const participants = [];
+      const regName = document.getElementById('part-reg-name').value?.trim();
+      const regPhone = document.getElementById('part-reg-phone').value?.trim();
+      const regEmail = document.getElementById('part-reg-email').value?.trim();
+      const regWebsite = document.getElementById('part-reg-website').value?.trim();
+      const brlmNameStr = document.getElementById('part-brlm-name').value?.trim();
+
+      if (regName) {
+        participants.push({
+          role: 'REGISTRAR',
+          name: regName,
+          phone: regPhone || undefined,
+          email: regEmail || undefined,
+          website: regWebsite || undefined,
+        });
+      }
+      if (brlmNameStr) {
+        const names = brlmNameStr.split(',').map(s => s.trim()).filter(Boolean);
+        names.forEach((name, idx) => {
+          participants.push({
+            role: 'BRLM',
+            name,
+            displayOrder: idx + 1,
+          });
+        });
+      }
+      payload.participants = participants;
+
+      // Subscriptions
+      const subscription = [];
+      const subQibVal = parseFloat(document.getElementById('sub-qib').value);
+      const subNiiVal = parseFloat(document.getElementById('sub-nii').value);
+      const subRetailVal = parseFloat(document.getElementById('sub-retail').value);
+      const subTotalVal = parseFloat(document.getElementById('sub-total').value);
+
+      if (!isNaN(subQibVal)) subscription.push({ category: 'QIB', subscriptionMultiple: subQibVal });
+      if (!isNaN(subNiiVal)) subscription.push({ category: 'NII', subscriptionMultiple: subNiiVal });
+      if (!isNaN(subRetailVal)) subscription.push({ category: 'RETAIL', subscriptionMultiple: subRetailVal });
+      if (!isNaN(subTotalVal)) subscription.push({ category: 'OTHER', subscriptionMultiple: subTotalVal });
+
+      payload.subscription = subscription;
 
       const gmpAmtEl = document.getElementById('gmp-amount');
       const gmpPctEl = document.getElementById('gmp-percentage');
