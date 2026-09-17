@@ -1084,6 +1084,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         if (sidebar) sidebar.classList.add('collapsed');
       }
       if (window.feather) feather.replace();
+      loadDashboard();
     });
 
     function toggleSidebar() {
@@ -1140,14 +1141,26 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         const res = await fetch(API_BASE + '/dashboard');
         const json = await res.json();
         const data = json.data || json;
-        document.getElementById('kpi-total').textContent = data.totalCanonicalIpos ?? 0;
-        document.getElementById('kpi-published').textContent = data.publishedIpos ?? 0;
-        document.getElementById('kpi-open').textContent = data.openIpos ?? 0;
-        document.getElementById('kpi-drafts').textContent = data.draftIpos ?? 0;
 
-        fetchRecentDashboardIpos();
+        const totalVal = data.ipoCounts?.total ?? data.totalCanonicalIpos ?? 0;
+        const pubVal = data.publicationBreakdown?.published ?? data.publishedIpos ?? 0;
+        const openVal = data.ipoCounts?.open ?? data.openIpos ?? 0;
+        const draftVal = data.publicationBreakdown?.draft ?? data.draftIpos ?? 0;
+
+        const elTotal = document.getElementById('kpi-total');
+        const elPub = document.getElementById('kpi-published');
+        const elOpen = document.getElementById('kpi-open');
+        const elDrafts = document.getElementById('kpi-drafts');
+
+        if (elTotal) elTotal.textContent = totalVal;
+        if (elPub) elPub.textContent = pubVal;
+        if (elOpen) elOpen.textContent = openVal;
+        if (elDrafts) elDrafts.textContent = draftVal;
+
+        await fetchRecentDashboardIpos();
       } catch (err) {
         console.error('Dashboard load error:', err);
+        fetchRecentDashboardIpos();
       }
     }
 
@@ -1157,6 +1170,7 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         const json = await res.json();
         const items = json.data?.items || json.items || [];
         const tbody = document.getElementById('dashboard-recent-table-body');
+        if (!tbody) return;
 
         if (items.length === 0) {
           tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color:var(--text-muted);">No recent IPO records found.</td></tr>';
@@ -1178,6 +1192,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         \`).join('');
       } catch (err) {
         console.error('Dashboard recent fetch error:', err);
+        const tbody = document.getElementById('dashboard-recent-table-body');
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color:red;">Failed to load recent IPO records.</td></tr>';
+        }
       }
     }
 
