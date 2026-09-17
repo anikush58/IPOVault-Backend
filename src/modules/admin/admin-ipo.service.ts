@@ -206,6 +206,14 @@ export class AdminIpoService {
           dto.faceValue !== undefined
             ? new Prisma.Decimal(dto.faceValue)
             : null,
+        preIpoEps: dto.preIpoEps !== undefined && dto.preIpoEps !== null ? new Prisma.Decimal(dto.preIpoEps) : null,
+        postIpoEps: dto.postIpoEps !== undefined && dto.postIpoEps !== null ? new Prisma.Decimal(dto.postIpoEps) : null,
+        preIpoPe: dto.preIpoPe !== undefined && dto.preIpoPe !== null ? new Prisma.Decimal(dto.preIpoPe) : null,
+        postIpoPe: dto.postIpoPe !== undefined && dto.postIpoPe !== null ? new Prisma.Decimal(dto.postIpoPe) : null,
+        preIpoPromoterHolding: dto.preIpoPromoterHolding !== undefined && dto.preIpoPromoterHolding !== null ? new Prisma.Decimal(dto.preIpoPromoterHolding) : null,
+        postIpoPromoterHolding: dto.postIpoPromoterHolding !== undefined && dto.postIpoPromoterHolding !== null ? new Prisma.Decimal(dto.postIpoPromoterHolding) : null,
+        preIpoMarketCap: dto.preIpoMarketCap !== undefined && dto.preIpoMarketCap !== null ? new Prisma.Decimal(dto.preIpoMarketCap) : null,
+        postIpoMarketCap: dto.postIpoMarketCap !== undefined && dto.postIpoMarketCap !== null ? new Prisma.Decimal(dto.postIpoMarketCap) : null,
       },
       include: { company: true },
     });
@@ -393,6 +401,14 @@ export class AdminIpoService {
                 return issuePrice > 0 ? new Prisma.Decimal((((dto.listingPrice - issuePrice) / issuePrice) * 100).toFixed(2)) : null;
               })()
             } : {})),
+        ...(dto.preIpoEps !== undefined ? { preIpoEps: dto.preIpoEps !== null ? new Prisma.Decimal(dto.preIpoEps) : null } : {}),
+        ...(dto.postIpoEps !== undefined ? { postIpoEps: dto.postIpoEps !== null ? new Prisma.Decimal(dto.postIpoEps) : null } : {}),
+        ...(dto.preIpoPe !== undefined ? { preIpoPe: dto.preIpoPe !== null ? new Prisma.Decimal(dto.preIpoPe) : null } : {}),
+        ...(dto.postIpoPe !== undefined ? { postIpoPe: dto.postIpoPe !== null ? new Prisma.Decimal(dto.postIpoPe) : null } : {}),
+        ...(dto.preIpoPromoterHolding !== undefined ? { preIpoPromoterHolding: dto.preIpoPromoterHolding !== null ? new Prisma.Decimal(dto.preIpoPromoterHolding) : null } : {}),
+        ...(dto.postIpoPromoterHolding !== undefined ? { postIpoPromoterHolding: dto.postIpoPromoterHolding !== null ? new Prisma.Decimal(dto.postIpoPromoterHolding) : null } : {}),
+        ...(dto.preIpoMarketCap !== undefined ? { preIpoMarketCap: dto.preIpoMarketCap !== null ? new Prisma.Decimal(dto.preIpoMarketCap) : null } : {}),
+        ...(dto.postIpoMarketCap !== undefined ? { postIpoMarketCap: dto.postIpoMarketCap !== null ? new Prisma.Decimal(dto.postIpoMarketCap) : null } : {}),
         ...(dto.issueSize !== undefined
           ? {
               issueSize:
@@ -597,6 +613,15 @@ export class AdminIpoService {
       listingGainPct: ipo.listingGainPct ? Number(ipo.listingGainPct) : null,
       profitAmount: ipo.profitAmount ? Number(ipo.profitAmount) : null,
       profitPercentage: ipo.profitPercentage ? Number(ipo.profitPercentage) : null,
+      preIpoEps: ipo.preIpoEps ? Number(ipo.preIpoEps) : null,
+      postIpoEps: ipo.postIpoEps ? Number(ipo.postIpoEps) : null,
+      preIpoPe: ipo.preIpoPe ? Number(ipo.preIpoPe) : null,
+      postIpoPe: ipo.postIpoPe ? Number(ipo.postIpoPe) : null,
+      preIpoPromoterHolding: ipo.preIpoPromoterHolding ? Number(ipo.preIpoPromoterHolding) : null,
+      postIpoPromoterHolding: ipo.postIpoPromoterHolding ? Number(ipo.postIpoPromoterHolding) : null,
+      preIpoMarketCap: ipo.preIpoMarketCap ? Number(ipo.preIpoMarketCap) : null,
+      postIpoMarketCap: ipo.postIpoMarketCap ? Number(ipo.postIpoMarketCap) : null,
+      marketCap: ipo.postIpoMarketCap ? Number(ipo.postIpoMarketCap) : (ipo.preIpoMarketCap ? Number(ipo.preIpoMarketCap) : null),
       openDate: openEvent ? openEvent.eventDate.toISOString().slice(0, 10) : null,
       closeDate: closeEvent ? closeEvent.eventDate.toISOString().slice(0, 10) : null,
       listingDate: listingEvent

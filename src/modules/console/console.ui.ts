@@ -824,6 +824,41 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <label>Offer for Sale Size (₹ Cr)</label>
                   <input type="number" step="0.01" id="form-ofsSize" placeholder="e.g. 200.00" />
                 </div>
+                <div class="form-group" style="grid-column: 1 / -1; margin-top: 10px;">
+                  <h4 style="margin: 0; font-size: 13px; color: var(--primary); font-weight: 700; text-transform: uppercase;">Pre & Post IPO Metrics (Valuation & Shareholding)</h4>
+                </div>
+                <div class="form-group">
+                  <label>Pre-IPO EPS (₹)</label>
+                  <input type="number" step="0.01" id="form-preIpoEps" placeholder="e.g. 9.00" />
+                </div>
+                <div class="form-group">
+                  <label>Post-IPO EPS (₹)</label>
+                  <input type="number" step="0.01" id="form-postIpoEps" placeholder="e.g. 7.97" />
+                </div>
+                <div class="form-group">
+                  <label>Pre-IPO P/E (x)</label>
+                  <input type="number" step="0.01" id="form-preIpoPe" placeholder="e.g. 47.11" />
+                </div>
+                <div class="form-group">
+                  <label>Post-IPO P/E (x)</label>
+                  <input type="number" step="0.01" id="form-postIpoPe" placeholder="e.g. 53.20" />
+                </div>
+                <div class="form-group">
+                  <label>Pre-IPO Promoter Holding (%)</label>
+                  <input type="number" step="0.01" id="form-preIpoPromoterHolding" placeholder="e.g. 75.74" />
+                </div>
+                <div class="form-group">
+                  <label>Post-IPO Promoter Holding (%)</label>
+                  <input type="number" step="0.01" id="form-postIpoPromoterHolding" placeholder="e.g. 0.00" />
+                </div>
+                <div class="form-group">
+                  <label>Pre-IPO Market Cap (₹ Cr)</label>
+                  <input type="number" step="0.01" id="form-preIpoMarketCap" placeholder="e.g. 2500.00" />
+                </div>
+                <div class="form-group">
+                  <label>Post-IPO Market Cap (₹ Cr)</label>
+                  <input type="number" step="0.01" id="form-postIpoMarketCap" placeholder="e.g. 3153.36" />
+                </div>
               </div>
 
               <div class="form-grid">
@@ -1877,6 +1912,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       document.getElementById('form-ipo-id').value = '';
       document.getElementById('form-freshIssueSize').value = '';
       document.getElementById('form-ofsSize').value = '';
+      document.getElementById('form-preIpoEps').value = '';
+      document.getElementById('form-postIpoEps').value = '';
+      document.getElementById('form-preIpoPe').value = '';
+      document.getElementById('form-postIpoPe').value = '';
+      document.getElementById('form-preIpoPromoterHolding').value = '';
+      document.getElementById('form-postIpoPromoterHolding').value = '';
+      document.getElementById('form-preIpoMarketCap').value = '';
+      document.getElementById('form-postIpoMarketCap').value = '';
       document.getElementById('allot-registrar-code').value = '';
       document.getElementById('allot-registrar-ipo-code').value = '';
       document.getElementById('cat-qib-pct').value = '';
@@ -1952,6 +1995,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-listingGainPct').value = currentIpoData.listingGainPct ?? '';
         document.getElementById('form-profitAmount').value = currentIpoData.profitAmount ?? '';
         document.getElementById('form-profitPercentage').value = currentIpoData.profitPercentage ?? '';
+        document.getElementById('form-preIpoEps').value = currentIpoData.preIpoEps ?? '';
+        document.getElementById('form-postIpoEps').value = currentIpoData.postIpoEps ?? '';
+        document.getElementById('form-preIpoPe').value = currentIpoData.preIpoPe ?? '';
+        document.getElementById('form-postIpoPe').value = currentIpoData.postIpoPe ?? '';
+        document.getElementById('form-preIpoPromoterHolding').value = currentIpoData.preIpoPromoterHolding ?? '';
+        document.getElementById('form-postIpoPromoterHolding').value = currentIpoData.postIpoPromoterHolding ?? '';
+        document.getElementById('form-preIpoMarketCap').value = currentIpoData.preIpoMarketCap ?? '';
+        document.getElementById('form-postIpoMarketCap').value = currentIpoData.postIpoMarketCap ?? '';
 
         // Populate Offer Breakup & Retail Category Terms
         const offerCats = currentIpoData.offerCategories || [];
@@ -2101,6 +2152,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         listingGainPct: parseFloat(document.getElementById('form-listingGainPct').value) || undefined,
         profitAmount: parseFloat(document.getElementById('form-profitAmount').value) || undefined,
         profitPercentage: parseFloat(document.getElementById('form-profitPercentage').value) || undefined,
+        preIpoEps: parseFloat(document.getElementById('form-preIpoEps').value) || undefined,
+        postIpoEps: parseFloat(document.getElementById('form-postIpoEps').value) || undefined,
+        preIpoPe: parseFloat(document.getElementById('form-preIpoPe').value) || undefined,
+        postIpoPe: parseFloat(document.getElementById('form-postIpoPe').value) || undefined,
+        preIpoPromoterHolding: parseFloat(document.getElementById('form-preIpoPromoterHolding').value) || undefined,
+        postIpoPromoterHolding: parseFloat(document.getElementById('form-postIpoPromoterHolding').value) || undefined,
+        preIpoMarketCap: parseFloat(document.getElementById('form-preIpoMarketCap').value) || undefined,
+        postIpoMarketCap: parseFloat(document.getElementById('form-postIpoMarketCap').value) || undefined,
         issueSize: parseFloat(document.getElementById('form-issueSize').value) || undefined,
         freshIssueSize: parseFloat(document.getElementById('form-freshIssueSize').value) || undefined,
         ofsSize: parseFloat(document.getElementById('form-ofsSize').value) || undefined,
