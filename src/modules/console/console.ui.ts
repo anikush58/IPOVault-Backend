@@ -336,8 +336,37 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
     .status-pill.open { background-color: var(--status-open-bg); color: var(--status-open-fg); }
     .status-pill.upcoming { background-color: var(--status-upcoming-bg); color: var(--status-upcoming-fg); }
-    .status-pill.closed { background-color: var(--status-closed-bg); color: var(--status-closed-fg); }
-    .status-pill.published { background-color: var(--status-published-bg); color: var(--status-published-fg); }
+    .status-pill.closed, .status-pill.allotment-completed, .status-pill.allotment_completed { background-color: var(--status-closed-bg); color: var(--status-closed-fg); }
+    .status-pill.published, .status-pill.listed { background-color: var(--status-published-bg); color: var(--status-published-fg); }
+
+    .status-filter-pills {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .filter-pill {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-hover);
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .filter-pill:hover {
+      background-color: var(--bg-active);
+      color: var(--text-main);
+    }
+    .filter-pill.active {
+      background-color: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+      font-weight: 600;
+      box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
+    }
 
     /* Grid Table System */
     .grid-table-box {
@@ -644,14 +673,33 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <option value="DRAFT">Draft</option>
                 <option value="ARCHIVED">Archived</option>
               </select>
-              <select id="man-filter-status" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
-                <option value="">All Lifecycle Statuses</option>
-                <option value="OPEN">Open</option>
+              <select id="man-filter-status" onchange="onStatusSelectChange(this.value)" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
+                <option value="OPEN" selected>Open (Draft & Open)</option>
                 <option value="UPCOMING">Upcoming</option>
-                <option value="CLOSED">Closed</option>
-                <option value="ALLOTMENT_COMPLETED">Allotment Completed</option>
+                <option value="CLOSED">Closed (Closed & Allotment Out)</option>
+                <option value="LISTED">Listed</option>
+                <option value="ALL">All Statuses</option>
               </select>
             </div>
+          </div>
+
+          <!-- Status Filter Pills -->
+          <div class="status-filter-pills" style="margin-top:14px; margin-bottom:4px;">
+            <button type="button" class="filter-pill active" id="pill-filter-OPEN" onclick="setStatusFilter('OPEN')">
+              Open (Draft & Open)
+            </button>
+            <button type="button" class="filter-pill" id="pill-filter-UPCOMING" onclick="setStatusFilter('UPCOMING')">
+              Upcoming
+            </button>
+            <button type="button" class="filter-pill" id="pill-filter-CLOSED" onclick="setStatusFilter('CLOSED')">
+              Closed (Closed & Allotment Out)
+            </button>
+            <button type="button" class="filter-pill" id="pill-filter-LISTED" onclick="setStatusFilter('LISTED')">
+              Listed
+            </button>
+            <button type="button" class="filter-pill" id="pill-filter-ALL" onclick="setStatusFilter('ALL')">
+              All Statuses
+            </button>
           </div>
 
           <div class="grid-table-box" style="margin-top:8px;">
@@ -736,7 +784,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                     <option value="UPCOMING">UPCOMING</option>
                     <option value="OPEN">OPEN</option>
                     <option value="CLOSED">CLOSED</option>
-                    <option value="ALLOTMENT_COMPLETED">ALLOTMENT_COMPLETED</option>
+                    <option value="ALLOTMENT_COMPLETED">Allotment Out (ALLOTMENT_COMPLETED)</option>
                     <option value="LISTED">LISTED</option>
                     <option value="CANCELLED">CANCELLED</option>
                   </select>
@@ -1223,15 +1271,49 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    let currentStatusFilter = 'OPEN';
+
+    function setStatusFilter(filterKey) {
+      currentStatusFilter = filterKey;
+      ['OPEN', 'UPCOMING', 'CLOSED', 'LISTED', 'ALL'].forEach(k => {
+        const btn = document.getElementById('pill-filter-' + k);
+        if (btn) {
+          if (k === filterKey) btn.classList.add('active');
+          else btn.classList.remove('active');
+        }
+      });
+      const selectEl = document.getElementById('man-filter-status');
+      if (selectEl) selectEl.value = filterKey;
+      fetchManualIpos();
+    }
+
+    function onStatusSelectChange(val) {
+      setStatusFilter(val || 'ALL');
+    }
+
     async function fetchManualIpos() {
       try {
         const q = document.getElementById('man-search-q').value;
         const pub = document.getElementById('man-filter-pub').value;
-        const st = document.getElementById('man-filter-status').value;
-        const query = new URLSearchParams({ page: 1, limit: 50 });
+        const filterKey = currentStatusFilter;
+
+        let statusParam = '';
+        if (filterKey === 'OPEN') {
+          statusParam = 'DRAFT,OPEN';
+        } else if (filterKey === 'CLOSED') {
+          statusParam = 'CLOSED,ALLOTMENT_COMPLETED';
+        } else if (filterKey === 'UPCOMING') {
+          statusParam = 'UPCOMING';
+        } else if (filterKey === 'LISTED') {
+          statusParam = 'LISTED';
+        } else if (filterKey && filterKey !== 'ALL') {
+          statusParam = filterKey;
+        }
+
+        const query = new URLSearchParams({ page: 1, limit: 100 });
         if (q) query.set('q', q);
         if (pub) query.set('publicationStatus', pub);
-        if (st) query.set('status', st);
+        if (statusParam) query.set('status', statusParam);
 
         const res = await fetch(API_BASE + '/manual-ipos?' + query.toString());
         const json = await res.json();
@@ -1239,23 +1321,29 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const tbody = document.getElementById('manual-ipos-table-body');
         
         if (items.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color:var(--text-muted);">No Manual IPOs found. Click "Add Manual IPO" to create one.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color:var(--text-muted);">No Manual IPOs found matching filter.</td></tr>';
           return;
         }
 
-        tbody.innerHTML = items.map(item => \`
-          <tr>
-            <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
-            <td>\${item.marketSegment || 'MAINBOARD'}</td>
-            <td><span class="status-pill \${(item.status || 'DRAFT').toLowerCase()}">\${item.status || 'DRAFT'}</span></td>
-            <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
-            <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
-            <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
-            <td>
-              <button class="btn-secondary" onclick="editManualIpo('\${item.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
-            </td>
-          </tr>
-        \`).join('');
+        tbody.innerHTML = items.map(item => {
+          const displayStatus = item.status === 'ALLOTMENT_COMPLETED' ? 'Allotment Out' : (item.status || 'DRAFT');
+          const rawStatus = (item.status || 'DRAFT').toLowerCase();
+          const statusPillClass = rawStatus === 'allotment_completed' ? 'closed' : rawStatus;
+
+          return \`
+            <tr>
+              <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
+              <td>\${item.marketSegment || 'MAINBOARD'}</td>
+              <td><span class="status-pill \${statusPillClass}">\${displayStatus}</span></td>
+              <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
+              <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
+              <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
+              <td>
+                <button class="btn-secondary" onclick="editManualIpo('\${item.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
+              </td>
+            </tr>
+          \`;
+        }).join('');
       } catch (err) {
         console.error('Fetch manual IPOs error:', err);
       }

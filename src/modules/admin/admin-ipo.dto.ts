@@ -190,7 +190,7 @@ export class ConfigureAllotmentDto {
 
 export class AdminIpoQueryDto {
   q?: string;
-  status?: IpoStatus;
+  status?: IpoStatus | string;
   publicationStatus?: PublicationStatus;
   marketSegment?: MarketSegment;
   exchange?: ExchangeListing;

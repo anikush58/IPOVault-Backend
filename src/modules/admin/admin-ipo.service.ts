@@ -697,7 +697,14 @@ export class AdminIpoService {
       ];
     }
 
-    if (query.status) where.status = query.status;
+    if (query.status) {
+      if (typeof query.status === 'string' && query.status.includes(',')) {
+        const statuses = query.status.split(',').map((s) => s.trim() as IpoStatus);
+        where.status = { in: statuses };
+      } else {
+        where.status = query.status as IpoStatus;
+      }
+    }
     if (query.publicationStatus) where.publicationStatus = query.publicationStatus;
     if (query.marketSegment) where.marketSegment = query.marketSegment;
     if (query.exchange) where.exchange = query.exchange;
