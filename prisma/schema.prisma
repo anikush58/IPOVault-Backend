@@ -147,6 +147,10 @@ model Ipo {
   priceBandHigh        Decimal?            @map("price_band_high") @db.Decimal(20, 2)
   lotSize              Int?                @map("lot_size")
   minimumLots          Int?                @map("minimum_lots")
+  listingPrice         Decimal?            @map("listing_price") @db.Decimal(20, 2)
+  listingGainPct       Decimal?            @map("listing_gain_pct") @db.Decimal(6, 2)
+  profitAmount         Decimal?            @map("profit_amount") @db.Decimal(20, 2)
+  profitPercentage     Decimal?            @map("profit_percentage") @db.Decimal(6, 2)
   createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

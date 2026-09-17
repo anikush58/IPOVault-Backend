@@ -283,6 +283,10 @@ export type CompareIpoItemDto = {
   priceBandHigh: string | null;
   lotSize: number | null;
   minimumLots: number | null;
+  listingPrice?: string | null;
+  listingGainPct?: string | null;
+  profitAmount?: string | null;
+  profitPercentage?: string | null;
   faceValue: string | null;
   openDate: string | null;
   closeDate: string | null;
@@ -487,6 +491,10 @@ export type IpoResponseDto = {
   priceBandHigh: string | null;
   lotSize: number | null;
   minimumLots: number | null;
+  listingPrice?: number | null;
+  listingGainPct?: number | null;
+  profitAmount?: number | null;
+  profitPercentage?: number | null;
   minimumInvestmentAmount?: string | null;
   lifecycle: IpoLifecycleDto;
   offerCategories?: IpoOfferCategoryDto[];

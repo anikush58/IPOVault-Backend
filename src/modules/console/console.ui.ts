@@ -790,6 +790,30 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
                 </div>
               </div>
 
+              <!-- Listing Performance (For Listed IPOs) -->
+              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                <strong style="color:var(--primary); font-size:14px;">Listing Performance Details (For LISTED IPOs)</strong>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Listing Price (₹)</label>
+                  <input type="number" step="0.01" id="form-listingPrice" placeholder="e.g. 150.00" />
+                </div>
+                <div class="form-group">
+                  <label>Listing Gain (%)</label>
+                  <input type="number" step="0.01" id="form-listingGainPct" placeholder="e.g. 25.00" />
+                </div>
+                <div class="form-group">
+                  <label>Est Profit Amount (₹)</label>
+                  <input type="number" step="0.01" id="form-profitAmount" placeholder="e.g. 3500.00" />
+                </div>
+                <div class="form-group">
+                  <label>Est Profit (%)</label>
+                  <input type="number" step="0.01" id="form-profitPercentage" placeholder="e.g. 25.00" />
+                </div>
+              </div>
+
               <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:16px;">
                 <button type="button" class="btn-secondary" onclick="switchTab('manual')">Cancel</button>
                 <button type="submit" class="btn-primary">Save</button>
@@ -1091,6 +1115,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-allotmentDate').value = currentIpoData.allotmentDate ? currentIpoData.allotmentDate.split('T')[0] : '';
         document.getElementById('form-listingDate').value = currentIpoData.listingDate ? currentIpoData.listingDate.split('T')[0] : '';
         document.getElementById('form-logoUrl').value = currentIpoData.logoUrl || '';
+        document.getElementById('form-listingPrice').value = currentIpoData.listingPrice ?? '';
+        document.getElementById('form-listingGainPct').value = currentIpoData.listingGainPct ?? '';
+        document.getElementById('form-profitAmount').value = currentIpoData.profitAmount ?? '';
+        document.getElementById('form-profitPercentage').value = currentIpoData.profitPercentage ?? '';
 
         switchTab('manual-edit');
       } catch (err) {
@@ -1112,6 +1140,10 @@ export function renderConsoleHtml(baseUrl = '/api/v1/console/api'): string {
         priceBandLow: parseFloat(document.getElementById('form-priceBandLow').value) || undefined,
         priceBandHigh: parseFloat(document.getElementById('form-priceBandHigh').value) || undefined,
         lotSize: parseInt(document.getElementById('form-lotSize').value, 10) || undefined,
+        listingPrice: parseFloat(document.getElementById('form-listingPrice').value) || undefined,
+        listingGainPct: parseFloat(document.getElementById('form-listingGainPct').value) || undefined,
+        profitAmount: parseFloat(document.getElementById('form-profitAmount').value) || undefined,
+        profitPercentage: parseFloat(document.getElementById('form-profitPercentage').value) || undefined,
         issueSize: parseFloat(document.getElementById('form-issueSize').value) || undefined,
         openDate: document.getElementById('form-openDate').value || undefined,
         closeDate: document.getElementById('form-closeDate').value || undefined,

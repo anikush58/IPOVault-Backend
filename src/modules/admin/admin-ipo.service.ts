@@ -148,6 +148,36 @@ export class AdminIpoService {
             ? new Prisma.Decimal(dto.priceBandHigh)
             : null,
         lotSize: dto.lotSize || null,
+        listingPrice:
+          dto.listingPrice !== undefined && dto.listingPrice !== null
+            ? new Prisma.Decimal(dto.listingPrice)
+            : null,
+        listingGainPct: (() => {
+          if (dto.listingGainPct !== undefined && dto.listingGainPct !== null) return new Prisma.Decimal(dto.listingGainPct);
+          const issuePrice = dto.priceBandHigh || dto.priceBandLow || 0;
+          if (dto.listingPrice && issuePrice > 0) {
+            return new Prisma.Decimal((((dto.listingPrice - issuePrice) / issuePrice) * 100).toFixed(2));
+          }
+          return null;
+        })(),
+        profitAmount: (() => {
+          if (dto.profitAmount !== undefined && dto.profitAmount !== null) return new Prisma.Decimal(dto.profitAmount);
+          const issuePrice = dto.priceBandHigh || dto.priceBandLow || 0;
+          if (dto.listingPrice && issuePrice > 0) {
+            const lot = dto.lotSize || 1;
+            return new Prisma.Decimal(((dto.listingPrice - issuePrice) * lot).toFixed(2));
+          }
+          return null;
+        })(),
+        profitPercentage: (() => {
+          if (dto.profitPercentage !== undefined && dto.profitPercentage !== null) return new Prisma.Decimal(dto.profitPercentage);
+          if (dto.listingGainPct !== undefined && dto.listingGainPct !== null) return new Prisma.Decimal(dto.listingGainPct);
+          const issuePrice = dto.priceBandHigh || dto.priceBandLow || 0;
+          if (dto.listingPrice && issuePrice > 0) {
+            return new Prisma.Decimal((((dto.listingPrice - issuePrice) / issuePrice) * 100).toFixed(2));
+          }
+          return null;
+        })(),
         issueSize:
           dto.issueSize !== undefined
             ? new Prisma.Decimal(dto.issueSize)
@@ -314,6 +344,54 @@ export class AdminIpoService {
             }
           : {}),
         ...(dto.lotSize !== undefined ? { lotSize: dto.lotSize } : {}),
+        ...(dto.listingPrice !== undefined
+          ? {
+              listingPrice:
+                dto.listingPrice !== null
+                  ? new Prisma.Decimal(dto.listingPrice)
+                  : null,
+            }
+          : {}),
+        ...(dto.listingGainPct !== undefined
+          ? {
+              listingGainPct:
+                dto.listingGainPct !== null
+                  ? new Prisma.Decimal(dto.listingGainPct)
+                  : null,
+            }
+          : (dto.listingPrice !== undefined && dto.listingPrice !== null ? {
+              listingGainPct: (() => {
+                const issuePrice = dto.priceBandHigh || (existing.priceBandHigh ? Number(existing.priceBandHigh) : (dto.priceBandLow || (existing.priceBandLow ? Number(existing.priceBandLow) : 0)));
+                return issuePrice > 0 ? new Prisma.Decimal((((dto.listingPrice - issuePrice) / issuePrice) * 100).toFixed(2)) : null;
+              })()
+            } : {})),
+        ...(dto.profitAmount !== undefined
+          ? {
+              profitAmount:
+                dto.profitAmount !== null
+                  ? new Prisma.Decimal(dto.profitAmount)
+                  : null,
+            }
+          : (dto.listingPrice !== undefined && dto.listingPrice !== null ? {
+              profitAmount: (() => {
+                const issuePrice = dto.priceBandHigh || (existing.priceBandHigh ? Number(existing.priceBandHigh) : (dto.priceBandLow || (existing.priceBandLow ? Number(existing.priceBandLow) : 0)));
+                const lot = dto.lotSize || existing.lotSize || 1;
+                return issuePrice > 0 ? new Prisma.Decimal(((dto.listingPrice - issuePrice) * lot).toFixed(2)) : null;
+              })()
+            } : {})),
+        ...(dto.profitPercentage !== undefined
+          ? {
+              profitPercentage:
+                dto.profitPercentage !== null
+                  ? new Prisma.Decimal(dto.profitPercentage)
+                  : null,
+            }
+          : (dto.listingPrice !== undefined && dto.listingPrice !== null ? {
+              profitPercentage: (() => {
+                const issuePrice = dto.priceBandHigh || (existing.priceBandHigh ? Number(existing.priceBandHigh) : (dto.priceBandLow || (existing.priceBandLow ? Number(existing.priceBandLow) : 0)));
+                return issuePrice > 0 ? new Prisma.Decimal((((dto.listingPrice - issuePrice) / issuePrice) * 100).toFixed(2)) : null;
+              })()
+            } : {})),
         ...(dto.issueSize !== undefined
           ? {
               issueSize:
@@ -525,6 +603,10 @@ export class AdminIpoService {
       priceBandLow: ipo.priceBandLow ? Number(ipo.priceBandLow) : null,
       priceBandHigh: ipo.priceBandHigh ? Number(ipo.priceBandHigh) : null,
       lotSize: ipo.lotSize,
+      listingPrice: ipo.listingPrice ? Number(ipo.listingPrice) : null,
+      listingGainPct: ipo.listingGainPct ? Number(ipo.listingGainPct) : null,
+      profitAmount: ipo.profitAmount ? Number(ipo.profitAmount) : null,
+      profitPercentage: ipo.profitPercentage ? Number(ipo.profitPercentage) : null,
       openDate: openEvent ? openEvent.eventDate.toISOString().slice(0, 10) : null,
       closeDate: closeEvent ? closeEvent.eventDate.toISOString().slice(0, 10) : null,
       listingDate: listingEvent
@@ -610,6 +692,11 @@ export class AdminIpoService {
           publicationStatus: ipo.publicationStatus,
           priceBandLow: ipo.priceBandLow ? Number(ipo.priceBandLow) : null,
           priceBandHigh: ipo.priceBandHigh ? Number(ipo.priceBandHigh) : null,
+          lotSize: ipo.lotSize,
+          listingPrice: ipo.listingPrice ? Number(ipo.listingPrice) : null,
+          listingGainPct: ipo.listingGainPct ? Number(ipo.listingGainPct) : null,
+          profitAmount: ipo.profitAmount ? Number(ipo.profitAmount) : null,
+          profitPercentage: ipo.profitPercentage ? Number(ipo.profitPercentage) : null,
           openDate: openEv ? openEv.eventDate.toISOString().slice(0, 10) : null,
           closeDate: closeEv ? closeEv.eventDate.toISOString().slice(0, 10) : null,
           hasAllotmentConfig: !!ipo.allotmentConfig,

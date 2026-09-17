@@ -78,6 +78,10 @@ export class CreateAdminIpoDto {
   priceBandLow?: number;
   priceBandHigh?: number;
   lotSize?: number;
+  listingPrice?: number;
+  listingGainPct?: number;
+  profitAmount?: number;
+  profitPercentage?: number;
   issueSize?: number;
   freshIssueSize?: number;
   ofsSize?: number;
@@ -130,6 +134,10 @@ export class UpdateAdminIpoDto {
   priceBandLow?: number;
   priceBandHigh?: number;
   lotSize?: number;
+  listingPrice?: number;
+  listingGainPct?: number;
+  profitAmount?: number;
+  profitPercentage?: number;
   issueSize?: number;
   freshIssueSize?: number;
   ofsSize?: number;
