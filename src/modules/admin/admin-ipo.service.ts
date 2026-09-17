@@ -1287,9 +1287,26 @@ export class AdminIpoService {
       const categoriesArray = payload.offerCategories || ipoData.offerCategories || [];
       if (Array.isArray(categoriesArray) && categoriesArray.length > 0) {
         for (const cat of categoriesArray) {
-          const category = cat.category || cat.categoryCode;
-          if (!category) continue;
-          const allocationPct = cat.allocationPct !== undefined && cat.allocationPct !== null ? cat.allocationPct : cat.allocationPercentage;
+          const rawCat = cat.category || cat.categoryCode;
+          if (!rawCat) continue;
+          let categoryStr = String(rawCat).trim().toUpperCase();
+          if (categoryStr.includes('RETAIL')) categoryStr = 'RETAIL';
+          else if (categoryStr.includes('EMPLOYEE')) categoryStr = 'EMPLOYEE';
+          else if (categoryStr.includes('SHAREHOLDER')) categoryStr = 'SHAREHOLDER';
+          else if (categoryStr.includes('NII_SMALL') || categoryStr.includes('SNII')) categoryStr = 'NII_SMALL';
+          else if (categoryStr.includes('NII_BIG') || categoryStr.includes('BNII')) categoryStr = 'NII_BIG';
+          else if (categoryStr.includes('NII') || categoryStr.includes('NON_INSTITUTIONAL') || categoryStr.includes('NON INSTITUTIONAL')) categoryStr = 'NII';
+          else if (categoryStr.includes('QIB') || categoryStr.includes('QUALIFIED')) categoryStr = 'QIB';
+
+          if (!Object.values(OfferCategoryType).includes(categoryStr as OfferCategoryType)) {
+            categoryStr = 'OTHER';
+          }
+          const category = categoryStr as OfferCategoryType;
+          const allocationPct = cat.allocationPct !== undefined && cat.allocationPct !== null
+            ? cat.allocationPct
+            : (cat.allocationPercentage !== undefined && cat.allocationPercentage !== null
+              ? cat.allocationPercentage
+              : cat.allocationPercent);
           await tx.ipoOfferCategory.upsert({
             where: {
               ipoId_category: { ipoId: ipo.id, category },
@@ -1356,14 +1373,21 @@ export class AdminIpoService {
         });
       }
 
-      const leadManagerName = (payload.leadManager || companyData.leadManager)?.trim();
-      if (leadManagerName) {
+      const rawLeadManager = payload.leadManager || companyData.leadManager;
+      let leadManagerNames: string[] = [];
+      if (Array.isArray(rawLeadManager)) {
+        leadManagerNames = rawLeadManager.map((m) => String(m).trim()).filter(Boolean);
+      } else if (typeof rawLeadManager === 'string' && rawLeadManager.trim()) {
+        leadManagerNames = [rawLeadManager.trim()];
+      }
+
+      for (let i = 0; i < leadManagerNames.length; i++) {
         await tx.ipoParticipant.create({
           data: {
             ipoId: ipo.id,
             role: ParticipantRole.BRLM,
-            name: leadManagerName,
-            displayOrder: 2,
+            name: leadManagerNames[i],
+            displayOrder: 2 + i,
           },
         });
       }
@@ -1442,12 +1466,22 @@ export class AdminIpoService {
 
       if (Array.isArray(payload.documents) && payload.documents.length > 0) {
         for (const doc of payload.documents) {
-          if (!doc.documentType) continue;
+          const docTypeStr = (doc.documentType || doc.type || '').toString().toUpperCase();
+          if (!docTypeStr) continue;
+          let docType: DocumentType = DocumentType.OTHER;
+          if (docTypeStr.includes('DRHP')) docType = DocumentType.DRHP;
+          else if (docTypeStr.includes('RHP')) docType = DocumentType.RHP;
+          else if (docTypeStr.includes('PROSPECTUS')) docType = DocumentType.PROSPECTUS;
+          else if (docTypeStr.includes('ANCHOR')) docType = DocumentType.ANCHOR_LIST;
+          else if (Object.values(DocumentType).includes(docTypeStr as DocumentType)) {
+            docType = docTypeStr as DocumentType;
+          }
+
           const sourceUrl = doc.sourceUrl || doc.url;
           await tx.ipoDocument.create({
             data: {
               ipoId: ipo.id,
-              documentType: doc.documentType,
+              documentType: docType,
               fileName: doc.fileName?.trim() || doc.title?.trim() || null,
               sourceUrl: sourceUrl?.trim() || null,
               source: 'MANUAL_IMPORT',

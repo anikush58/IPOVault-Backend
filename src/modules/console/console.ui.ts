@@ -1949,8 +1949,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(jsonPayload)
           });
-          if (res.ok) { alert('JSON Imported successfully!'); fetchManualIpos(); }
-        } catch (err) { alert('JSON import failed: ' + err.message); }
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            alert('JSON Imported successfully!');
+            fetchManualIpos();
+          } else {
+            const errMsg = data.message || data.error || ('HTTP ' + res.status + ' ' + res.statusText);
+            alert('JSON import failed: ' + (Array.isArray(errMsg) ? errMsg.join(', ') : errMsg));
+          }
+        } catch (err) {
+          alert('JSON import failed: ' + err.message);
+        } finally {
+          evt.target.value = '';
+        }
       };
       reader.readAsText(file);
     }
