@@ -1559,10 +1559,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         document.getElementById('form-profitAmount').value = currentIpoData.profitAmount ?? '';
         document.getElementById('form-profitPercentage').value = currentIpoData.profitPercentage ?? '';
 
-        if (currentIpoData.latestGmp) {
-          document.getElementById('gmp-amount').value = currentIpoData.latestGmp.gmpAmount ?? '';
-          document.getElementById('gmp-percentage').value = currentIpoData.latestGmp.gmpPercentage ?? '';
-          document.getElementById('gmp-est-profit').value = currentIpoData.latestGmp.estProfitPerLot ?? '';
+        const latestGmp = currentIpoData.latestGmp || currentIpoData.currentGmp || currentIpoData.gmp || (currentIpoData.gmpObservations && currentIpoData.gmpObservations[0]);
+        if (latestGmp) {
+          const amt = latestGmp.gmpAmount ?? latestGmp.gmp_amount ?? '';
+          const pct = latestGmp.gmpPercentage ?? latestGmp.gmp_percent ?? '';
+          const profit = latestGmp.estProfitPerLot ?? latestGmp.profit_per_lot ?? '';
+          document.getElementById('gmp-amount').value = amt !== null && amt !== undefined ? amt : '';
+          document.getElementById('gmp-percentage').value = pct !== null && pct !== undefined ? pct : '';
+          document.getElementById('gmp-est-profit').value = profit !== null && profit !== undefined ? profit : '';
         } else {
           document.getElementById('gmp-amount').value = '';
           document.getElementById('gmp-percentage').value = '';
@@ -1641,12 +1645,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         anchorInvestors: getAnchorInvestorsFromForm(),
       };
 
-      const gmpVal = parseFloat(document.getElementById('gmp-amount').value);
-      if (!isNaN(gmpVal)) {
+      const gmpAmtEl = document.getElementById('gmp-amount');
+      const gmpPctEl = document.getElementById('gmp-percentage');
+      const gmpEstEl = document.getElementById('gmp-est-profit');
+      const gmpAmtStr = gmpAmtEl && gmpAmtEl.value ? gmpAmtEl.value.trim() : '';
+      const gmpPctStr = gmpPctEl && gmpPctEl.value ? gmpPctEl.value.trim() : '';
+      const gmpEstStr = gmpEstEl && gmpEstEl.value ? gmpEstEl.value.trim() : '';
+
+      if (gmpAmtStr !== '' || gmpPctStr !== '' || gmpEstStr !== '') {
+        const amt = parseFloat(gmpAmtStr);
         payload.gmp = {
-          gmpAmount: gmpVal,
-          gmpPercentage: parseFloat(document.getElementById('gmp-percentage').value) || undefined,
-          estProfitPerLot: parseFloat(document.getElementById('gmp-est-profit').value) || undefined,
+          gmpAmount: !isNaN(amt) ? amt : 0,
+          gmpPercentage: gmpPctStr !== '' && !isNaN(parseFloat(gmpPctStr)) ? parseFloat(gmpPctStr) : undefined,
+          estProfitPerLot: gmpEstStr !== '' && !isNaN(parseFloat(gmpEstStr)) ? parseFloat(gmpEstStr) : undefined,
         };
       }
 

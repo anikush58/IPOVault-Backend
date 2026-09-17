@@ -615,6 +615,25 @@ export class AdminIpoService {
       financials: ipo.company.financials,
       participants: ipo.participants,
       gmpObservations: ipo.gmpObservations,
+      latestGmp: ipo.gmpObservations?.[0]
+        ? {
+            gmpAmount: ipo.gmpObservations[0].gmpAmount ? Number(ipo.gmpObservations[0].gmpAmount) : null,
+            gmpPercentage: ipo.gmpObservations[0].gmpPercentage ? Number(ipo.gmpObservations[0].gmpPercentage) : null,
+            estProfitPerLot: ipo.gmpObservations[0].estProfitPerLot ? Number(ipo.gmpObservations[0].estProfitPerLot) : null,
+            observedAt: ipo.gmpObservations[0].observedAt.toISOString(),
+          }
+        : null,
+      currentGmp: ipo.gmpObservations?.[0]
+        ? {
+            gmpAmount: ipo.gmpObservations[0].gmpAmount ? Number(ipo.gmpObservations[0].gmpAmount) : null,
+            gmpPercentage: ipo.gmpObservations[0].gmpPercentage ? Number(ipo.gmpObservations[0].gmpPercentage) : null,
+            estProfitPerLot: ipo.gmpObservations[0].estProfitPerLot ? Number(ipo.gmpObservations[0].estProfitPerLot) : null,
+            observedAt: ipo.gmpObservations[0].observedAt.toISOString(),
+          }
+        : null,
+      gmpAmount: ipo.gmpObservations?.[0]?.gmpAmount ? Number(ipo.gmpObservations[0].gmpAmount) : null,
+      gmpPercentage: ipo.gmpObservations?.[0]?.gmpPercentage ? Number(ipo.gmpObservations[0].gmpPercentage) : null,
+      estProfitPerLot: ipo.gmpObservations?.[0]?.estProfitPerLot ? Number(ipo.gmpObservations[0].estProfitPerLot) : null,
       subscriptionObservations: ipo.subscriptionObservations,
       sourceIdentities: ipo.sourceIdentities,
       validation: this.validationService.validateIpo({
@@ -686,7 +705,15 @@ export class AdminIpoService {
     const [items, total] = await Promise.all([
       this.prisma.ipo.findMany({
         where,
-        include: { company: true, lifecycleEvents: true, allotmentConfig: true },
+        include: {
+          company: true,
+          lifecycleEvents: true,
+          allotmentConfig: true,
+          gmpObservations: {
+            orderBy: { observedAt: 'desc' },
+            take: 1,
+          },
+        },
         orderBy: { updatedAt: 'desc' },
         skip,
         take: limit,
@@ -698,6 +725,16 @@ export class AdminIpoService {
       items: items.map((ipo) => {
         const openEv = ipo.lifecycleEvents.find((e) => e.eventType === 'OPEN');
         const closeEv = ipo.lifecycleEvents.find((e) => e.eventType === 'CLOSE');
+        const latestGmpObs = ipo.gmpObservations?.[0];
+        const latestGmp = latestGmpObs
+          ? {
+              gmpAmount: latestGmpObs.gmpAmount ? Number(latestGmpObs.gmpAmount) : null,
+              gmpPercentage: latestGmpObs.gmpPercentage ? Number(latestGmpObs.gmpPercentage) : null,
+              estProfitPerLot: latestGmpObs.estProfitPerLot ? Number(latestGmpObs.estProfitPerLot) : null,
+              observedAt: latestGmpObs.observedAt.toISOString(),
+            }
+          : null;
+
         return {
           id: ipo.id,
           legalName: ipo.company.legalName,
@@ -716,6 +753,10 @@ export class AdminIpoService {
           profitPercentage: ipo.profitPercentage ? Number(ipo.profitPercentage) : null,
           openDate: openEv ? openEv.eventDate.toISOString().slice(0, 10) : null,
           closeDate: closeEv ? closeEv.eventDate.toISOString().slice(0, 10) : null,
+          latestGmp,
+          currentGmp: latestGmp,
+          gmpAmount: latestGmpObs?.gmpAmount ? Number(latestGmpObs.gmpAmount) : null,
+          gmpPercentage: latestGmpObs?.gmpPercentage ? Number(latestGmpObs.gmpPercentage) : null,
           hasAllotmentConfig: !!ipo.allotmentConfig,
           updatedAt: ipo.updatedAt,
         };
