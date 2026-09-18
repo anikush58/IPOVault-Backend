@@ -243,66 +243,189 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     };
   }
 
+  private readonly CACHE_TTL_MS = 3600 * 1000; // 1 hour
+  private cachedCompanyList: {
+    items: Array<{ clientId: string; name: string }>;
+    fetchedAt: number;
+  } | null = null;
+  private inFlightDiscovery: Promise<
+    Array<{ clientId: string; name: string }>
+  > | null = null;
+
   public async resolveRegistrarIpoCode(
     request: CheckAllotmentRequest,
   ): Promise<string | NormalizedAllotmentResult> {
     const checkedAt = new Date();
     try {
-      const companyListUrl =
-        process.env.KFINTECH_COMPANY_LIST_URL ||
-        process.env.KFINTECH_API_URL ||
-        'https://0uz601ms56.execute-api.ap-south-1.amazonaws.com/prod/api/query?type=company';
-
-      const url = companyListUrl.includes('?')
-        ? companyListUrl
-        : `${companyListUrl}?type=company`;
-
-      const response = await this.fetchWithRetry(url, {
-        method: 'GET',
-        headers: {
-          Origin: 'https://ipostatus.kfintech.com',
-          Referer: 'https://ipostatus.kfintech.com/',
-          Accept: 'application/json, text/plain, */*',
-        },
-      });
-
-      if (!response.ok) {
-        return {
-          status: AllotmentStatus.SOURCE_UNAVAILABLE,
-          sourceCode: this.code,
-          checkedAt,
-          errorMessage: `KFintech company list returned HTTP status ${response.status}`,
-        };
-      }
-
-      let raw: unknown;
-      try {
-        raw = await response.json();
-      } catch {
+      const list = await this.fetchActiveCompanyList();
+      return this.matchCompanyInList(list, request, checkedAt);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        msg.includes('JSON') ||
+        msg.includes('parse') ||
+        msg.includes('bundle')
+      ) {
         return {
           status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
           sourceCode: this.code,
           checkedAt,
-          errorMessage: 'Failed to parse JSON response from KFintech company list',
+          errorMessage: `Failed to parse KFintech active company bundle: ${msg}`,
         };
       }
-
-      const list = Array.isArray(raw)
-        ? raw
-        : Array.isArray((raw as Record<string, unknown>)?.data)
-          ? ((raw as Record<string, unknown>).data as unknown[])
-          : [];
-
-      return this.matchCompanyInList(list, request, checkedAt);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
       return {
         status: AllotmentStatus.SOURCE_UNAVAILABLE,
         sourceCode: this.code,
         checkedAt,
-        errorMessage: `KFintech company list unavailable: ${msg}`,
+        errorMessage: `KFintech portal unavailable: ${msg}`,
       };
     }
+  }
+
+  /**
+   * Fetches the live KFintech active issue dataset from ipostatus.kfintech.com SPA bundle,
+   * cached in-memory with a 1-hour TTL.
+   */
+  public async fetchActiveCompanyList(): Promise<
+    Array<{ clientId: string; name: string }>
+  > {
+    const now = Date.now();
+    if (
+      this.cachedCompanyList &&
+      now - this.cachedCompanyList.fetchedAt < this.CACHE_TTL_MS
+    ) {
+      return this.cachedCompanyList.items;
+    }
+
+    if (this.inFlightDiscovery) {
+      return this.inFlightDiscovery;
+    }
+
+    this.inFlightDiscovery = this.discoverCompanyListFromPortal();
+    try {
+      const items = await this.inFlightDiscovery;
+      this.cachedCompanyList = { items, fetchedAt: Date.now() };
+      return items;
+    } finally {
+      this.inFlightDiscovery = null;
+    }
+  }
+
+  private async discoverCompanyListFromPortal(): Promise<
+    Array<{ clientId: string; name: string }>
+  > {
+    const portalUrl =
+      process.env.KFINTECH_PORTAL_URL || 'https://ipostatus.kfintech.com/';
+
+    // Step 1: Fetch root portal HTML to find the active main JS bundle
+    const htmlResponse = await this.fetchWithRetry(portalUrl, {
+      method: 'GET',
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Origin: 'https://ipostatus.kfintech.com',
+        Referer: 'https://ipostatus.kfintech.com/',
+      },
+    });
+
+    if (!htmlResponse.ok) {
+      throw new Error(`Portal HTML returned HTTP ${htmlResponse.status}`);
+    }
+
+    const html = await htmlResponse.text();
+    const jsMatch = html.match(
+      /src=["'](\.?\/static\/js\/main\.[a-f0-9]+\.js)["']/i,
+    );
+
+    let bundleUrl: string;
+    if (jsMatch) {
+      const relPath = jsMatch[1].replace(/^\.\//, '/');
+      const base = portalUrl.endsWith('/') ? portalUrl.slice(0, -1) : portalUrl;
+      bundleUrl = `${base}${relPath.startsWith('/') ? '' : '/'}${relPath}`;
+    } else {
+      const base = portalUrl.endsWith('/') ? portalUrl.slice(0, -1) : portalUrl;
+      bundleUrl = `${base}/static/js/main.js`;
+    }
+
+    // Step 2: Fetch active JS bundle
+    const bundleResponse = await this.fetchWithRetry(bundleUrl, {
+      method: 'GET',
+      headers: {
+        Accept: '*/*',
+        Origin: 'https://ipostatus.kfintech.com',
+        Referer: 'https://ipostatus.kfintech.com/',
+      },
+    });
+
+    if (!bundleResponse.ok) {
+      throw new Error(`Portal JS bundle returned HTTP ${bundleResponse.status}`);
+    }
+
+    const bundleCode = await bundleResponse.text();
+
+    // Step 3: Extract embedded company JSON array from bundle
+    const jsonRegex = /JSON\.parse\('(\[\s*\{[\s\S]*?\}\s*\])'\)/;
+    const match = jsonRegex.exec(bundleCode);
+
+    let rawList: unknown[] = [];
+    if (match) {
+      const rawJsonStr = match[1];
+      try {
+        const unescaped = rawJsonStr.replace(/\\'/g, "'").replace(/\\"/g, '"');
+        const parsed = JSON.parse(unescaped);
+        if (Array.isArray(parsed)) {
+          rawList = parsed;
+        }
+      } catch (err: unknown) {
+        throw new Error(
+          `Failed to parse JSON string in KFintech bundle: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else {
+      // Fallback: try direct array matching in bundle
+      const directArrayRegex =
+        /\[\s*\{"clientId"\s*:\s*"[^"]+"\s*,\s*"name"\s*:\s*"[^"]+"\}[\s\S]*?\]/;
+      const directMatch = directArrayRegex.exec(bundleCode);
+      if (directMatch) {
+        try {
+          const parsed = JSON.parse(directMatch[0]);
+          if (Array.isArray(parsed)) {
+            rawList = parsed;
+          }
+        } catch {
+          // Ignore fallback error and throw main parse error below
+        }
+      }
+    }
+
+    if (rawList.length === 0) {
+      throw new Error('Unable to extract active company list from KFintech bundle');
+    }
+
+    // Step 4: Validate extracted items
+    const validated: Array<{ clientId: string; name: string }> = [];
+    for (const item of rawList) {
+      if (!item || typeof item !== 'object') continue;
+      const rec = item as Record<string, unknown>;
+      const code = String(rec.clientId || rec.client_id || '').trim();
+      const name = String(rec.name || rec.company_name || '').trim();
+
+      // Ensure valid non-empty string, not UUID
+      if (
+        code &&
+        name &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          code,
+        )
+      ) {
+        validated.push({ clientId: code, name });
+      }
+    }
+
+    if (validated.length === 0) {
+      throw new Error('No valid company entries found in KFintech bundle');
+    }
+
+    return validated;
   }
 
   public matchCompanyInList(
@@ -324,11 +447,28 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     for (const item of items) {
       if (!item || typeof item !== 'object') continue;
       const rec = item as Record<string, unknown>;
-      const code = String(rec.client_id || rec.id || rec.code || rec.value || '').trim();
-      const name = String(rec.company_name || rec.name || rec.caption || rec.text || '').trim();
-      const symbol = rec.symbol ? String(rec.symbol).trim().toUpperCase() : undefined;
+      const code = String(
+        rec.clientId || rec.client_id || rec.id || rec.code || rec.value || '',
+      ).trim();
+      const name = String(
+        rec.name ||
+          rec.company_name ||
+          rec.companyName ||
+          rec.caption ||
+          rec.text ||
+          '',
+      ).trim();
+      const symbol = rec.symbol
+        ? String(rec.symbol).trim().toUpperCase()
+        : undefined;
 
-      if (code && name) {
+      if (
+        code &&
+        name &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          code,
+        )
+      ) {
         normalizedItems.push({ code, name, symbol });
       }
     }
@@ -384,6 +524,8 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
   private normalizeName(name: string): string {
     return name
       .toLowerCase()
+      .trim()
+      .replace(/[\s\-_]+(ipo|sme\s+ipo|sme|rights\s+issue|buyback)$/i, '')
       .replace(/[^a-z0-9]/g, '')
       .trim();
   }

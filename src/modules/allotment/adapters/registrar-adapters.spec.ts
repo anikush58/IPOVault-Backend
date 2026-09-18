@@ -12,7 +12,14 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
     identifierValue: 'ABCDE1234F',
   };
 
+  const sampleKfinHtml = `<!doctype html><html><head><script defer="defer" src="/static/js/main.91b6fce3.js"></script></head><body><div id="root"></div></body></html>`;
+
+  const sampleKfinBundle = `
+    var rf=JSON.parse('[{"clientId":"66907812020","name":"RENTOMOJO LIMITED"},{"clientId":"75003530500","name":"PRASOL CHEMICALS LIMITED"},{"clientId":"94818267561","name":"DHOOT TRANSMISSION LIMITED"},{"clientId":"35015605280","name":"INNOVISION LIMITED-IPO"}]');
+  `;
+
   beforeEach(() => {
+    jest.restoreAllMocks();
     adapter = new KfinRegistrarAdapter();
   });
 
@@ -101,7 +108,7 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
     expect(result.status).toBe(AllotmentStatus.RATE_LIMITED);
   });
 
-  it('8. should use explicit registrarIpoCode directly when provided', async () => {
+  it('8. should use explicit registrarIpoCode directly when provided (bypasses discovery)', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() =>
       Promise.resolve({
         ok: true,
@@ -118,6 +125,7 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
 
     const result = await adapter.checkAllotment(mockRequest);
     expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('0uz601ms56.execute-api'),
       expect.objectContaining({
@@ -126,108 +134,215 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
     );
   });
 
-  it('9. should auto-resolve client_id from live public list when registrarIpoCode is null', async () => {
+  it('9. should auto-resolve client_id from live public bundle for Rentomojo Limited -> 66907812020', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
-      if (String(url).includes('type=company')) {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => [
-            { client_id: '12345', company_name: 'Manika Moulds Limited', symbol: 'MANIKA' },
-          ],
-        } as Response);
+          text: async () => sampleKfinHtml,
+        } as unknown as Response);
       }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => [{ All_Shares: 100, App_Shares: 100, Name: 'TEST USER' }],
-      } as Response);
+      if (urlStr.includes('main.91b6fce3.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinBundle,
+        } as unknown as Response);
+      }
+      if (urlStr.includes('0uz601ms56.execute-api')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [{ All_Shares: 100, App_Shares: 100, Name: 'TEST USER' }],
+        } as unknown as Response);
+      }
+      return Promise.reject(new Error(`Unexpected URL ${urlStr}`));
     });
 
-    const requestNoCode = {
+    const requestRentomojo = {
       ipoId: '11111111-1111-1111-1111-111111111111',
       identifierType: AllotmentIdentifierType.PAN,
       identifierValue: 'ABCDE1234F',
-      companyLegalName: 'Manika Moulds Limited',
-      companyName: 'Manika Moulds',
-      symbol: 'MANIKA',
+      companyLegalName: 'Rentomojo Limited',
+      companyName: 'Rentomojo',
+      symbol: 'RENTOMOJO',
     };
 
-    const result = await adapter.checkAllotment(requestNoCode);
+    const result = await adapter.checkAllotment(requestRentomojo);
     expect(result.status).toBe(AllotmentStatus.ALLOTTED);
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('0uz601ms56.execute-api'),
       expect.objectContaining({
-        headers: expect.objectContaining({ client_id: '12345' }),
+        headers: expect.objectContaining({ client_id: '66907812020' }),
       }),
     );
   });
 
-  it('10. should return NOT_YET_AVAILABLE when no match is found in live list', async () => {
-    jest.spyOn(global, 'fetch').mockImplementation(() =>
-      Promise.resolve({
+  it('10. should auto-resolve client_id for Prasol Chemicals Limited -> 75003530500', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinHtml,
+        } as unknown as Response);
+      }
+      if (urlStr.includes('main.91b6fce3.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinBundle,
+        } as unknown as Response);
+      }
+      return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => [
-          { client_id: '99999', company_name: 'Unrelated Company Ltd', symbol: 'OTHER' },
-        ],
-      } as Response),
+        json: async () => [{ All_Shares: 0, App_Shares: 100, Name: 'TEST USER' }],
+      } as unknown as Response);
+    });
+
+    const requestPrasol = {
+      ipoId: '11111111-1111-1111-1111-111111111111',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Prasol Chemicals Limited',
+      companyName: 'Prasol Chemicals',
+    };
+
+    const result = await adapter.checkAllotment(requestPrasol);
+    expect(result.status).toBe(AllotmentStatus.NOT_ALLOTTED);
+  });
+
+  it('11. should auto-resolve client_id for Dhoot Transmission Limited -> 94818267561', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinHtml,
+        } as unknown as Response);
+      }
+      if (urlStr.includes('main.91b6fce3.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinBundle,
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [{ All_Shares: 50, App_Shares: 50, Name: 'TEST USER' }],
+      } as unknown as Response);
+    });
+
+    const requestDhoot = {
+      ipoId: '11111111-1111-1111-1111-111111111111',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Dhoot Transmission Limited',
+      companyName: 'Dhoot Transmission',
+    };
+
+    const result = await adapter.checkAllotment(requestDhoot);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('0uz601ms56.execute-api'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ client_id: '94818267561' }),
+      }),
     );
+  });
+
+  it('12. should return NOT_YET_AVAILABLE when no match is found in live list', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinHtml,
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: async () => sampleKfinBundle,
+      } as unknown as Response);
+    });
 
     const requestUnmatched = {
       ipoId: '11111111-1111-1111-1111-111111111111',
       identifierType: AllotmentIdentifierType.PAN,
       identifierValue: 'ABCDE1234F',
-      companyLegalName: 'Manika Moulds Limited',
-      companyName: 'Manika Moulds',
-      symbol: 'MANIKA',
+      companyLegalName: 'Unrelated Nonexistent Company Ltd',
+      companyName: 'Unrelated Nonexistent',
+      symbol: 'NONEXIST',
     };
 
     const result = await adapter.checkAllotment(requestUnmatched);
     expect(result.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
   });
 
-  it('11. should return NEEDS_REVIEW when multiple matches exist in live list', async () => {
-    jest.spyOn(global, 'fetch').mockImplementation(() =>
-      Promise.resolve({
+  it('13. should return NEEDS_REVIEW when multiple matches exist in live list', async () => {
+    const ambiguousBundle = `
+      var rf=JSON.parse('[{"clientId":"11111111111","name":"Ambiguous Tech Limited"},{"clientId":"22222222222","name":"Ambiguous Tech Limited SME"}]');
+    `;
+
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinHtml,
+        } as unknown as Response);
+      }
+      return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => [
-          { client_id: '11111', company_name: 'Manika Moulds Limited', symbol: 'MANIKA' },
-          { client_id: '22222', company_name: 'Manika Moulds Limited', symbol: 'MANIKA' },
-        ],
-      } as Response),
-    );
+        text: async () => ambiguousBundle,
+      } as unknown as Response);
+    });
 
     const requestAmbiguous = {
       ipoId: '11111111-1111-1111-1111-111111111111',
       identifierType: AllotmentIdentifierType.PAN,
       identifierValue: 'ABCDE1234F',
-      companyLegalName: 'Manika Moulds Limited',
-      companyName: 'Manika Moulds',
-      symbol: 'MANIKA',
+      companyLegalName: 'Ambiguous Tech Limited',
+      companyName: 'Ambiguous Tech',
     };
 
     const result = await adapter.checkAllotment(requestAmbiguous);
     expect(result.status).toBe(AllotmentStatus.NEEDS_REVIEW);
   });
 
-  it('12. should NEVER use backend UUID as registrarIpoCode and trigger resolution instead', async () => {
+  it('14. should NEVER use backend UUID as registrarIpoCode and trigger resolution instead', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
-      if (String(url).includes('type=company')) {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => [
-            { client_id: '88888', company_name: 'Manika Moulds Limited', symbol: 'MANIKA' },
-          ],
-        } as Response);
+          text: async () => sampleKfinHtml,
+        } as unknown as Response);
+      }
+      if (urlStr.includes('main.91b6fce3.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinBundle,
+        } as unknown as Response);
       }
       return Promise.resolve({
         ok: true,
         status: 200,
         json: async () => [{ All_Shares: 100, App_Shares: 100, Name: 'TEST USER' }],
-      } as Response);
+      } as unknown as Response);
     });
 
     const requestWithUuidCode = {
@@ -235,8 +350,8 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
       registrarIpoCode: '11111111-1111-1111-1111-111111111111', // UUID passed erroneously
       identifierType: AllotmentIdentifierType.PAN,
       identifierValue: 'ABCDE1234F',
-      companyLegalName: 'Manika Moulds Limited',
-      symbol: 'MANIKA',
+      companyLegalName: 'Rentomojo Limited',
+      companyName: 'Rentomojo',
     };
 
     const result = await adapter.checkAllotment(requestWithUuidCode);
@@ -244,9 +359,97 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('0uz601ms56.execute-api'),
       expect.objectContaining({
-        headers: expect.objectContaining({ client_id: '88888' }), // Resolved 88888, NOT the UUID!
+        headers: expect.objectContaining({ client_id: '66907812020' }), // Resolved 66907812020, NOT UUID!
       }),
     );
+  });
+
+  it('15. should handle KFin bundle parsing failure safely as SOURCE_RESPONSE_INVALID', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinHtml,
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: async () => 'var brokenCode = true; // no bundle data',
+      } as unknown as Response);
+    });
+
+    const requestNoCode = {
+      ipoId: '11111111-1111-1111-1111-111111111111',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Rentomojo Limited',
+    };
+
+    const result = await adapter.checkAllotment(requestNoCode);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
+  });
+
+  it('16. should handle KFin portal HTML 5xx failure as SOURCE_UNAVAILABLE', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+      } as Response),
+    );
+
+    const requestNoCode = {
+      ipoId: '11111111-1111-1111-1111-111111111111',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Rentomojo Limited',
+    };
+
+    const result = await adapter.checkAllotment(requestNoCode);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+  });
+
+  it('17. should reuse in-memory cached company list without re-fetching within TTL', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinHtml,
+        } as unknown as Response);
+      }
+      if (urlStr.includes('main.91b6fce3.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinBundle,
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [{ All_Shares: 100, App_Shares: 100, Name: 'TEST USER' }],
+      } as unknown as Response);
+    });
+
+    const requestRentomojo = {
+      ipoId: '11111111-1111-1111-1111-111111111111',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Rentomojo Limited',
+    };
+
+    // First call: fetches HTML and JS bundle
+    await adapter.checkAllotment(requestRentomojo);
+    const initialCallCount = fetchSpy.mock.calls.length;
+
+    // Second call: should use in-memory cache, so only the query API call happens (+1)
+    await adapter.checkAllotment(requestRentomojo);
+    expect(fetchSpy.mock.calls.length).toBe(initialCallCount + 1);
   });
 });
 
