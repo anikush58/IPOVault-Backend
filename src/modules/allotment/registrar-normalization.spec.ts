@@ -43,6 +43,14 @@ describe('Registrar Normalization & Registry Resolution Tests', () => {
     expect(registry.get('KFIN_TECH')?.code).toBe('KFINTECH');
   });
 
+  it('4b. Underscore variants resolve KFINTECH adapter ("KFIN_TECHNOLOGIES", "KFIN_TECHNOLOGIES_LIMITED")', () => {
+    expect(registry.get('KFIN_TECHNOLOGIES')?.code).toBe('KFINTECH');
+    expect(registry.get('kfin_technologies')?.code).toBe('KFINTECH');
+    expect(registry.get('KFIN_TECHNOLOGIES_LIMITED')?.code).toBe('KFINTECH');
+    expect(registry.get('KFIN_TECHNOLOGIES_PVT_LTD')?.code).toBe('KFINTECH');
+    expect(registry.get('KFIN_TECHNOLOGIES_PRIVATE_LIMITED')?.code).toBe('KFINTECH');
+  });
+
   it('5. Unknown registrar does NOT accidentally resolve to KFin', () => {
     expect(registry.get('CAMEO')).toBeUndefined();
     expect(registry.get('BIGSHARE')).toBeUndefined();
