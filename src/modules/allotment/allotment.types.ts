@@ -16,6 +16,7 @@ export enum AllotmentStatus {
   REGISTRAR_UNRESOLVED = 'REGISTRAR_UNRESOLVED',
   REGISTRAR_UNSUPPORTED = 'REGISTRAR_UNSUPPORTED',
   UNSUPPORTED_IDENTIFIER = 'UNSUPPORTED_IDENTIFIER',
+  NEEDS_REVIEW = 'NEEDS_REVIEW',
 
   // Category 3: Technical & System Outcomes
   SOURCE_UNAVAILABLE = 'SOURCE_UNAVAILABLE',
@@ -69,6 +70,9 @@ export interface CheckAllotmentRequest {
   identifierValue: string; // Plaintext identifier, kept in-memory only
   captchaToken?: string;
   sessionId?: string;
+  companyName?: string;
+  companyLegalName?: string;
+  symbol?: string;
 }
 
 /**

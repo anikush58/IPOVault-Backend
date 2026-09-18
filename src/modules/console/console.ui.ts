@@ -1171,16 +1171,26 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             <div class="stat-title" style="margin-bottom:12px; font-size:14px; color:var(--primary);">Allotment Checker Mapping Configuration</div>
             <div class="form-grid">
               <div class="form-group">
-                <label>Registrar Code</label>
-                <input type="text" id="allot-registrar-code" placeholder="kfintech / linkintime / bigshare" />
+                <label>Registrar Code *</label>
+                <input type="text" id="allot-registrar-code" placeholder="KFINTECH / MUFG_INTIME / BIGSHARE" oninput="updateAllotmentWarning()" />
               </div>
               <div class="form-group">
-                <label>Registrar IPO Code / ID</label>
-                <input type="text" id="allot-registrar-ipo-code" placeholder="e.g. REGISTRAR_IPO_CODE" />
+                <label>Registrar IPO Code</label>
+                <input type="text" id="allot-registrar-ipo-code" placeholder="e.g. 40580036070 or 00142" oninput="updateAllotmentWarning()" />
+                <small style="color:var(--text-muted); font-size:11px; margin-top:4px; display:block;">Registrar IPO Code is the internal issue code used by the registrar's allotment system. It is separate from the IPOVault IPO ID.</small>
+              </div>
+              <div class="form-group" style="display:flex; align-items:center; gap:8px; margin-top:22px;">
+                <input type="checkbox" id="allot-enabled" checked onchange="updateAllotmentWarning()" style="width:16px; height:16px; cursor:pointer;" />
+                <label for="allot-enabled" style="cursor:pointer; font-weight:600; margin:0;">Enable Allotment Checker</label>
               </div>
             </div>
+
+            <div id="allotment-warning-banner" style="display:none; margin-top:12px; padding:10px 14px; background-color:#FEF3C7; border:1px solid #F59E0B; border-radius:8px; color:#92400E; font-size:12px; font-weight:500;">
+              ⚠️ Registrar IPO Code is required before allotment checking can be used.
+            </div>
+
             <div style="display:flex; justify-content:flex-end; margin-top:12px;">
-              <button class="btn-secondary" onclick="saveAllotmentConfig()">Save Allotment Config</button>
+              <button type="button" class="btn-secondary" onclick="saveAllotmentConfig()">Save Allotment Config</button>
             </div>
           </div>
         </div>
@@ -1906,6 +1916,21 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       reindexDocumentRows();
     }
 
+    function updateAllotmentWarning() {
+      const codeVal = document.getElementById('allot-registrar-ipo-code')?.value?.trim();
+      const enabledChecked = document.getElementById('allot-enabled')?.checked ?? true;
+      const registrarCodeVal = document.getElementById('allot-registrar-code')?.value?.trim();
+      const banner = document.getElementById('allotment-warning-banner');
+
+      if (banner) {
+        if (enabledChecked && registrarCodeVal && !codeVal) {
+          banner.style.display = 'block';
+        } else {
+          banner.style.display = 'none';
+        }
+      }
+    }
+
     function openCreateModal() {
       currentIpoData = null;
       document.getElementById('manual-ipo-form').reset();
@@ -1922,6 +1947,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       document.getElementById('form-postIpoMarketCap').value = '';
       document.getElementById('allot-registrar-code').value = '';
       document.getElementById('allot-registrar-ipo-code').value = '';
+      const allotEnabledEl = document.getElementById('allot-enabled');
+      if (allotEnabledEl) allotEnabledEl.checked = true;
+      updateAllotmentWarning();
       document.getElementById('cat-qib-pct').value = '';
       document.getElementById('cat-nii-pct').value = '';
       document.getElementById('cat-retail-pct').value = '';
@@ -2091,6 +2119,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
         document.getElementById('allot-registrar-code').value = currentIpoData.allotmentConfig?.registrar || currentIpoData.allotmentConfig?.registrarCode || currentIpoData.allotmentRegistrarCode || '';
         document.getElementById('allot-registrar-ipo-code').value = currentIpoData.allotmentConfig?.registrarIpoCode || currentIpoData.allotmentRegistrarIpoCode || '';
+        const allotEnabledEl = document.getElementById('allot-enabled');
+        if (allotEnabledEl) {
+          allotEnabledEl.checked = currentIpoData.allotmentConfig ? currentIpoData.allotmentConfig.enabled !== false : true;
+        }
+        updateAllotmentWarning();
 
         // Populate Anchor Investors Table
         const tbody = document.getElementById('anchor-investors-tbody');
@@ -2117,15 +2150,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (!id) { alert('Please save or select an IPO first before configuring allotment.'); return; }
       const registrarCode = document.getElementById('allot-registrar-code').value?.trim();
       const registrarIpoCode = document.getElementById('allot-registrar-ipo-code').value?.trim();
-      if (!registrarCode || !registrarIpoCode) {
-        alert('Please enter both Registrar Code and Registrar IPO Code');
+      const enabled = document.getElementById('allot-enabled')?.checked ?? true;
+      if (!registrarCode) {
+        alert('Please enter a Registrar Code (e.g. KFINTECH or MUFG_INTIME)');
         return;
       }
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/allotment-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ registrar: registrarCode, registrarCode, registrarIpoCode })
+          body: JSON.stringify({ registrar: registrarCode, registrarCode, registrarIpoCode: registrarIpoCode || null, enabled })
         });
         if (!res.ok) throw new Error('Status ' + res.status);
         alert('Allotment checker configuration saved!');

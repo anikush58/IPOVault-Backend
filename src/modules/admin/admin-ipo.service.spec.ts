@@ -652,4 +652,126 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(createdEmptyUrl).toBe(false);
     });
   });
+
+  describe('Allotment Configuration Contract Tests', () => {
+    it('1. allows importing JSON with null registrarIpoCode', async () => {
+      mockPrisma.company.findFirst.mockResolvedValueOnce({ id: 'c-null-code', legalName: 'Null Code Corp' });
+      mockPrisma.company.update.mockResolvedValueOnce({ id: 'c-null-code' });
+      mockPrisma.ipo.create.mockResolvedValueOnce({
+        id: 'ipo-null-code-1',
+        companyId: 'c-null-code',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.NSE,
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+      });
+
+      const imported = await adminIpoService.importIpoFromJson({
+        companyName: 'Null Code Corp',
+        registrar: 'KFINTECH',
+        allotmentConfig: {
+          registrar: 'KFINTECH',
+          registrarIpoCode: null,
+          enabled: true,
+        },
+      });
+
+      expect(imported.id).toBe('ipo-null-code-1');
+      expect(mockPrisma.ipoAllotmentConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            registrar: 'KFINTECH',
+            registrarIpoCode: null,
+            enabled: true,
+          }),
+        }),
+      );
+    });
+
+    it('2. IPO can remain DRAFT with null registrarIpoCode', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'ipo-draft-null-code',
+        publicationStatus: PublicationStatus.DRAFT,
+        status: 'DRAFT',
+        companyId: 'company-uuid-1',
+        sourceIdentities: [{ source: { sourceType: 'REGISTRAR', code: 'MUFG_INTIME' } }],
+        lifecycleEvents: [],
+        offerCategories: [],
+        participants: [],
+        documents: [],
+      });
+      mockPrisma.ipo.update.mockResolvedValueOnce({
+        id: 'ipo-draft-null-code',
+        publicationStatus: PublicationStatus.DRAFT,
+      });
+
+      const updated = await adminIpoService.updateIpo('ipo-draft-null-code', {
+        publicationStatus: PublicationStatus.DRAFT,
+        allotmentConfig: {
+          registrar: 'MUFG_INTIME',
+          registrarIpoCode: undefined,
+          enabled: true,
+        },
+      });
+
+      expect(updated.publicationStatus).toBe(PublicationStatus.DRAFT);
+    });
+
+    it('3. IPO can be published with null registrarIpoCode without throwing validation error', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValue({
+        id: 'ipo-pub-null-code',
+        legalName: 'Test Legal Name',
+        publicationStatus: PublicationStatus.DRAFT,
+        status: 'OPEN',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.NSE,
+        companyId: 'company-uuid-1',
+        company: { legalName: 'Test Legal Name' },
+        sourceIdentities: [{ source: { sourceType: 'REGISTRAR', code: 'MUFG_INTIME' } }],
+        lifecycleEvents: [],
+        offerCategories: [],
+        participants: [],
+        documents: [],
+        allotmentConfig: { registrar: 'MUFG_INTIME', registrarIpoCode: null, enabled: true },
+      });
+      mockPrisma.ipo.update.mockResolvedValue({
+        id: 'ipo-pub-null-code',
+        publicationStatus: PublicationStatus.PUBLISHED,
+      });
+
+      const published = await adminIpoService.publishIpo('ipo-pub-null-code');
+      expect(published.publicationStatus).toBe(PublicationStatus.PUBLISHED);
+    });
+
+    it('4. preserves leading-zero registrarIpoCode as a string without converting to number', async () => {
+      mockPrisma.company.findFirst.mockResolvedValueOnce({ id: 'c-leading-zero', legalName: 'Leading Zero Corp' });
+      mockPrisma.company.update.mockResolvedValueOnce({ id: 'c-leading-zero' });
+      mockPrisma.ipo.create.mockResolvedValueOnce({
+        id: 'ipo-lz-1',
+        companyId: 'c-leading-zero',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.NSE,
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+      });
+
+      await adminIpoService.importIpoFromJson({
+        companyName: 'Leading Zero Corp',
+        registrar: 'KFINTECH',
+        allotmentConfig: {
+          registrar: 'KFINTECH',
+          registrarIpoCode: '00142',
+          enabled: true,
+        },
+      });
+
+      expect(mockPrisma.ipoAllotmentConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            registrarIpoCode: '00142',
+          }),
+        }),
+      );
+    });
+  });
 });

@@ -101,15 +101,152 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
     expect(result.status).toBe(AllotmentStatus.RATE_LIMITED);
   });
 
-  it('8. should return error if missing client_id (registrarIpoCode)', async () => {
-    const invalidRequest = {
+  it('8. should use explicit registrarIpoCode directly when provided', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            All_Shares: 100,
+            App_Shares: 100,
+            Name: 'TEST USER',
+          },
+        ],
+      } as Response),
+    );
+
+    const result = await adapter.checkAllotment(mockRequest);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('0uz601ms56.execute-api'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ client_id: '40580036070' }),
+      }),
+    );
+  });
+
+  it('9. should auto-resolve client_id from live public list when registrarIpoCode is null', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      if (String(url).includes('type=company')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [
+            { client_id: '12345', company_name: 'Manika Moulds Limited', symbol: 'MANIKA' },
+          ],
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [{ All_Shares: 100, App_Shares: 100, Name: 'TEST USER' }],
+      } as Response);
+    });
+
+    const requestNoCode = {
       ipoId: '11111111-1111-1111-1111-111111111111',
       identifierType: AllotmentIdentifierType.PAN,
       identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Manika Moulds Limited',
+      companyName: 'Manika Moulds',
+      symbol: 'MANIKA',
     };
 
-    const result = await adapter.checkAllotment(invalidRequest);
-    expect(result.status).toBe(AllotmentStatus.REGISTRAR_UNRESOLVED);
+    const result = await adapter.checkAllotment(requestNoCode);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('0uz601ms56.execute-api'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ client_id: '12345' }),
+      }),
+    );
+  });
+
+  it('10. should return NOT_YET_AVAILABLE when no match is found in live list', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [
+          { client_id: '99999', company_name: 'Unrelated Company Ltd', symbol: 'OTHER' },
+        ],
+      } as Response),
+    );
+
+    const requestUnmatched = {
+      ipoId: '11111111-1111-1111-1111-111111111111',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Manika Moulds Limited',
+      companyName: 'Manika Moulds',
+      symbol: 'MANIKA',
+    };
+
+    const result = await adapter.checkAllotment(requestUnmatched);
+    expect(result.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+  });
+
+  it('11. should return NEEDS_REVIEW when multiple matches exist in live list', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [
+          { client_id: '11111', company_name: 'Manika Moulds Limited', symbol: 'MANIKA' },
+          { client_id: '22222', company_name: 'Manika Moulds Limited', symbol: 'MANIKA' },
+        ],
+      } as Response),
+    );
+
+    const requestAmbiguous = {
+      ipoId: '11111111-1111-1111-1111-111111111111',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Manika Moulds Limited',
+      companyName: 'Manika Moulds',
+      symbol: 'MANIKA',
+    };
+
+    const result = await adapter.checkAllotment(requestAmbiguous);
+    expect(result.status).toBe(AllotmentStatus.NEEDS_REVIEW);
+  });
+
+  it('12. should NEVER use backend UUID as registrarIpoCode and trigger resolution instead', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      if (String(url).includes('type=company')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [
+            { client_id: '88888', company_name: 'Manika Moulds Limited', symbol: 'MANIKA' },
+          ],
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [{ All_Shares: 100, App_Shares: 100, Name: 'TEST USER' }],
+      } as Response);
+    });
+
+    const requestWithUuidCode = {
+      ipoId: '11111111-1111-1111-1111-111111111111',
+      registrarIpoCode: '11111111-1111-1111-1111-111111111111', // UUID passed erroneously
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Manika Moulds Limited',
+      symbol: 'MANIKA',
+    };
+
+    const result = await adapter.checkAllotment(requestWithUuidCode);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('0uz601ms56.execute-api'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ client_id: '88888' }), // Resolved 88888, NOT the UUID!
+      }),
+    );
   });
 });
 
@@ -233,15 +370,125 @@ describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {
     expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
   });
 
-  it('9. should return REGISTRAR_UNRESOLVED if missing client_id (registrarIpoCode)', async () => {
-    const invalidRequest = {
+  it('9. should auto-resolve clientid from live public list when registrarIpoCode is null', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      if (String(url).includes('getCompanyList')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify([{ clientid: 'MUFG_777', companyname: 'Manika Moulds Limited' }]),
+          json: async () => [{ clientid: 'MUFG_777', companyname: 'Manika Moulds Limited' }],
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ status: 'SUCCESS', applied_shares: 50, allotted_shares: 50, name: 'PRIYA PATEL' }),
+        json: async () => ({ status: 'SUCCESS', applied_shares: 50, allotted_shares: 50, name: 'PRIYA PATEL' }),
+      } as unknown as Response);
+    });
+
+    const requestNoCode = {
       ipoId: '22222222-2222-2222-2222-222222222222',
       identifierType: AllotmentIdentifierType.PAN,
       identifierValue: 'XYZAB5678C',
+      companyLegalName: 'Manika Moulds Limited',
+      companyName: 'Manika Moulds',
     };
 
-    const result = await adapter.checkAllotment(invalidRequest);
-    expect(result.status).toBe(AllotmentStatus.REGISTRAR_UNRESOLVED);
+    const result = await adapter.checkAllotment(requestNoCode);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('public-issues.html'),
+      expect.objectContaining({
+        body: expect.stringContaining('MUFG_777'),
+      }),
+    );
+  });
+
+  it('9b. should return NOT_YET_AVAILABLE when no match is found in MUFG live list', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify([{ clientid: 'MUFG_999', companyname: 'Other Corp Ltd' }]),
+        json: async () => [{ clientid: 'MUFG_999', companyname: 'Other Corp Ltd' }],
+      } as unknown as Response),
+    );
+
+    const requestUnmatched = {
+      ipoId: '22222222-2222-2222-2222-222222222222',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'XYZAB5678C',
+      companyLegalName: 'Manika Moulds Limited',
+    };
+
+    const result = await adapter.checkAllotment(requestUnmatched);
+    expect(result.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+  });
+
+  it('9c. should return NEEDS_REVIEW when multiple matches exist in MUFG live list', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify([
+            { clientid: 'MUFG_1', companyname: 'Manika Moulds Limited' },
+            { clientid: 'MUFG_2', companyname: 'Manika Moulds Limited' },
+          ]),
+        json: async () => [
+          { clientid: 'MUFG_1', companyname: 'Manika Moulds Limited' },
+          { clientid: 'MUFG_2', companyname: 'Manika Moulds Limited' },
+        ],
+      } as unknown as Response),
+    );
+
+    const requestAmbiguous = {
+      ipoId: '22222222-2222-2222-2222-222222222222',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'XYZAB5678C',
+      companyLegalName: 'Manika Moulds Limited',
+    };
+
+    const result = await adapter.checkAllotment(requestAmbiguous);
+    expect(result.status).toBe(AllotmentStatus.NEEDS_REVIEW);
+  });
+
+  it('9d. should NEVER use backend UUID as MUFG registrarIpoCode and trigger resolution instead', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      if (String(url).includes('getCompanyList')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify([{ clientid: 'MUFG_555', companyname: 'Manika Moulds Limited' }]),
+          json: async () => [{ clientid: 'MUFG_555', companyname: 'Manika Moulds Limited' }],
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ status: 'SUCCESS', applied_shares: 50, allotted_shares: 50, name: 'PRIYA PATEL' }),
+        json: async () => ({ status: 'SUCCESS', applied_shares: 50, allotted_shares: 50, name: 'PRIYA PATEL' }),
+      } as unknown as Response);
+    });
+
+    const requestWithUuidCode = {
+      ipoId: '22222222-2222-2222-2222-222222222222',
+      registrarIpoCode: '22222222-2222-2222-2222-222222222222', // UUID passed erroneously
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'XYZAB5678C',
+      companyLegalName: 'Manika Moulds Limited',
+    };
+
+    const result = await adapter.checkAllotment(requestWithUuidCode);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('public-issues.html'),
+      expect.objectContaining({
+        body: expect.stringContaining('MUFG_555'), // Used MUFG_555, NOT the UUID!
+      }),
+    );
   });
 
   it('10. should handle APPLICATION_NUMBER query correctly', async () => {

@@ -6,7 +6,7 @@ import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry'
 
 export interface ResolvedRegistrar {
   adapter: IRegistrarAdapter;
-  registrarIpoCode: string;
+  registrarIpoCode?: string;
 }
 
 @Injectable()
@@ -20,7 +20,7 @@ export class RegistrarResolver {
 
   /**
    * Resolves the appropriate IRegistrarAdapter and registrar-specific company code for an IPO ID.
-   * Driven by database IpoSourceIdentity records with fallback resolution by symbol/company name.
+   * Driven by database IpoAllotmentConfig or IpoSourceIdentity records with fallback resolution.
    */
   async resolveAdapter(
     ipoId: string,
@@ -75,15 +75,18 @@ export class RegistrarResolver {
       if (config && config.enabled && config.registrar) {
         const adapter = this.registry.get(config.registrar.toLowerCase());
         if (adapter) {
-          if (!config.registrarIpoCode || !config.registrarIpoCode.trim()) {
-            this.logger.warn(
-              `IpoAllotmentConfig for IPO ${ipoId} has registrar '${config.registrar}' but is missing registrarIpoCode`,
-            );
-            return undefined;
-          }
+          const rawCode = config.registrarIpoCode?.trim();
+          const isCodeUuid = rawCode
+            ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                rawCode,
+              )
+            : false;
+          const registrarIpoCode =
+            rawCode && !isCodeUuid ? rawCode : undefined;
+
           return {
             adapter,
-            registrarIpoCode: config.registrarIpoCode.trim(),
+            registrarIpoCode,
           };
         }
       }
@@ -103,12 +106,21 @@ export class RegistrarResolver {
       },
     });
 
-    if (sourceIdentity?.source?.code && sourceIdentity.externalId) {
+    if (sourceIdentity?.source?.code) {
       const adapter = this.registry.get(sourceIdentity.source.code);
       if (adapter) {
+        const rawCode = sourceIdentity.externalId?.trim();
+        const isCodeUuid = rawCode
+          ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              rawCode,
+            )
+          : false;
+        const registrarIpoCode =
+          rawCode && !isCodeUuid ? rawCode : undefined;
+
         return {
           adapter,
-          registrarIpoCode: sourceIdentity.externalId,
+          registrarIpoCode,
         };
       }
     }

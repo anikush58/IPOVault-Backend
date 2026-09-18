@@ -39,13 +39,22 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
       );
     }
 
-    const clientId = request.registrarIpoCode;
+    let clientId = request.registrarIpoCode?.trim();
+    if (
+      clientId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        clientId,
+      )
+    ) {
+      clientId = undefined;
+    }
+
     if (!clientId) {
-      return this.createErrorResult(
-        request,
-        AllotmentStatus.REGISTRAR_UNRESOLVED,
-        `Missing registrar company client_id for MUFG Intime allotment check`,
-      );
+      const resolved = await this.resolveRegistrarIpoCode(request);
+      if (typeof resolved !== 'string') {
+        return resolved;
+      }
+      clientId = resolved;
     }
 
     try {
@@ -304,5 +313,168 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
       checkedAt,
       rawResponseRef: raw.app_no ? String(raw.app_no) : undefined,
     };
+  }
+
+  public async resolveRegistrarIpoCode(
+    request: CheckAllotmentRequest,
+  ): Promise<string | NormalizedAllotmentResult> {
+    const checkedAt = new Date();
+    try {
+      const companyListUrl =
+        process.env.MUFG_INTIME_COMPANY_LIST_URL ||
+        'https://in.mpms.mufg.com/Initial_Offer/getCompanyList';
+
+      const response = await this.fetchWithRetry(companyListUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/plain, */*',
+          Origin: 'https://in.mpms.mufg.com',
+          Referer: 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html',
+        },
+        body: JSON.stringify({}),
+      });
+
+      if (!response.ok) {
+        return {
+          status: AllotmentStatus.SOURCE_UNAVAILABLE,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: `MUFG Intime company list returned HTTP status ${response.status}`,
+        };
+      }
+
+      const text = await response.text();
+      let list: unknown[] = [];
+
+      try {
+        const parsed = JSON.parse(text);
+        list = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.data)
+            ? parsed.data
+            : Array.isArray(parsed?.companyList)
+              ? parsed.companyList
+              : [];
+      } catch {
+        const optionRegex =
+          /<option[^>]*value=["']([^"']+)["'][^>]*>([^<]+)<\/option>/gi;
+        let match: RegExpExecArray | null;
+        while ((match = optionRegex.exec(text)) !== null) {
+          const val = match[1].trim();
+          const label = match[2].trim();
+          if (val && val !== '0' && val !== '-1' && label) {
+            list.push({ clientid: val, companyname: label });
+          }
+        }
+      }
+
+      return this.matchCompanyInList(list, request, checkedAt);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        status: AllotmentStatus.SOURCE_UNAVAILABLE,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage: `MUFG Intime company list unavailable: ${msg}`,
+      };
+    }
+  }
+
+  public matchCompanyInList(
+    items: unknown[],
+    request: CheckAllotmentRequest,
+    checkedAt: Date = new Date(),
+  ): string | NormalizedAllotmentResult {
+    const targetSymbol = request.symbol?.trim().toUpperCase();
+    const targetLegalName = this.normalizeName(request.companyLegalName || '');
+    const targetDisplayName = this.normalizeName(request.companyName || '');
+
+    interface CompanyItem {
+      code: string;
+      name: string;
+      symbol?: string;
+    }
+
+    const normalizedItems: CompanyItem[] = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const rec = item as Record<string, unknown>;
+      const code = String(
+        rec.clientid ||
+          rec.client_id ||
+          rec.id ||
+          rec.value ||
+          rec.company_id ||
+          '',
+      ).trim();
+      const name = String(
+        rec.companyname ||
+          rec.company_name ||
+          rec.name ||
+          rec.text ||
+          rec.label ||
+          '',
+      ).trim();
+      const symbol = rec.symbol ? String(rec.symbol).trim().toUpperCase() : undefined;
+
+      if (code && name) {
+        normalizedItems.push({ code, name, symbol });
+      }
+    }
+
+    // Rule 1: Prefer exact symbol where both sides provide symbol
+    if (targetSymbol) {
+      const symbolMatches = normalizedItems.filter(
+        (i) => i.symbol && i.symbol === targetSymbol,
+      );
+      if (symbolMatches.length === 1) {
+        return symbolMatches[0].code;
+      }
+      if (symbolMatches.length > 1) {
+        return {
+          status: AllotmentStatus.NEEDS_REVIEW,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: `Multiple ambiguous matches found by symbol '${targetSymbol}' in MUFG Intime live list`,
+        };
+      }
+    }
+
+    // Rule 2: Exact normalized company/legal name match
+    const nameMatches = normalizedItems.filter((i) => {
+      const normName = this.normalizeName(i.name);
+      return (
+        (targetLegalName.length > 0 && normName === targetLegalName) ||
+        (targetDisplayName.length > 0 && normName === targetDisplayName)
+      );
+    });
+
+    if (nameMatches.length === 1) {
+      return nameMatches[0].code;
+    }
+
+    if (nameMatches.length > 1) {
+      return {
+        status: AllotmentStatus.NEEDS_REVIEW,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage: `Multiple ambiguous matches found by company name in MUFG Intime live list`,
+      };
+    }
+
+    return {
+      status: AllotmentStatus.NOT_YET_AVAILABLE,
+      sourceCode: this.code,
+      checkedAt,
+      errorMessage: `IPO not found in MUFG Intime live active list`,
+    };
+  }
+
+  private normalizeName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
   }
 }

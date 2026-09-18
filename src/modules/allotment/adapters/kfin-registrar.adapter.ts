@@ -40,13 +40,22 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       );
     }
 
-    const clientId = request.registrarIpoCode;
+    let clientId = request.registrarIpoCode?.trim();
+    if (
+      clientId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        clientId,
+      )
+    ) {
+      clientId = undefined;
+    }
+
     if (!clientId) {
-      return this.createErrorResult(
-        request,
-        AllotmentStatus.REGISTRAR_UNRESOLVED,
-        `Missing registrar company client_id for KFintech allotment check`,
-      );
+      const resolved = await this.resolveRegistrarIpoCode(request);
+      if (typeof resolved !== 'string') {
+        return resolved;
+      }
+      clientId = resolved;
     }
 
     try {
@@ -232,5 +241,150 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
         ? String(targetObj.Appln_No)
         : undefined,
     };
+  }
+
+  public async resolveRegistrarIpoCode(
+    request: CheckAllotmentRequest,
+  ): Promise<string | NormalizedAllotmentResult> {
+    const checkedAt = new Date();
+    try {
+      const companyListUrl =
+        process.env.KFINTECH_COMPANY_LIST_URL ||
+        process.env.KFINTECH_API_URL ||
+        'https://0uz601ms56.execute-api.ap-south-1.amazonaws.com/prod/api/query?type=company';
+
+      const url = companyListUrl.includes('?')
+        ? companyListUrl
+        : `${companyListUrl}?type=company`;
+
+      const response = await this.fetchWithRetry(url, {
+        method: 'GET',
+        headers: {
+          Origin: 'https://ipostatus.kfintech.com',
+          Referer: 'https://ipostatus.kfintech.com/',
+          Accept: 'application/json, text/plain, */*',
+        },
+      });
+
+      if (!response.ok) {
+        return {
+          status: AllotmentStatus.SOURCE_UNAVAILABLE,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: `KFintech company list returned HTTP status ${response.status}`,
+        };
+      }
+
+      let raw: unknown;
+      try {
+        raw = await response.json();
+      } catch {
+        return {
+          status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: 'Failed to parse JSON response from KFintech company list',
+        };
+      }
+
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray((raw as Record<string, unknown>)?.data)
+          ? ((raw as Record<string, unknown>).data as unknown[])
+          : [];
+
+      return this.matchCompanyInList(list, request, checkedAt);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        status: AllotmentStatus.SOURCE_UNAVAILABLE,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage: `KFintech company list unavailable: ${msg}`,
+      };
+    }
+  }
+
+  public matchCompanyInList(
+    items: unknown[],
+    request: CheckAllotmentRequest,
+    checkedAt: Date = new Date(),
+  ): string | NormalizedAllotmentResult {
+    const targetSymbol = request.symbol?.trim().toUpperCase();
+    const targetLegalName = this.normalizeName(request.companyLegalName || '');
+    const targetDisplayName = this.normalizeName(request.companyName || '');
+
+    interface CompanyItem {
+      code: string;
+      name: string;
+      symbol?: string;
+    }
+
+    const normalizedItems: CompanyItem[] = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const rec = item as Record<string, unknown>;
+      const code = String(rec.client_id || rec.id || rec.code || rec.value || '').trim();
+      const name = String(rec.company_name || rec.name || rec.caption || rec.text || '').trim();
+      const symbol = rec.symbol ? String(rec.symbol).trim().toUpperCase() : undefined;
+
+      if (code && name) {
+        normalizedItems.push({ code, name, symbol });
+      }
+    }
+
+    // Rule 1: Prefer exact symbol where both sides provide symbol
+    if (targetSymbol) {
+      const symbolMatches = normalizedItems.filter(
+        (i) => i.symbol && i.symbol === targetSymbol,
+      );
+      if (symbolMatches.length === 1) {
+        return symbolMatches[0].code;
+      }
+      if (symbolMatches.length > 1) {
+        return {
+          status: AllotmentStatus.NEEDS_REVIEW,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: `Multiple ambiguous matches found by symbol '${targetSymbol}' in KFintech live list`,
+        };
+      }
+    }
+
+    // Rule 2: Exact normalized company/legal name match
+    const nameMatches = normalizedItems.filter((i) => {
+      const normName = this.normalizeName(i.name);
+      return (
+        (targetLegalName.length > 0 && normName === targetLegalName) ||
+        (targetDisplayName.length > 0 && normName === targetDisplayName)
+      );
+    });
+
+    if (nameMatches.length === 1) {
+      return nameMatches[0].code;
+    }
+
+    if (nameMatches.length > 1) {
+      return {
+        status: AllotmentStatus.NEEDS_REVIEW,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage: `Multiple ambiguous matches found by company name in KFintech live list`,
+      };
+    }
+
+    return {
+      status: AllotmentStatus.NOT_YET_AVAILABLE,
+      sourceCode: this.code,
+      checkedAt,
+      errorMessage: `IPO not found in KFintech live active list`,
+    };
+  }
+
+  private normalizeName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
   }
 }

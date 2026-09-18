@@ -45,6 +45,7 @@ export class AllotmentService {
 
     const ipo = await this.prisma.ipo.findUnique({
       where: { id: request.ipoId },
+      include: { company: true },
     });
 
     if (!ipo) {
@@ -54,6 +55,10 @@ export class AllotmentService {
         404,
       );
     }
+
+    request.companyName = (ipo.company as { displayName?: string })?.displayName;
+    request.companyLegalName = (ipo.company as { legalName?: string })?.legalName;
+    request.symbol = ipo.symbol || undefined;
 
     const resolved = await this.resolver.resolveAdapter(request.ipoId);
 
