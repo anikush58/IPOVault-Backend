@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import * as crypto from 'crypto';
 import {
   AllotmentIdentifierType,
   AllotmentStatus,
@@ -88,35 +89,109 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
     }
   }
 
+  public encryptToken(token: string | number): string {
+    const key = Buffer.from('8080808080808080', 'utf8');
+    const iv = Buffer.from('8080808080808080', 'utf8');
+    const cipher = crypto.createCipheriv('aes-128-cbc', key, iv);
+    let encrypted = cipher.update(String(token), 'utf8', 'base64');
+    encrypted += cipher.final('base64');
+    return encrypted;
+  }
+
+  public extractSessionId(response: Response): string | undefined {
+    if (typeof (response.headers as any).getSetCookie === 'function') {
+      const cookies = (response.headers as any).getSetCookie();
+      if (Array.isArray(cookies) && cookies.length > 0) {
+        for (const c of cookies) {
+          const match = /ASP\.NET_SessionId=([^;]+)/i.exec(c);
+          if (match) return match[1];
+        }
+      }
+    }
+    const rawCookie = response.headers.get('set-cookie');
+    if (rawCookie) {
+      const match = /ASP\.NET_SessionId=([^;]+)/i.exec(rawCookie);
+      if (match) return match[1];
+    }
+    return undefined;
+  }
+
   private async queryMufgEndpoint(
     request: CheckAllotmentRequest,
     clientId: string,
   ): Promise<Record<string, unknown>> {
-    const baseUrl =
-      process.env.MUFG_INTIME_API_URL ||
-      'https://in.mpms.mufg.com/Initial_Offer/public-issues.html';
+    const baseHost =
+      process.env.MUFG_INTIME_BASE_URL || 'https://in.mpms.mufg.com';
 
-    const searchType =
-      request.identifierType === AllotmentIdentifierType.PAN
-        ? 'PAN'
-        : request.identifierType === AllotmentIdentifierType.APPLICATION_NUMBER
-          ? 'APP'
-          : 'DPID';
+    // Step 1: generateToken
+    const tokenUrl = `${baseHost}/Initial_Offer/IPO.aspx/generateToken`;
+    const tokenResponse = await this.fetchWithRetry(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        Origin: baseHost,
+        Referer: `${baseHost}/Initial_Offer/public-issues.html`,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (tokenResponse.status === 429) {
+      return { status: 'RATE_LIMITED' };
+    }
+
+    if (!tokenResponse.ok) {
+      throw new Error(
+        `MUFG Intime token endpoint returned HTTP ${tokenResponse.status}`,
+      );
+    }
+
+    const sessionId = this.extractSessionId(tokenResponse);
+    let tokenVal: string | number | undefined;
+    try {
+      const tokenJson = (await tokenResponse.json()) as {
+        d?: string | number;
+      };
+      tokenVal = tokenJson?.d;
+    } catch {
+      throw new Error('Failed to parse token response from MUFG Intime');
+    }
+
+    if (tokenVal === undefined || tokenVal === null || tokenVal === '') {
+      throw new Error('MUFG Intime token generation returned empty token');
+    }
+
+    // Step 2: Encrypt token
+    const encryptedToken = this.encryptToken(tokenVal);
+
+    // Step 3: SearchOnPan
+    const searchUrl = `${baseHost}/Initial_Offer/IPO.aspx/SearchOnPan`;
+    const pan = request.identifierValue.trim().toUpperCase();
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json; charset=utf-8',
+      Accept: 'application/json, text/javascript, */*; q=0.01',
+      Origin: baseHost,
+      Referer: `${baseHost}/Initial_Offer/public-issues.html`,
+      'X-Requested-With': 'XMLHttpRequest',
+    };
+
+    if (sessionId) {
+      headers['Cookie'] = `ASP.NET_SessionId=${sessionId}`;
+    }
 
     const payload = {
       clientid: clientId,
-      searchtype: searchType,
-      searchValue: request.identifierValue.trim().toUpperCase(),
+      PAN: pan,
+      IFSC: '',
+      CHKVAL: '1',
+      token: encryptedToken,
     };
 
-    const response = await this.fetchWithRetry(baseUrl, {
+    const response = await this.fetchWithRetry(searchUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/plain, */*',
-        Origin: 'https://in.mpms.mufg.com',
-        Referer: 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html',
-      },
+      headers,
       body: JSON.stringify(payload),
     });
 
@@ -129,7 +204,7 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
     }
 
     if (!response.ok) {
-      throw new Error(`MUFG Intime returned HTTP ${response.status}`);
+      throw new Error(`MUFG Intime search returned HTTP ${response.status}`);
     }
 
     try {
@@ -137,6 +212,30 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
     } catch {
       throw new Error('Failed to parse JSON response from MUFG Intime portal');
     }
+  }
+
+  public parseXmlDataSet(xml: string): Array<Record<string, string>> {
+    const records: Array<Record<string, string>> = [];
+    if (!xml || typeof xml !== 'string') return records;
+
+    const tableRegex = /<Table[\s\S]*?>([\s\S]*?)<\/Table>/gi;
+    let tableMatch: RegExpExecArray | null;
+
+    while ((tableMatch = tableRegex.exec(xml)) !== null) {
+      const tableContent = tableMatch[1];
+      const record: Record<string, string> = {};
+      const fieldRegex = /<([a-zA-Z0-9_]+)>([\s\S]*?)<\/\1>/gi;
+      let fieldMatch: RegExpExecArray | null;
+      while ((fieldMatch = fieldRegex.exec(tableContent)) !== null) {
+        const tag = fieldMatch[1];
+        const val = fieldMatch[2].trim();
+        record[tag] = val;
+      }
+      if (Object.keys(record).length > 0) {
+        records.push(record);
+      }
+    }
+    return records;
   }
 
   public normalizeMufgResponse(
@@ -150,6 +249,90 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
         status: AllotmentStatus.UNKNOWN,
         sourceCode: this.code,
         checkedAt,
+      };
+    }
+
+    // Handle XML string in raw.d if returned from ASP.NET PageMethods
+    if (typeof raw.d === 'string') {
+      const xml = raw.d.trim();
+
+      // Check for empty dataset: <NewDataSet /> or <NewDataSet/> or <NewDataSet></NewDataSet>
+      if (
+        xml === '<NewDataSet />' ||
+        xml === '<NewDataSet/>' ||
+        xml === '<NewDataSet></NewDataSet>' ||
+        xml === '<NewDataSet />\r\n' ||
+        (xml.startsWith('<NewDataSet') && !xml.includes('<Table'))
+      ) {
+        return {
+          status: AllotmentStatus.APPLICATION_NOT_FOUND,
+          sourceCode: this.code,
+          checkedAt,
+        };
+      }
+
+      if (xml.includes('<Table')) {
+        const records = this.parseXmlDataSet(xml);
+        if (records.length === 0) {
+          return {
+            status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
+            sourceCode: this.code,
+            checkedAt,
+            errorMessage:
+              'Unable to parse records from MUFG Intime XML response',
+          };
+        }
+
+        const rec = records[0];
+        const allotStr =
+          rec.ALLOT ?? rec.allot ?? rec.allotted_shares ?? rec.ashares;
+        const sharesStr =
+          rec.SHARES ?? rec.shares ?? rec.applied_shares ?? rec.nshares;
+        const priceStr = rec.offer_price ?? rec.price ?? rec.issue_price;
+        const nameStr = rec.name ?? rec.invname ?? rec.applicantName;
+        const appNoStr = rec.app_no ?? rec.appno ?? rec.Appln_No;
+
+        if (allotStr === undefined && sharesStr === undefined && !nameStr) {
+          return {
+            status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
+            sourceCode: this.code,
+            checkedAt,
+            errorMessage: 'Unrecognized MUFG Intime XML table format',
+          };
+        }
+
+        const allotted = Number(allotStr ?? 0);
+        const applied = Number(sharesStr ?? 0);
+        const price = priceStr ? Number(priceStr) : undefined;
+
+        let status: AllotmentStatus;
+        if (allotted > 0) {
+          status =
+            applied > 0 && allotted < applied
+              ? AllotmentStatus.PARTIALLY_ALLOTTED
+              : AllotmentStatus.ALLOTTED;
+        } else {
+          status = AllotmentStatus.NOT_ALLOTTED;
+        }
+
+        return {
+          status,
+          sharesApplied: applied > 0 ? applied : undefined,
+          sharesAllotted: allotted,
+          allotmentPrice: price && price > 0 ? price : undefined,
+          applicantName: nameStr ? nameStr.trim() : undefined,
+          sourceCode: this.code,
+          checkedAt,
+          rawResponseRef: appNoStr ? String(appNoStr).trim() : undefined,
+        };
+      }
+
+      return {
+        status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage:
+          'Invalid or unexpected XML format in MUFG Intime response',
       };
     }
 
@@ -255,6 +438,7 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
       'applied',
       'shares_applied',
       'sharesApplied',
+      'SHARES',
     ].find((k) => k in raw);
     const allottedKey = [
       'allotted_shares',
@@ -262,6 +446,7 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
       'allotted',
       'shares_allotted',
       'sharesAllotted',
+      'ALLOT',
     ].find((k) => k in raw);
 
     const hasExplicitShareInfo =
@@ -284,7 +469,11 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
     const applied = Number(raw[appliedKey || ''] ?? 0);
     const allotted = Number(raw[allottedKey || ''] ?? 0);
     const price = Number(
-      raw.price ?? raw.issue_price ?? raw.allotmentPrice ?? 0,
+      raw.price ??
+        raw.issue_price ??
+        raw.allotmentPrice ??
+        raw.offer_price ??
+        0,
     );
 
     let status: AllotmentStatus;
@@ -320,17 +509,20 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
   ): Promise<string | NormalizedAllotmentResult> {
     const checkedAt = new Date();
     try {
+      const baseHost =
+        process.env.MUFG_INTIME_BASE_URL || 'https://in.mpms.mufg.com';
       const companyListUrl =
         process.env.MUFG_INTIME_COMPANY_LIST_URL ||
-        'https://in.mpms.mufg.com/Initial_Offer/getCompanyList';
+        `${baseHost}/Initial_Offer/IPO.aspx/GetDetails`;
 
       const response = await this.fetchWithRetry(companyListUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json, text/plain, */*',
-          Origin: 'https://in.mpms.mufg.com',
-          Referer: 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html',
+          'Content-Type': 'application/json; charset=utf-8',
+          Accept: 'application/json, text/javascript, */*; q=0.01',
+          Origin: baseHost,
+          Referer: `${baseHost}/Initial_Offer/public-issues.html`,
+          'X-Requested-With': 'XMLHttpRequest',
         },
         body: JSON.stringify({}),
       });
@@ -344,29 +536,30 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
         };
       }
 
-      const text = await response.text();
-      let list: unknown[] = [];
+      const rawJson = (await response.json()) as { d?: string };
+      const xmlString = typeof rawJson?.d === 'string' ? rawJson.d : '';
+      const parsedRecords = this.parseXmlDataSet(xmlString);
 
-      try {
-        const parsed = JSON.parse(text);
-        list = Array.isArray(parsed)
-          ? parsed
-          : Array.isArray(parsed?.data)
-            ? parsed.data
-            : Array.isArray(parsed?.companyList)
-              ? parsed.companyList
-              : [];
-      } catch {
-        const optionRegex =
-          /<option[^>]*value=["']([^"']+)["'][^>]*>([^<]+)<\/option>/gi;
-        let match: RegExpExecArray | null;
-        while ((match = optionRegex.exec(text)) !== null) {
-          const val = match[1].trim();
-          const label = match[2].trim();
-          if (val && val !== '0' && val !== '-1' && label) {
-            list.push({ clientid: val, companyname: label });
-          }
+      const list: Array<{
+        clientid: string;
+        companyname: string;
+        symbol?: string;
+      }> = [];
+      for (const rec of parsedRecords) {
+        const code = rec.company_id || rec.clientid || rec.id || '';
+        const name = rec.companyname || rec.company_name || rec.name || '';
+        if (code && name) {
+          list.push({
+            clientid: code,
+            companyname: name,
+            symbol: rec.symbol,
+          });
         }
+      }
+
+      // Also support legacy JSON fallback if GetDetails returns array in test environment
+      if (list.length === 0 && Array.isArray(rawJson)) {
+        list.push(...(rawJson as any[]));
       }
 
       return this.matchCompanyInList(list, request, checkedAt);
@@ -416,7 +609,9 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
           rec.label ||
           '',
       ).trim();
-      const symbol = rec.symbol ? String(rec.symbol).trim().toUpperCase() : undefined;
+      const symbol = rec.symbol
+        ? String(rec.symbol).trim().toUpperCase()
+        : undefined;
 
       if (code && name) {
         normalizedItems.push({ code, name, symbol });
@@ -474,6 +669,8 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
   private normalizeName(name: string): string {
     return name
       .toLowerCase()
+      .trim()
+      .replace(/[\s\-_]+(ipo|sme\s+ipo|rights\s+issue|buyback)$/i, '')
       .replace(/[^a-z0-9]/g, '')
       .trim();
   }

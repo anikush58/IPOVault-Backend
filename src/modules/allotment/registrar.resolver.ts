@@ -73,7 +73,7 @@ export class RegistrarResolver {
         where: { ipoId: targetIpoId },
       });
       if (config && config.enabled && config.registrar) {
-        const adapter = this.registry.get(config.registrar.toLowerCase());
+        const adapter = this.registry.get(config.registrar);
         if (adapter) {
           const rawCode = config.registrarIpoCode?.trim();
           const isCodeUuid = rawCode

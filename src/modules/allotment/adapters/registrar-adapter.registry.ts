@@ -1,6 +1,48 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { IRegistrarAdapter } from '../allotment.types';
 
+/**
+ * Deterministically normalizes registrar names, display names, and codes to canonical adapter codes.
+ */
+export function normalizeRegistrarCode(rawCode?: string | null): string {
+  if (!rawCode) return '';
+  const trimmed = rawCode.trim().toUpperCase();
+
+  // Explicit deterministic mapping for known KFin display names and aliases
+  if (
+    trimmed === 'KFINTECH' ||
+    trimmed === 'KFIN' ||
+    trimmed === 'KFIN_TECH' ||
+    trimmed === 'KFIN TECHNOLOGIES' ||
+    trimmed === 'KFIN TECHNOLOGIES LIMITED' ||
+    trimmed === 'KFIN TECHNOLOGIES PVT LTD' ||
+    trimmed === 'KFIN TECHNOLOGIES PRIVATE LIMITED' ||
+    trimmed === 'KARVY'
+  ) {
+    return 'KFINTECH';
+  }
+
+  // Explicit deterministic mapping for known MUFG / Link Intime display names and aliases
+  if (
+    trimmed === 'MUFG_INTIME' ||
+    trimmed === 'MUFG' ||
+    trimmed === 'MUFG INTIME' ||
+    trimmed === 'MUFG INTIME INDIA' ||
+    trimmed === 'MUFG INTIME INDIA (FORMERLY LINK INTIME)' ||
+    trimmed === 'MUFG INTIME INDIA PRIVATE LIMITED' ||
+    trimmed === 'LINKINTIME' ||
+    trimmed === 'LINK_INTIME' ||
+    trimmed === 'LINK INTIME' ||
+    trimmed === 'LINK INTIME INDIA PVT LTD' ||
+    trimmed === 'LINK INTIME INDIA PRIVATE LIMITED' ||
+    trimmed === 'INTIME'
+  ) {
+    return 'MUFG_INTIME';
+  }
+
+  return trimmed;
+}
+
 @Injectable()
 export class RegistrarAdapterRegistry {
   private readonly logger = new Logger(RegistrarAdapterRegistry.name);
@@ -18,24 +60,39 @@ export class RegistrarAdapterRegistry {
       this.adapters.set('KFIN', adapter);
       this.adapters.set('KFINTECH', adapter);
       this.adapters.set('KFIN_TECH', adapter);
+      this.adapters.set('KFIN TECHNOLOGIES', adapter);
+      this.adapters.set('KFIN TECHNOLOGIES LIMITED', adapter);
+      this.adapters.set('KFIN TECHNOLOGIES PVT LTD', adapter);
+      this.adapters.set('KFIN TECHNOLOGIES PRIVATE LIMITED', adapter);
+      this.adapters.set('KARVY', adapter);
     }
     if (code === 'MUFG_INTIME' || code === 'LINKINTIME') {
       this.adapters.set('MUFG_INTIME', adapter);
       this.adapters.set('LINKINTIME', adapter);
       this.adapters.set('LINK_INTIME', adapter);
+      this.adapters.set('LINK INTIME', adapter);
       this.adapters.set('MUFG', adapter);
+      this.adapters.set('MUFG INTIME', adapter);
+      this.adapters.set('MUFG INTIME INDIA', adapter);
+      this.adapters.set('MUFG INTIME INDIA (FORMERLY LINK INTIME)', adapter);
+      this.adapters.set('MUFG INTIME INDIA PRIVATE LIMITED', adapter);
+      this.adapters.set('LINK INTIME INDIA PRIVATE LIMITED', adapter);
       this.adapters.set('INTIME', adapter);
     }
 
     this.logger.log(`Registered Registrar Adapter: ${adapter.name} (${code})`);
   }
 
-  get(code: string): IRegistrarAdapter | undefined {
-    return this.adapters.get(code.toUpperCase());
+  get(code?: string | null): IRegistrarAdapter | undefined {
+    if (!code) return undefined;
+    const normalized = normalizeRegistrarCode(code);
+    return this.adapters.get(normalized) || this.adapters.get(code.trim().toUpperCase());
   }
 
-  has(code: string): boolean {
-    return this.adapters.has(code.toUpperCase());
+  has(code?: string | null): boolean {
+    if (!code) return false;
+    const normalized = normalizeRegistrarCode(code);
+    return this.adapters.has(normalized) || this.adapters.has(code.trim().toUpperCase());
   }
 
   getAll(): IRegistrarAdapter[] {

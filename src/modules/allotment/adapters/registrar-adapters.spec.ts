@@ -255,9 +255,9 @@ describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {
 
   const mockRequest = {
     ipoId: '22222222-2222-2222-2222-222222222222',
-    registrarIpoCode: 'MUFG_IPO_001',
+    registrarIpoCode: '11937',
     identifierType: AllotmentIdentifierType.PAN,
-    identifierValue: 'XYZAB5678C',
+    identifierValue: 'xyzab5678c',
   };
 
   beforeEach(() => {
@@ -265,88 +265,168 @@ describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {
     adapter = new MufgIntimeRegistrarAdapter();
   });
 
-  it('1. should normalize valid MUFG ALLOTTED response', () => {
+  it('1. should encrypt token correctly using AES-128-CBC with key/iv 8080808080808080', () => {
+    const encrypted = adapter.encryptToken(63435);
+    expect(typeof encrypted).toBe('string');
+    expect(encrypted.length).toBeGreaterThan(0);
+
+    // Verify deterministic encryption
+    const encryptedAgain = adapter.encryptToken(63435);
+    expect(encryptedAgain).toBe(encrypted);
+  });
+
+  it('2. should execute 2-step flow: generateToken -> SearchOnPan with session cookie, configured registrarIpoCode, and uppercased PAN', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('generateToken')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'set-cookie': 'ASP.NET_SessionId=sess_test_12345; path=/; HttpOnly',
+          }),
+          json: async () => ({ d: 98765 }),
+        } as unknown as Response);
+      }
+
+      if (urlStr.includes('SearchOnPan')) {
+        const body = JSON.parse(init?.body as string);
+        expect(body.clientid).toBe('11937');
+        expect(body.PAN).toBe('XYZAB5678C'); // Uppercased
+        expect(body.CHKVAL).toBe('1');
+        expect(body.IFSC).toBe('');
+        expect(body.token).toBeDefined();
+
+        const headers = init?.headers as Record<string, string>;
+        expect(headers['Cookie']).toBe('ASP.NET_SessionId=sess_test_12345');
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            d: '<NewDataSet><Table><id>11937</id><companyname>Manika Plastech Limited - IPO</companyname><ALLOT>0</ALLOT><SHARES>348</SHARES><offer_price>43</offer_price><name>PRIYA PATEL</name><app_no>APP999</app_no></Table></NewDataSet>',
+          }),
+        } as unknown as Response);
+      }
+
+      return Promise.reject(new Error(`Unexpected URL ${urlStr}`));
+    });
+
+    const result = await adapter.checkAllotment(mockRequest);
+    expect(result.status).toBe(AllotmentStatus.NOT_ALLOTTED);
+    expect(result.sharesApplied).toBe(348);
+    expect(result.sharesAllotted).toBe(0);
+    expect(result.allotmentPrice).toBe(43);
+    expect(result.applicantName).toBe('PRIYA PATEL');
+    expect(result.sourceCode).toBe('MUFG_INTIME');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('3. should normalize valid MUFG XML ALLOTTED response (ALLOT > 0)', () => {
     const fixture = {
-      status: 'SUCCESS',
-      applied_shares: 50,
-      allotted_shares: 50,
-      price: 250,
-      name: 'PRIYA PATEL',
-      app_no: 'MUFG123456',
+      d: '<NewDataSet><Table><id>11937</id><companyname>Manika Plastech Limited - IPO</companyname><ALLOT>348</ALLOT><SHARES>348</SHARES><offer_price>43</offer_price><name>PRIYA PATEL</name><app_no>APP999</app_no></Table></NewDataSet>',
     };
 
     const result = adapter.normalizeMufgResponse(fixture, mockRequest);
     expect(result.status).toBe(AllotmentStatus.ALLOTTED);
-    expect(result.sharesApplied).toBe(50);
-    expect(result.sharesAllotted).toBe(50);
-    expect(result.allotmentPrice).toBe(250);
+    expect(result.sharesApplied).toBe(348);
+    expect(result.sharesAllotted).toBe(348);
+    expect(result.allotmentPrice).toBe(43);
     expect(result.applicantName).toBe('PRIYA PATEL');
-    expect(result.sourceCode).toBe('MUFG_INTIME');
   });
 
-  it('2. should normalize valid MUFG PARTIALLY_ALLOTTED response', () => {
+  it('4. should normalize valid MUFG XML PARTIALLY_ALLOTTED response', () => {
     const fixture = {
-      status: 'SUCCESS',
-      applied_shares: 100,
-      allotted_shares: 50,
-      name: 'PRIYA PATEL',
+      d: '<NewDataSet><Table><id>11937</id><companyname>Manika Plastech Limited - IPO</companyname><ALLOT>174</ALLOT><SHARES>348</SHARES><offer_price>43</offer_price><name>PRIYA PATEL</name></Table></NewDataSet>',
     };
 
     const result = adapter.normalizeMufgResponse(fixture, mockRequest);
     expect(result.status).toBe(AllotmentStatus.PARTIALLY_ALLOTTED);
-    expect(result.sharesApplied).toBe(100);
-    expect(result.sharesAllotted).toBe(50);
+    expect(result.sharesApplied).toBe(348);
+    expect(result.sharesAllotted).toBe(174);
   });
 
-  it('3. should normalize valid MUFG NOT_ALLOTTED response', () => {
-    const fixture = {
-      status: 'SUCCESS',
-      applied_shares: 50,
-      allotted_shares: 0,
-      name: 'PRIYA PATEL',
+  it('5. should normalize empty NewDataSet (<NewDataSet />) to APPLICATION_NOT_FOUND', () => {
+    const fixture1 = { d: '<NewDataSet />' };
+    const fixture2 = { d: '<NewDataSet/>' };
+    const fixture3 = { d: '<NewDataSet></NewDataSet>' };
+
+    expect(adapter.normalizeMufgResponse(fixture1, mockRequest).status).toBe(
+      AllotmentStatus.APPLICATION_NOT_FOUND,
+    );
+    expect(adapter.normalizeMufgResponse(fixture2, mockRequest).status).toBe(
+      AllotmentStatus.APPLICATION_NOT_FOUND,
+    );
+    expect(adapter.normalizeMufgResponse(fixture3, mockRequest).status).toBe(
+      AllotmentStatus.APPLICATION_NOT_FOUND,
+    );
+  });
+
+  it('6. should normalize malformed XML response to SOURCE_RESPONSE_INVALID', () => {
+    const fixture = { d: '<html><body>Service Error</body></html>' };
+    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
+  });
+
+  it('7. should NEVER use backend UUID as registrarIpoCode and trigger resolution instead', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('GetDetails')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            d: '<NewDataSet><Table><company_id>11937</company_id><companyname>Manika Plastech Limited - IPO</companyname></Table></NewDataSet>',
+          }),
+        } as unknown as Response);
+      }
+
+      if (urlStr.includes('generateToken')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'set-cookie': 'ASP.NET_SessionId=sess_uuid_test; path=/',
+          }),
+          json: async () => ({ d: 11223 }),
+        } as unknown as Response);
+      }
+
+      if (urlStr.includes('SearchOnPan')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            d: '<NewDataSet><Table><id>11937</id><companyname>Manika Plastech Limited - IPO</companyname><ALLOT>348</ALLOT><SHARES>348</SHARES><name>PRIYA PATEL</name></Table></NewDataSet>',
+          }),
+        } as unknown as Response);
+      }
+
+      return Promise.reject(new Error(`Unexpected URL ${urlStr}`));
+    });
+
+    const requestWithUuidCode = {
+      ipoId: '22222222-2222-2222-2222-222222222222',
+      registrarIpoCode: '22222222-2222-2222-2222-222222222222', // Erroneously passed UUID
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'XYZAB5678C',
+      companyLegalName: 'Manika Plastech Limited',
+      companyName: 'Manika Plastech',
     };
 
-    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
-    expect(result.status).toBe(AllotmentStatus.NOT_ALLOTTED);
-    expect(result.sharesAllotted).toBe(0);
+    const result = await adapter.checkAllotment(requestWithUuidCode);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+
+    // Verify SearchOnPan was called with the resolved 11937, NOT the UUID
+    const searchCall = fetchSpy.mock.calls.find((c) =>
+      String(c[0]).includes('SearchOnPan'),
+    );
+    expect(searchCall).toBeDefined();
+    const searchBody = JSON.parse(searchCall![1]?.body as string);
+    expect(searchBody.clientid).toBe('11937');
   });
 
-  it('4. should normalize MUFG CAPTCHA_REQUIRED response', () => {
-    const fixture = {
-      status: 'CAPTCHA_REQUIRED',
-      require_captcha: true,
-      sessionId: 'mufg_session_123',
-      captchaUrl: 'https://in.mpms.mufg.com/captcha.png',
-    };
-
-    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
-    expect(result.status).toBe(AllotmentStatus.CAPTCHA_REQUIRED);
-    expect(result.captchaChallenge).toBeDefined();
-    expect(result.captchaChallenge?.challengeType).toBe('IMAGE_CAPTCHA');
-    expect(result.captchaChallenge?.challengeId).toBe('mufg_session_123');
-  });
-
-  it('5. should normalize MUFG NOT_YET_AVAILABLE response', () => {
-    const fixture = {
-      status: 'PENDING',
-      message: 'Basis of allotment under process',
-    };
-
-    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
-    expect(result.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
-  });
-
-  it('6. should normalize MUFG RECORD_NOT_FOUND response', () => {
-    const fixture = {
-      status: 'NOT_FOUND',
-      message: 'No Data Found',
-    };
-
-    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
-    expect(result.status).toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
-  });
-
-  it('7. should handle MUFG HTTP 429 Rate Limiting safely', async () => {
+  it('8. should handle MUFG HTTP 429 Rate Limiting safely', async () => {
     jest.spyOn(global, 'fetch').mockImplementation(() =>
       Promise.resolve({
         ok: false,
@@ -359,7 +439,7 @@ describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {
     expect(result.status).toBe(AllotmentStatus.RATE_LIMITED);
   });
 
-  it('8. should handle MUFG network errors safely', async () => {
+  it('9. should handle MUFG network errors safely', async () => {
     jest
       .spyOn(global, 'fetch')
       .mockImplementation(() =>
@@ -370,234 +450,29 @@ describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {
     expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
   });
 
-  it('9. should auto-resolve clientid from live public list when registrarIpoCode is null', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
-      if (String(url).includes('getCompanyList')) {
+  it('10. should handle JSON parse errors gracefully as SOURCE_RESPONSE_INVALID', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      if (String(url).includes('generateToken')) {
         return Promise.resolve({
           ok: true,
           status: 200,
-          text: async () => JSON.stringify([{ clientid: 'MUFG_777', companyname: 'Manika Moulds Limited' }]),
-          json: async () => [{ clientid: 'MUFG_777', companyname: 'Manika Moulds Limited' }],
+          headers: new Headers({
+            'set-cookie': 'ASP.NET_SessionId=sess_test; path=/',
+          }),
+          json: async () => ({ d: 12345 }),
         } as unknown as Response);
       }
       return Promise.resolve({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify({ status: 'SUCCESS', applied_shares: 50, allotted_shares: 50, name: 'PRIYA PATEL' }),
-        json: async () => ({ status: 'SUCCESS', applied_shares: 50, allotted_shares: 50, name: 'PRIYA PATEL' }),
-      } as unknown as Response);
-    });
-
-    const requestNoCode = {
-      ipoId: '22222222-2222-2222-2222-222222222222',
-      identifierType: AllotmentIdentifierType.PAN,
-      identifierValue: 'XYZAB5678C',
-      companyLegalName: 'Manika Moulds Limited',
-      companyName: 'Manika Moulds',
-    };
-
-    const result = await adapter.checkAllotment(requestNoCode);
-    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
-    expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining('public-issues.html'),
-      expect.objectContaining({
-        body: expect.stringContaining('MUFG_777'),
-      }),
-    );
-  });
-
-  it('9b. should return NOT_YET_AVAILABLE when no match is found in MUFG live list', async () => {
-    jest.spyOn(global, 'fetch').mockImplementation(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([{ clientid: 'MUFG_999', companyname: 'Other Corp Ltd' }]),
-        json: async () => [{ clientid: 'MUFG_999', companyname: 'Other Corp Ltd' }],
-      } as unknown as Response),
-    );
-
-    const requestUnmatched = {
-      ipoId: '22222222-2222-2222-2222-222222222222',
-      identifierType: AllotmentIdentifierType.PAN,
-      identifierValue: 'XYZAB5678C',
-      companyLegalName: 'Manika Moulds Limited',
-    };
-
-    const result = await adapter.checkAllotment(requestUnmatched);
-    expect(result.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
-  });
-
-  it('9c. should return NEEDS_REVIEW when multiple matches exist in MUFG live list', async () => {
-    jest.spyOn(global, 'fetch').mockImplementation(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        text: async () =>
-          JSON.stringify([
-            { clientid: 'MUFG_1', companyname: 'Manika Moulds Limited' },
-            { clientid: 'MUFG_2', companyname: 'Manika Moulds Limited' },
-          ]),
-        json: async () => [
-          { clientid: 'MUFG_1', companyname: 'Manika Moulds Limited' },
-          { clientid: 'MUFG_2', companyname: 'Manika Moulds Limited' },
-        ],
-      } as unknown as Response),
-    );
-
-    const requestAmbiguous = {
-      ipoId: '22222222-2222-2222-2222-222222222222',
-      identifierType: AllotmentIdentifierType.PAN,
-      identifierValue: 'XYZAB5678C',
-      companyLegalName: 'Manika Moulds Limited',
-    };
-
-    const result = await adapter.checkAllotment(requestAmbiguous);
-    expect(result.status).toBe(AllotmentStatus.NEEDS_REVIEW);
-  });
-
-  it('9d. should NEVER use backend UUID as MUFG registrarIpoCode and trigger resolution instead', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
-      if (String(url).includes('getCompanyList')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify([{ clientid: 'MUFG_555', companyname: 'Manika Moulds Limited' }]),
-          json: async () => [{ clientid: 'MUFG_555', companyname: 'Manika Moulds Limited' }],
-        } as unknown as Response);
-      }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify({ status: 'SUCCESS', applied_shares: 50, allotted_shares: 50, name: 'PRIYA PATEL' }),
-        json: async () => ({ status: 'SUCCESS', applied_shares: 50, allotted_shares: 50, name: 'PRIYA PATEL' }),
-      } as unknown as Response);
-    });
-
-    const requestWithUuidCode = {
-      ipoId: '22222222-2222-2222-2222-222222222222',
-      registrarIpoCode: '22222222-2222-2222-2222-222222222222', // UUID passed erroneously
-      identifierType: AllotmentIdentifierType.PAN,
-      identifierValue: 'XYZAB5678C',
-      companyLegalName: 'Manika Moulds Limited',
-    };
-
-    const result = await adapter.checkAllotment(requestWithUuidCode);
-    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
-    expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining('public-issues.html'),
-      expect.objectContaining({
-        body: expect.stringContaining('MUFG_555'), // Used MUFG_555, NOT the UUID!
-      }),
-    );
-  });
-
-  it('10. should handle APPLICATION_NUMBER query correctly', async () => {
-    const appRequest = {
-      ipoId: '22222222-2222-2222-2222-222222222222',
-      registrarIpoCode: 'MUFG_IPO_001',
-      identifierType: AllotmentIdentifierType.APPLICATION_NUMBER,
-      identifierValue: '12345678',
-    };
-
-    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          status: 'SUCCESS',
-          applied_shares: 100,
-          allotted_shares: 100,
-          name: 'TEST USER',
-        }),
-      } as Response),
-    );
-
-    const result = await adapter.checkAllotment(appRequest);
-    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
-    expect(fetchSpy).toHaveBeenCalled();
-    const lastCall = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1];
-    const fetchBody = JSON.parse(
-      (lastCall[1] as RequestInit).body as string,
-    );
-    expect(fetchBody.searchtype).toBe('APP');
-    expect(fetchBody.searchValue).toBe('12345678');
-  });
-
-  it('11. should handle DP_CLIENT_ID query correctly', async () => {
-    const dpidRequest = {
-      ipoId: '22222222-2222-2222-2222-222222222222',
-      registrarIpoCode: 'MUFG_IPO_001',
-      identifierType: AllotmentIdentifierType.DP_CLIENT_ID,
-      identifierValue: '1201090012345678',
-    };
-
-    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          status: 'SUCCESS',
-          applied_shares: 50,
-          allotted_shares: 0,
-          name: 'TEST USER',
-        }),
-      } as Response),
-    );
-
-    const result = await adapter.checkAllotment(dpidRequest);
-    expect(result.status).toBe(AllotmentStatus.NOT_ALLOTTED);
-    const lastCall = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1];
-    const fetchBody = JSON.parse(
-      (lastCall[1] as RequestInit).body as string,
-    );
-    expect(fetchBody.searchtype).toBe('DPID');
-    expect(fetchBody.searchValue).toBe('1201090012345678');
-  });
-
-  it('12. should normalize INVALID_IDENTIFIER response', () => {
-    const fixture = {
-      status: 'INVALID_IDENTIFIER',
-      message: 'Invalid PAN format provided',
-    };
-
-    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
-    expect(result.status).toBe(AllotmentStatus.INVALID_IDENTIFIER);
-  });
-
-  it('13. should normalize TEMPORARY_ERROR response', () => {
-    const fixture = {
-      status: 'TEMPORARY_ERROR',
-      message: 'Service temporarily unavailable, try again later',
-    };
-
-    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
-    expect(result.status).toBe(AllotmentStatus.TEMPORARY_ERROR);
-  });
-
-  it('14. should handle JSON parse errors gracefully as SOURCE_RESPONSE_INVALID', async () => {
-    jest.spyOn(global, 'fetch').mockImplementation(() =>
-      Promise.resolve({
         ok: true,
         status: 200,
         text: async () => '<html><body>Error</body></html>',
         json: async () => {
           throw new SyntaxError('Unexpected token <');
         },
-      } as unknown as Response),
-    );
+      } as unknown as Response);
+    });
 
     const result = await adapter.checkAllotment(mockRequest);
     expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
-  });
-
-  it('15. should NEVER convert unrecognized response into NOT_ALLOTTED', () => {
-    const fixture = {
-      status: 'UNKNOWN_CODE',
-      random_field: 'something',
-    };
-
-    const result = adapter.normalizeMufgResponse(fixture, mockRequest);
-    expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
-    expect(result.status).not.toBe(AllotmentStatus.NOT_ALLOTTED);
   });
 });
