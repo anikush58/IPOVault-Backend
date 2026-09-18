@@ -208,12 +208,47 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
       ipoId: '11111111-1111-1111-1111-111111111111',
       identifierType: AllotmentIdentifierType.PAN,
       identifierValue: 'ABCDE1234F',
-      companyLegalName: 'Prasol Chemicals Limited',
-      companyName: 'Prasol Chemicals',
+      companyLegalName: 'Prasol Chemicals', // Database legalName without Limited
+      companyName: 'Prasol Chemicals', // Database displayName without Limited
     };
 
     const result = await adapter.checkAllotment(requestPrasol);
     expect(result.status).toBe(AllotmentStatus.NOT_ALLOTTED);
+  });
+
+  it('10b. should match across corporate suffix variants (Pvt. Ltd., LTD, Limited)', () => {
+    const list = [
+      { clientId: '10000000001', name: 'Alpha Solutions Private Limited' },
+      { clientId: '20000000002', name: 'Beta Industries Ltd.' },
+      { clientId: '30000000003', name: 'Gamma Infotech Pvt. Ltd.' },
+    ];
+
+    // Test 1: "Alpha Solutions" matches "Alpha Solutions Private Limited"
+    const matchAlpha = adapter.matchCompanyInList(list, {
+      ipoId: '1',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Alpha Solutions',
+    });
+    expect(matchAlpha).toBe('10000000001');
+
+    // Test 2: "Beta Industries Limited" matches "Beta Industries Ltd."
+    const matchBeta = adapter.matchCompanyInList(list, {
+      ipoId: '2',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'Beta Industries Limited',
+    });
+    expect(matchBeta).toBe('20000000002');
+
+    // Test 3: "Gamma Infotech LTD" matches "Gamma Infotech Pvt. Ltd."
+    const matchGamma = adapter.matchCompanyInList(list, {
+      ipoId: '3',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Gamma Infotech LTD',
+    });
+    expect(matchGamma).toBe('30000000003');
   });
 
   it('11. should auto-resolve client_id for Dhoot Transmission Limited -> 94818267561', async () => {

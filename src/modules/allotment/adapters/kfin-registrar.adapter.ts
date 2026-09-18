@@ -522,10 +522,26 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
   }
 
   private normalizeName(name: string): string {
-    return name
-      .toLowerCase()
-      .trim()
-      .replace(/[\s\-_]+(ipo|sme\s+ipo|sme|rights\s+issue|buyback)$/i, '')
+    let clean = name.toLowerCase().trim();
+
+    // Repeatedly strip known trailing offering and corporate suffixes
+    let changed = true;
+    while (changed) {
+      const prev = clean;
+      clean = clean
+        .replace(
+          /[\s\-_,.]+(ipo|sme\s+ipo|sme|rights\s+issue|buyback|fpo|reit|invit)$/i,
+          '',
+        )
+        .replace(
+          /[\s\-_,.]+(private\s+limited|pvt\s*\.?\s*ltd\.?|limited|ltd\.?)$/i,
+          '',
+        )
+        .trim();
+      changed = clean !== prev;
+    }
+
+    return clean
       .replace(/[^a-z0-9]/g, '')
       .trim();
   }
