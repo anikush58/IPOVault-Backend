@@ -13,9 +13,18 @@ export class RegistrarAdapterRegistry {
     }
     this.adapters.set(code, adapter);
 
-    // Register alias for legacy identity if applicable
-    if (code === 'MUFG_INTIME') {
+    // Register aliases for common registrar codes
+    if (code === 'KFINTECH' || code === 'KFIN') {
+      this.adapters.set('KFIN', adapter);
+      this.adapters.set('KFINTECH', adapter);
+      this.adapters.set('KFIN_TECH', adapter);
+    }
+    if (code === 'MUFG_INTIME' || code === 'LINKINTIME') {
+      this.adapters.set('MUFG_INTIME', adapter);
       this.adapters.set('LINKINTIME', adapter);
+      this.adapters.set('LINK_INTIME', adapter);
+      this.adapters.set('MUFG', adapter);
+      this.adapters.set('INTIME', adapter);
     }
 
     this.logger.log(`Registered Registrar Adapter: ${adapter.name} (${code})`);

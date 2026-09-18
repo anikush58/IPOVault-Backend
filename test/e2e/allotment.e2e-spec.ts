@@ -100,6 +100,15 @@ describe('Allotment E2E User Flow', () => {
       ipoSourceIdentity: {
         findFirst: jest.fn().mockResolvedValue(mockSourceIdentity),
       },
+      ipoAllotmentConfig: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'config-1',
+          ipoId,
+          registrar: 'KFINTECH',
+          registrarIpoCode: '40580036070',
+          enabled: true,
+        }),
+      },
       userSavedPan: {
         findMany: jest.fn().mockResolvedValue(mockSavedPans),
       },

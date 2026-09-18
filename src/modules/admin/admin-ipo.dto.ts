@@ -209,7 +209,8 @@ export class UpdateAdminIpoDto {
 }
 
 export class ConfigureAllotmentDto {
-  registrar!: string;
+  registrar?: string;
+  registrarCode?: string;
   registrarIpoCode?: string;
   allotmentSourceUrl?: string;
   expectedAllotmentDate?: string;

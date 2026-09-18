@@ -2089,7 +2089,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           document.getElementById('gmp-est-profit').value = '';
         }
 
-        document.getElementById('allot-registrar-code').value = currentIpoData.allotmentConfig?.registrarCode || currentIpoData.allotmentRegistrarCode || '';
+        document.getElementById('allot-registrar-code').value = currentIpoData.allotmentConfig?.registrar || currentIpoData.allotmentConfig?.registrarCode || currentIpoData.allotmentRegistrarCode || '';
         document.getElementById('allot-registrar-ipo-code').value = currentIpoData.allotmentConfig?.registrarIpoCode || currentIpoData.allotmentRegistrarIpoCode || '';
 
         // Populate Anchor Investors Table
@@ -2125,7 +2125,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/allotment-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ registrarCode, registrarIpoCode })
+          body: JSON.stringify({ registrar: registrarCode, registrarCode, registrarIpoCode })
         });
         if (!res.ok) throw new Error('Status ' + res.status);
         alert('Allotment checker configuration saved!');
@@ -2268,6 +2268,15 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           gmpAmount: !isNaN(amt) ? amt : 0,
           gmpPercentage: gmpPctStr !== '' && !isNaN(parseFloat(gmpPctStr)) ? parseFloat(gmpPctStr) : undefined,
           estProfitPerLot: gmpEstStr !== '' && !isNaN(parseFloat(gmpEstStr)) ? parseFloat(gmpEstStr) : undefined,
+        };
+      }
+
+      const registrarCodeVal = document.getElementById('allot-registrar-code')?.value?.trim();
+      const registrarIpoCodeVal = document.getElementById('allot-registrar-ipo-code')?.value?.trim();
+      if (registrarCodeVal) {
+        payload.allotmentConfig = {
+          registrar: registrarCodeVal,
+          registrarIpoCode: registrarIpoCodeVal || undefined,
         };
       }
 

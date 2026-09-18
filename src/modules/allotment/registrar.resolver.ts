@@ -52,16 +52,38 @@ export class RegistrarResolver {
     }
 
     // 1. Check IpoAllotmentConfig table for admin-managed allotment configuration
-    if (isUuid) {
+    let targetIpoId = isUuid ? ipoId.trim() : null;
+    if (!targetIpoId && typeof this.prisma.ipo?.findFirst === 'function') {
+      const matchedIpo = await this.prisma.ipo.findFirst({
+        where: {
+          OR: [
+            { symbol: { equals: ipoId, mode: 'insensitive' } },
+            { company: { displayName: { contains: ipoId, mode: 'insensitive' } } },
+            { company: { legalName: { contains: ipoId, mode: 'insensitive' } } },
+          ],
+        },
+      });
+      if (matchedIpo) {
+        targetIpoId = matchedIpo.id;
+      }
+    }
+
+    if (targetIpoId && typeof this.prisma.ipoAllotmentConfig?.findUnique === 'function') {
       const config = await this.prisma.ipoAllotmentConfig.findUnique({
-        where: { ipoId },
+        where: { ipoId: targetIpoId },
       });
       if (config && config.enabled && config.registrar) {
         const adapter = this.registry.get(config.registrar.toLowerCase());
         if (adapter) {
+          if (!config.registrarIpoCode || !config.registrarIpoCode.trim()) {
+            this.logger.warn(
+              `IpoAllotmentConfig for IPO ${ipoId} has registrar '${config.registrar}' but is missing registrarIpoCode`,
+            );
+            return undefined;
+          }
           return {
             adapter,
-            registrarIpoCode: config.registrarIpoCode || ipoId,
+            registrarIpoCode: config.registrarIpoCode.trim(),
           };
         }
       }

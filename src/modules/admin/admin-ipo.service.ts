@@ -1615,6 +1615,12 @@ export class AdminIpoService {
       throw new NotFoundException(`IPO with ID '${ipoId}' not found`);
     }
 
+    const rawRegistrar = dto.registrar || dto.registrarCode || '';
+    const registrarVal = rawRegistrar.toLowerCase().trim();
+    if (!registrarVal) {
+      throw new BadRequestException('Registrar (registrar or registrarCode) is required');
+    }
+
     const expectedDate = dto.expectedAllotmentDate
       ? new Date(dto.expectedAllotmentDate)
       : null;
@@ -1622,7 +1628,7 @@ export class AdminIpoService {
     const config = await this.prisma.ipoAllotmentConfig.upsert({
       where: { ipoId },
       update: {
-        registrar: dto.registrar.toLowerCase().trim(),
+        registrar: registrarVal,
         registrarIpoCode: dto.registrarIpoCode?.trim() || null,
         allotmentSourceUrl: dto.allotmentSourceUrl?.trim() || null,
         expectedAllotmentDate: expectedDate,
@@ -1630,7 +1636,7 @@ export class AdminIpoService {
       },
       create: {
         ipoId,
-        registrar: dto.registrar.toLowerCase().trim(),
+        registrar: registrarVal,
         registrarIpoCode: dto.registrarIpoCode?.trim() || null,
         allotmentSourceUrl: dto.allotmentSourceUrl?.trim() || null,
         expectedAllotmentDate: expectedDate,
