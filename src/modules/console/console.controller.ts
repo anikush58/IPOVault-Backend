@@ -5,6 +5,8 @@ import {
   Delete,
   Get,
   Header,
+  HttpException,
+  Logger,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -35,6 +37,8 @@ import {
 @Controller('console')
 @UseGuards(ConsoleEnabledGuard)
 export class ConsoleController {
+  private readonly logger = new Logger(ConsoleController.name);
+
   constructor(
     private readonly consoleService: ConsoleService,
     private readonly adminIpoService: AdminIpoService,
@@ -210,7 +214,25 @@ export class ConsoleController {
     if (!dto || typeof dto !== 'object') {
       throw new BadRequestException('Invalid JSON payload provided');
     }
-    return this.adminIpoService.importIpoFromJson(dto, targetIpoId);
+    try {
+      return await this.adminIpoService.importIpoFromJson(dto, targetIpoId);
+    } catch (err: any) {
+      this.logger.error({
+        message: err.message || 'Manual IPO JSON import failed',
+        stack: err.stack,
+        response: err.response,
+        statusCode: err.status || err.statusCode || 400,
+      });
+
+      if (err instanceof HttpException) {
+        throw err;
+      }
+
+      throw new BadRequestException({
+        message: 'Manual IPO JSON import failed',
+        details: err.message || err,
+      });
+    }
   }
 
   @Post('api/manual-ipos/:id/allotment-config')

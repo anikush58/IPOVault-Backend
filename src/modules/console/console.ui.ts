@@ -2367,6 +2367,70 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       } catch (err) { alert('Delete error: ' + err.message); }
     }
 
+    function formatApiError(error) {
+      if (!error) {
+        return 'Unknown error occurred';
+      }
+
+      if (error instanceof Error) {
+        return error.message;
+      }
+
+      if (typeof error === 'string') {
+        return error;
+      }
+
+      if (typeof error === 'object') {
+        const e = error;
+
+        if (e.response && e.response.data) {
+          return formatApiError(e.response.data);
+        }
+
+        if (e.data) {
+          return formatApiError(e.data);
+        }
+
+        if (e.error && typeof e.error === 'object') {
+          return formatApiError(e.error);
+        }
+
+        if (Array.isArray(e.message)) {
+          return e.message.join('\n');
+        }
+
+        if (Array.isArray(e.errors)) {
+          return e.errors.map(function(err) {
+            return typeof err === 'object' ? formatApiError(err) : String(err);
+          }).join('\n');
+        }
+
+        if (e.details) {
+          const detailsStr = typeof e.details === 'object' ? JSON.stringify(e.details, null, 2) : String(e.details);
+          if (typeof e.message === 'string' && e.message.trim()) {
+            return e.message + '\n' + detailsStr;
+          }
+          return detailsStr;
+        }
+
+        if (typeof e.message === 'string' && e.message.trim()) {
+          return e.message;
+        }
+
+        if (typeof e.error === 'string' && e.error.trim()) {
+          return e.error;
+        }
+
+        try {
+          return JSON.stringify(e, null, 2);
+        } catch {
+          return 'Unknown JSON import error';
+        }
+      }
+
+      return String(error);
+    }
+
     function triggerJsonImport() {
       document.getElementById('json-file-input').click();
     }
@@ -2378,21 +2442,30 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       reader.onload = async (e) => {
         try {
           const jsonPayload = JSON.parse(e.target.result);
-          const res = await fetch(API_BASE + '/manual-ipos/import-json', {
+          const response = await fetch(API_BASE + '/manual-ipos/import-json', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(jsonPayload)
           });
-          const data = await res.json().catch(() => ({}));
-          if (res.ok) {
-            alert('JSON Imported successfully!');
-            fetchManualIpos();
-          } else {
-            const errMsg = data.message || data.error || ('HTTP ' + res.status + ' ' + res.statusText);
-            alert('JSON import failed: ' + (Array.isArray(errMsg) ? errMsg.join(', ') : errMsg));
+          const rawText = await response.text();
+          let body;
+          try {
+            body = rawText ? JSON.parse(rawText) : null;
+          } catch {
+            body = rawText;
           }
+
+          if (!response.ok) {
+            throw body || {
+              statusCode: response.status,
+              message: response.statusText,
+            };
+          }
+
+          alert('JSON Imported successfully!');
+          fetchManualIpos();
         } catch (err) {
-          alert('JSON import failed: ' + err.message);
+          alert('JSON import failed:\n' + formatApiError(err));
         } finally {
           evt.target.value = '';
         }

@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -25,6 +27,8 @@ import { AdminValidationService } from './admin-validation.service';
 
 @Injectable()
 export class AdminIpoService {
+  private readonly logger = new Logger(AdminIpoService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly validationService: AdminValidationService,
@@ -935,6 +939,44 @@ export class AdminIpoService {
       throw new BadRequestException(`Invalid status: ${ipoData.status}`);
     }
 
+    const topLevelKeys = Object.keys(payload || {});
+    const rawOfferCategories = payload.offerCategories || ipoData.offerCategories || [];
+    const rawSubItems = Array.isArray(payload.subscription)
+      ? payload.subscription
+      : payload.subscription && typeof payload.subscription === 'object'
+        ? [
+            ...(payload.subscription.qibx ? [{ category: 'QIB', subscriptionMultiple: payload.subscription.qibx }] : []),
+            ...(payload.subscription.nii ? [{ category: 'NII', subscriptionMultiple: payload.subscription.nii }] : []),
+            ...(payload.subscription.bNii ? [{ category: 'NII', subscriptionMultiple: payload.subscription.bNii }] : []),
+            ...(payload.subscription.sNii ? [{ category: 'NII', subscriptionMultiple: payload.subscription.sNii }] : []),
+            ...(payload.subscription.rii ? [{ category: 'RETAIL', subscriptionMultiple: payload.subscription.rii }] : []),
+            ...(payload.subscription.employee ? [{ category: 'EMPLOYEE', subscriptionMultiple: payload.subscription.employee }] : []),
+            ...(payload.subscription.shareholder ? [{ category: 'SHAREHOLDER', subscriptionMultiple: payload.subscription.shareholder }] : []),
+          ]
+        : [];
+    const rawDocList = Array.isArray(payload.documents) ? payload.documents : [];
+
+    this.logger.log({
+      context: 'Manual IPO JSON Import',
+      topLevelKeys,
+      legalName,
+      marketSegment,
+      exchange,
+      status,
+      offerCategories: rawOfferCategories.map((c: any) => c.category || c.categoryCode),
+      subscriptionCategories: rawSubItems.map((s: any) => s.category || s.categoryCode),
+      documentTypes: [
+        ...(payload.drhpUrl || ipoData.drhpUrl ? ['DRHP'] : []),
+        ...(payload.rhpUrl || ipoData.rhpUrl ? ['RHP'] : []),
+        ...rawDocList.map((d: any) => d.documentType || d.type),
+      ],
+      mappedPrismaEnums: {
+        marketSegment,
+        exchange,
+        status,
+      },
+    });
+
     // 2. Validate Price Band
     const priceBandLowVal = ipoData.priceBandLow ?? ipoData.priceBandMin ?? payload.priceBandMin;
     const priceBandHighVal = ipoData.priceBandHigh ?? ipoData.priceBandMax ?? payload.priceBandMax;
@@ -1071,7 +1113,8 @@ export class AdminIpoService {
     const sector = (payload.sector || companyData.sector)?.trim() || null;
     const aboutDescription = (companyData.aboutDescription || payload.aboutDescription || payload.notes || companyData.notes || ipoData.notes)?.trim() || null;
 
-    const createdOrUpdatedIpo = await this.prisma.$transaction(async (tx) => {
+    try {
+      const createdOrUpdatedIpo = await this.prisma.$transaction(async (tx) => {
       // Upsert / Update Company
       if (!company) {
         company = await tx.company.create({
@@ -1599,11 +1642,32 @@ export class AdminIpoService {
       return ipo;
     });
 
-    return {
-      id: createdOrUpdatedIpo.id,
-      publicationStatus: createdOrUpdatedIpo.publicationStatus,
-      message: 'JSON import successful. IPO created/updated in DRAFT status.',
-    };
+      return {
+        id: createdOrUpdatedIpo.id,
+        publicationStatus: createdOrUpdatedIpo.publicationStatus,
+        message: 'JSON import successful. IPO created/updated in DRAFT status.',
+      };
+    } catch (err: any) {
+      this.logger.error({
+        context: 'Manual IPO JSON Import Failure',
+        message: err.message || 'Database error during manual IPO JSON import',
+        stack: err.stack,
+        statusCode: err.status || 400,
+        prismaCode: err.code,
+        prismaMeta: err.meta,
+      });
+
+      if (err instanceof HttpException) {
+        throw err;
+      }
+
+      throw new BadRequestException({
+        message: err.message ? `Manual IPO JSON import failed: ${err.message}` : 'Manual IPO JSON import failed',
+        details: err.meta || err.message || 'Database transaction failed during import',
+        prismaCode: err.code,
+        prismaMeta: err.meta,
+      });
+    }
   }
 
   /**
