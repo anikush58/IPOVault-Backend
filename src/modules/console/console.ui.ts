@@ -2396,19 +2396,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
 
         if (Array.isArray(e.message)) {
-          return e.message.join('\n');
+          return e.message.join('\\n');
         }
 
         if (Array.isArray(e.errors)) {
           return e.errors.map(function(err) {
             return typeof err === 'object' ? formatApiError(err) : String(err);
-          }).join('\n');
+          }).join('\\n');
         }
 
         if (e.details) {
           const detailsStr = typeof e.details === 'object' ? JSON.stringify(e.details, null, 2) : String(e.details);
           if (typeof e.message === 'string' && e.message.trim()) {
-            return e.message + '\n' + detailsStr;
+            return e.message + '\\n' + detailsStr;
           }
           return detailsStr;
         }
@@ -2465,7 +2465,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           alert('JSON Imported successfully!');
           fetchManualIpos();
         } catch (err) {
-          alert('JSON import failed:\n' + formatApiError(err));
+          alert('JSON import failed:\\n' + formatApiError(err));
         } finally {
           evt.target.value = '';
         }
