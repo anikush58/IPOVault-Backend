@@ -7,6 +7,10 @@ import {
   NormalizedAllotmentResult,
 } from '../allotment.types';
 import { maskIdentifier } from '../allotment.utils';
+import {
+  matchRegistrarCompany,
+  normalizeName,
+} from '../allotment.matching';
 import { BaseRegistrarAdapter } from './base-registrar.adapter';
 
 @Injectable()
@@ -579,99 +583,16 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
     request: CheckAllotmentRequest,
     checkedAt: Date = new Date(),
   ): string | NormalizedAllotmentResult {
-    const targetSymbol = request.symbol?.trim().toUpperCase();
-    const targetLegalName = this.normalizeName(request.companyLegalName || '');
-    const targetDisplayName = this.normalizeName(request.companyName || '');
-
-    interface CompanyItem {
-      code: string;
-      name: string;
-      symbol?: string;
-    }
-
-    const normalizedItems: CompanyItem[] = [];
-    for (const item of items) {
-      if (!item || typeof item !== 'object') continue;
-      const rec = item as Record<string, unknown>;
-      const code = String(
-        rec.clientid ||
-          rec.client_id ||
-          rec.id ||
-          rec.value ||
-          rec.company_id ||
-          '',
-      ).trim();
-      const name = String(
-        rec.companyname ||
-          rec.company_name ||
-          rec.name ||
-          rec.text ||
-          rec.label ||
-          '',
-      ).trim();
-      const symbol = rec.symbol
-        ? String(rec.symbol).trim().toUpperCase()
-        : undefined;
-
-      if (code && name) {
-        normalizedItems.push({ code, name, symbol });
-      }
-    }
-
-    // Rule 1: Prefer exact symbol where both sides provide symbol
-    if (targetSymbol) {
-      const symbolMatches = normalizedItems.filter(
-        (i) => i.symbol && i.symbol === targetSymbol,
-      );
-      if (symbolMatches.length === 1) {
-        return symbolMatches[0].code;
-      }
-      if (symbolMatches.length > 1) {
-        return {
-          status: AllotmentStatus.NEEDS_REVIEW,
-          sourceCode: this.code,
-          checkedAt,
-          errorMessage: `Multiple ambiguous matches found by symbol '${targetSymbol}' in MUFG Intime live list`,
-        };
-      }
-    }
-
-    // Rule 2: Exact normalized company/legal name match
-    const nameMatches = normalizedItems.filter((i) => {
-      const normName = this.normalizeName(i.name);
-      return (
-        (targetLegalName.length > 0 && normName === targetLegalName) ||
-        (targetDisplayName.length > 0 && normName === targetDisplayName)
-      );
-    });
-
-    if (nameMatches.length === 1) {
-      return nameMatches[0].code;
-    }
-
-    if (nameMatches.length > 1) {
-      return {
-        status: AllotmentStatus.NEEDS_REVIEW,
-        sourceCode: this.code,
-        checkedAt,
-        errorMessage: `Multiple ambiguous matches found by company name in MUFG Intime live list`,
-      };
-    }
-
-    return {
-      status: AllotmentStatus.NOT_YET_AVAILABLE,
-      sourceCode: this.code,
+    return matchRegistrarCompany(
+      items,
+      request,
+      this.code,
+      this.name,
       checkedAt,
-      errorMessage: `IPO not found in MUFG Intime live active list`,
-    };
+    );
   }
 
-  private normalizeName(name: string): string {
-    return name
-      .toLowerCase()
-      .trim()
-      .replace(/[\s\-_]+(ipo|sme\s+ipo|rights\s+issue|buyback)$/i, '')
-      .replace(/[^a-z0-9]/g, '')
-      .trim();
+  public normalizeName(name: string): string {
+    return normalizeName(name);
   }
 }

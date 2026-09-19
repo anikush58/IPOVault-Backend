@@ -15,7 +15,7 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
   const sampleKfinHtml = `<!doctype html><html><head><script defer="defer" src="/static/js/main.91b6fce3.js"></script></head><body><div id="root"></div></body></html>`;
 
   const sampleKfinBundle = `
-    var rf=JSON.parse('[{"clientId":"66907812020","name":"RENTOMOJO LIMITED"},{"clientId":"75003530500","name":"PRASOL CHEMICALS LIMITED"},{"clientId":"94818267561","name":"DHOOT TRANSMISSION LIMITED"},{"clientId":"35015605280","name":"INNOVISION LIMITED-IPO"}]');
+    var rf=JSON.parse('[{"clientId":"66907812020","name":"RENTOMOJO LIMITED"},{"clientId":"75003530500","name":"PRASOL CHEMICALS LIMITED"},{"clientId":"94818267561","name":"DHOOT TRANSMISSION LIMITED"},{"clientId":"35015605280","name":"INNOVISION LIMITED-IPO"},{"clientId":"89468061991","name":"SBI FUNDS MANAGMENT LIMITED IPO"}]');
   `;
 
   beforeEach(() => {
@@ -289,6 +289,48 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
       expect.stringContaining('0uz601ms56.execute-api'),
       expect.objectContaining({
         headers: expect.objectContaining({ client_id: '94818267561' }),
+      }),
+    );
+  });
+
+  it('11b. should auto-resolve client_id for SBI Funds Management Limited with registrar typo MANAGMENT -> 89468061991', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinHtml,
+        } as unknown as Response);
+      }
+      if (urlStr.includes('main.91b6fce3.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleKfinBundle,
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [{ All_Shares: 100, App_Shares: 100, Name: 'TEST USER' }],
+      } as unknown as Response);
+    });
+
+    const requestSbi = {
+      ipoId: '11111111-1111-1111-1111-111111111111',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'SBI Funds Management Limited',
+      companyName: 'SBI Funds Management',
+    };
+
+    const result = await adapter.checkAllotment(requestSbi);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('0uz601ms56.execute-api'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ client_id: '89468061991' }),
       }),
     );
   });

@@ -7,6 +7,10 @@ import {
 } from '../allotment.types';
 import { maskIdentifier } from '../allotment.utils';
 import { BaseRegistrarAdapter } from './base-registrar.adapter';
+import {
+  matchRegistrarCompany,
+  normalizeName,
+} from '../allotment.matching';
 
 @Injectable()
 export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
@@ -433,116 +437,16 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     request: CheckAllotmentRequest,
     checkedAt: Date = new Date(),
   ): string | NormalizedAllotmentResult {
-    const targetSymbol = request.symbol?.trim().toUpperCase();
-    const targetLegalName = this.normalizeName(request.companyLegalName || '');
-    const targetDisplayName = this.normalizeName(request.companyName || '');
-
-    interface CompanyItem {
-      code: string;
-      name: string;
-      symbol?: string;
-    }
-
-    const normalizedItems: CompanyItem[] = [];
-    for (const item of items) {
-      if (!item || typeof item !== 'object') continue;
-      const rec = item as Record<string, unknown>;
-      const code = String(
-        rec.clientId || rec.client_id || rec.id || rec.code || rec.value || '',
-      ).trim();
-      const name = String(
-        rec.name ||
-          rec.company_name ||
-          rec.companyName ||
-          rec.caption ||
-          rec.text ||
-          '',
-      ).trim();
-      const symbol = rec.symbol
-        ? String(rec.symbol).trim().toUpperCase()
-        : undefined;
-
-      if (
-        code &&
-        name &&
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          code,
-        )
-      ) {
-        normalizedItems.push({ code, name, symbol });
-      }
-    }
-
-    // Rule 1: Prefer exact symbol where both sides provide symbol
-    if (targetSymbol) {
-      const symbolMatches = normalizedItems.filter(
-        (i) => i.symbol && i.symbol === targetSymbol,
-      );
-      if (symbolMatches.length === 1) {
-        return symbolMatches[0].code;
-      }
-      if (symbolMatches.length > 1) {
-        return {
-          status: AllotmentStatus.NEEDS_REVIEW,
-          sourceCode: this.code,
-          checkedAt,
-          errorMessage: `Multiple ambiguous matches found by symbol '${targetSymbol}' in KFintech live list`,
-        };
-      }
-    }
-
-    // Rule 2: Exact normalized company/legal name match
-    const nameMatches = normalizedItems.filter((i) => {
-      const normName = this.normalizeName(i.name);
-      return (
-        (targetLegalName.length > 0 && normName === targetLegalName) ||
-        (targetDisplayName.length > 0 && normName === targetDisplayName)
-      );
-    });
-
-    if (nameMatches.length === 1) {
-      return nameMatches[0].code;
-    }
-
-    if (nameMatches.length > 1) {
-      return {
-        status: AllotmentStatus.NEEDS_REVIEW,
-        sourceCode: this.code,
-        checkedAt,
-        errorMessage: `Multiple ambiguous matches found by company name in KFintech live list`,
-      };
-    }
-
-    return {
-      status: AllotmentStatus.NOT_YET_AVAILABLE,
-      sourceCode: this.code,
+    return matchRegistrarCompany(
+      items,
+      request,
+      this.code,
+      this.name,
       checkedAt,
-      errorMessage: `IPO not found in KFintech live active list`,
-    };
+    );
   }
 
-  private normalizeName(name: string): string {
-    let clean = name.toLowerCase().trim();
-
-    // Repeatedly strip known trailing offering and corporate suffixes
-    let changed = true;
-    while (changed) {
-      const prev = clean;
-      clean = clean
-        .replace(
-          /[\s\-_,.]+(ipo|sme\s+ipo|sme|rights\s+issue|buyback|fpo|reit|invit)$/i,
-          '',
-        )
-        .replace(
-          /[\s\-_,.]+(private\s+limited|pvt\s*\.?\s*ltd\.?|limited|ltd\.?)$/i,
-          '',
-        )
-        .trim();
-      changed = clean !== prev;
-    }
-
-    return clean
-      .replace(/[^a-z0-9]/g, '')
-      .trim();
+  public normalizeName(name: string): string {
+    return normalizeName(name);
   }
 }
