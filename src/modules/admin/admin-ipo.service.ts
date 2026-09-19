@@ -86,15 +86,44 @@ export class AdminIpoService {
     const legalName = dto.legalName.trim();
     const displayName = dto.displayName?.trim() || legalName;
 
-    // Check if Company already exists by CIN or Legal Name
-    let company = await this.prisma.company.findFirst({
-      where: {
-        OR: [
-          ...(dto.cin ? [{ cin: dto.cin.trim() }] : []),
-          { legalName: { equals: legalName, mode: 'insensitive' } },
-        ],
-      },
+    // Check if Company already exists by CIN or Legal Name with strict ambiguity detection
+    const cin = dto.cin?.trim() || null;
+    let company: any = null;
+
+    const companiesByCin = cin
+      ? await this.prisma.company.findMany({
+          where: { cin: { equals: cin, mode: 'insensitive' } },
+        })
+      : [];
+    if (companiesByCin.length > 1) {
+      throw new BadRequestException(
+        `Ambiguous company match: multiple existing companies match CIN '${cin}'.`,
+      );
+    }
+    const companyByCin = companiesByCin[0] || null;
+
+    const companiesByName = await this.prisma.company.findMany({
+      where: { legalName: { equals: legalName, mode: 'insensitive' } },
     });
+    if (companiesByName.length > 1) {
+      throw new BadRequestException(
+        `Ambiguous company match: multiple existing companies match Legal Name '${legalName}'.`,
+      );
+    }
+    const companyByName = companiesByName[0] || null;
+
+    if (companyByCin && companyByName && companyByCin.id !== companyByName.id) {
+      throw new BadRequestException(
+        `Ambiguous company match: CIN '${cin}' and Legal Name '${legalName}' match different existing companies.`,
+      );
+    }
+    if (cin && companyByName && companyByName.cin && companyByName.cin !== cin) {
+      throw new BadRequestException(
+        `Ambiguous company match: existing company with Legal Name '${legalName}' has CIN '${companyByName.cin}', which conflicts with supplied CIN '${cin}'.`,
+      );
+    }
+
+    company = companyByCin || companyByName;
 
     if (!company) {
       company = await this.prisma.company.create({
@@ -728,10 +757,14 @@ export class AdminIpoService {
 
     if (query.status) {
       if (typeof query.status === 'string' && query.status.includes(',')) {
-        const statuses = query.status.split(',').map((s) => s.trim() as IpoStatus);
+        const statuses = query.status.split(',').map((s) => {
+          const trimmed = s.trim();
+          return trimmed === 'ALLOTMENT_OUT' ? IpoStatus.ALLOTMENT_COMPLETED : (trimmed as IpoStatus);
+        });
         where.status = { in: statuses };
       } else {
-        where.status = query.status as IpoStatus;
+        const s = typeof query.status === 'string' ? query.status.trim() : query.status;
+        where.status = s === 'ALLOTMENT_OUT' ? IpoStatus.ALLOTMENT_COMPLETED : (s as IpoStatus);
       }
     }
     if (query.publicationStatus) where.publicationStatus = query.publicationStatus;
@@ -1097,16 +1130,37 @@ export class AdminIpoService {
     if (existingIpo) {
       company = existingIpo.company;
     } else {
-      const companyByCin = cin
-        ? await this.prisma.company.findUnique({ where: { cin } })
-        : null;
-      const companyByName = await this.prisma.company.findFirst({
+      const companiesByCin = cin
+        ? await this.prisma.company.findMany({
+            where: { cin: { equals: cin, mode: 'insensitive' } },
+          })
+        : [];
+      if (companiesByCin.length > 1) {
+        throw new BadRequestException(
+          `Ambiguous company match: multiple existing companies match CIN '${cin}'.`,
+        );
+      }
+      const companyByCin = companiesByCin[0] || null;
+
+      const companiesByName = await this.prisma.company.findMany({
         where: { legalName: { equals: legalName, mode: 'insensitive' } },
       });
+
+      if (companiesByName.length > 1) {
+        throw new BadRequestException(
+          `Ambiguous company match: multiple existing companies match Legal Name '${legalName}'.`,
+        );
+      }
+      const companyByName = companiesByName[0] || null;
 
       if (companyByCin && companyByName && companyByCin.id !== companyByName.id) {
         throw new BadRequestException(
           `Ambiguous company match: CIN '${cin}' and Legal Name '${legalName}' match different existing companies.`,
+        );
+      }
+      if (cin && companyByName && companyByName.cin && companyByName.cin !== cin) {
+        throw new BadRequestException(
+          `Ambiguous company match: existing company with Legal Name '${legalName}' has CIN '${companyByName.cin}', which conflicts with supplied CIN '${cin}'.`,
         );
       }
 
@@ -1923,28 +1977,54 @@ export class AdminIpoService {
   }
 
   /**
-   * Delete an IPO permanently.
+   * Delete an IPO permanently with full transactional cascading and orphan company cleanup.
    */
   async deleteIpo(id: string) {
-    const existing = await this.prisma.ipo.findUnique({ where: { id } });
+    const existing = await this.prisma.ipo.findUnique({
+      where: { id },
+      include: { company: true },
+    });
     if (!existing) {
       throw new NotFoundException(`IPO with ID ${id} not found.`);
     }
 
-    await this.prisma.gmpObservation.deleteMany({ where: { ipoId: id } });
-    await this.prisma.subscriptionObservation.deleteMany({ where: { ipoId: id } });
-    await this.prisma.ipoLifecycleEvent.deleteMany({ where: { ipoId: id } });
-    await this.prisma.ipoOfferCategory.deleteMany({ where: { ipoId: id } });
-    await this.prisma.ipoParticipant.deleteMany({ where: { ipoId: id } });
-    await this.prisma.ipoSourceIdentity.deleteMany({ where: { ipoId: id } });
-    await this.prisma.ipoDocument.deleteMany({ where: { ipoId: id } });
-    await this.prisma.ipoAllotmentConfig.deleteMany({ where: { ipoId: id } });
-    await this.prisma.fieldProvenance.deleteMany({ where: { entityId: id } });
-    await this.prisma.ipoChangeEvent.deleteMany({ where: { ipoId: id } });
+    const companyId = existing.companyId;
 
-    await this.prisma.ipo.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Delete all IPO-owned child records
+      await tx.gmpObservation.deleteMany({ where: { ipoId: id } });
+      await tx.subscriptionObservation.deleteMany({ where: { ipoId: id } });
+      await tx.ipoLifecycleEvent.deleteMany({ where: { ipoId: id } });
+      await tx.ipoOfferCategory.deleteMany({ where: { ipoId: id } });
+      await tx.ipoParticipant.deleteMany({ where: { ipoId: id } });
+      await tx.ipoSourceIdentity.deleteMany({ where: { ipoId: id } });
+      await tx.ipoDocument.deleteMany({ where: { ipoId: id } });
+      await tx.ipoAllotmentConfig.deleteMany({ where: { ipoId: id } });
+      await tx.allotmentCheckLog.deleteMany({ where: { ipoId: id } });
+      await tx.allotmentCheckJobItem.deleteMany({ where: { job: { ipoId: id } } });
+      await tx.allotmentCheckJob.deleteMany({ where: { ipoId: id } });
+      await tx.ipoChangeEvent.deleteMany({ where: { ipoId: id } });
+      await tx.fieldProvenance.deleteMany({ where: { entityId: id, entityType: 'IPO' } });
 
-    return { id, message: 'IPO deleted permanently.' };
+      // 2. Delete the target IPO
+      await tx.ipo.delete({ where: { id } });
+
+      // 3. Check whether the company is referenced by any remaining IPOs
+      if (companyId) {
+        const remainingIposCount = await tx.ipo.count({
+          where: { companyId },
+        });
+
+        // If no other IPO references this company, clean up company records and delete company
+        if (remainingIposCount === 0) {
+          await tx.companyFinancial.deleteMany({ where: { companyId } });
+          await tx.fieldProvenance.deleteMany({ where: { entityId: companyId, entityType: 'COMPANY' } });
+          await tx.company.delete({ where: { id: companyId } });
+        }
+      }
+    });
+
+    return { id, message: 'IPO and associated unshared records deleted permanently.' };
   }
 
   /**

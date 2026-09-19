@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { IpoStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import { IpoListQuery } from './ipo.dto';
@@ -168,9 +168,13 @@ export class IpoRepository {
 
     if (query.status) {
       if (Array.isArray(query.status)) {
-        where.status = { in: query.status };
+        const statuses = query.status.map((s) =>
+          s === 'ALLOTMENT_OUT' ? ('ALLOTMENT_COMPLETED' as IpoStatus) : (s as IpoStatus),
+        );
+        where.status = { in: statuses };
       } else {
-        where.status = query.status;
+        const s = query.status === 'ALLOTMENT_OUT' ? 'ALLOTMENT_COMPLETED' : query.status;
+        where.status = s as IpoStatus;
       }
     }
     if (query.marketSegment) {

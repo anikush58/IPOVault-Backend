@@ -342,6 +342,22 @@ describe('IpoController API Endpoints', () => {
     );
   });
 
+  it('4b. GET /ipos/allotment-out - filters by status ALLOTMENT_COMPLETED', async () => {
+    const listSpy = jest.spyOn(service, 'list');
+    await controller.allotmentOut({ page: 1, limit: 10 });
+    expect(listSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'ALLOTMENT_COMPLETED' }),
+    );
+  });
+
+  it('4c. GET /ipos/listed - filters by status LISTED', async () => {
+    const listSpy = jest.spyOn(service, 'list');
+    await controller.listed({ page: 1, limit: 10 });
+    expect(listSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'LISTED' }),
+    );
+  });
+
   it('5. GET /ipos/listing-soon - filters by status LISTING_PENDING', async () => {
     const listSpy = jest.spyOn(service, 'list');
     await controller.listingSoon({ page: 1, limit: 10 });

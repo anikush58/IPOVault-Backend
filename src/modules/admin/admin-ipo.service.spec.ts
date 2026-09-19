@@ -16,6 +16,7 @@ describe('AdminIpoService & AdminValidationService', () => {
     company: {
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({
         id: 'company-uuid-1',
         legalName: 'TEST ENTERPRISES LIMITED',
@@ -23,6 +24,7 @@ describe('AdminIpoService & AdminValidationService', () => {
         cin: 'U27109HR1974PLC007126',
       }),
       update: jest.fn().mockResolvedValue({ id: 'company-uuid-1' }),
+      delete: jest.fn().mockResolvedValue({ id: 'company-uuid-1' }),
     },
     ipo: {
       create: jest.fn().mockResolvedValue({
@@ -41,6 +43,7 @@ describe('AdminIpoService & AdminValidationService', () => {
         id: 'ipo-uuid-1',
         publicationStatus: PublicationStatus.DRAFT,
       }),
+      delete: jest.fn().mockResolvedValue({ id: 'ipo-uuid-1' }),
     },
     ipoLifecycleEvent: {
       upsert: jest.fn().mockResolvedValue({}),
@@ -48,15 +51,19 @@ describe('AdminIpoService & AdminValidationService', () => {
     },
     companyFinancial: {
       upsert: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoOfferCategory: {
       upsert: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoParticipant: {
       create: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoAllotmentConfig: {
       upsert: jest.fn().mockResolvedValue({ registrar: 'kfintech', registrarIpoCode: 'MANIKA2026', enabled: true }),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoDocument: {
       create: jest.fn().mockResolvedValue({ id: 'doc-uuid-1', parsingStatus: 'PARSED' }),
@@ -64,18 +71,35 @@ describe('AdminIpoService & AdminValidationService', () => {
       findFirst: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ id: 'doc-uuid-1' }),
       delete: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     gmpObservation: {
       create: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     subscriptionObservation: {
       create: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     fieldProvenance: {
       create: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoSourceIdentity: {
       upsert: jest.fn().mockResolvedValue({ id: 'source-id-1' }),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    allotmentCheckLog: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    allotmentCheckJob: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    allotmentCheckJobItem: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    ipoChangeEvent: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
   };
 
@@ -826,7 +850,7 @@ describe('AdminIpoService & AdminValidationService', () => {
     });
 
     it('4. preserves leading-zero registrarIpoCode as a string without converting to number', async () => {
-      mockPrisma.company.findFirst.mockResolvedValueOnce({ id: 'c-leading-zero', legalName: 'Leading Zero Corp' });
+      mockPrisma.company.findMany.mockResolvedValueOnce([{ id: 'c-leading-zero', legalName: 'Leading Zero Corp' }]);
       mockPrisma.company.update.mockResolvedValueOnce({ id: 'c-leading-zero' });
       mockPrisma.ipo.create.mockResolvedValueOnce({
         id: 'ipo-lz-1',
@@ -853,6 +877,263 @@ describe('AdminIpoService & AdminValidationService', () => {
             registrarIpoCode: '00142',
           }),
         }),
+      );
+    });
+  });
+
+  describe('Company Identity & Resolution Safety', () => {
+    it('1. resolves successfully when CIN and Legal Name match the same existing company', async () => {
+      const existingCompany = {
+        id: 'nse-company-1',
+        legalName: 'National Stock Exchange of India Limited',
+        displayName: 'NSE',
+        cin: 'U67120MH1992PLC069769',
+      };
+
+      mockPrisma.company.findMany.mockImplementation((args: any) => {
+        if (args?.where?.cin) {
+          return Promise.resolve([existingCompany]);
+        }
+        if (args?.where?.legalName) {
+          return Promise.resolve([existingCompany]);
+        }
+        return Promise.resolve([]);
+      });
+
+      mockPrisma.company.update.mockResolvedValue(existingCompany);
+      mockPrisma.ipo.create.mockResolvedValue({
+        id: 'ipo-nse-1',
+        companyId: 'nse-company-1',
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+      });
+
+      const res = await adminIpoService.importIpoFromJson({
+        company: {
+          legalName: 'National Stock Exchange of India Limited',
+          cin: 'U67120MH1992PLC069769',
+        },
+      });
+
+      expect(res).toBeDefined();
+      expect(mockPrisma.company.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'nse-company-1' },
+        }),
+      );
+    });
+
+    it('2. fails with explicit ambiguity error when CIN and Legal Name match two different existing companies', async () => {
+      const companyA = {
+        id: 'company-a',
+        legalName: 'Old NSE Ltd',
+        cin: 'U67120MH1992PLC069769',
+      };
+      const companyB = {
+        id: 'company-b',
+        legalName: 'National Stock Exchange of India Limited',
+        cin: null,
+      };
+
+      mockPrisma.company.findMany.mockImplementation((args: any) => {
+        if (args?.where?.cin) {
+          return Promise.resolve([companyA]);
+        }
+        if (args?.where?.legalName) {
+          return Promise.resolve([companyB]);
+        }
+        return Promise.resolve([]);
+      });
+
+      await expect(
+        adminIpoService.importIpoFromJson({
+          company: {
+            legalName: 'National Stock Exchange of India Limited',
+            cin: 'U67120MH1992PLC069769',
+          },
+        }),
+      ).rejects.toThrow(
+        "Ambiguous company match: CIN 'U67120MH1992PLC069769' and Legal Name 'National Stock Exchange of India Limited' match different existing companies.",
+      );
+    });
+
+    it('3. fails with explicit conflict error when Legal Name matches company with a different conflicting CIN', async () => {
+      const companyWithDifferentCin = {
+        id: 'company-diff-cin',
+        legalName: 'National Stock Exchange of India Limited',
+        cin: 'U99999MH1999PLC999999',
+      };
+
+      mockPrisma.company.findMany.mockImplementation((args: any) => {
+        if (args?.where?.cin) {
+          return Promise.resolve([]);
+        }
+        if (args?.where?.legalName) {
+          return Promise.resolve([companyWithDifferentCin]);
+        }
+        return Promise.resolve([]);
+      });
+
+      await expect(
+        adminIpoService.importIpoFromJson({
+          company: {
+            legalName: 'National Stock Exchange of India Limited',
+            cin: 'U67120MH1992PLC069769',
+          },
+        }),
+      ).rejects.toThrow(
+        "Ambiguous company match: existing company with Legal Name 'National Stock Exchange of India Limited' has CIN 'U99999MH1999PLC999999', which conflicts with supplied CIN 'U67120MH1992PLC069769'.",
+      );
+    });
+
+    it('4. fails safely with ambiguity error when multiple database records share the same Legal Name', async () => {
+      const dup1 = { id: 'dup-1', legalName: 'National Stock Exchange of India Limited', cin: null };
+      const dup2 = { id: 'dup-2', legalName: 'National Stock Exchange of India Limited', cin: null };
+
+      mockPrisma.company.findMany.mockImplementation((args: any) => {
+        if (args?.where?.legalName) {
+          return Promise.resolve([dup1, dup2]);
+        }
+        return Promise.resolve([]);
+      });
+
+      await expect(
+        adminIpoService.importIpoFromJson({
+          company: {
+            legalName: 'National Stock Exchange of India Limited',
+          },
+        }),
+      ).rejects.toThrow(
+        "Ambiguous company match: multiple existing companies match Legal Name 'National Stock Exchange of India Limited'.",
+      );
+    });
+
+    it('5. fails safely with ambiguity error when multiple database records share the same CIN', async () => {
+      const dupCin1 = { id: 'dup-cin-1', legalName: 'NSE Corp 1', cin: 'U67120MH1992PLC069769' };
+      const dupCin2 = { id: 'dup-cin-2', legalName: 'NSE Corp 2', cin: 'U67120MH1992PLC069769' };
+
+      mockPrisma.company.findMany.mockImplementation((args: any) => {
+        if (args?.where?.cin) {
+          return Promise.resolve([dupCin1, dupCin2]);
+        }
+        return Promise.resolve([]);
+      });
+
+      await expect(
+        adminIpoService.importIpoFromJson({
+          company: {
+            legalName: 'National Stock Exchange of India Limited',
+            cin: 'U67120MH1992PLC069769',
+          },
+        }),
+      ).rejects.toThrow(
+        "Ambiguous company match: multiple existing companies match CIN 'U67120MH1992PLC069769'.",
+      );
+    });
+
+    it('6. resolves case-insensitive and trimmed whitespace differences cleanly', async () => {
+      const existingCompany = {
+        id: 'nse-case-comp',
+        legalName: 'NATIONAL STOCK EXCHANGE OF INDIA LIMITED',
+        displayName: 'NSE',
+        cin: null,
+      };
+
+      mockPrisma.company.findMany.mockImplementation((args: any) => {
+        if (args?.where?.legalName) {
+          return Promise.resolve([existingCompany]);
+        }
+        return Promise.resolve([]);
+      });
+      mockPrisma.company.update.mockResolvedValue(existingCompany);
+      mockPrisma.ipo.create.mockResolvedValue({
+        id: 'ipo-nse-case',
+        companyId: 'nse-case-comp',
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+      });
+
+      const res = await adminIpoService.importIpoFromJson({
+        company: {
+          legalName: '  national stock exchange of india limited  ',
+          cin: '  U67120MH1992PLC069769  ',
+        },
+      });
+
+      expect(res).toBeDefined();
+      expect(mockPrisma.company.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'nse-case-comp' },
+          data: expect.objectContaining({
+            cin: 'U67120MH1992PLC069769',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('Transactional IPO Deletion Lifecycle', () => {
+    it('1. deletes all IPO-owned child records and deletes orphaned company when no other IPOs reference it', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'del-ipo-1',
+        companyId: 'del-comp-1',
+        company: { id: 'del-comp-1' },
+      });
+      mockPrisma.ipo.count.mockResolvedValueOnce(0); // 0 remaining IPOs
+
+      const result = await adminIpoService.deleteIpo('del-ipo-1');
+
+      expect(result).toEqual({
+        id: 'del-ipo-1',
+        message: 'IPO and associated unshared records deleted permanently.',
+      });
+
+      expect(mockPrisma.gmpObservation.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.subscriptionObservation.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.ipoLifecycleEvent.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.ipoOfferCategory.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.ipoParticipant.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.ipoSourceIdentity.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.ipoDocument.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.ipoAllotmentConfig.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.allotmentCheckLog.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.allotmentCheckJobItem.deleteMany).toHaveBeenCalledWith({ where: { job: { ipoId: 'del-ipo-1' } } });
+      expect(mockPrisma.allotmentCheckJob.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.ipoChangeEvent.deleteMany).toHaveBeenCalledWith({ where: { ipoId: 'del-ipo-1' } });
+      expect(mockPrisma.fieldProvenance.deleteMany).toHaveBeenCalledWith({ where: { entityId: 'del-ipo-1', entityType: 'IPO' } });
+      expect(mockPrisma.ipo.delete).toHaveBeenCalledWith({ where: { id: 'del-ipo-1' } });
+
+      // Cleaned unshared company
+      expect(mockPrisma.companyFinancial.deleteMany).toHaveBeenCalledWith({ where: { companyId: 'del-comp-1' } });
+      expect(mockPrisma.fieldProvenance.deleteMany).toHaveBeenCalledWith({ where: { entityId: 'del-comp-1', entityType: 'COMPANY' } });
+      expect(mockPrisma.company.delete).toHaveBeenCalledWith({ where: { id: 'del-comp-1' } });
+    });
+
+    it('2. retains company and its financials when other IPOs still reference the company', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'del-ipo-shared',
+        companyId: 'del-comp-shared',
+        company: { id: 'del-comp-shared' },
+      });
+      mockPrisma.ipo.count.mockResolvedValueOnce(1); // 1 other IPO remains
+
+      const result = await adminIpoService.deleteIpo('del-ipo-shared');
+
+      expect(result).toEqual({
+        id: 'del-ipo-shared',
+        message: 'IPO and associated unshared records deleted permanently.',
+      });
+
+      expect(mockPrisma.ipo.delete).toHaveBeenCalledWith({ where: { id: 'del-ipo-shared' } });
+      expect(mockPrisma.company.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.companyFinancial.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('3. throws NotFoundException when deleting a non-existent IPO', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce(null);
+
+      await expect(adminIpoService.deleteIpo('non-existent-id')).rejects.toThrow(
+        'IPO with ID non-existent-id not found.',
       );
     });
   });

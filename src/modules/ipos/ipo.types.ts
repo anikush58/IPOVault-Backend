@@ -34,11 +34,27 @@ export type IpoWithRelations = Omit<
   | 'listingGainPct'
   | 'profitAmount'
   | 'profitPercentage'
+  | 'preIpoEps'
+  | 'postIpoEps'
+  | 'preIpoPe'
+  | 'postIpoPe'
+  | 'preIpoPromoterHolding'
+  | 'postIpoPromoterHolding'
+  | 'preIpoMarketCap'
+  | 'postIpoMarketCap'
 > & {
   listingPrice?: BaseIpoWithRelations['listingPrice'];
   listingGainPct?: BaseIpoWithRelations['listingGainPct'];
   profitAmount?: BaseIpoWithRelations['profitAmount'];
   profitPercentage?: BaseIpoWithRelations['profitPercentage'];
+  preIpoEps?: BaseIpoWithRelations['preIpoEps'];
+  postIpoEps?: BaseIpoWithRelations['postIpoEps'];
+  preIpoPe?: BaseIpoWithRelations['preIpoPe'];
+  postIpoPe?: BaseIpoWithRelations['postIpoPe'];
+  preIpoPromoterHolding?: BaseIpoWithRelations['preIpoPromoterHolding'];
+  postIpoPromoterHolding?: BaseIpoWithRelations['postIpoPromoterHolding'];
+  preIpoMarketCap?: BaseIpoWithRelations['preIpoMarketCap'];
+  postIpoMarketCap?: BaseIpoWithRelations['postIpoMarketCap'];
   company: Partial<BaseIpoWithRelations['company']> & {
     id: string;
     legalName: string;

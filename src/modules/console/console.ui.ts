@@ -676,7 +676,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               <select id="man-filter-status" onchange="onStatusSelectChange(this.value)" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
                 <option value="OPEN" selected>Open (Draft & Open)</option>
                 <option value="UPCOMING">Upcoming</option>
-                <option value="CLOSED">Closed (Closed & Allotment Out)</option>
+                <option value="CLOSED">Closed</option>
+                <option value="ALLOTMENT_COMPLETED">Allotment Out</option>
                 <option value="LISTED">Listed</option>
                 <option value="ALL">All Statuses</option>
               </select>
@@ -692,7 +693,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               Upcoming
             </button>
             <button type="button" class="filter-pill" id="pill-filter-CLOSED" onclick="setStatusFilter('CLOSED')">
-              Closed (Closed & Allotment Out)
+              Closed
+            </button>
+            <button type="button" class="filter-pill" id="pill-filter-ALLOTMENT_COMPLETED" onclick="setStatusFilter('ALLOTMENT_COMPLETED')">
+              Allotment Out
             </button>
             <button type="button" class="filter-pill" id="pill-filter-LISTED" onclick="setStatusFilter('LISTED')">
               Listed
@@ -1411,7 +1415,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     function setStatusFilter(filterKey) {
       currentStatusFilter = filterKey;
-      ['OPEN', 'UPCOMING', 'CLOSED', 'LISTED', 'ALL'].forEach(k => {
+      ['OPEN', 'UPCOMING', 'CLOSED', 'ALLOTMENT_COMPLETED', 'LISTED', 'ALL'].forEach(k => {
         const btn = document.getElementById('pill-filter-' + k);
         if (btn) {
           if (k === filterKey) btn.classList.add('active');
@@ -1437,7 +1441,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (filterKey === 'OPEN') {
           statusParam = 'DRAFT,OPEN';
         } else if (filterKey === 'CLOSED') {
-          statusParam = 'CLOSED,ALLOTMENT_COMPLETED';
+          statusParam = 'CLOSED';
+        } else if (filterKey === 'ALLOTMENT_COMPLETED' || filterKey === 'ALLOTMENT_OUT') {
+          statusParam = 'ALLOTMENT_COMPLETED';
         } else if (filterKey === 'UPCOMING') {
           statusParam = 'UPCOMING';
         } else if (filterKey === 'LISTED') {
@@ -1462,9 +1468,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
 
         tbody.innerHTML = items.map(item => {
-          const displayStatus = item.status === 'ALLOTMENT_COMPLETED' ? 'Allotment Out' : (item.status || 'DRAFT');
+          const isAllotmentOut = item.status === 'ALLOTMENT_COMPLETED' || item.status === 'ALLOTMENT_OUT';
+          const displayStatus = isAllotmentOut ? 'Allotment Out' : (item.status || 'DRAFT');
           const rawStatus = (item.status || 'DRAFT').toLowerCase();
-          const statusPillClass = rawStatus === 'allotment_completed' ? 'closed' : rawStatus;
+          const statusPillClass = isAllotmentOut ? 'allotment-completed' : rawStatus;
 
           return \`
             <tr>

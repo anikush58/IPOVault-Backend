@@ -60,6 +60,20 @@ export class IpoController {
     return this.ipos.list({ ...query, status: 'CLOSED' });
   }
 
+  @Get('allotment-out')
+  allotmentOut(
+    @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+  ) {
+    return this.ipos.list({ ...query, status: 'ALLOTMENT_COMPLETED' });
+  }
+
+  @Get('listed')
+  listed(
+    @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+  ) {
+    return this.ipos.list({ ...query, status: 'LISTED' });
+  }
+
   @Get('listing-soon')
   listingSoon(
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
