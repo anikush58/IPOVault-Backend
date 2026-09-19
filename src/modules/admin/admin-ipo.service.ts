@@ -2104,7 +2104,6 @@ export class AdminIpoService {
       const validIncomingDocs = dto.documents
         .map((d) => {
           const url = (d.sourceUrl || d.url || '').trim();
-          if (!url) return null;
           const typeStr = (d.documentType || 'OTHER').toString().toUpperCase();
           let type: DocumentType = DocumentType.OTHER;
           if (typeStr.includes('DRHP')) type = DocumentType.DRHP;
@@ -2115,14 +2114,16 @@ export class AdminIpoService {
           else if (Object.values(DocumentType).includes(typeStr as DocumentType)) {
             type = typeStr as DocumentType;
           }
+          // Accept document if it has URL OR if it is ANCHOR_LIST
+          if (!url && type !== DocumentType.ANCHOR_LIST) return null;
           return {
             id: (d.id || '').trim() || undefined,
             type,
             title: (d.fileName || d.title || '').trim() || null,
-            url,
+            url: url || null,
           };
         })
-        .filter((d): d is { id: string | undefined; type: DocumentType; title: string | null; url: string } => d !== null);
+        .filter((d): d is { id: string | undefined; type: DocumentType; title: string | null; url: string | null } => d !== null);
 
       const existingDocs = await this.prisma.ipoDocument.findMany({
         where: { ipoId },
@@ -2141,8 +2142,11 @@ export class AdminIpoService {
           );
         }
 
-        const extraction = inDoc.type === DocumentType.ANCHOR_LIST && anchorData
-          ? { ...((existing?.extractionData as object) || {}), ...anchorData }
+        const currentExtraction = (existing?.extractionData as object) || {};
+        const extraction = inDoc.type === DocumentType.ANCHOR_LIST
+          ? (anchorData !== null
+              ? { ...currentExtraction, ...anchorData }
+              : (existing?.extractionData ? currentExtraction : null))
           : existing?.extractionData;
 
         if (existing) {
@@ -2151,8 +2155,8 @@ export class AdminIpoService {
             where: { id: existing.id },
             data: {
               documentType: inDoc.type,
-              sourceUrl: inDoc.url,
-              fileName: inDoc.title,
+              ...(inDoc.url ? { sourceUrl: inDoc.url } : {}),
+              fileName: inDoc.title ?? existing.fileName,
               parsingStatus: 'PARSED',
               ...(extraction ? { extractionData: extraction as any } : {}),
             },
@@ -2163,7 +2167,7 @@ export class AdminIpoService {
               ipoId,
               documentType: inDoc.type,
               sourceUrl: inDoc.url,
-              fileName: inDoc.title,
+              fileName: inDoc.title ?? (inDoc.type === DocumentType.ANCHOR_LIST ? 'Anchor List' : null),
               source: 'MANUAL_UPLOAD',
               parsingStatus: 'PARSED',
               ...(extraction ? { extractionData: extraction as any } : {}),
@@ -2173,7 +2177,50 @@ export class AdminIpoService {
         }
       }
 
-      const toDelete = existingDocs.filter((e) => !processedIds.has(e.id));
+      // If anchorData was provided OR if an existing ANCHOR_LIST doc already exists with data, ensure it is preserved & updated
+      const existingAnchor = existingDocs.find((e) => e.documentType === DocumentType.ANCHOR_LIST);
+      if (existingAnchor && !processedIds.has(existingAnchor.id)) {
+        const ext = (existingAnchor.extractionData as any) || {};
+        const hasExistingData = (Array.isArray(ext.anchorInvestors) && ext.anchorInvestors.length > 0) || !!ext.anchorPortion || !!ext.anchorDetails;
+        if (anchorData !== null || hasExistingData) {
+          processedIds.add(existingAnchor.id);
+          if (anchorData !== null) {
+            const merged = { ...ext, ...anchorData };
+            await this.prisma.ipoDocument.update({
+              where: { id: existingAnchor.id },
+              data: {
+                extractionData: merged as any,
+              },
+            });
+          }
+        }
+      } else if (!existingAnchor && anchorData !== null) {
+        const createdAnchor = await this.prisma.ipoDocument.create({
+          data: {
+            ipoId,
+            documentType: DocumentType.ANCHOR_LIST,
+            fileName: 'Anchor List',
+            sourceUrl: dto.anchorListUrl?.trim() || null,
+            source: 'MANUAL_UPLOAD',
+            parsingStatus: 'PARSED',
+            extractionData: anchorData as any,
+          },
+        });
+        processedIds.add(createdAnchor.id);
+      }
+
+      const toDelete = existingDocs.filter((e) => {
+        if (processedIds.has(e.id)) return false;
+        // Never delete an existing ANCHOR_LIST document if it has extractionData or anchor investors, unless explicitly cleared
+        if (e.documentType === DocumentType.ANCHOR_LIST) {
+          const ext = e.extractionData as any;
+          if (ext && (ext.anchorInvestors?.length > 0 || ext.anchorPortion || ext.anchorDetails)) {
+            return false;
+          }
+        }
+        return true;
+      });
+
       for (const delDoc of toDelete) {
         await this.prisma.ipoDocument.delete({ where: { id: delDoc.id } });
       }
@@ -2194,7 +2241,7 @@ export class AdminIpoService {
     ];
 
     for (const doc of docs) {
-      const hasUrl = doc.url !== undefined;
+      const hasUrl = doc.url !== undefined && doc.url !== null;
       const isAnchorWithData = doc.type === DocumentType.ANCHOR_LIST && anchorData !== null;
 
       if (hasUrl || isAnchorWithData) {
@@ -2215,7 +2262,7 @@ export class AdminIpoService {
               data: {
                 ...(cleanUrl ? { sourceUrl: cleanUrl } : {}),
                 fileName: doc.title,
-                ...(doc.extractionData ? { extractionData: extraction as any } : {}),
+                ...(extraction ? { extractionData: extraction as any } : {}),
               },
             });
           } else {
@@ -2227,7 +2274,7 @@ export class AdminIpoService {
                 fileName: doc.title,
                 source: 'MANUAL_UPLOAD',
                 parsingStatus: 'PARSED',
-                ...(doc.extractionData ? { extractionData: extraction as any } : {}),
+                ...(extraction ? { extractionData: extraction as any } : {}),
               },
             });
           }

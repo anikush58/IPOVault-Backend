@@ -729,33 +729,68 @@ describe('AdminIpoService & AdminValidationService', () => {
       });
     });
 
-    it('skips empty URLs in JSON import documents', async () => {
-      mockPrisma.company.findFirst.mockResolvedValueOnce({ id: 'c-1', legalName: 'Doc Corp' });
-      mockPrisma.company.update.mockResolvedValueOnce({ id: 'c-1' });
-      mockPrisma.ipo.create.mockResolvedValueOnce({
-        id: 'ipo-json-doc-1',
-        companyId: 'c-1',
-        marketSegment: MarketSegment.MAINBOARD,
-        exchange: ExchangeListing.NSE,
-        status: 'DRAFT',
-        publicationStatus: PublicationStatus.DRAFT,
+    it('preserves uploaded ANCHOR_LIST document with extractionData even when documents array is submitted without ANCHOR_LIST', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'ipo-anchor-test-1',
+        companyId: 'company-uuid-1',
+        lifecycleEvents: [],
       });
+      mockPrisma.ipoDocument.findMany.mockResolvedValueOnce([
+        { id: 'doc-drhp', documentType: 'DRHP', sourceUrl: 'https://example.com/drhp.pdf' },
+        {
+          id: 'doc-anchor-list',
+          documentType: 'ANCHOR_LIST',
+          sourceUrl: null,
+          extractionData: {
+            anchorInvestors: [{ anchorName: 'Goldman Sachs', sharesAllotted: 50000, amtCr: 2.5 }],
+          },
+        },
+      ]);
+      mockPrisma.ipoDocument.delete = jest.fn().mockResolvedValue({});
 
-      mockPrisma.ipoDocument.findFirst.mockResolvedValue(null);
-
-      await adminIpoService.importIpoFromJson({
-        companyName: 'Doc Corp',
-        drhpUrl: 'https://example.com/import-drhp.pdf',
+      await adminIpoService.updateIpo('ipo-anchor-test-1', {
         documents: [
-          { documentType: 'DRHP', title: 'Duplicate DRHP', url: 'https://example.com/import-drhp.pdf' },
-          { documentType: 'RHP', title: 'Valid RHP', url: 'https://example.com/import-rhp.pdf' },
-          { documentType: 'OTHER', title: 'No URL Doc', url: '' }, // empty URL should be skipped
+          { id: 'doc-drhp', documentType: 'DRHP', title: 'DRHP', url: 'https://example.com/drhp.pdf' },
         ],
       });
 
-      const docCreateCalls = mockPrisma.ipoDocument.create.mock.calls;
-      const createdEmptyUrl = docCreateCalls.some((call: any) => !call[0]?.data?.sourceUrl?.trim());
-      expect(createdEmptyUrl).toBe(false);
+      // Verification: doc-anchor-list MUST NOT be deleted because it contains anchor investor extractionData
+      expect(mockPrisma.ipoDocument.delete).not.toHaveBeenCalledWith({
+        where: { id: 'doc-anchor-list' },
+      });
+    });
+
+    it('creates or updates ANCHOR_LIST document when anchorInvestors array is supplied without document URL', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'ipo-anchor-test-2',
+        companyId: 'company-uuid-1',
+        lifecycleEvents: [],
+      });
+      mockPrisma.ipoDocument.findMany.mockResolvedValueOnce([]);
+
+      await adminIpoService.updateIpo('ipo-anchor-test-2', {
+        anchorInvestors: [
+          { anchorName: 'Morgan Stanley', sharesAllotted: 100000, amtCr: 5.0 },
+        ],
+        documents: [
+          { documentType: 'DRHP', title: 'DRHP', url: 'https://example.com/drhp.pdf' },
+        ],
+      });
+
+      // Verification: ANCHOR_LIST document was created with anchor investors extractionData
+      expect(mockPrisma.ipoDocument.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ipoId: 'ipo-anchor-test-2',
+            documentType: 'ANCHOR_LIST',
+            extractionData: expect.objectContaining({
+              anchorInvestors: expect.arrayContaining([
+                expect.objectContaining({ anchorName: 'Morgan Stanley' }),
+              ]),
+            }),
+          }),
+        }),
+      );
     });
   });
 

@@ -1865,14 +1865,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const documentType = typeSelect ? typeSelect.value : 'OTHER';
         const fileName = titleInput ? titleInput.value.trim() : '';
         const sourceUrl = urlInput ? urlInput.value.trim() : '';
-        if (sourceUrl) {
+        if (sourceUrl || documentType === 'ANCHOR_LIST') {
           docs.push({
             id: docId,
             documentType,
             fileName: fileName || undefined,
             title: fileName || undefined,
-            sourceUrl,
-            url: sourceUrl
+            sourceUrl: sourceUrl || undefined,
+            url: sourceUrl || undefined
           });
         }
       });
@@ -1889,7 +1889,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (docs.length > 0) {
         docs.forEach(d => {
           const url = d.sourceUrl || d.fileUrl || d.documentUrl || d.url;
-          if (url && String(url).trim()) {
+          const isAnchorWithData = d.documentType === 'ANCHOR_LIST' && (
+            (d.extractionData && Array.isArray(d.extractionData.anchorInvestors) && d.extractionData.anchorInvestors.length > 0) ||
+            (ipoData && Array.isArray(ipoData.anchorInvestors) && ipoData.anchorInvestors.length > 0)
+          );
+          if ((url && String(url).trim()) || isAnchorWithData) {
             const title = d.title || d.fileName || (
               d.documentType === 'DRHP' ? 'DRHP Prospectus' :
               d.documentType === 'RHP' ? 'RHP Prospectus' :
@@ -1897,7 +1901,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               d.documentType === 'ANCHOR_LIST' ? 'Anchor Allocation' :
               d.documentType === 'BASIS_OF_ALLOTMENT' ? 'Basis of Allotment' : ''
             );
-            addDocumentRow(d.documentType || 'OTHER', title, String(url).trim(), d.id || '');
+            addDocumentRow(d.documentType || 'OTHER', title, url ? String(url).trim() : '', d.id || '');
             loadedAny = true;
           }
         });
