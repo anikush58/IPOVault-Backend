@@ -183,6 +183,88 @@ describe('AdminIpoService & AdminValidationService', () => {
         }),
       ).rejects.toThrow('cannot be greater than');
     });
+
+    describe('Monetary Size Decimal-Safety (Dhoot Transmission Regression)', () => {
+      const basePayload = {
+        company: { legalName: 'Dhoot Transmission Limited' },
+        ipo: { marketSegment: 'MAINBOARD', exchange: 'NSE' },
+      };
+
+      it('1. accepts equal monetary size sum (3066.89 == 1400.00 + 1666.89)', async () => {
+        const payload = {
+          ...basePayload,
+          ipo: {
+            ...basePayload.ipo,
+            issueSize: 3066.89,
+            freshIssueSize: 1400.0,
+            ofsSize: 1666.89,
+          },
+        };
+        const res = await adminIpoService.importIpoFromJson(payload);
+        expect(res).toBeDefined();
+        expect(res.publicationStatus).toBe(PublicationStatus.DRAFT);
+      });
+
+      it('2. rejects slightly smaller issueSize (3066.88 < 1400.00 + 1666.89)', async () => {
+        const payload = {
+          ...basePayload,
+          ipo: {
+            ...basePayload.ipo,
+            issueSize: 3066.88,
+            freshIssueSize: 1400.0,
+            ofsSize: 1666.89,
+          },
+        };
+        await expect(adminIpoService.importIpoFromJson(payload)).rejects.toThrow(
+          'issueSize cannot be less than the sum of freshIssueSize and ofsSize',
+        );
+      });
+
+      it('3. rejects clearly smaller issueSize (3000.00 < 1400.00 + 1666.89)', async () => {
+        const payload = {
+          ...basePayload,
+          ipo: {
+            ...basePayload.ipo,
+            issueSize: 3000.0,
+            freshIssueSize: 1400.0,
+            ofsSize: 1666.89,
+          },
+        };
+        await expect(adminIpoService.importIpoFromJson(payload)).rejects.toThrow(
+          'issueSize cannot be less than the sum of freshIssueSize and ofsSize',
+        );
+      });
+
+      it('4. accepts larger issueSize (3067.00 > 1400.00 + 1666.89)', async () => {
+        const payload = {
+          ...basePayload,
+          ipo: {
+            ...basePayload.ipo,
+            issueSize: 3067.0,
+            freshIssueSize: 1400.0,
+            ofsSize: 1666.89,
+          },
+        };
+        const res = await adminIpoService.importIpoFromJson(payload);
+        expect(res).toBeDefined();
+        expect(res.publicationStatus).toBe(PublicationStatus.DRAFT);
+      });
+
+      it('5. handles null values safely without inventing zeroes', async () => {
+        const payload = {
+          ...basePayload,
+          ipo: {
+            ...basePayload.ipo,
+            issueSize: 3066.89,
+            freshIssueSize: null,
+            ofsSize: 1666.89,
+          },
+        };
+        const res = await adminIpoService.importIpoFromJson(payload);
+        expect(res).toBeDefined();
+        expect(res.publicationStatus).toBe(PublicationStatus.DRAFT);
+      });
+    });
   });
 
   describe('Admin CRUD & Publication Lifecycle', () => {

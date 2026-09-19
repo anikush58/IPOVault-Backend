@@ -987,14 +987,16 @@ export class AdminIpoService {
       priceBandHighVal !== undefined &&
       priceBandHighVal !== null
     ) {
-      if (Number(priceBandLowVal) > Number(priceBandHighVal)) {
+      const decLow = new Prisma.Decimal(priceBandLowVal);
+      const decHigh = new Prisma.Decimal(priceBandHighVal);
+      if (decLow.gt(decHigh)) {
         throw new BadRequestException(
           `priceBandLow/Min (${priceBandLowVal}) cannot be greater than priceBandHigh/Max (${priceBandHighVal})`,
         );
       }
     }
 
-    // 3. Validate Monetary Sizes & Share Counts consistency
+    // 3. Validate Monetary Sizes & Share Counts consistency (Decimal-safe)
     const freshIssueSizeVal = ipoData.freshIssueSize ?? payload.freshIssueSize;
     const ofsSizeVal = ipoData.ofsSize ?? payload.ofsSize;
     const issueSizeVal = ipoData.issueSize ?? payload.issueSize;
@@ -1007,7 +1009,12 @@ export class AdminIpoService {
       issueSizeVal !== undefined &&
       issueSizeVal !== null
     ) {
-      if (Number(issueSizeVal) < Number(freshIssueSizeVal) + Number(ofsSizeVal)) {
+      const decIssueSize = new Prisma.Decimal(issueSizeVal);
+      const decFreshIssueSize = new Prisma.Decimal(freshIssueSizeVal);
+      const decOfsSize = new Prisma.Decimal(ofsSizeVal);
+      const minRequiredIssueSize = decFreshIssueSize.plus(decOfsSize);
+
+      if (decIssueSize.lt(minRequiredIssueSize)) {
         throw new BadRequestException(
           'issueSize cannot be less than the sum of freshIssueSize and ofsSize',
         );
@@ -1026,7 +1033,12 @@ export class AdminIpoService {
       issueShareCountVal !== undefined &&
       issueShareCountVal !== null
     ) {
-      if (Number(issueShareCountVal) < Number(freshIssueShareCountVal) + Number(ofsShareCountVal)) {
+      const decIssueShares = new Prisma.Decimal(issueShareCountVal);
+      const decFreshShares = new Prisma.Decimal(freshIssueShareCountVal);
+      const decOfsShares = new Prisma.Decimal(ofsShareCountVal);
+      const minRequiredShares = decFreshShares.plus(decOfsShares);
+
+      if (decIssueShares.lt(minRequiredShares)) {
         throw new BadRequestException(
           'issueShareCount cannot be less than the sum of freshIssueShareCount and ofsShareCount',
         );
