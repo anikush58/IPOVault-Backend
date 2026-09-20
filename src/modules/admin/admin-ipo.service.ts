@@ -783,7 +783,7 @@ export class AdminIpoService {
             take: 1,
           },
         },
-        orderBy: { updatedAt: 'desc' },
+        orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),

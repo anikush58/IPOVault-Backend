@@ -441,8 +441,21 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       background-color: var(--bg-hover) !important;
     }
 
-    /* Segmented Actions Icon Group (Image 1 Style: 212x36px, radius 6px) */
+    /* Segmented Actions Icon Group (Table: 170px for 4 icons, Form: 212px for 5 icons) */
     .table-action-group {
+      display: inline-flex;
+      align-items: center;
+      width: 170px;
+      height: 36px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      vertical-align: middle;
+    }
+
+    .form-action-group {
       display: inline-flex;
       align-items: center;
       width: 212px;
@@ -455,7 +468,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       vertical-align: middle;
     }
 
-    .table-action-btn {
+    .table-action-btn, .form-action-btn {
       flex: 1;
       height: 100%;
       display: flex;
@@ -469,28 +482,29 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       transition: background-color 0.15s ease, transform 0.1s ease;
     }
 
-    .table-action-btn:last-child {
+    .table-action-btn:last-child, .form-action-btn:last-child {
       border-right: none;
     }
 
-    .table-action-btn:hover {
+    .table-action-btn:hover, .form-action-btn:hover {
       background-color: #F8FAFC;
     }
 
-    .table-action-btn:active {
+    .table-action-btn:active, .form-action-btn:active {
       background-color: #F1F5F9;
+      transform: scale(0.95);
     }
 
-    body.dark-mode .table-action-group {
+    body.dark-mode .table-action-group, body.dark-mode .form-action-group {
       background: #0F172A;
       border-color: #1E293B;
     }
 
-    body.dark-mode .table-action-btn {
+    body.dark-mode .table-action-btn, body.dark-mode .form-action-btn {
       border-right-color: #1E293B;
     }
 
-    body.dark-mode .table-action-btn:hover {
+    body.dark-mode .table-action-btn:hover, body.dark-mode .form-action-btn:hover {
       background-color: #1E293B;
     }
 
@@ -531,126 +545,6 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       background-color: #1E293B;
     }
 
-    .btn-action-save {
-      height: 36px;
-      padding: 0 18px;
-      background-color: #4F46E5;
-      color: #FFFFFF;
-      border: none;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 1px 2px rgba(79, 70, 229, 0.2);
-    }
-
-    .btn-action-save:hover {
-      background-color: #4338CA;
-      transform: translateY(-1px);
-    }
-
-    .btn-action-publish {
-      height: 36px;
-      padding: 0 18px;
-      background-color: #00A870;
-      color: #FFFFFF;
-      border: none;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 1px 2px rgba(0, 168, 112, 0.2);
-    }
-
-    .btn-action-publish:hover {
-      background-color: #009362;
-      transform: translateY(-1px);
-    }
-
-    .btn-action-unpublish {
-      height: 36px;
-      padding: 0 18px;
-      background-color: #FB9816;
-      color: #FFFFFF;
-      border: none;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 1px 2px rgba(251, 152, 22, 0.2);
-    }
-
-    .btn-action-unpublish:hover {
-      background-color: #E8880B;
-      transform: translateY(-1px);
-    }
-
-    .btn-action-archive {
-      height: 36px;
-      padding: 0 18px;
-      background-color: #FFFFFF;
-      color: #0F172A;
-      border: 1px solid #E2E8F0;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-    }
-
-    .btn-action-archive:hover {
-      background-color: #F8FAFC;
-      border-color: #CBD5E1;
-    }
-
-    body.dark-mode .btn-action-archive {
-      background-color: #0F172A;
-      border-color: #1E293B;
-      color: #F8FAFC;
-    }
-
-    body.dark-mode .btn-action-archive:hover {
-      background-color: #1E293B;
-    }
-
-    .btn-action-delete {
-      height: 36px;
-      padding: 0 18px;
-      background-color: #EF4444;
-      color: #FFFFFF;
-      border: none;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 1px 2px rgba(239, 68, 68, 0.2);
-    }
-
-    .btn-action-delete:hover {
-      background-color: #DC2626;
-      transform: translateY(-1px);
-    }
-
     /* Form Header Actions Bar */
     .form-header-bar {
       display: flex;
@@ -660,12 +554,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       gap: 12px;
       margin-bottom: 4px;
     }
-    .form-header-buttons {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
+
 
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
     .form-group { display: flex; flex-direction: column; gap: 6px; width: 100%; }
@@ -835,7 +724,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         <div id="tab-dashboard" class="section-view active">
           <div class="stats-grid">
             <div class="stat-card">
-              <div class="stat-title">Total Canonical IPOs</div>
+              <div class="stat-title">Total Manual IPOs</div>
               <div class="stat-value" id="kpi-total">-</div>
             </div>
             <div class="stat-card">
@@ -854,7 +743,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
           <div class="grid-table-box">
             <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-weight:600; font-size:14px; color:var(--text-main);">Recent Manual & Canonical IPOs</span>
+              <span style="font-weight:600; font-size:14px; color:var(--text-main);">Recent Manual IPOs</span>
               <button class="btn-secondary" onclick="switchTab('manual')" style="font-size:12px; padding:4px 10px;">Manage All IPOs →</button>
             </div>
             <table>
@@ -953,14 +842,45 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <line x1="19" y1="12" x2="5" y2="12"></line>
                 <polyline points="12 19 5 12 12 5"></polyline>
               </svg>
-              <span>Back to Manual IPOs</span>
+              <span>Back</span>
             </button>
-            <div class="form-header-buttons">
-              <button type="button" class="btn-action-save" id="btn-save-action" onclick="saveManualIpo()">Save</button>
-              <button type="button" class="btn-action-publish" id="btn-publish-action" onclick="publishCurrentIpo()">Publish</button>
-              <button type="button" class="btn-action-unpublish" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">Unpublish</button>
-              <button type="button" class="btn-action-archive" id="btn-archive-action" onclick="archiveCurrentIpo()">Archive</button>
-              <button type="button" class="btn-action-delete" id="btn-delete-action" onclick="deleteCurrentIpo()">Delete</button>
+            <div class="form-action-group">
+              <button type="button" class="form-action-btn" id="btn-save-action" title="Save IPO" onclick="saveManualIpo()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00A870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                  <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                  <polyline points="7 3 7 8 15 8"></polyline>
+                </svg>
+              </button>
+              <button type="button" class="form-action-btn" id="btn-publish-action" title="Publish to Mobile App" onclick="publishCurrentIpo()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9F4AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
+                  <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path>
+                  <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path>
+                  <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+                </svg>
+              </button>
+              <button type="button" class="form-action-btn" id="btn-unpublish-action" title="Unpublish (Draft)" onclick="unpublishCurrentIpo()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0050E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              </button>
+              <button type="button" class="form-action-btn" id="btn-archive-action" title="Archive IPO" onclick="archiveCurrentIpo()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FB9816" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                  <rect x="1" y="3" width="22" height="5" rx="1"></rect>
+                  <line x1="10" y1="12" x2="14" y2="12"></line>
+                </svg>
+              </button>
+              <button type="button" class="form-action-btn" id="btn-delete-action" title="Delete IPO" onclick="deleteCurrentIpo()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                  <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -1347,50 +1267,94 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 </div>
               </div>
 
-              <!-- Anchor Investors Allocation List -->
-              <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
-                  <strong style="color:var(--primary); font-size:14px;">Anchor Investors Allocation List</strong>
-                  <div style="display:flex; gap:8px;">
+              <!-- Anchor Investors Allocation List (Accordion) -->
+              <div class="accordion-item" style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
+                <div class="accordion-header" onclick="toggleAnchorAccordion()" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; user-select:none; padding:4px 0;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <svg id="anchor-accordion-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s ease;">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                    <strong style="color:var(--primary); font-size:14px;">Anchor Investors Allocation List</strong>
+                    <span id="anchor-count-badge" style="font-size:11px; padding:2px 8px; background:var(--primary-light); color:var(--primary); border-radius:12px; font-weight:600;">0 investors</span>
+                  </div>
+                  <div style="display:flex; gap:8px;" onclick="event.stopPropagation()">
                     <input type="file" id="anchor-csv-file-input" accept=".csv" style="display:none;" onchange="handleAnchorCsvFileSelect(event)" />
                     <button type="button" class="btn-secondary" onclick="triggerAnchorCsvUpload()" style="font-size:12px; padding:4px 10px;">Upload CSV</button>
-                    <button type="button" class="btn-secondary" onclick="addAnchorInvestorRow()" style="font-size:12px; padding:4px 10px;">+ Add Anchor Investor</button>
+                    <button type="button" class="btn-secondary" onclick="addAnchorInvestorRow(); openAnchorAccordion();" style="font-size:12px; padding:4px 10px;">+ Add Anchor Investor</button>
                   </div>
                 </div>
 
-                <div class="grid-table-box" style="margin-bottom:12px;">
-                  <table id="anchor-investors-table" style="min-width:650px;">
-                    <thead>
-                      <tr>
-                        <th style="width:40px; text-align:center;">#</th>
-                        <th>Anchor Investor Name</th>
-                        <th style="text-align:right;">Shares Allotted</th>
-                        <th style="text-align:right;">Amt (₹ Cr)</th>
-                        <th style="text-align:right;">% Allocated</th>
-                        <th style="text-align:right;">% of Issue</th>
-                        <th style="width:70px; text-align:center;">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody id="anchor-investors-tbody">
-                      <tr id="no-anchor-row"><td colspan="7" style="text-align:center; padding:16px; color:var(--text-muted); font-size:12px;">No anchor investors added yet. Click "+ Add Anchor Investor".</td></tr>
-                    </tbody>
-                    <tfoot id="anchor-investors-tfoot" style="background-color:var(--bg-hover); font-weight:700;">
-                      <tr>
-                        <td colspan="2" style="padding:10px 12px; font-weight:700; color:var(--primary);">Total</td>
-                        <td id="anchor-total-shares" style="text-align:right; padding:10px 12px; color:var(--primary);">0</td>
-                        <td id="anchor-total-amt" style="text-align:right; padding:10px 12px; color:var(--primary);">₹0.00</td>
-                        <td id="anchor-total-pct-allocated" style="text-align:right; padding:10px 12px; color:var(--primary);">0.00%</td>
-                        <td id="anchor-total-pct-issue" style="text-align:right; padding:10px 12px; color:var(--primary);">0.00%</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                <div id="anchor-accordion-body" style="margin-top:12px;">
+                  <div class="grid-table-box" style="margin-bottom:12px;">
+                    <table id="anchor-investors-table" style="min-width:650px;">
+                      <thead>
+                        <tr>
+                          <th style="width:40px; text-align:center;">#</th>
+                          <th>Anchor Investor Name</th>
+                          <th style="text-align:right;">Shares Allotted</th>
+                          <th style="text-align:right;">Amt (₹ Cr)</th>
+                          <th style="text-align:right;">% Allocated</th>
+                          <th style="text-align:right;">% of Issue</th>
+                          <th style="width:70px; text-align:center;">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="anchor-investors-tbody">
+                        <tr id="no-anchor-row"><td colspan="7" style="text-align:center; padding:16px; color:var(--text-muted); font-size:12px;">No anchor investors added yet. Click "+ Add Anchor Investor".</td></tr>
+                      </tbody>
+                      <tfoot id="anchor-investors-tfoot" style="background-color:var(--bg-hover); font-weight:700;">
+                        <tr>
+                          <td colspan="2" style="padding:10px 12px; font-weight:700; color:var(--primary);">Total</td>
+                          <td id="anchor-total-shares" style="text-align:right; padding:10px 12px; color:var(--primary);">0</td>
+                          <td id="anchor-total-amt" style="text-align:right; padding:10px 12px; color:var(--primary);">₹0.00</td>
+                          <td id="anchor-total-pct-allocated" style="text-align:right; padding:10px 12px; color:var(--primary);">0.00%</td>
+                          <td id="anchor-total-pct-issue" style="text-align:right; padding:10px 12px; color:var(--primary);">0.00%</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 </div>
               </div>
 
               <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:16px;">
-                <button type="button" class="btn-secondary" onclick="switchTab('manual')">Cancel</button>
-                <button type="submit" class="btn-primary">Save</button>
+                <div class="form-action-group">
+                  <button type="button" class="form-action-btn" title="Save IPO" onclick="saveManualIpo()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00A870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                      <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                      <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                  </button>
+                  <button type="button" class="form-action-btn" title="Publish to Mobile App" onclick="publishCurrentIpo()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9F4AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
+                      <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path>
+                      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path>
+                      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+                    </svg>
+                  </button>
+                  <button type="button" class="form-action-btn" title="Unpublish (Draft)" onclick="unpublishCurrentIpo()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0050E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                      <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>
+                  </button>
+                  <button type="button" class="form-action-btn" title="Archive IPO" onclick="archiveCurrentIpo()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FB9816" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                      <rect x="1" y="3" width="22" height="5" rx="1"></rect>
+                      <line x1="10" y1="12" x2="14" y2="12"></line>
+                    </svg>
+                  </button>
+                  <button type="button" class="form-action-btn" title="Delete IPO" onclick="deleteCurrentIpo()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      <line x1="10" y1="11" x2="10" y2="17"></line>
+                      <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1545,6 +1509,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       const target = document.getElementById('tab-' + tabId);
       if (target) target.classList.add('active');
 
+      const workspaceEl = document.querySelector('.workspace-content');
+      if (workspaceEl) workspaceEl.scrollTop = 0;
+      window.scrollTo(0, 0);
+
       document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => el.classList.remove('active'));
       const activeNavBtn = document.getElementById('nav-btn-' + tabId);
       if (activeNavBtn) activeNavBtn.classList.add('active');
@@ -1656,7 +1624,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     async function rowDeleteManualIpo(id, event) {
       if (event) event.stopPropagation();
-      if (!confirm('Permanently delete this IPO?')) return;
+      if (!confirm('Are you sure you want to permanently delete this IPO? This action cannot be undone.')) return;
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id, { method: 'DELETE' });
         if (res.ok) {
@@ -1674,13 +1642,6 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     function renderTableRowActionIcons(id) {
       return \`
         <div class="table-action-group" onclick="event.stopPropagation()">
-          <button type="button" class="table-action-btn" title="Save / Open Details" onclick="rowSaveManualIpo('\${id}', event)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00A870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-              <polyline points="17 21 17 13 7 13 7 21"></polyline>
-              <polyline points="7 3 7 8 15 8"></polyline>
-            </svg>
-          </button>
           <button type="button" class="table-action-btn" title="Publish" onclick="rowPublishManualIpo('\${id}', event)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9F4AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
@@ -1954,6 +1915,22 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (elPctIssue) elPctIssue.textContent = totalPctIssue.toFixed(2) + '%';
     }
 
+    function toggleAnchorAccordion() {
+      const body = document.getElementById('anchor-accordion-body');
+      const icon = document.getElementById('anchor-accordion-icon');
+      if (!body) return;
+      const isHidden = body.style.display === 'none';
+      body.style.display = isHidden ? 'block' : 'none';
+      if (icon) icon.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+    }
+
+    function openAnchorAccordion() {
+      const body = document.getElementById('anchor-accordion-body');
+      const icon = document.getElementById('anchor-accordion-icon');
+      if (body) body.style.display = 'block';
+      if (icon) icon.style.transform = 'rotate(0deg)';
+    }
+
     function reindexAnchorRows() {
       const tbody = document.getElementById('anchor-investors-tbody');
       if (!tbody) return;
@@ -1969,6 +1946,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           if (idxCell) idxCell.textContent = idx + 1;
         });
       }
+      const badge = document.getElementById('anchor-count-badge');
+      if (badge) badge.textContent = rows.length + (rows.length === 1 ? ' investor' : ' investors');
       calculateAnchorTotals();
     }
 
@@ -2083,6 +2062,27 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    function getDocTypeTitle(type) {
+      const titles = {
+        'DRHP': 'DRHP Document',
+        'RHP': 'RHP Document',
+        'PROSPECTUS': 'Prospectus Document',
+        'ANCHOR_LIST': 'Anchor List Document',
+        'BASIS_OF_ALLOTMENT': 'Basis of Allotment Document',
+        'OTHER': 'Other Document',
+      };
+      return titles[type] || (type ? type + ' Document' : 'Document');
+    }
+
+    function onDocTypeChange(selectEl) {
+      const row = selectEl.closest('.doc-row');
+      if (!row) return;
+      const titleInput = row.querySelector('.doc-title-input');
+      if (titleInput) {
+        titleInput.value = getDocTypeTitle(selectEl.value);
+      }
+    }
+
     function addDocumentRow(docType = 'DRHP', title = '', sourceUrl = '', id = '') {
       const tbody = document.getElementById('documents-tbody');
       if (!tbody) return;
@@ -2109,12 +2109,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         return '<option value="' + t.value + '" ' + (selType === t.value ? 'selected' : '') + '>' + t.label + '</option>';
       }).join('');
 
+      const resolvedTitle = title ? title : getDocTypeTitle(selType);
+
       row.innerHTML =
         '<td class="doc-row-index" style="text-align:center; font-weight:600; font-size:12px; color:var(--text-muted);">1</td>' +
-        '<td><select class="doc-type-select" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%;">' +
+        '<td><select class="doc-type-select" onchange="onDocTypeChange(this)" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%;">' +
         typeOptionsHtml +
         '</select></td>' +
-        '<td><input type="text" class="doc-title-input" value="' + escAttr(title) + '" placeholder="e.g. Red Herring Prospectus" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%;" /></td>' +
+        '<td><input type="text" class="doc-title-input" value="' + escAttr(resolvedTitle) + '" placeholder="e.g. RHP Document" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%;" /></td>' +
         '<td><input type="url" class="doc-url-input" value="' + escAttr(sourceUrl) + '" placeholder="https://..." style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%;" /></td>' +
         '<td style="text-align:center;"><button type="button" onclick="removeDocumentRow(this)" style="background:none; border:none; color:var(--danger); cursor:pointer; padding:4px;" title="Remove Document">✕</button></td>';
 
@@ -2222,23 +2224,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (tbody) {
         tbody.querySelectorAll('.doc-row').forEach(r => r.remove());
       }
-      const docs = ipoData && Array.isArray(ipoData.documents) ? ipoData.documents : [];
       let loadedAny = false;
-      if (docs.length > 0) {
-        docs.forEach(d => {
-          const url = d.sourceUrl || d.fileUrl || d.documentUrl || d.url;
-          const isAnchorWithData = d.documentType === 'ANCHOR_LIST' && (
-            (d.extractionData && Array.isArray(d.extractionData.anchorInvestors) && d.extractionData.anchorInvestors.length > 0) ||
-            (ipoData && Array.isArray(ipoData.anchorInvestors) && ipoData.anchorInvestors.length > 0)
-          );
-          if ((url && String(url).trim()) || isAnchorWithData) {
-            const title = d.title || d.fileName || (
-              d.documentType === 'DRHP' ? 'DRHP Prospectus' :
-              d.documentType === 'RHP' ? 'RHP Prospectus' :
-              d.documentType === 'PROSPECTUS' ? 'Final Prospectus' :
-              d.documentType === 'ANCHOR_LIST' ? 'Anchor Allocation' :
-              d.documentType === 'BASIS_OF_ALLOTMENT' ? 'Basis of Allotment' : ''
-            );
+      if (ipoData && Array.isArray(ipoData.documents) && ipoData.documents.length > 0) {
+        ipoData.documents.forEach(d => {
+          const url = d.sourceUrl || d.documentUrl || d.url;
+          if (url || d.title || d.documentType) {
+            const title = d.title || getDocTypeTitle(d.documentType);
             addDocumentRow(d.documentType || 'OTHER', title, url ? String(url).trim() : '', d.id || '');
             loadedAny = true;
           }
@@ -2246,19 +2237,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
       if (!loadedAny && ipoData) {
         if (ipoData.drhpUrl && String(ipoData.drhpUrl).trim()) {
-          addDocumentRow('DRHP', 'DRHP Prospectus', String(ipoData.drhpUrl).trim());
+          addDocumentRow('DRHP', 'DRHP Document', String(ipoData.drhpUrl).trim());
           loadedAny = true;
         }
         if (ipoData.rhpUrl && String(ipoData.rhpUrl).trim()) {
-          addDocumentRow('RHP', 'RHP Prospectus', String(ipoData.rhpUrl).trim());
+          addDocumentRow('RHP', 'RHP Document', String(ipoData.rhpUrl).trim());
           loadedAny = true;
         }
         if (ipoData.prospectusUrl && String(ipoData.prospectusUrl).trim()) {
-          addDocumentRow('PROSPECTUS', 'Final Prospectus', String(ipoData.prospectusUrl).trim());
+          addDocumentRow('PROSPECTUS', 'Prospectus Document', String(ipoData.prospectusUrl).trim());
           loadedAny = true;
         }
         if (ipoData.anchorListUrl && String(ipoData.anchorListUrl).trim()) {
-          addDocumentRow('ANCHOR_LIST', 'Anchor Allocation', String(ipoData.anchorListUrl).trim());
+          addDocumentRow('ANCHOR_LIST', 'Anchor List Document', String(ipoData.anchorListUrl).trim());
           loadedAny = true;
         }
       }
@@ -2682,7 +2673,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     async function publishCurrentIpo() {
       const id = document.getElementById('form-ipo-id').value;
-      if (!id) return;
+      if (!id) {
+        alert('Please save the IPO first before publishing.');
+        return;
+      }
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/publish', { method: 'POST' });
         if (res.ok) { alert('Published to mobile live feed!'); switchTab('manual'); }
@@ -2691,7 +2685,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     async function unpublishCurrentIpo() {
       const id = document.getElementById('form-ipo-id').value;
-      if (!id) return;
+      if (!id) {
+        alert('Please save the IPO first before unpublishing.');
+        return;
+      }
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/unpublish', { method: 'POST' });
         if (res.ok) { alert('Unpublished!'); switchTab('manual'); }
@@ -2700,7 +2697,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     async function archiveCurrentIpo() {
       const id = document.getElementById('form-ipo-id').value;
-      if (!id) return;
+      if (!id) {
+        alert('Please save the IPO first before archiving.');
+        return;
+      }
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id + '/archive', { method: 'POST' });
         if (res.ok) { alert('Archived IPO!'); switchTab('manual'); }
@@ -2709,11 +2709,23 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     async function deleteCurrentIpo() {
       const id = document.getElementById('form-ipo-id').value;
-      if (!id || !confirm('Permanently delete this IPO?')) return;
+      if (!id) {
+        alert('No IPO selected to delete.');
+        return;
+      }
+      if (!confirm('Are you sure you want to permanently delete this IPO? This action cannot be undone.')) return;
       try {
         const res = await fetch(API_BASE + '/manual-ipos/' + id, { method: 'DELETE' });
-        if (res.ok) { alert('Deleted!'); switchTab('manual'); }
-      } catch (err) { alert('Delete error: ' + err.message); }
+        if (res.ok) {
+          alert('IPO deleted successfully!');
+          switchTab('manual');
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert('Delete failed: ' + (err.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Delete error: ' + err.message);
+      }
     }
 
     function formatApiError(error) {

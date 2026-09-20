@@ -24,6 +24,16 @@ export class ConsoleService {
    * Aggregates top-level read-only backend observability metrics for the Console Dashboard.
    */
   async getDashboardSummary(): Promise<ConsoleDashboardSummaryDto> {
+    const manualIpoWhere = {
+      sourceIdentities: {
+        some: {
+          source: {
+            code: 'ADMIN',
+          },
+        },
+      },
+    };
+
     const [
       totalIpos,
       ipoStatusGroup,
@@ -36,21 +46,25 @@ export class ConsoleService {
       allotmentJobStats,
       allotmentObsStats,
     ] = await Promise.all([
-      this.prisma.ipo.count(),
+      this.prisma.ipo.count({ where: manualIpoWhere }),
       this.prisma.ipo.groupBy({
         by: ['status'],
+        where: manualIpoWhere,
         _count: { id: true },
       }),
       this.prisma.ipo.groupBy({
         by: ['publicationStatus'],
+        where: manualIpoWhere,
         _count: { id: true },
       }),
       this.prisma.ipo.groupBy({
         by: ['marketSegment'],
+        where: manualIpoWhere,
         _count: { id: true },
       }),
       this.prisma.ipo.groupBy({
         by: ['exchange'],
+        where: manualIpoWhere,
         _count: { id: true },
       }),
       this.prisma.source.count(),
