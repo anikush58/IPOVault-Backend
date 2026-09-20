@@ -632,9 +632,162 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     /* Strict Tab Section Display */
     .section-view { display: none !important; }
     .section-view.active { display: flex !important; flex-direction: column; gap: 20px; }
+
+    /* Authentication Modal Overlay */
+    .auth-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.25s ease, visibility 0.25s ease;
+    }
+    .auth-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 400px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 32px 28px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .auth-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 12px;
+    }
+    .auth-logo {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+    }
+    .auth-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin: 0;
+    }
+    .auth-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 4px 0 0 0;
+    }
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .auth-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .auth-input-group label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .auth-input-group input {
+      background: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s ease;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .auth-input-group input:focus {
+      border-color: var(--primary);
+    }
+    .auth-btn-submit {
+      background-color: var(--primary);
+      color: #FFFFFF;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 11px 16px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background-color 0.15s ease;
+      margin-top: 4px;
+    }
+    .auth-btn-submit:hover {
+      background-color: var(--primary-hover);
+    }
+    .auth-btn-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .auth-error-alert {
+      padding: 10px 14px;
+      background-color: #FEF2F2;
+      border: 1px solid #EF4444;
+      color: #991B1B;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      display: none;
+    }
   </style>
 </head>
 <body>
+
+  <!-- Authentication Modal Overlay -->
+  <div id="login-overlay" class="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-header">
+        <img src="${FAVICON_DATA_URI}" alt="IPOVault Logo" class="auth-logo" />
+        <div>
+          <h2 class="auth-title">IPOVault Console</h2>
+          <p class="auth-subtitle">Sign in to access admin console and tools</p>
+        </div>
+      </div>
+
+      <div id="login-error-alert" class="auth-error-alert"></div>
+
+      <form class="auth-form" onsubmit="handleLogin(event)">
+        <div class="auth-input-group">
+          <label for="login-username">Username</label>
+          <input type="text" id="login-username" name="username" placeholder="Enter admin username" autocomplete="username" required autofocus />
+        </div>
+        <div class="auth-input-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" name="password" placeholder="Enter password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" id="login-submit-btn" class="auth-btn-submit">
+          <span>Sign In</span>
+        </button>
+      </form>
+    </div>
+  </div>
 
   <!-- SaaS Root Container -->
   <div class="app-root">
@@ -690,9 +843,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         <div class="user-profile">
           <div class="user-avatar-box">ADM</div>
           <div class="user-info">
-            <span class="user-name">IPOVault Admin</span>
+            <span class="user-name" id="sidebar-user-name">IPOVault Admin</span>
             <span class="user-email">admin@getipovault.in</span>
           </div>
+          <button class="icon-btn" onclick="handleLogout()" title="Log out from console" style="background:transparent; border:none; color:#94A3B8; cursor:pointer; padding:6px; border-radius:6px; display:flex; align-items:center; justify-content:center;">
+            <i data-feather="log-out"></i>
+          </button>
         </div>
       </div>
     </aside>
@@ -1472,6 +1628,140 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     const API_BASE = window.location.pathname.replace(new RegExp('/+$'), '') + '/api';
     let currentTab = 'dashboard';
     let currentIpoData = null;
+    let isAuthenticated = false;
+
+    // Intercept 401 Unauthorized globally for console API requests
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const res = await originalFetch.apply(this, args);
+      if (
+        res.status === 401 &&
+        typeof args[0] === 'string' &&
+        args[0].includes('/api/') &&
+        !args[0].endsWith('/login') &&
+        !args[0].endsWith('/session')
+      ) {
+        showLoginModal('Session expired or unauthorized. Please sign in again.');
+      }
+      return res;
+    };
+
+    function showLoginModal(errorMsg = '') {
+      isAuthenticated = false;
+      const overlay = document.getElementById('login-overlay');
+      if (overlay) overlay.classList.remove('hidden');
+      const errEl = document.getElementById('login-error-alert');
+      if (errEl) {
+        if (errorMsg) {
+          errEl.textContent = errorMsg;
+          errEl.style.display = 'block';
+        } else {
+          errEl.style.display = 'none';
+        }
+      }
+      const passInput = document.getElementById('login-password');
+      if (passInput) passInput.value = '';
+    }
+
+    function hideLoginModal() {
+      isAuthenticated = true;
+      const overlay = document.getElementById('login-overlay');
+      if (overlay) overlay.classList.add('hidden');
+      const errEl = document.getElementById('login-error-alert');
+      if (errEl) errEl.style.display = 'none';
+    }
+
+    async function handleLogin(e) {
+      if (e) e.preventDefault();
+      const usernameInput = document.getElementById('login-username');
+      const passwordInput = document.getElementById('login-password');
+      const submitBtn = document.getElementById('login-submit-btn');
+      const errEl = document.getElementById('login-error-alert');
+
+      const username = usernameInput ? usernameInput.value.trim() : '';
+      const password = passwordInput ? passwordInput.value : '';
+
+      if (!username || !password) {
+        if (errEl) {
+          errEl.textContent = 'Please enter both username and password.';
+          errEl.style.display = 'block';
+        }
+        return;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Signing in...';
+      }
+      if (errEl) errEl.style.display = 'none';
+
+      try {
+        const res = await originalFetch(API_BASE + '/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const userDisplay = document.getElementById('sidebar-user-name');
+          if (userDisplay && data.username) {
+            userDisplay.textContent = data.username;
+          }
+          hideLoginModal();
+          initConsoleApp();
+        } else {
+          if (errEl) {
+            errEl.textContent = 'Invalid username or password.';
+            errEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (errEl) {
+          errEl.textContent = 'Network or server error. Please try again.';
+          errEl.style.display = 'block';
+        }
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Sign In';
+        }
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await originalFetch(API_BASE + '/logout', { method: 'POST' });
+      } catch (err) {
+        console.warn('Logout error:', err);
+      }
+      showLoginModal('You have been signed out.');
+    }
+
+    async function checkSessionAndInit() {
+      if (localStorage.getItem('sidebar-collapsed') === 'true') {
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar) sidebar.classList.add('collapsed');
+      }
+      if (window.feather) feather.replace();
+
+      try {
+        const res = await originalFetch(API_BASE + '/session');
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const userDisplay = document.getElementById('sidebar-user-name');
+          if (userDisplay && data.username) {
+            userDisplay.textContent = data.username;
+          }
+          hideLoginModal();
+          initConsoleApp();
+        } else {
+          showLoginModal();
+        }
+      } catch (err) {
+        showLoginModal();
+      }
+    }
 
     function initConsoleApp() {
       if (localStorage.getItem('sidebar-collapsed') === 'true') {
@@ -1483,9 +1773,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
 
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initConsoleApp);
+      document.addEventListener('DOMContentLoaded', checkSessionAndInit);
     } else {
-      initConsoleApp();
+      checkSessionAndInit();
     }
 
     function toggleSidebar() {

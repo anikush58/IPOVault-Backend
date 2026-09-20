@@ -12,15 +12,27 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
+import { ConfigService } from '@nestjs/config';
+import { Env } from '../../config/env';
 import { ConsoleService } from './console.service';
 import { ConsoleIpoListQueryDto } from './console.types';
 import { renderConsoleHtml } from './console.ui';
 import { FAVICON_PNG_BASE64 } from './console.favicon';
-import { ConsoleEnabledGuard } from './console.guard';
+import {
+  CONSOLE_SESSION_COOKIE,
+  ConsoleEnabledGuard,
+  createSessionToken,
+  getConsoleSessionSecret,
+  parseCookies,
+  timingSafeCompare,
+  verifySessionToken,
+} from './console.guard';
 import {
   DEFAULT_LIMIT,
   DEFAULT_PAGE,
@@ -43,6 +55,7 @@ export class ConsoleController {
   constructor(
     private readonly consoleService: ConsoleService,
     private readonly adminIpoService: AdminIpoService,
+    private readonly configService: ConfigService<Env, true>,
   ) {}
 
   /**
@@ -82,6 +95,95 @@ export class ConsoleController {
       return;
     }
     return buffer;
+  }
+
+  /**
+   * Authenticate console admin credentials and issue signed httpOnly session cookie.
+   */
+  @Post('api/login')
+  @Header('Content-Type', 'application/json')
+  async login(
+    @Body() body: Record<string, unknown>,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const configuredUsername =
+      this.configService.get('CONSOLE_ADMIN_USERNAME', { infer: true }) ||
+      'admin';
+    const configuredPassword = this.configService.get(
+      'CONSOLE_ADMIN_PASSWORD',
+      { infer: true },
+    );
+
+    const providedUsername =
+      typeof body.username === 'string' ? body.username.trim() : '';
+    const providedPassword =
+      typeof body.password === 'string' ? body.password : '';
+
+    if (!configuredPassword) {
+      this.logger.warn(
+        'Console login rejected: CONSOLE_ADMIN_PASSWORD is not configured in environment.',
+      );
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isUserValid = timingSafeCompare(providedUsername, configuredUsername);
+    const isPassValid = timingSafeCompare(providedPassword, configuredPassword);
+
+    if (!isUserValid || !isPassValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const secret = getConsoleSessionSecret(this.configService);
+
+    const token = createSessionToken(configuredUsername, secret);
+    const isProd =
+      this.configService.get('NODE_ENV', { infer: true }) === 'production';
+
+    res.cookie(CONSOLE_SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      path: '/api/v1/console',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return {
+      success: true,
+      username: configuredUsername,
+    };
+  }
+
+  /**
+   * Log out from console session by clearing httpOnly session cookie.
+   */
+  @Post('api/logout')
+  @Header('Content-Type', 'application/json')
+  async logout(@Res({ passthrough: true }) res: Response) {
+    const isProd =
+      this.configService.get('NODE_ENV', { infer: true }) === 'production';
+    res.clearCookie(CONSOLE_SESSION_COOKIE, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      path: '/api/v1/console',
+    });
+    return { success: true };
+  }
+
+  /**
+   * Check active console session state.
+   */
+  @Get('api/session')
+  async getSession(@Req() req: Request) {
+    const cookies = parseCookies(req.headers?.cookie);
+    const token = cookies[CONSOLE_SESSION_COOKIE];
+    const secret = getConsoleSessionSecret(this.configService);
+
+    const verification = verifySessionToken(token, secret);
+    if (!verification.valid) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+    return { authenticated: true, username: verification.username };
   }
 
   /**

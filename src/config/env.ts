@@ -56,6 +56,18 @@ export const envSchema = z.object({
     .min(0)
     .default(0),
   ADMIN_API_KEY: z.string().optional(),
+  CONSOLE_ADMIN_USERNAME: z.string().optional().default('admin'),
+  CONSOLE_ADMIN_PASSWORD: z.string().optional(),
+  CONSOLE_SESSION_SECRET: z.string().optional(),
+})
+.superRefine((val, ctx) => {
+  if (val.NODE_ENV === 'production' && !val.CONSOLE_SESSION_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['CONSOLE_SESSION_SECRET'],
+      message: 'CONSOLE_SESSION_SECRET is required in production environment',
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;
