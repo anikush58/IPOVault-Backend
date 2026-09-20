@@ -1,3 +1,5 @@
+import { FAVICON_DATA_URI } from './console.favicon';
+
 export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -5,6 +7,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IPOVault — Backend Admin Console</title>
+  <link rel="icon" type="image/png" href="${FAVICON_DATA_URI}" />
+  <link rel="shortcut icon" type="image/png" href="${FAVICON_DATA_URI}" />
+  <link rel="apple-touch-icon" href="${FAVICON_DATA_URI}" />
   
   <!-- Google Fonts: Google Sans Flex, JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -637,9 +642,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     <aside class="sidebar">
       <div class="sidebar-brand">
         <div class="brand-logo" style="display:flex; align-items:center; gap:10px;">
-          <div class="logo-box">
-            <span>IV</span>
-          </div>
+          <img src="${FAVICON_DATA_URI}" alt="IPOVault" style="width:32px; height:32px; object-fit:contain; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.15));" />
           <span class="brand-title">IPOVault</span>
         </div>
         <div class="workspace-picker">

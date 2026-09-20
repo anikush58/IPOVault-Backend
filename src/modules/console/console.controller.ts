@@ -19,6 +19,7 @@ import { Response } from 'express';
 import { ConsoleService } from './console.service';
 import { ConsoleIpoListQueryDto } from './console.types';
 import { renderConsoleHtml } from './console.ui';
+import { FAVICON_PNG_BASE64 } from './console.favicon';
 import { ConsoleEnabledGuard } from './console.guard';
 import {
   DEFAULT_LIMIT,
@@ -63,6 +64,24 @@ export class ConsoleController {
       return html;
     }
     return html;
+  }
+
+  /**
+   * Serves the IPOVault favicon.
+   */
+  @Get(['favicon.png', 'favicon.ico', 'api/favicon.png', 'api/favicon.ico'])
+  @Header('Content-Type', 'image/png')
+  @Header('Cache-Control', 'public, max-age=86400')
+  getFavicon(@Res() res: Response) {
+    const buffer = Buffer.from(FAVICON_PNG_BASE64, 'base64');
+    if (res && typeof res.setHeader === 'function' && typeof res.end === 'function') {
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Content-Length', buffer.length.toString());
+      res.end(buffer);
+      return;
+    }
+    return buffer;
   }
 
   /**
