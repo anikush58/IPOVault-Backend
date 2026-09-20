@@ -115,9 +115,9 @@ export class ConsoleController {
     );
 
     const providedUsername =
-      typeof body.username === 'string' ? body.username.trim() : '';
+      typeof body?.username === 'string' ? (body.username as string).trim() : '';
     const providedPassword =
-      typeof body.password === 'string' ? body.password : '';
+      typeof body?.password === 'string' ? (body.password as string) : '';
 
     if (!configuredPassword) {
       this.logger.warn(
