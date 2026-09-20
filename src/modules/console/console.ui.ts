@@ -432,6 +432,225 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     .btn-danger { background-color: #EF4444; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
     .btn-warning { background-color: #F59E0B; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 
+    /* Clickable Table Row */
+    .clickable-row {
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+    .clickable-row:hover td {
+      background-color: var(--bg-hover) !important;
+    }
+
+    /* Segmented Actions Icon Group (Image 1 Style: 212x36px, radius 6px) */
+    .table-action-group {
+      display: inline-flex;
+      align-items: center;
+      width: 212px;
+      height: 36px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      vertical-align: middle;
+    }
+
+    .table-action-btn {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-right: 1px solid #E2E8F0;
+      cursor: pointer;
+      padding: 0;
+      transition: background-color 0.15s ease, transform 0.1s ease;
+    }
+
+    .table-action-btn:last-child {
+      border-right: none;
+    }
+
+    .table-action-btn:hover {
+      background-color: #F8FAFC;
+    }
+
+    .table-action-btn:active {
+      background-color: #F1F5F9;
+    }
+
+    body.dark-mode .table-action-group {
+      background: #0F172A;
+      border-color: #1E293B;
+    }
+
+    body.dark-mode .table-action-btn {
+      border-right-color: #1E293B;
+    }
+
+    body.dark-mode .table-action-btn:hover {
+      background-color: #1E293B;
+    }
+
+    /* Back Button & Edit Header Buttons (Image 1 & 2 Style) */
+    .btn-back-manual {
+      height: 36px;
+      padding: 0 16px;
+      background-color: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+      color: #0F172A;
+      font-weight: 600;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+
+    .btn-back-manual:hover {
+      background-color: #F8FAFC;
+      border-color: #CBD5E1;
+    }
+
+    body.dark-mode .btn-back-manual {
+      background-color: #0F172A;
+      border-color: #1E293B;
+      color: #F8FAFC;
+    }
+
+    body.dark-mode .btn-back-manual svg {
+      stroke: #F8FAFC;
+    }
+
+    body.dark-mode .btn-back-manual:hover {
+      background-color: #1E293B;
+    }
+
+    .btn-action-save {
+      height: 36px;
+      padding: 0 18px;
+      background-color: #4F46E5;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 2px rgba(79, 70, 229, 0.2);
+    }
+
+    .btn-action-save:hover {
+      background-color: #4338CA;
+      transform: translateY(-1px);
+    }
+
+    .btn-action-publish {
+      height: 36px;
+      padding: 0 18px;
+      background-color: #00A870;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 2px rgba(0, 168, 112, 0.2);
+    }
+
+    .btn-action-publish:hover {
+      background-color: #009362;
+      transform: translateY(-1px);
+    }
+
+    .btn-action-unpublish {
+      height: 36px;
+      padding: 0 18px;
+      background-color: #FB9816;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 2px rgba(251, 152, 22, 0.2);
+    }
+
+    .btn-action-unpublish:hover {
+      background-color: #E8880B;
+      transform: translateY(-1px);
+    }
+
+    .btn-action-archive {
+      height: 36px;
+      padding: 0 18px;
+      background-color: #FFFFFF;
+      color: #0F172A;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+
+    .btn-action-archive:hover {
+      background-color: #F8FAFC;
+      border-color: #CBD5E1;
+    }
+
+    body.dark-mode .btn-action-archive {
+      background-color: #0F172A;
+      border-color: #1E293B;
+      color: #F8FAFC;
+    }
+
+    body.dark-mode .btn-action-archive:hover {
+      background-color: #1E293B;
+    }
+
+    .btn-action-delete {
+      height: 36px;
+      padding: 0 18px;
+      background-color: #EF4444;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 2px rgba(239, 68, 68, 0.2);
+    }
+
+    .btn-action-delete:hover {
+      background-color: #DC2626;
+      transform: translateY(-1px);
+    }
+
     /* Form Header Actions Bar */
     .form-header-bar {
       display: flex;
@@ -729,13 +948,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         <!-- 3. MANUAL IPO EDIT / CREATE TAB -->
         <div id="tab-manual-edit" class="section-view">
           <div class="form-header-bar">
-            <button class="btn-secondary" onclick="switchTab('manual')">Back to Manual IPOs</button>
+            <button type="button" class="btn-back-manual" onclick="switchTab('manual')">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>Back to Manual IPOs</span>
+            </button>
             <div class="form-header-buttons">
-              <button class="btn-primary" id="btn-save-action" onclick="saveManualIpo()">Save</button>
-              <button class="btn-success" id="btn-publish-action" onclick="publishCurrentIpo()">Publish</button>
-              <button class="btn-warning" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">Unpublish</button>
-              <button class="btn-secondary" id="btn-archive-action" onclick="archiveCurrentIpo()">Archive</button>
-              <button class="btn-danger" id="btn-delete-action" onclick="deleteCurrentIpo()">Delete</button>
+              <button type="button" class="btn-action-save" id="btn-save-action" onclick="saveManualIpo()">Save</button>
+              <button type="button" class="btn-action-publish" id="btn-publish-action" onclick="publishCurrentIpo()">Publish</button>
+              <button type="button" class="btn-action-unpublish" id="btn-unpublish-action" onclick="unpublishCurrentIpo()">Unpublish</button>
+              <button type="button" class="btn-action-archive" id="btn-archive-action" onclick="archiveCurrentIpo()">Archive</button>
+              <button type="button" class="btn-action-delete" id="btn-delete-action" onclick="deleteCurrentIpo()">Delete</button>
             </div>
           </div>
 
@@ -1376,6 +1601,119 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    async function rowSaveManualIpo(id, event) {
+      if (event) event.stopPropagation();
+      editManualIpo(id);
+    }
+
+    async function rowPublishManualIpo(id, event) {
+      if (event) event.stopPropagation();
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/' + id + '/publish', { method: 'POST' });
+        if (res.ok) {
+          fetchManualIpos();
+          fetchRecentDashboardIpos();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert('Publish failed: ' + (err.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Publish error: ' + err.message);
+      }
+    }
+
+    async function rowUnpublishManualIpo(id, event) {
+      if (event) event.stopPropagation();
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/' + id + '/unpublish', { method: 'POST' });
+        if (res.ok) {
+          fetchManualIpos();
+          fetchRecentDashboardIpos();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert('Unpublish failed: ' + (err.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Unpublish error: ' + err.message);
+      }
+    }
+
+    async function rowArchiveManualIpo(id, event) {
+      if (event) event.stopPropagation();
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/' + id + '/archive', { method: 'POST' });
+        if (res.ok) {
+          fetchManualIpos();
+          fetchRecentDashboardIpos();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert('Archive failed: ' + (err.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Archive error: ' + err.message);
+      }
+    }
+
+    async function rowDeleteManualIpo(id, event) {
+      if (event) event.stopPropagation();
+      if (!confirm('Permanently delete this IPO?')) return;
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/' + id, { method: 'DELETE' });
+        if (res.ok) {
+          fetchManualIpos();
+          fetchRecentDashboardIpos();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert('Delete failed: ' + (err.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Delete error: ' + err.message);
+      }
+    }
+
+    function renderTableRowActionIcons(id) {
+      return \`
+        <div class="table-action-group" onclick="event.stopPropagation()">
+          <button type="button" class="table-action-btn" title="Save / Open Details" onclick="rowSaveManualIpo('\${id}', event)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00A870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+          </button>
+          <button type="button" class="table-action-btn" title="Publish" onclick="rowPublishManualIpo('\${id}', event)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9F4AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
+              <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path>
+              <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path>
+              <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+            </svg>
+          </button>
+          <button type="button" class="table-action-btn" title="Unpublish" onclick="rowUnpublishManualIpo('\${id}', event)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0050E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+              <line x1="1" y1="1" x2="23" y2="23"></line>
+            </svg>
+          </button>
+          <button type="button" class="table-action-btn" title="Archive" onclick="rowArchiveManualIpo('\${id}', event)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FB9816" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="21 8 21 21 3 21 3 8"></polyline>
+              <rect x="1" y="3" width="22" height="5" rx="1"></rect>
+              <line x1="10" y1="12" x2="14" y2="12"></line>
+            </svg>
+          </button>
+          <button type="button" class="table-action-btn" title="Delete" onclick="rowDeleteManualIpo('\${id}', event)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+          </button>
+        </div>
+      \`;
+    }
+
     async function fetchRecentDashboardIpos() {
       try {
         const res = await fetch(API_BASE + '/manual-ipos?limit=10');
@@ -1390,15 +1728,15 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
 
         tbody.innerHTML = items.map(item => \`
-          <tr>
+          <tr class="clickable-row" onclick="editManualIpo('\${item.id}')" title="Click to view/edit details">
             <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
             <td>\${item.marketSegment || 'MAINBOARD'}</td>
             <td><span class="status-pill \${(item.status || 'DRAFT').toLowerCase()}">\${item.status || 'DRAFT'}</span></td>
             <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
             <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
             <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
-            <td>
-              <button class="btn-secondary" onclick="editManualIpo('\${item.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
+            <td onclick="event.stopPropagation()" style="text-align:center;">
+              \${renderTableRowActionIcons(item.id)}
             </td>
           </tr>
         \`).join('');
@@ -1474,15 +1812,15 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           const statusPillClass = isAllotmentOut ? 'allotment-completed' : rawStatus;
 
           return \`
-            <tr>
+            <tr class="clickable-row" onclick="editManualIpo('\${item.id}')" title="Click to view/edit details">
               <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
               <td>\${item.marketSegment || 'MAINBOARD'}</td>
               <td><span class="status-pill \${statusPillClass}">\${displayStatus}</span></td>
               <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
               <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
               <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
-              <td>
-                <button class="btn-secondary" onclick="editManualIpo('\${item.id}')" style="padding:4px 8px; font-size:11px;">Edit</button>
+              <td onclick="event.stopPropagation()" style="text-align:center;">
+                \${renderTableRowActionIcons(item.id)}
               </td>
             </tr>
           \`;
