@@ -380,6 +380,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       white-space: nowrap;
     }
     .status-pill.open { background-color: var(--status-open-bg); color: var(--status-open-fg); }
+    .status-pill.closing_today, .status-pill.closing-today { background-color: #FEF3C7; color: #D97706; }
     .status-pill.upcoming { background-color: var(--status-upcoming-bg); color: var(--status-upcoming-fg); }
     .status-pill.closed, .status-pill.allotment-completed, .status-pill.allotment_completed { background-color: var(--status-closed-bg); color: var(--status-closed-fg); }
     .status-pill.published, .status-pill.listed { background-color: var(--status-published-bg); color: var(--status-published-fg); }
@@ -1194,6 +1195,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               </select>
               <select id="man-filter-status" onchange="onStatusSelectChange(this.value)" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
                 <option value="OPEN" selected>Open (Draft & Open)</option>
+                <option value="CLOSING_TODAY">Closing Today</option>
                 <option value="UPCOMING">Upcoming</option>
                 <option value="CLOSED">Closed</option>
                 <option value="ALLOTMENT_COMPLETED">Allotment Out</option>
@@ -1207,6 +1209,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <div class="status-filter-pills" style="margin-top:14px; margin-bottom:4px;">
             <button type="button" class="filter-pill active" id="pill-filter-OPEN" onclick="setStatusFilter('OPEN')">
               Open (Draft & Open)
+            </button>
+            <button type="button" class="filter-pill" id="pill-filter-CLOSING_TODAY" onclick="setStatusFilter('CLOSING_TODAY')">
+              Closing Today
             </button>
             <button type="button" class="filter-pill" id="pill-filter-UPCOMING" onclick="setStatusFilter('UPCOMING')">
               Upcoming
@@ -1343,8 +1348,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                     <option value="DRAFT">DRAFT</option>
                     <option value="UPCOMING">UPCOMING</option>
                     <option value="OPEN">OPEN</option>
+                    <option value="CLOSING_TODAY">CLOSING TODAY</option>
                     <option value="CLOSED">CLOSED</option>
-                    <option value="ALLOTMENT_COMPLETED">Allotment Out (ALLOTMENT_COMPLETED)</option>
+                    <option value="ALLOTMENT_COMPLETED">Allotment Out</option>
                     <option value="LISTED">LISTED</option>
                     <option value="CANCELLED">CANCELLED</option>
                   </select>
@@ -2243,19 +2249,32 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           return;
         }
 
-        tbody.innerHTML = items.map(item => \`
-          <tr class="clickable-row" onclick="editManualIpo('\${item.id}')" title="Click to view/edit details">
-            <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
-            <td>\${item.marketSegment || 'MAINBOARD'}</td>
-            <td><span class="status-pill \${(item.status || 'DRAFT').toLowerCase()}">\${item.status || 'DRAFT'}</span></td>
-            <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
-            <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
-            <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
-            <td onclick="event.stopPropagation()" style="text-align:center;">
-              \${renderTableRowActionIcons(item.id)}
-            </td>
-          </tr>
-        \`).join('');
+        tbody.innerHTML = items.map(item => {
+          const isAllotmentOut = item.status === 'ALLOTMENT_COMPLETED' || item.status === 'ALLOTMENT_OUT';
+          const isClosingToday = item.status === 'CLOSING_TODAY';
+          let displayStatus = item.status || 'DRAFT';
+          if (isAllotmentOut) displayStatus = 'Allotment Out';
+          else if (isClosingToday) displayStatus = 'Closing Today';
+
+          const rawStatus = (item.status || 'DRAFT').toLowerCase();
+          let statusPillClass = rawStatus;
+          if (isAllotmentOut) statusPillClass = 'allotment-completed';
+          else if (isClosingToday) statusPillClass = 'closing-today';
+
+          return \`
+            <tr class="clickable-row" onclick="editManualIpo('\${item.id}')" title="Click to view/edit details">
+              <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
+              <td>\${item.marketSegment || 'MAINBOARD'}</td>
+              <td><span class="status-pill \${statusPillClass}">\${displayStatus}</span></td>
+              <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
+              <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
+              <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
+              <td onclick="event.stopPropagation()" style="text-align:center;">
+                \${renderTableRowActionIcons(item.id)}
+              </td>
+            </tr>
+          \`;
+        }).join('');
       } catch (err) {
         console.error('Dashboard recent fetch error:', err);
         const tbody = document.getElementById('dashboard-recent-table-body');
@@ -2269,7 +2288,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     function setStatusFilter(filterKey) {
       currentStatusFilter = filterKey;
-      ['OPEN', 'UPCOMING', 'CLOSED', 'ALLOTMENT_COMPLETED', 'LISTED', 'ALL'].forEach(k => {
+      ['OPEN', 'CLOSING_TODAY', 'UPCOMING', 'CLOSED', 'ALLOTMENT_COMPLETED', 'LISTED', 'ALL'].forEach(k => {
         const btn = document.getElementById('pill-filter-' + k);
         if (btn) {
           if (k === filterKey) btn.classList.add('active');
@@ -2294,6 +2313,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         let statusParam = '';
         if (filterKey === 'OPEN') {
           statusParam = 'DRAFT,OPEN';
+        } else if (filterKey === 'CLOSING_TODAY') {
+          statusParam = 'CLOSING_TODAY';
         } else if (filterKey === 'CLOSED') {
           statusParam = 'CLOSED';
         } else if (filterKey === 'ALLOTMENT_COMPLETED' || filterKey === 'ALLOTMENT_OUT') {
@@ -2323,9 +2344,15 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
         tbody.innerHTML = items.map(item => {
           const isAllotmentOut = item.status === 'ALLOTMENT_COMPLETED' || item.status === 'ALLOTMENT_OUT';
-          const displayStatus = isAllotmentOut ? 'Allotment Out' : (item.status || 'DRAFT');
+          const isClosingToday = item.status === 'CLOSING_TODAY';
+          let displayStatus = item.status || 'DRAFT';
+          if (isAllotmentOut) displayStatus = 'Allotment Out';
+          else if (isClosingToday) displayStatus = 'Closing Today';
+
           const rawStatus = (item.status || 'DRAFT').toLowerCase();
-          const statusPillClass = isAllotmentOut ? 'allotment-completed' : rawStatus;
+          let statusPillClass = rawStatus;
+          if (isAllotmentOut) statusPillClass = 'allotment-completed';
+          else if (isClosingToday) statusPillClass = 'closing-today';
 
           return \`
             <tr class="clickable-row" onclick="editManualIpo('\${item.id}')" title="Click to view/edit details">

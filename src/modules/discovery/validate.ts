@@ -22,6 +22,7 @@ const discoveredIpoSchema = z
           'DRAFT',
           'UPCOMING',
           'OPEN',
+          'CLOSING_TODAY',
           'CLOSED',
           'ALLOTMENT_PENDING',
           'ALLOTMENT_COMPLETED',

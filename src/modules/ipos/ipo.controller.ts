@@ -37,7 +37,7 @@ export class IpoController {
     return this.ipos.list({
       ...query,
       publicationStatus: 'PUBLISHED',
-      status: ['UPCOMING', 'OPEN'],
+      status: ['UPCOMING', 'OPEN', 'CLOSING_TODAY'],
     });
   }
 
@@ -51,6 +51,13 @@ export class IpoController {
   @Get('open')
   open(@Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery) {
     return this.ipos.list({ ...query, status: 'OPEN' });
+  }
+
+  @Get('closing-today')
+  closingToday(
+    @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+  ) {
+    return this.ipos.list({ ...query, status: 'CLOSING_TODAY' });
   }
 
   @Get('closed')

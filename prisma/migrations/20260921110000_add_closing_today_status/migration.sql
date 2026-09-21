@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "IpoStatus" ADD VALUE 'CLOSING_TODAY' AFTER 'OPEN';

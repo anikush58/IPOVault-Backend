@@ -239,6 +239,7 @@ export class DiscoveryQualityGateService {
     const status = ipo.status;
     const isPostOpen = [
       'OPEN',
+      'CLOSING_TODAY',
       'CLOSED',
       'ALLOTMENT_PENDING',
       'ALLOTMENT_COMPLETED',
