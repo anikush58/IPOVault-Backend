@@ -86,18 +86,46 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     html, body {
       width: 100%;
+      max-width: 100vw;
       height: 100vh;
+      height: 100dvh;
+      margin: 0;
+      padding: 0;
       overflow: hidden;
       background-color: var(--bg-app);
       color: var(--text-main);
+      -webkit-text-size-adjust: 100%;
     }
 
     /* SaaS Application Root Layout */
     .app-root {
       display: flex;
       width: 100vw;
+      max-width: 100vw;
       height: 100vh;
+      height: 100dvh;
       overflow: hidden;
+      position: relative;
+    }
+
+    /* Mobile Sidebar Backdrop Overlay */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background-color: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      z-index: 998;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+
+    body.mobile-sidebar-open .sidebar-backdrop {
+      display: block;
+      opacity: 1;
+      pointer-events: auto;
     }
 
     /* Sidebar Styling (Dark Modern SaaS Sidebar) */
@@ -109,8 +137,13 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       padding: 20px 14px;
       flex-shrink: 0;
       color: #94A3B8;
-      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
+      z-index: 999;
+    }
+
+    .mobile-sidebar-close {
+      display: none !important;
     }
 
     .sidebar.collapsed {
@@ -230,12 +263,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       align-items: center;
       justify-content: center;
     }
-    .user-info { display: flex; flex-direction: column; flex: 1; }
-    .user-name { font-size: 12px; font-weight: 600; color: #F8FAFC; }
-    .user-email { font-size: 11px; color: #64748B; }
+    .user-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+    .user-name { font-size: 12px; font-weight: 600; color: #F8FAFC; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-email { font-size: 11px; color: #64748B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* Main Workspace Area */
-    .main-workspace { flex: 1; display: flex; flex-direction: column; background-color: var(--bg-app); overflow: hidden; }
+    .main-workspace { flex: 1; min-width: 0; display: flex; flex-direction: column; background-color: var(--bg-app); overflow: hidden; }
 
     /* Top Breadcrumb & Actions Bar */
     .top-bar {
@@ -252,10 +285,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       gap: 12px;
     }
 
-    .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text-muted); flex-wrap: wrap; }
+    .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text-muted); flex-wrap: wrap; min-width: 0; }
     .breadcrumb-active { color: var(--text-main); font-weight: 600; }
     .breadcrumbs i,
-    .breadcrumbs svg { width: 13px; height: 13px; color: var(--text-subtle); }
+    .breadcrumbs svg { width: 13px; height: 13px; color: var(--text-subtle); flex-shrink: 0; }
 
     .top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
@@ -271,7 +304,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       max-width: 100%;
     }
     .search-input-box i,
-    .search-input-box svg { width: 13px; height: 13px; color: var(--text-muted); }
+    .search-input-box svg { width: 13px; height: 13px; color: var(--text-muted); flex-shrink: 0; }
     .search-input-box input {
       border: none;
       background: none;
@@ -291,9 +324,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       display: flex;
       align-items: center;
       justify-content: center;
+      min-width: 36px;
+      min-height: 36px;
+      transition: background-color 0.15s ease, color 0.15s ease;
     }
     .icon-btn i,
-    .icon-btn svg { width: 14px; height: 14px; }
+    .icon-btn svg { width: 16px; height: 16px; }
     .icon-btn:hover { background-color: var(--bg-active); color: var(--text-main); }
 
     /* Section View Tab Switching */
@@ -301,7 +337,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       display: none !important;
     }
     .section-view.active {
-      display: block !important;
+      display: flex !important;
+      flex-direction: column;
+      gap: 20px;
     }
 
     /* Content Area */
@@ -312,6 +350,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       display: flex;
       flex-direction: column;
       gap: 24px;
+      -webkit-overflow-scrolling: touch;
     }
 
     /* KPI Grid */
@@ -338,6 +377,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       border-radius: 6px;
       font-size: 12px;
       font-weight: 600;
+      white-space: nowrap;
     }
     .status-pill.open { background-color: var(--status-open-bg); color: var(--status-open-fg); }
     .status-pill.upcoming { background-color: var(--status-upcoming-bg); color: var(--status-upcoming-fg); }
@@ -348,7 +388,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       display: flex;
       gap: 8px;
       align-items: center;
-      flex-wrap: wrap;
+      overflow-x: auto;
+      white-space: nowrap;
+      padding: 4px 2px 8px 2px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .status-filter-pills::-webkit-scrollbar {
+      display: none;
     }
     .filter-pill {
       padding: 6px 14px;
@@ -360,6 +407,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       font-weight: 500;
       cursor: pointer;
       transition: all 0.15s ease;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .filter-pill:hover {
       background-color: var(--bg-active);
@@ -376,14 +425,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     /* Grid Table System */
     .grid-table-box {
       width: 100%;
+      max-width: 100%;
       border: 1px solid var(--border-color);
       border-radius: 12px;
-      overflow: hidden;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
       background: var(--bg-surface);
       box-shadow: var(--shadow-card);
     }
 
-    table { width: 100%; border-collapse: collapse; text-align: left; }
+    table { width: 100%; border-collapse: collapse; text-align: left; min-width: 620px; }
     th {
       background: var(--bg-hover);
       padding: 12px 18px;
@@ -391,6 +442,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       color: var(--text-muted);
       font-weight: 600;
       border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
     }
     td {
       padding: 14px 18px;
@@ -413,8 +465,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       cursor: pointer;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
       transition: all 0.15s ease;
+      min-height: 38px;
+      white-space: nowrap;
     }
     .btn-primary:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
 
@@ -429,13 +484,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       cursor: pointer;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
+      min-height: 38px;
+      white-space: nowrap;
     }
     .btn-secondary:hover { background-color: var(--bg-hover); }
 
-    .btn-success { background-color: #10B981; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
-    .btn-danger { background-color: #EF4444; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
-    .btn-warning { background-color: #F59E0B; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-success { background-color: #10B981; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 38px; }
+    .btn-danger { background-color: #EF4444; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 38px; }
+    .btn-warning { background-color: #F59E0B; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 38px; }
 
     /* Clickable Table Row */
     .clickable-row {
@@ -458,6 +516,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       overflow: hidden;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
       vertical-align: middle;
+      flex-shrink: 0;
     }
 
     .form-action-group {
@@ -471,6 +530,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       overflow: hidden;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
       vertical-align: middle;
+      flex-shrink: 0;
     }
 
     .table-action-btn, .form-action-btn {
@@ -513,7 +573,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       background-color: #1E293B;
     }
 
-    /* Back Button & Edit Header Buttons (Image 1 & 2 Style) */
+    /* Back Button & Edit Header Buttons */
     .btn-back-manual {
       height: 36px;
       padding: 0 16px;
@@ -529,6 +589,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       cursor: pointer;
       transition: all 0.15s ease;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      white-space: nowrap;
     }
 
     .btn-back-manual:hover {
@@ -560,7 +621,6 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       margin-bottom: 4px;
     }
 
-
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
     .form-group { display: flex; flex-direction: column; gap: 6px; width: 100%; }
     .form-group label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
@@ -574,6 +634,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       outline: none;
       width: 100%;
       box-sizing: border-box;
+      min-height: 38px;
     }
     .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); }
 
@@ -583,55 +644,238 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     .mono { font-family: 'JetBrains Mono', monospace; }
 
-    .grid-table-box {
-      width: 100%;
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      overflow-x: auto;
-      background: var(--bg-surface);
-      box-shadow: var(--shadow-card);
-    }
-    table { width: 100%; border-collapse: collapse; text-align: left; min-width: 600px; }
-
-    /* Split-View & Mobile Responsive Breakpoints */
+    /* Responsive Breakpoints */
     @media (max-width: 1100px) {
-      .workspace-content { padding: 18px 16px; gap: 16px; }
+      .workspace-content { padding: 20px 16px; gap: 18px; }
       .top-bar { padding: 10px 16px; }
-      .search-input-box { width: 160px; }
+      .search-input-box { width: 180px; }
       .form-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
     }
 
-    @media (max-width: 800px) {
+    @media (max-width: 768px) {
+      /* Off-canvas mobile navigation drawer */
       .sidebar {
-        width: 72px;
-        padding: 20px 10px;
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 270px;
+        height: 100vh;
+        height: 100dvh;
+        z-index: 1000;
+        transform: translateX(-100%);
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: none;
       }
-      .sidebar .brand-title,
-      .sidebar .workspace-picker,
-      .sidebar .nav-group-title,
-      .sidebar .nav-item span,
-      .sidebar .user-info {
-        display: none !important;
-      }
-      .sidebar .brand-logo { justify-content: center; }
-      .sidebar .nav-item { justify-content: center; padding: 10px 0; }
-      .sidebar .user-profile { justify-content: center; padding: 6px 0; }
 
-      .top-bar { padding: 8px 12px; gap: 8px; }
-      .search-input-box { width: 100%; }
-      .form-grid { grid-template-columns: 1fr; gap: 12px; }
-      .form-header-bar { flex-direction: column; align-items: stretch; gap: 10px; }
-      .form-header-buttons { width: 100%; justify-content: flex-start; }
-      .stat-card { padding: 16px; }
-      .btn-primary, .btn-secondary, .btn-success, .btn-danger, .btn-warning {
+      body.mobile-sidebar-open .sidebar {
+        transform: translateX(0);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.45);
+      }
+
+      .mobile-sidebar-close {
+        display: flex !important;
+      }
+
+      .sidebar.collapsed {
+        width: 270px !important;
+        padding: 20px 14px !important;
+      }
+
+      .sidebar.collapsed .brand-title,
+      .sidebar.collapsed .workspace-picker,
+      .sidebar.collapsed .nav-group-title,
+      .sidebar.collapsed .nav-item span,
+      .sidebar.collapsed .user-info {
+        display: block !important;
+      }
+
+      .sidebar.collapsed .brand-logo {
+        justify-content: flex-start !important;
+      }
+
+      .sidebar.collapsed .nav-item {
+        width: 100% !important;
+        height: auto !important;
+        padding: 9px 12px !important;
+        margin: 0 !important;
+        justify-content: flex-start !important;
+        border-radius: 8px !important;
+      }
+
+      .sidebar.collapsed .user-profile {
+        justify-content: flex-start !important;
+        padding: 6px 8px !important;
+      }
+
+      .top-bar {
+        min-height: 52px;
         padding: 8px 12px;
+        gap: 8px;
+      }
+
+      .breadcrumbs {
+        font-size: 13px;
+        gap: 6px;
+      }
+
+      .breadcrumb-active {
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .workspace-content {
+        padding: 14px 12px;
+        gap: 14px;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+
+      .stat-card {
+        padding: 14px;
+        border-radius: 10px;
+        gap: 4px;
+      }
+
+      .stat-title {
+        font-size: 11px;
+      }
+
+      .stat-value {
+        font-size: 20px;
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+
+      .form-group input,
+      .form-group select,
+      .form-group textarea {
+        font-size: 14px;
+        padding: 9px 12px;
+        border-radius: 8px;
+        min-height: 40px;
+      }
+
+      .form-header-bar {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+      }
+
+      .form-action-group {
+        width: 200px;
+        height: 36px;
+      }
+
+      .manual-toolbar {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 10px !important;
+      }
+
+      .manual-toolbar-actions {
+        width: 100%;
+        display: flex;
+        gap: 8px;
+      }
+
+      .manual-toolbar-actions .btn-primary,
+      .manual-toolbar-actions .btn-secondary {
+        flex: 1;
+        justify-content: center;
+      }
+
+      .manual-toolbar-filters {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .manual-toolbar-filters input,
+      .manual-toolbar-filters select {
+        width: 100% !important;
+        box-sizing: border-box;
+      }
+
+      .accordion-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 10px !important;
+      }
+
+      .accordion-header > div:last-child {
+        width: 100%;
+        display: flex;
+        gap: 8px;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+
+      th {
+        padding: 10px 12px;
+        font-size: 11px;
+      }
+
+      td {
+        padding: 10px 12px;
         font-size: 12px;
       }
     }
-    
-    /* Strict Tab Section Display */
-    .section-view { display: none !important; }
-    .section-view.active { display: flex !important; flex-direction: column; gap: 20px; }
+
+    @media (max-width: 480px) {
+      .top-bar {
+        padding: 6px 10px;
+      }
+
+      .search-input-box {
+        display: none;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+
+      .form-header-bar {
+        gap: 6px;
+      }
+
+      .btn-back-manual {
+        height: 36px;
+        padding: 0 10px;
+        font-size: 12px;
+      }
+
+      .form-action-group {
+        width: 190px;
+        height: 36px;
+      }
+
+      .auth-overlay {
+        padding: 12px;
+      }
+
+      .auth-card {
+        padding: 22px 16px;
+        border-radius: 14px;
+        gap: 16px;
+      }
+
+      .auth-title {
+        font-size: 18px;
+      }
+    }
 
     /* Authentication Modal Overlay */
     .auth-overlay {
@@ -791,12 +1035,20 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
   <!-- SaaS Root Container -->
   <div class="app-root">
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
+
     <!-- Left Sidebar Navigation -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="brand-logo" style="display:flex; align-items:center; gap:10px;">
-          <img src="${FAVICON_DATA_URI}" alt="IPOVault" style="width:32px; height:32px; object-fit:contain; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.15));" />
-          <span class="brand-title">IPOVault</span>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+          <div class="brand-logo" style="display:flex; align-items:center; gap:10px; margin-bottom:0;">
+            <img src="${FAVICON_DATA_URI}" alt="IPOVault" style="width:32px; height:32px; object-fit:contain; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.15));" />
+            <span class="brand-title">IPOVault</span>
+          </div>
+          <button type="button" class="mobile-sidebar-close icon-btn" onclick="closeMobileSidebar()" title="Close navigation menu" style="background:transparent; border:none; color:#94A3B8; cursor:pointer;">
+            <i data-feather="x"></i>
+          </button>
         </div>
         <div class="workspace-picker">
           <span>Production API (v1)</span>
@@ -859,7 +1111,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       <div class="top-bar">
         <div class="breadcrumbs">
           <button class="icon-btn" onclick="toggleSidebar()" title="Toggle Menu" style="margin-right:6px;">
-            <i data-feather="sidebar"></i>
+            <i data-feather="menu"></i>
           </button>
           <span>Console</span>
           <i data-feather="chevron-right"></i>
@@ -901,7 +1153,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           </div>
 
           <div class="grid-table-box">
-            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
               <span style="font-weight:600; font-size:14px; color:var(--text-main);">Recent Manual IPOs</span>
               <button class="btn-secondary" onclick="switchTab('manual')" style="font-size:12px; padding:4px 10px;">Manage All IPOs →</button>
             </div>
@@ -926,13 +1178,13 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
         <!-- 2. MANUAL IPOs MANAGER TAB -->
         <div id="tab-manual" class="section-view">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-            <div style="display:flex; gap:10px;">
+          <div class="manual-toolbar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div class="manual-toolbar-actions" style="display:flex; gap:10px; flex-wrap:wrap;">
               <button class="btn-primary" onclick="openCreateModal()"><i data-feather="plus"></i> <span>Add Manual IPO</span></button>
               <button class="btn-secondary" onclick="triggerJsonImport()">Import JSON</button>
               <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
             </div>
-            <div style="display:flex; gap:10px;">
+            <div class="manual-toolbar-filters" style="display:flex; gap:10px; flex-wrap:wrap;">
               <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
               <select id="man-filter-pub" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
                 <option value="">All Publication States</option>
@@ -1779,11 +2031,20 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
 
     function toggleSidebar() {
-      const sidebar = document.querySelector('.sidebar');
-      if (!sidebar) return;
-      sidebar.classList.toggle('collapsed');
-      const isCollapsed = sidebar.classList.contains('collapsed');
-      localStorage.setItem('sidebar-collapsed', isCollapsed ? 'true' : 'false');
+      if (window.innerWidth <= 768) {
+        document.body.classList.toggle('mobile-sidebar-open');
+      } else {
+        const sidebar = document.querySelector('.sidebar');
+        if (!sidebar) return;
+        sidebar.classList.toggle('collapsed');
+        const isCollapsed = sidebar.classList.contains('collapsed');
+        localStorage.setItem('sidebar-collapsed', isCollapsed ? 'true' : 'false');
+      }
+      if (window.feather) feather.replace();
+    }
+
+    function closeMobileSidebar() {
+      document.body.classList.remove('mobile-sidebar-open');
     }
 
     function toggleTheme() {
@@ -1797,6 +2058,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
 
     function switchTab(tabId) {
+      closeMobileSidebar();
       currentTab = tabId;
       document.querySelectorAll('.section-view').forEach(el => el.classList.remove('active'));
       const target = document.getElementById('tab-' + tabId);
