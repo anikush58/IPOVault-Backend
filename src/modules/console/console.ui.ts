@@ -1268,8 +1268,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <option value="ARCHIVED">Archived</option>
               </select>
               <select id="man-filter-status" onchange="onStatusSelectChange(this.value)" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
-                <option value="OPEN" selected>Open (Draft & Open)</option>
-                <option value="CLOSING_TODAY">Closing Today</option>
+                <option value="OPEN" selected>Open</option>
                 <option value="UPCOMING">Upcoming</option>
                 <option value="CLOSED">Closed</option>
                 <option value="ALLOTMENT_COMPLETED">Allotment Out</option>
@@ -1282,10 +1281,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <!-- Status Filter Pills -->
           <div class="status-filter-pills" style="margin-top:14px; margin-bottom:4px;">
             <button type="button" class="filter-pill active" id="pill-filter-OPEN" onclick="setStatusFilter('OPEN')">
-              Open (Draft & Open)
-            </button>
-            <button type="button" class="filter-pill" id="pill-filter-CLOSING_TODAY" onclick="setStatusFilter('CLOSING_TODAY')">
-              Closing Today
+              Open
             </button>
             <button type="button" class="filter-pill" id="pill-filter-UPCOMING" onclick="setStatusFilter('UPCOMING')">
               Upcoming
@@ -2474,7 +2470,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     function setStatusFilter(filterKey) {
       currentStatusFilter = filterKey;
-      ['OPEN', 'CLOSING_TODAY', 'UPCOMING', 'CLOSED', 'ALLOTMENT_COMPLETED', 'LISTED', 'ALL'].forEach(k => {
+      ['OPEN', 'UPCOMING', 'CLOSED', 'ALLOTMENT_COMPLETED', 'LISTED', 'ALL'].forEach(k => {
         const btn = document.getElementById('pill-filter-' + k);
         if (btn) {
           if (k === filterKey) btn.classList.add('active');
@@ -2498,9 +2494,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
         let statusParam = '';
         if (filterKey === 'OPEN') {
-          statusParam = 'DRAFT,OPEN';
-        } else if (filterKey === 'CLOSING_TODAY') {
-          statusParam = 'CLOSING_TODAY';
+          statusParam = 'DRAFT,OPEN,CLOSING_TODAY';
         } else if (filterKey === 'CLOSED') {
           statusParam = 'CLOSED';
         } else if (filterKey === 'ALLOTMENT_COMPLETED' || filterKey === 'ALLOTMENT_OUT') {

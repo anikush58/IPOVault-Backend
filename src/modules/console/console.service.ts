@@ -145,7 +145,7 @@ export class ConsoleService {
       ipoCounts: {
         total: totalIpos,
         upcoming: statusMap.UPCOMING || 0,
-        open: statusMap.OPEN || 0,
+        open: (statusMap.OPEN || 0) + (statusMap.CLOSING_TODAY || 0),
         closed: statusMap.CLOSED || 0,
         listingSoon: statusMap.LISTING_PENDING || 0,
         withdrawn: statusMap.WITHDRAWN || 0,
