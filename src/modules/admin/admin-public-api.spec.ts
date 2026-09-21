@@ -53,7 +53,7 @@ describe('Public IPO API Hardening & Publication Filtering', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           publicationStatus: 'PUBLISHED',
-          status: { in: ['UPCOMING', 'OPEN'] },
+          status: { in: ['UPCOMING', 'OPEN', 'CLOSING_TODAY'] },
         }),
       }),
     );

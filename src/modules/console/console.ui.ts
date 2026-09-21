@@ -385,6 +385,80 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     .status-pill.closed, .status-pill.allotment-completed, .status-pill.allotment_completed { background-color: var(--status-closed-bg); color: var(--status-closed-fg); }
     .status-pill.published, .status-pill.listed { background-color: var(--status-published-bg); color: var(--status-published-fg); }
 
+    /* In-Row Interactive Status Select */
+    .status-pill-select {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 22px 4px 9px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      background-repeat: no-repeat;
+      background-position: right 6px center;
+      background-size: 11px;
+      transition: all 0.18s ease;
+      outline: none;
+    }
+    .status-pill-select:hover {
+      filter: brightness(0.96);
+      border-color: rgba(0, 0, 0, 0.22);
+    }
+    body.dark-mode .status-pill-select {
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+    body.dark-mode .status-pill-select:hover {
+      filter: brightness(1.12);
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+    .status-pill-select:focus {
+      box-shadow: 0 0 0 2px var(--primary);
+    }
+    .status-pill-select.open {
+      background-color: var(--status-open-bg);
+      color: var(--status-open-fg);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2315803D' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    }
+    .status-pill-select.closing_today, .status-pill-select.closing-today {
+      background-color: #FEF3C7;
+      color: #D97706;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23D97706' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    }
+    .status-pill-select.upcoming {
+      background-color: var(--status-upcoming-bg);
+      color: var(--status-upcoming-fg);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23D97706' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    }
+    .status-pill-select.closed, .status-pill-select.allotment-completed, .status-pill-select.allotment_completed {
+      background-color: var(--status-closed-bg);
+      color: var(--status-closed-fg);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    }
+    .status-pill-select.published, .status-pill-select.listed {
+      background-color: var(--status-published-bg);
+      color: var(--status-published-fg);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234F46E5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    }
+    .status-pill-select.draft {
+      background-color: var(--bg-hover);
+      color: var(--text-muted);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    }
+    .status-pill-select option {
+      background-color: var(--bg-surface);
+      color: var(--text-main);
+      font-weight: 500;
+    }
+    .status-pill-select.saving {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
     .status-filter-pills {
       display: flex;
       gap: 8px;
@@ -2236,6 +2310,129 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       \`;
     }
 
+    function showToast(message, type = 'success') {
+      let container = document.getElementById('console-toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'console-toast-container';
+        container.style.position = 'fixed';
+        container.style.bottom = '24px';
+        container.style.right = '24px';
+        container.style.zIndex = '999999';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.gap = '8px';
+        container.style.pointerEvents = 'none';
+        document.body.appendChild(container);
+      }
+
+      const toast = document.createElement('div');
+      toast.style.padding = '10px 16px';
+      toast.style.borderRadius = '8px';
+      toast.style.fontSize = '13px';
+      toast.style.fontWeight = '600';
+      toast.style.boxShadow = '0 4px 14px rgba(0,0,0,0.18)';
+      toast.style.transition = 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(12px)';
+      toast.style.pointerEvents = 'auto';
+
+      if (type === 'success') {
+        toast.style.backgroundColor = '#10B981';
+        toast.style.color = '#FFFFFF';
+      } else if (type === 'error') {
+        toast.style.backgroundColor = '#EF4444';
+        toast.style.color = '#FFFFFF';
+      } else {
+        toast.style.backgroundColor = '#1E293B';
+        toast.style.color = '#FFFFFF';
+      }
+
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+      });
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(12px)';
+        setTimeout(() => toast.remove(), 300);
+      }, 2500);
+    }
+
+    function renderStatusSelect(id, currentStatus) {
+      const norm = (currentStatus || 'DRAFT').toUpperCase();
+      let statusPillClass = norm.toLowerCase();
+      if (norm === 'ALLOTMENT_COMPLETED' || norm === 'ALLOTMENT_OUT') statusPillClass = 'allotment-completed';
+      else if (norm === 'CLOSING_TODAY') statusPillClass = 'closing-today';
+
+      return \`
+        <select class="status-pill-select \${statusPillClass}" 
+                data-prev-status="\${norm}" 
+                onclick="event.stopPropagation()" 
+                onchange="updateRowLifecycleStatus('\${id}', this.value, this, event)"
+                title="Change lifecycle status">
+          <option value="OPEN" \${norm === 'OPEN' ? 'selected' : ''}>Live Now</option>
+          <option value="CLOSING_TODAY" \${norm === 'CLOSING_TODAY' ? 'selected' : ''}>Closing Today</option>
+          <option value="UPCOMING" \${norm === 'UPCOMING' ? 'selected' : ''}>Upcoming</option>
+          <option value="CLOSED" \${norm === 'CLOSED' ? 'selected' : ''}>Closed</option>
+          <option value="ALLOTMENT_COMPLETED" \${(norm === 'ALLOTMENT_COMPLETED' || norm === 'ALLOTMENT_OUT') ? 'selected' : ''}>Allotment Out</option>
+          <option value="LISTED" \${norm === 'LISTED' ? 'selected' : ''}>Listed</option>
+          <option value="DRAFT" \${norm === 'DRAFT' ? 'selected' : ''}>Draft</option>
+        </select>
+      \`;
+    }
+
+    async function updateRowLifecycleStatus(id, newStatus, selectEl, event) {
+      if (event) event.stopPropagation();
+      if (!id || !newStatus) return;
+
+      const prevStatus = selectEl.getAttribute('data-prev-status') || selectEl.value;
+      selectEl.classList.add('saving');
+
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/' + id, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || 'HTTP ' + res.status);
+        }
+
+        selectEl.setAttribute('data-prev-status', newStatus);
+        const norm = newStatus.toUpperCase();
+        let statusPillClass = norm.toLowerCase();
+        if (norm === 'ALLOTMENT_COMPLETED' || norm === 'ALLOTMENT_OUT') {
+          statusPillClass = 'allotment-completed';
+        } else if (norm === 'CLOSING_TODAY') {
+          statusPillClass = 'closing-today';
+        }
+        selectEl.className = 'status-pill-select ' + statusPillClass;
+
+        const label = norm === 'ALLOTMENT_COMPLETED' ? 'Allotment Out' : norm === 'CLOSING_TODAY' ? 'Closing Today' : norm === 'OPEN' ? 'Live Now' : norm;
+        showToast('Status updated to ' + label, 'success');
+
+        if (typeof fetchKpis === 'function') fetchKpis();
+      } catch (err) {
+        console.error('Failed to update status:', err);
+        alert('Failed to update status: ' + (err.message || err));
+        selectEl.value = prevStatus;
+        const prevNorm = prevStatus.toUpperCase();
+        let prevClass = prevNorm.toLowerCase();
+        if (prevNorm === 'ALLOTMENT_COMPLETED' || prevNorm === 'ALLOTMENT_OUT') prevClass = 'allotment-completed';
+        else if (prevNorm === 'CLOSING_TODAY') prevClass = 'closing-today';
+        selectEl.className = 'status-pill-select ' + prevClass;
+      } finally {
+        selectEl.classList.remove('saving');
+      }
+    }
+
     async function fetchRecentDashboardIpos() {
       try {
         const res = await fetch(API_BASE + '/manual-ipos?limit=10');
@@ -2250,22 +2447,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
 
         tbody.innerHTML = items.map(item => {
-          const isAllotmentOut = item.status === 'ALLOTMENT_COMPLETED' || item.status === 'ALLOTMENT_OUT';
-          const isClosingToday = item.status === 'CLOSING_TODAY';
-          let displayStatus = item.status || 'DRAFT';
-          if (isAllotmentOut) displayStatus = 'Allotment Out';
-          else if (isClosingToday) displayStatus = 'Closing Today';
-
-          const rawStatus = (item.status || 'DRAFT').toLowerCase();
-          let statusPillClass = rawStatus;
-          if (isAllotmentOut) statusPillClass = 'allotment-completed';
-          else if (isClosingToday) statusPillClass = 'closing-today';
-
           return \`
             <tr class="clickable-row" onclick="editManualIpo('\${item.id}')" title="Click to view/edit details">
               <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
               <td>\${item.marketSegment || 'MAINBOARD'}</td>
-              <td><span class="status-pill \${statusPillClass}">\${displayStatus}</span></td>
+              <td onclick="event.stopPropagation()">\${renderStatusSelect(item.id, item.status)}</td>
               <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
               <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
               <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
@@ -2343,22 +2529,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
 
         tbody.innerHTML = items.map(item => {
-          const isAllotmentOut = item.status === 'ALLOTMENT_COMPLETED' || item.status === 'ALLOTMENT_OUT';
-          const isClosingToday = item.status === 'CLOSING_TODAY';
-          let displayStatus = item.status || 'DRAFT';
-          if (isAllotmentOut) displayStatus = 'Allotment Out';
-          else if (isClosingToday) displayStatus = 'Closing Today';
-
-          const rawStatus = (item.status || 'DRAFT').toLowerCase();
-          let statusPillClass = rawStatus;
-          if (isAllotmentOut) statusPillClass = 'allotment-completed';
-          else if (isClosingToday) statusPillClass = 'closing-today';
-
           return \`
             <tr class="clickable-row" onclick="editManualIpo('\${item.id}')" title="Click to view/edit details">
               <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
               <td>\${item.marketSegment || 'MAINBOARD'}</td>
-              <td><span class="status-pill \${statusPillClass}">\${displayStatus}</span></td>
+              <td onclick="event.stopPropagation()">\${renderStatusSelect(item.id, item.status)}</td>
               <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
               <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
               <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
