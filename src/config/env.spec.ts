@@ -68,4 +68,25 @@ describe('validateEnv', () => {
       validateEnv({ LOG_LEVEL: 'verbose', DATABASE_URL: validDatabaseUrl }),
     ).toThrow(/Invalid environment configuration/);
   });
+
+  it('rejects missing BROKER_TOKEN_ENCRYPTION_SECRET in production', () => {
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL: validDatabaseUrl,
+        CONSOLE_SESSION_SECRET: 'production-secret-console',
+      }),
+    ).toThrow(/BROKER_TOKEN_ENCRYPTION_SECRET is required in production environment/);
+  });
+
+  it('accepts valid BROKER_TOKEN_ENCRYPTION_SECRET in production', () => {
+    const env = validateEnv({
+      NODE_ENV: 'production',
+      DATABASE_URL: validDatabaseUrl,
+      CONSOLE_SESSION_SECRET: 'production-secret-console',
+      BROKER_TOKEN_ENCRYPTION_SECRET: 'a'.repeat(32),
+    });
+
+    expect(env.BROKER_TOKEN_ENCRYPTION_SECRET).toBe('a'.repeat(32));
+  });
 });

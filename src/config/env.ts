@@ -59,6 +59,7 @@ export const envSchema = z.object({
   CONSOLE_ADMIN_USERNAME: z.string().optional().default('admin'),
   CONSOLE_ADMIN_PASSWORD: z.string().optional(),
   CONSOLE_SESSION_SECRET: z.string().optional(),
+  BROKER_TOKEN_ENCRYPTION_SECRET: z.string().optional(),
 })
 .superRefine((val, ctx) => {
   if (val.NODE_ENV === 'production' && !val.CONSOLE_SESSION_SECRET) {
@@ -66,6 +67,14 @@ export const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['CONSOLE_SESSION_SECRET'],
       message: 'CONSOLE_SESSION_SECRET is required in production environment',
+    });
+  }
+  if (val.NODE_ENV === 'production' && !val.BROKER_TOKEN_ENCRYPTION_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['BROKER_TOKEN_ENCRYPTION_SECRET'],
+      message:
+        'BROKER_TOKEN_ENCRYPTION_SECRET is required in production environment',
     });
   }
 });
