@@ -1963,11 +1963,15 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <strong style="color:#F59E0B;">Rate limit: 10 req/day &middot; 1 req/min.</strong>
               </div>
             </div>
-            <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+            <div style="display:flex; align-items:center; gap:10px; flex-shrink:0; flex-wrap:wrap;">
               <div id="ipo-guru-status-badge" style="display:none; font-size:11px; padding:3px 10px; border-radius:12px; font-weight:600;"></div>
-              <button id="ipo-guru-fetch-btn" class="btn-primary" onclick="fetchIpoGuruData()">
-                <i data-feather="download"></i>
+              <button id="ipo-guru-fetch-btn" class="btn-secondary" onclick="fetchIpoGuruData()">
+                <i data-feather="eye"></i>
                 <span>Fetch IPO Guru Data</span>
+              </button>
+              <button id="ipo-guru-sync-btn" class="btn-primary" onclick="syncIpoGuruData()">
+                <i data-feather="refresh-cw"></i>
+                <span>Sync to IPO Database</span>
               </button>
             </div>
           </div>
@@ -1975,6 +1979,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             <span>Last Fetch: <strong id="ipo-guru-last-fetch" style="color:var(--text-main);">&mdash;</strong></span>&nbsp;&nbsp;
             <span>HTTP Status: <strong id="ipo-guru-http-status" style="color:var(--text-main);">&mdash;</strong></span>&nbsp;&nbsp;
             <span>Total IPOs: <strong id="ipo-guru-total" style="color:var(--primary);">&mdash;</strong></span>
+          </div>
+          <div id="ipo-guru-sync-summary" style="display:none; padding:14px 18px; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:12px; margin-bottom:14px; box-shadow:var(--shadow-card);">
+            <div style="font-weight:700; font-size:14px; margin-bottom:10px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center;">
+              <span>Database Synchronization Summary</span>
+              <span id="ipo-guru-sync-time" style="font-size:11px; font-weight:normal; color:var(--text-muted);"></span>
+            </div>
+            <div class="stats-grid" style="margin-bottom:12px;">
+              <div class="stat-card" style="padding:10px;"><div class="stat-title">Total Fetched</div><div class="stat-value" id="sync-total-fetched" style="font-size:18px;">0</div></div>
+              <div class="stat-card" style="padding:10px;"><div class="stat-title">Matched & Updated</div><div class="stat-value" id="sync-matched-updated" style="font-size:18px; color:#10B981;">0</div></div>
+              <div class="stat-card" style="padding:10px;"><div class="stat-title">Newly Created</div><div class="stat-value" id="sync-newly-created" style="font-size:18px; color:#4F46E5;">0</div></div>
+              <div class="stat-card" style="padding:10px;"><div class="stat-title">Skipped / Errors</div><div class="stat-value" id="sync-skipped-errors" style="font-size:18px; color:#F59E0B;">0</div></div>
+            </div>
+            <div id="ipo-guru-sync-details" style="max-height:160px; overflow-y:auto; font-size:12px; border-top:1px solid var(--border-color); padding-top:8px;"></div>
           </div>
           <div id="ipo-guru-error" style="display:none; padding:12px 16px; background:#FEF2F2; border:1px solid #EF4444; border-radius:10px; color:#991B1B; font-size:13px; margin-bottom:14px;"></div>
           <div id="ipo-guru-table-wrap" style="display:none;">
@@ -3933,6 +3950,97 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (badge) { badge.textContent = 'Error'; badge.style.background = '#FEF2F2'; badge.style.color = '#991B1B'; badge.style.display = 'inline-block'; }
       } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i data-feather="download"></i> <span>Fetch IPO Guru Data</span>'; if (window.feather) feather.replace(); }
+      }
+    }
+
+    async function syncIpoGuruData() {
+      var btn = document.getElementById('ipo-guru-sync-btn');
+      var fetchBtn = document.getElementById('ipo-guru-fetch-btn');
+      var errEl = document.getElementById('ipo-guru-error');
+      var metaEl = document.getElementById('ipo-guru-meta');
+      var summaryEl = document.getElementById('ipo-guru-sync-summary');
+      var detailsEl = document.getElementById('ipo-guru-sync-details');
+      var tableWrap = document.getElementById('ipo-guru-table-wrap');
+      var emptyEl = document.getElementById('ipo-guru-empty');
+      var badge = document.getElementById('ipo-guru-status-badge');
+
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-feather="loader"></i> <span>Syncing...</span>'; }
+      if (fetchBtn) { fetchBtn.disabled = true; }
+      if (window.feather) feather.replace();
+      if (errEl) errEl.style.display = 'none';
+
+      try {
+        var res = await fetch(API_BASE + '/ipo-guru/sync', { method: 'POST' });
+        var json = await res.json();
+        var result = json.data || json;
+
+        if (!res.ok || json.error || result.error) {
+          var errMsg = (json.error && json.error.message) || (result.error && result.error.message) || result.details || result.message || ('HTTP ' + res.status);
+          if (errEl) { errEl.textContent = '\u26A0\uFE0F Sync Failed: ' + errMsg; errEl.style.display = 'block'; }
+          if (badge) { badge.textContent = 'Sync Error'; badge.style.background = '#FEF2F2'; badge.style.color = '#991B1B'; badge.style.display = 'inline-block'; }
+          return;
+        }
+
+        if (metaEl) metaEl.style.display = 'block';
+        var lastFetchEl = document.getElementById('ipo-guru-last-fetch');
+        var httpEl = document.getElementById('ipo-guru-http-status');
+        var totalEl = document.getElementById('ipo-guru-total');
+        if (lastFetchEl) lastFetchEl.textContent = new Date().toLocaleString();
+        if (httpEl) httpEl.textContent = res.status || 200;
+        if (totalEl) totalEl.textContent = result.totalFetched || 0;
+
+        // Update Sync Summary KPI
+        if (summaryEl) {
+          document.getElementById('sync-total-fetched').textContent = result.totalFetched || 0;
+          document.getElementById('sync-matched-updated').textContent = result.matchedUpdated || 0;
+          document.getElementById('sync-newly-created').textContent = result.newlyCreated || 0;
+          document.getElementById('sync-skipped-errors').textContent = (result.skipped || 0) + (result.errors || 0);
+          document.getElementById('ipo-guru-sync-time').textContent = 'Completed at ' + new Date().toLocaleTimeString();
+
+          // Render details
+          if (detailsEl && Array.isArray(result.details)) {
+            var detailRows = result.details.map(function(d) {
+              var color = '#10B981';
+              if (d.action === 'CREATED') color = '#4F46E5';
+              else if (d.action === 'SKIPPED') color = '#F59E0B';
+              else if (d.action === 'ERROR') color = '#EF4444';
+
+              var text = '<div style="display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px dashed var(--border-color);">'
+                + '<span><strong>' + igEsc(d.name) + '</strong>' + (d.symbol ? ' (' + igEsc(d.symbol) + ')' : '') + '</span>'
+                + '<span><span style="display:inline-block; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:700; color:#fff; background:' + color + ';">' + d.action + '</span>'
+                + (d.reason ? ' <span style="color:var(--text-muted); font-size:11px;">' + igEsc(d.reason) + '</span>' : '') + '</span>'
+                + '</div>';
+              return text;
+            });
+            detailsEl.innerHTML = detailRows.join('');
+          }
+          summaryEl.style.display = 'block';
+        }
+
+        if (badge) {
+          badge.textContent = 'Sync Success: ' + (result.matchedUpdated || 0) + ' Updated, ' + (result.newlyCreated || 0) + ' Created';
+          badge.style.background = '#DCFCE7';
+          badge.style.color = '#15803D';
+          badge.style.display = 'inline-block';
+        }
+
+        if (Array.isArray(result.ipos) && result.ipos.length > 0) {
+          ipoGuruLastData = result.ipos;
+          var rowCountEl = document.getElementById('ipo-guru-row-count');
+          if (rowCountEl) rowCountEl.textContent = result.ipos.length + ' IPOs';
+          renderIpoGuruTable(result.ipos);
+          if (tableWrap) tableWrap.style.display = 'block';
+          if (emptyEl) emptyEl.style.display = 'none';
+        }
+
+      } catch (err) {
+        console.error('IPO Guru sync error:', err);
+        if (errEl) { errEl.textContent = '\u26A0\uFE0F Sync error: ' + err.message; errEl.style.display = 'block'; }
+        if (badge) { badge.textContent = 'Error'; badge.style.background = '#FEF2F2'; badge.style.color = '#991B1B'; badge.style.display = 'inline-block'; }
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i data-feather="refresh-cw"></i> <span>Sync to IPO Database</span>'; }
+        if (fetchBtn) { fetchBtn.disabled = false; }
+        if (window.feather) feather.replace();
       }
     }
 

@@ -1,8 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  ExchangeListing,
+  IpoStatus,
+  MarketSegment,
+  OfferCategoryType,
+  ParticipantRole,
+  Prisma,
+  PublicationStatus,
+} from '@prisma/client';
+import { PrismaService } from '../../database/prisma.service';
 import { Env } from '../../config/env';
 import {
   IpoGuruFetchResult,
+  IpoGuruSyncItemDetail,
+  IpoGuruSyncResult,
   IpoGuruV1Ipo,
   IpoGuruV1Response,
 } from './ipo-guru.types';
@@ -10,13 +22,8 @@ import {
 /**
  * IPO Guru v1 Service
  *
- * READ-ONLY. Fetches from https://www.ipoguru.in/api/v1/ipos using the
- * IPOGURU_API_KEY backend environment variable.
- *
- * Rate limits: 10 requests/day, 1 request/minute — manual fetch only.
- *
- * Isolated so v1 can be replaced with v2 without touching other modules.
- * Does NOT write to the database or touch any IPO sync pipeline.
+ * READ-ONLY manual fetch and manual transactional sync to canonical IPOVault database.
+ * Rate limits: 10 requests/day, 1 request/minute — manual operations only.
  */
 @Injectable()
 export class IpoGuruService {
@@ -25,6 +32,7 @@ export class IpoGuruService {
 
   constructor(
     private readonly configService: ConfigService<Env, true>,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -32,8 +40,6 @@ export class IpoGuruService {
    *
    * The API key is read from IPOGURU_API_KEY environment variable and sent
    * as an X-API-KEY header. It is never included in the returned result.
-   *
-   * @throws Error if the API key is not configured
    */
   async fetchIpos(): Promise<IpoGuruFetchResult> {
     const apiKey = this.configService.get('IPOGURU_API_KEY' as keyof Env, {
@@ -89,14 +95,12 @@ export class IpoGuruService {
       throw new Error(`IPO Guru API request failed: ${msg}`);
     }
 
-    // Normalize IPO array — support multiple envelope shapes
     const ipos: IpoGuruV1Ipo[] = this.extractIpos(rawBody);
     const total =
-      rawBody.total ??
       rawBody.count ??
+      rawBody.total ??
       (Array.isArray(ipos) ? ipos.length : 0);
 
-    // Return ONLY safe fields — never include the apiKey
     const responseKeys = Object.keys(rawBody).filter(
       (k) => !['token', 'key', 'api_key', 'secret'].includes(k),
     );
@@ -115,8 +119,599 @@ export class IpoGuruService {
   }
 
   /**
+   * Synchronizes IPO Guru v1 records into the canonical IPOVault database.
+   * Transactional per IPO record.
+   */
+  async syncIpos(): Promise<IpoGuruSyncResult> {
+    const fetchResult = await this.fetchIpos();
+    const rawIpos = fetchResult.ipos;
+    const syncedAt = new Date().toISOString();
+
+    const summary: IpoGuruSyncResult = {
+      totalFetched: rawIpos.length,
+      matchedUpdated: 0,
+      newlyCreated: 0,
+      skipped: 0,
+      errorCount: 0,
+      syncedAt,
+      items: [],
+    };
+
+    if (rawIpos.length === 0) {
+      return summary;
+    }
+
+    // Ensure IPOGURU source exists
+    const sourceId = await this.ensureIpoGuruSource();
+
+    // Load existing canonical IPOs with companies and source identities for matching
+    const existingIpos = await this.prisma.ipo.findMany({
+      include: {
+        company: true,
+        sourceIdentities: true,
+      },
+    });
+
+    for (const rawItem of rawIpos) {
+      const guruName = (rawItem.name || rawItem.company_name || '').trim();
+      if (!guruName) {
+        summary.skipped++;
+        summary.items.push({
+          guruName: 'Unknown',
+          action: 'SKIPPED',
+          reason: 'Record has empty company name',
+        });
+        continue;
+      }
+
+      try {
+        const itemResult = await this.syncSingleIpo(rawItem, sourceId, existingIpos);
+        summary.items.push(itemResult);
+        if (itemResult.action === 'UPDATED') summary.matchedUpdated++;
+        else if (itemResult.action === 'CREATED') summary.newlyCreated++;
+        else if (itemResult.action === 'SKIPPED') summary.skipped++;
+        else if (itemResult.action === 'ERROR') summary.errorCount++;
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Error syncing IPO '${guruName}': ${errMsg}`);
+        summary.errorCount++;
+        summary.items.push({
+          guruName,
+          action: 'ERROR',
+          error: errMsg,
+        });
+      }
+    }
+
+    this.logger.log(
+      `IPO Guru sync finished: ${summary.matchedUpdated} updated, ${summary.newlyCreated} created, ${summary.skipped} skipped, ${summary.errorCount} errors`,
+    );
+
+    return summary;
+  }
+
+  /**
+   * Syncs a single IPO Guru item in an isolated database transaction.
+   */
+  private async syncSingleIpo(
+    rawItem: IpoGuruV1Ipo,
+    sourceId: string,
+    existingIpos: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>>,
+  ): Promise<IpoGuruSyncItemDetail> {
+    const guruName = (rawItem.name || rawItem.company_name || '').trim();
+    const match = this.matchIpo(rawItem, existingIpos);
+
+    // If ambiguous (multiple candidates matched), NEVER select an arbitrary candidate.
+    // Safely skip the record without modifying the database.
+    if (match.matchedBy === 'AMBIGUOUS') {
+      const candidatesStr = match.ambiguousCandidates && match.ambiguousCandidates.length > 0
+        ? match.ambiguousCandidates.join(', ')
+        : 'multiple candidates';
+      return {
+        guruName,
+        action: 'SKIPPED',
+        matchedBy: 'AMBIGUOUS',
+        reason: `AMBIGUOUS_MATCH: Multiple existing records matched: [${candidatesStr}]`,
+      };
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      const updatedFields: string[] = [];
+
+      // Parsed fields
+      const marketSegment = this.parseMarketSegment(rawItem.type || rawItem.sub_type || rawItem.ipo_type);
+      const status = this.parseStatus(rawItem.status);
+      const exchange = this.parseExchange(rawItem.listing_on, rawItem.exchange);
+      const priceBand = this.parsePriceBand(rawItem.price_band, rawItem.price_band_min, rawItem.price_band_max);
+      const lotSize = this.parseInt(rawItem.lot_size);
+      const faceValue = this.parseDecimal(rawItem.face_value);
+      const issueSize = this.parseIssueSize(rawItem.issue_size);
+      const freshIssueSize = this.parseIssueSize(rawItem.fresh_issue_size || rawItem.fresh_size);
+      const ofsSize = this.parseIssueSize(rawItem.ofs_size || rawItem.ofs_issue_size);
+      const listingPrice = this.parseDecimal(rawItem.listing_price);
+
+      let ipoId: string;
+      let action: 'UPDATED' | 'CREATED';
+
+      if (match.matchedIpo) {
+        // --- 1. UPDATE EXISTING IPO ---
+        action = 'UPDATED';
+        const existingIpo = match.matchedIpo;
+        ipoId = existingIpo.id;
+
+        const updateData: Prisma.IpoUpdateInput = {};
+        if (marketSegment && marketSegment !== existingIpo.marketSegment) {
+          updateData.marketSegment = marketSegment;
+          updatedFields.push('marketSegment');
+        }
+        if (status && status !== existingIpo.status) {
+          updateData.status = status;
+          updatedFields.push('status');
+        }
+        if (exchange && exchange !== existingIpo.exchange) {
+          updateData.exchange = exchange;
+          updatedFields.push('exchange');
+        }
+        if (priceBand.low != null && (!existingIpo.priceBandLow || !existingIpo.priceBandLow.equals(priceBand.low))) {
+          updateData.priceBandLow = priceBand.low;
+          updatedFields.push('priceBandLow');
+        }
+        if (priceBand.high != null && (!existingIpo.priceBandHigh || !existingIpo.priceBandHigh.equals(priceBand.high))) {
+          updateData.priceBandHigh = priceBand.high;
+          updatedFields.push('priceBandHigh');
+        }
+        if (lotSize != null && lotSize !== existingIpo.lotSize) {
+          updateData.lotSize = lotSize;
+          updatedFields.push('lotSize');
+        }
+        if (faceValue != null && (!existingIpo.faceValue || !existingIpo.faceValue.equals(faceValue))) {
+          updateData.faceValue = faceValue;
+          updatedFields.push('faceValue');
+        }
+        if (issueSize != null && (!existingIpo.issueSize || !existingIpo.issueSize.equals(issueSize))) {
+          updateData.issueSize = issueSize;
+          updatedFields.push('issueSize');
+        }
+        if (freshIssueSize != null && (!existingIpo.freshIssueSize || !existingIpo.freshIssueSize.equals(freshIssueSize))) {
+          updateData.freshIssueSize = freshIssueSize;
+          updatedFields.push('freshIssueSize');
+        }
+        if (ofsSize != null && (!existingIpo.ofsSize || !existingIpo.ofsSize.equals(ofsSize))) {
+          updateData.ofsSize = ofsSize;
+          updatedFields.push('ofsSize');
+        }
+        if (listingPrice != null && (!existingIpo.listingPrice || !existingIpo.listingPrice.equals(listingPrice))) {
+          updateData.listingPrice = listingPrice;
+          updatedFields.push('listingPrice');
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await tx.ipo.update({
+            where: { id: ipoId },
+            data: updateData,
+          });
+        }
+      } else {
+        // --- 2. CREATE NEW COMPANY & IPO ---
+        action = 'CREATED';
+        const company = await tx.company.create({
+          data: {
+            legalName: guruName,
+            displayName: guruName,
+          },
+        });
+
+        const newIpo = await tx.ipo.create({
+          data: {
+            companyId: company.id,
+            marketSegment: marketSegment || MarketSegment.MAINBOARD,
+            exchange: exchange || ExchangeListing.BOTH,
+            status: status || IpoStatus.UPCOMING,
+            publicationStatus: PublicationStatus.DRAFT,
+            symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
+            isin: rawItem.isin ? rawItem.isin.trim().toUpperCase() : null,
+            priceBandLow: priceBand.low,
+            priceBandHigh: priceBand.high,
+            lotSize: lotSize,
+            faceValue: faceValue,
+            issueSize: issueSize,
+            freshIssueSize: freshIssueSize,
+            ofsSize: ofsSize,
+            listingPrice: listingPrice,
+          },
+        });
+        ipoId = newIpo.id;
+        updatedFields.push('company', 'ipo');
+      }
+
+      // Link SourceIdentity for IPOGURU
+      await tx.ipoSourceIdentity.upsert({
+        where: {
+          ipoId_sourceId: {
+            ipoId,
+            sourceId,
+          },
+        },
+        update: {
+          symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : undefined,
+        },
+        create: {
+          ipoId,
+          sourceId,
+          externalId: rawItem.id ? String(rawItem.id) : guruName,
+          symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
+        },
+      });
+
+      // --- 3. LIFECYCLE EVENTS ---
+      const openDate = this.parseDate(rawItem.open_date);
+      if (openDate) {
+        await tx.ipoLifecycleEvent.upsert({
+          where: { ipoId_eventType: { ipoId, eventType: 'OPEN' } },
+          update: { eventDate: openDate, sourceId },
+          create: { ipoId, eventType: 'OPEN', eventDate: openDate, sourceId },
+        });
+        updatedFields.push('openDate');
+      }
+
+      const closeDate = this.parseDate(rawItem.close_date);
+      if (closeDate) {
+        await tx.ipoLifecycleEvent.upsert({
+          where: { ipoId_eventType: { ipoId, eventType: 'CLOSE' } },
+          update: { eventDate: closeDate, sourceId },
+          create: { ipoId, eventType: 'CLOSE', eventDate: closeDate, sourceId },
+        });
+        updatedFields.push('closeDate');
+      }
+
+      const allotmentDate = this.parseDate(rawItem.allotment_date);
+      if (allotmentDate) {
+        await tx.ipoLifecycleEvent.upsert({
+          where: { ipoId_eventType: { ipoId, eventType: 'BASIS_OF_ALLOTMENT' } },
+          update: { eventDate: allotmentDate, sourceId },
+          create: { ipoId, eventType: 'BASIS_OF_ALLOTMENT', eventDate: allotmentDate, sourceId },
+        });
+        updatedFields.push('allotmentDate');
+      }
+
+      const listingDate = this.parseDate(rawItem.listing_date);
+      if (listingDate) {
+        await tx.ipoLifecycleEvent.upsert({
+          where: { ipoId_eventType: { ipoId, eventType: 'LISTING' } },
+          update: { eventDate: listingDate, sourceId },
+          create: { ipoId, eventType: 'LISTING', eventDate: listingDate, sourceId },
+        });
+        updatedFields.push('listingDate');
+      }
+
+      // --- 4. ALLOTMENT CONFIG & REGISTRAR PARTICIPANT ---
+      const registrar = (rawItem.registrar || '').trim();
+      if (registrar) {
+        await tx.ipoAllotmentConfig.upsert({
+          where: { ipoId },
+          update: {
+            registrar,
+            expectedAllotmentDate: allotmentDate || undefined,
+          },
+          create: {
+            ipoId,
+            registrar,
+            expectedAllotmentDate: allotmentDate,
+            enabled: true,
+          },
+        });
+
+        // Ensure registrar participant exists
+        const existingParticipant = await tx.ipoParticipant.findFirst({
+          where: { ipoId, role: ParticipantRole.REGISTRAR },
+        });
+        if (existingParticipant) {
+          await tx.ipoParticipant.update({
+            where: { id: existingParticipant.id },
+            data: { name: registrar },
+          });
+        } else {
+          await tx.ipoParticipant.create({
+            data: {
+              ipoId,
+              role: ParticipantRole.REGISTRAR,
+              name: registrar,
+            },
+          });
+        }
+        updatedFields.push('registrar');
+      }
+
+      // --- 5. GMP OBSERVATION ---
+      const gmpObj = rawItem.gmp && typeof rawItem.gmp === 'object' ? rawItem.gmp : null;
+      const gmpAmount = this.parseDecimal(gmpObj ? gmpObj.price : rawItem.gmp);
+      const gmpPercentage = this.parseDecimal(gmpObj ? gmpObj.percentage : rawItem.gmp_pct);
+      const gmpObservedAt = this.parseTimestamp((gmpObj ? gmpObj.updated_at : rawItem.gmp_updated_at) as string | null);
+
+      if (gmpAmount != null) {
+        const existingGmp = await tx.gmpObservation.findFirst({
+          where: {
+            ipoId,
+            observedAt: gmpObservedAt,
+            gmpAmount,
+          },
+        });
+        if (!existingGmp) {
+          await tx.gmpObservation.create({
+            data: {
+              ipoId,
+              gmpAmount,
+              gmpPercentage,
+              observedAt: gmpObservedAt,
+              sourceId,
+            },
+          });
+          updatedFields.push('gmpObservation');
+        }
+      }
+
+      // --- 6. SUBSCRIPTION OBSERVATIONS ---
+      const sub = rawItem.subscription || {};
+      const subObservedAt = this.parseTimestamp((sub.updated_at || rawItem.sub_updated_at) as string | null);
+
+      const subCategories: Array<{ cat: OfferCategoryType; val: unknown }> = [
+        { cat: OfferCategoryType.QIB, val: sub.qib != null ? sub.qib : rawItem.qib_sub },
+        { cat: OfferCategoryType.NII, val: sub.nii != null ? sub.nii : rawItem.nii_sub },
+        { cat: OfferCategoryType.RETAIL, val: sub.retail != null ? sub.retail : rawItem.retail_sub },
+        { cat: OfferCategoryType.OTHER, val: sub.total != null ? sub.total : rawItem.total_sub },
+      ];
+
+      for (const { cat, val } of subCategories) {
+        const multiple = this.parseDecimal(val);
+        if (multiple != null) {
+          const existingSub = await tx.subscriptionObservation.findFirst({
+            where: {
+              ipoId,
+              category: cat,
+              observedAt: subObservedAt,
+            },
+          });
+          if (!existingSub) {
+            await tx.subscriptionObservation.create({
+              data: {
+                ipoId,
+                category: cat,
+                subscriptionMultiple: multiple,
+                observedAt: subObservedAt,
+                sourceId,
+              },
+            });
+            updatedFields.push(`subscription_${cat}`);
+          }
+        }
+      }
+
+      return {
+        guruName,
+        action,
+        ipoId,
+        companyName: match.matchedIpo ? match.matchedIpo.company.displayName : guruName,
+        matchedBy: match.matchedBy,
+        updatedFields,
+      };
+    });
+  }
+
+  /**
+   * Deterministically matches an IPO Guru record to an existing canonical IPO.
+   * If multiple existing records match, returns 'AMBIGUOUS' so the caller can safely skip.
+   */
+  public matchIpo(
+    rawItem: IpoGuruV1Ipo,
+    existingIpos: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>>,
+  ): {
+    matchedIpo: Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }> | null;
+    matchedBy: 'SYMBOL' | 'NAME' | 'AMBIGUOUS' | 'NONE';
+    ambiguousCandidates?: string[];
+  } {
+    const rawSymbol = rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null;
+    const rawName = (rawItem.name || rawItem.company_name || '').trim();
+    const rawNormName = this.normalizeCompanyName(rawName);
+
+    // 1. Match by Symbol
+    if (rawSymbol) {
+      const symbolMatches: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>> = [];
+      for (const ipo of existingIpos) {
+        if (
+          (ipo.symbol && ipo.symbol.toUpperCase() === rawSymbol) ||
+          (ipo.nseSymbol && ipo.nseSymbol.toUpperCase() === rawSymbol) ||
+          (ipo.bseSymbol && ipo.bseSymbol.toUpperCase() === rawSymbol) ||
+          ipo.sourceIdentities.some((sid) => sid.symbol && sid.symbol.toUpperCase() === rawSymbol)
+        ) {
+          symbolMatches.push(ipo);
+        }
+      }
+
+      if (symbolMatches.length === 1) {
+        return { matchedIpo: symbolMatches[0], matchedBy: 'SYMBOL' };
+      } else if (symbolMatches.length > 1) {
+        return {
+          matchedIpo: null,
+          matchedBy: 'AMBIGUOUS',
+          ambiguousCandidates: symbolMatches.map((m) => `${m.company.displayName} (ID: ${m.id})`),
+        };
+      }
+    }
+
+    // 2. Match by exact normalized legal/display name
+    if (rawNormName) {
+      const nameMatches: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>> = [];
+      for (const ipo of existingIpos) {
+        const legalNorm = this.normalizeCompanyName(ipo.company.legalName);
+        const displayNorm = this.normalizeCompanyName(ipo.company.displayName);
+        if (legalNorm === rawNormName || displayNorm === rawNormName) {
+          nameMatches.push(ipo);
+        }
+      }
+
+      if (nameMatches.length === 1) {
+        return { matchedIpo: nameMatches[0], matchedBy: 'NAME' };
+      } else if (nameMatches.length > 1) {
+        return {
+          matchedIpo: null,
+          matchedBy: 'AMBIGUOUS',
+          ambiguousCandidates: nameMatches.map((m) => `${m.company.displayName} (ID: ${m.id})`),
+        };
+      }
+
+      // 3. Match by token containment if normalized name length >= 4
+      if (rawNormName.length >= 4) {
+        const tokenMatches: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>> = [];
+        for (const ipo of existingIpos) {
+          const legalNorm = this.normalizeCompanyName(ipo.company.legalName);
+          const displayNorm = this.normalizeCompanyName(ipo.company.displayName);
+          if (
+            (legalNorm.length >= 4 && (legalNorm.includes(rawNormName) || rawNormName.includes(legalNorm))) ||
+            (displayNorm.length >= 4 && (displayNorm.includes(rawNormName) || rawNormName.includes(displayNorm)))
+          ) {
+            tokenMatches.push(ipo);
+          }
+        }
+
+        if (tokenMatches.length === 1) {
+          return { matchedIpo: tokenMatches[0], matchedBy: 'NAME' };
+        } else if (tokenMatches.length > 1) {
+          return {
+            matchedIpo: null,
+            matchedBy: 'AMBIGUOUS',
+            ambiguousCandidates: tokenMatches.map((m) => `${m.company.displayName} (ID: ${m.id})`),
+          };
+        }
+      }
+    }
+
+    return { matchedIpo: null, matchedBy: 'NONE' };
+  }
+
+  /**
+   * Normalizes company name for deterministic comparison.
+   */
+  public normalizeCompanyName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/\b(limited|ltd|pvt|private|sme|ipo|ncds?|ncd|invit|reit|trust|addendum|drhp|rhp|udrhp)\b/gi, '')
+      .replace(/[^a-z0-9]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private async ensureIpoGuruSource(): Promise<string> {
+    const source = await this.prisma.source.upsert({
+      where: { code: 'IPOGURU' },
+      update: {},
+      create: {
+        code: 'IPOGURU',
+        name: 'IPO Guru v1',
+        sourceType: 'SECONDARY',
+        baseUrl: this.BASE_URL,
+        priority: 50,
+      },
+    });
+    return source.id;
+  }
+
+  private parseDate(dateStr?: string | null): Date | null {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    const clean = dateStr.trim();
+    if (!clean || clean === 'null' || clean === '—' || clean === '-') return null;
+    const d = new Date(clean);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  private parseTimestamp(tsStr?: string | null): Date {
+    if (!tsStr || typeof tsStr !== 'string') return new Date();
+    const clean = tsStr.trim();
+    try {
+      const normalized = clean.replace(/IST$/i, '+05:30').replace(/,\s*/, ' ');
+      const d = new Date(normalized);
+      if (!isNaN(d.getTime())) return d;
+    } catch {
+      // ignore
+    }
+    const direct = new Date(clean);
+    return isNaN(direct.getTime()) ? new Date() : direct;
+  }
+
+  private parseDecimal(val?: unknown): Prisma.Decimal | null {
+    if (val == null || val === '') return null;
+    if (typeof val === 'number') return isNaN(val) ? null : new Prisma.Decimal(val);
+    const cleaned = String(val).replace(/[^0-9.-]/g, '');
+    if (!cleaned) return null;
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? null : new Prisma.Decimal(num);
+  }
+
+  private parseInt(val?: unknown): number | null {
+    if (val == null || val === '') return null;
+    const cleaned = String(val).replace(/[^0-9-]/g, '');
+    if (!cleaned) return null;
+    const n = parseInt(cleaned, 10);
+    return isNaN(n) ? null : n;
+  }
+
+  private parseIssueSize(val?: unknown): Prisma.Decimal | null {
+    if (val == null || val === '') return null;
+    const cleaned = String(val).replace(/₹|,|\s|Cr/gi, '').trim();
+    if (!cleaned) return null;
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? null : new Prisma.Decimal(num);
+  }
+
+  private parsePriceBand(
+    priceBandStr?: string | null,
+    lo?: unknown,
+    hi?: unknown,
+  ): { low: Prisma.Decimal | null; high: Prisma.Decimal | null } {
+    if (priceBandStr && typeof priceBandStr === 'string' && priceBandStr.trim()) {
+      const clean = priceBandStr.replace(/₹|,/g, '').trim();
+      if (clean.includes('-')) {
+        const [lowPart, highPart] = clean.split('-');
+        return {
+          low: this.parseDecimal(lowPart),
+          high: this.parseDecimal(highPart),
+        };
+      }
+      const single = this.parseDecimal(clean);
+      return { low: single, high: single };
+    }
+    return {
+      low: this.parseDecimal(lo),
+      high: this.parseDecimal(hi),
+    };
+  }
+
+  private parseMarketSegment(typeStr?: string | null): MarketSegment {
+    if (!typeStr) return MarketSegment.MAINBOARD;
+    const lower = typeStr.toLowerCase();
+    if (lower.includes('sme')) return MarketSegment.SME;
+    return MarketSegment.MAINBOARD;
+  }
+
+  private parseExchange(listingOn?: string | null, exchange?: string | null): ExchangeListing {
+    const combined = `${listingOn || ''} ${exchange || ''}`.toUpperCase();
+    if (combined.includes('BSE') && combined.includes('NSE')) return ExchangeListing.BOTH;
+    if (combined.includes('BSE')) return ExchangeListing.BSE;
+    if (combined.includes('NSE')) return ExchangeListing.NSE;
+    return ExchangeListing.BOTH;
+  }
+
+  private parseStatus(statusStr?: string | null): IpoStatus | null {
+    if (!statusStr) return null;
+    const upper = statusStr.trim().toUpperCase();
+    if (upper === 'UPCOMING') return IpoStatus.UPCOMING;
+    if (upper === 'OPEN') return IpoStatus.OPEN;
+    if (upper === 'CLOSED') return IpoStatus.CLOSED;
+    if (upper === 'LISTED') return IpoStatus.LISTED;
+    return null;
+  }
+
+  /**
    * Extract IPO array from various API envelope shapes.
-   * Supports: { data: [...] }, { ipos: [...] }, or top-level array.
    */
   private extractIpos(body: IpoGuruV1Response): IpoGuruV1Ipo[] {
     if (Array.isArray(body)) {
@@ -128,7 +723,6 @@ export class IpoGuruService {
     if (Array.isArray(body.ipos)) {
       return body.ipos;
     }
-    // Try any array-valued key
     for (const key of Object.keys(body)) {
       if (Array.isArray((body as Record<string, unknown>)[key])) {
         return (body as Record<string, unknown>)[key] as IpoGuruV1Ipo[];

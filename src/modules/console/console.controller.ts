@@ -367,7 +367,7 @@ export class ConsoleController {
   }
 
   // ==========================================
-  // IPO GURU v1 INSPECTION ENDPOINTS (READ-ONLY)
+  // IPO GURU v1 INSPECTION & SYNC ENDPOINTS
   // ==========================================
 
   /**
@@ -386,6 +386,24 @@ export class ConsoleController {
       this.logger.error(`IPO Guru fetch error: ${msg}`);
       throw new BadRequestException({
         message: 'IPO Guru fetch failed',
+        details: msg,
+      });
+    }
+  }
+
+  /**
+   * Manual transactional synchronization of IPO Guru v1 data into canonical IPOVault database.
+   * Rate limited by IPO Guru: 10 requests/day, 1 request/minute.
+   */
+  @Post('api/ipo-guru/sync')
+  async syncIpoGuruData() {
+    try {
+      return await this.ipoGuruService.syncIpos();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`IPO Guru sync error: ${msg}`);
+      throw new BadRequestException({
+        message: 'IPO Guru sync failed',
         details: msg,
       });
     }

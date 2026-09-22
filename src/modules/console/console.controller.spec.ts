@@ -8,6 +8,7 @@ import { ConsoleService } from './console.service';
 import { ConsoleEnabledGuard } from './console.guard';
 import { ResponseEnvelopeInterceptor } from '../../common/interceptors/response-envelope.interceptor';
 import { AdminIpoService } from '../admin/admin-ipo.service';
+import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 
 describe('ConsoleController', () => {
   let controller: ConsoleController;
@@ -46,18 +47,27 @@ describe('ConsoleController', () => {
       getAllotmentOpsSummary: jest.fn().mockResolvedValue({ totalJobs: 2 }),
     };
 
+    const ipoGuruService = {
+      fetchIpos: jest.fn().mockResolvedValue({ httpStatus: 200, ipos: [], total: 0 }),
+      syncIpos: jest.fn().mockResolvedValue({ totalFetched: 0, matchedUpdated: 0, newlyCreated: 0, skipped: 0, errorCount: 0, items: [] }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ConsoleController],
       providers: [
         { provide: ConsoleService, useValue: service },
         { provide: AdminIpoService, useValue: adminIpoService },
+        { provide: IpoGuruService, useValue: ipoGuruService },
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue(true) },
         },
         ConsoleEnabledGuard,
       ],
-    }).compile();
+    })
+      .overrideGuard(ConsoleEnabledGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<ConsoleController>(ConsoleController);
 

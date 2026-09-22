@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ConsoleController } from './console.controller';
 import { ConsoleService } from './console.service';
 import { AdminIpoService } from '../admin/admin-ipo.service';
+import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { ConsoleEnabledGuard } from './console.guard';
 import { renderConsoleHtml } from './console.ui';
 import { ExchangeListing, MarketSegment, PublicationStatus } from '@prisma/client';
@@ -93,6 +94,13 @@ describe('Phase 34.3A — Manual IPO Console Workflow & Reset Safety', () => {
       providers: [
         { provide: ConsoleService, useValue: {} },
         { provide: AdminIpoService, useValue: adminIpoService },
+        {
+          provide: IpoGuruService,
+          useValue: {
+            fetchIpos: jest.fn().mockResolvedValue({ httpStatus: 200, ipos: [], total: 0 }),
+            syncIpos: jest.fn().mockResolvedValue({ totalFetched: 0, matchedUpdated: 0, newlyCreated: 0, skipped: 0, errorCount: 0, items: [] }),
+          },
+        },
         { provide: ConfigService, useValue: { get: () => true } },
         ConsoleEnabledGuard,
       ],
