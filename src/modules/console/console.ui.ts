@@ -1,4 +1,4 @@
-﻿import { FAVICON_DATA_URI } from './console.favicon';
+import { FAVICON_DATA_URI } from './console.favicon';
 
 export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
   return `<!DOCTYPE html>
@@ -1162,6 +1162,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         <button class="nav-item" id="nav-btn-allotment" title="Allotment Ops" onclick="switchTab('allotment')">
           <i data-feather="check-square"></i>
           <span>Allotment Ops</span>
+        </button>
+        <button class="nav-item" id="nav-btn-ipo-guru" title="IPO Guru" onclick="switchTab('ipo-guru')">
+          <i data-feather="database"></i>
+          <span>IPO Guru</span>
         </button>
       </nav>
 
