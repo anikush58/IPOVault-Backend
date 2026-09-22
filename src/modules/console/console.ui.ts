@@ -1950,6 +1950,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             <div class="stat-card"><div class="stat-title">Observations</div><div class="stat-value" id="allot-observations">-</div></div>
             <div class="stat-card"><div class="stat-title">Positive Allotments</div><div class="stat-value" style="color:#4F46E5" id="allot-positive">-</div></div>
           </div>
+        </div>
 
         <!-- 9. IPO GURU v1 TAB -->
         <div id="tab-ipo-guru" class="section-view">
@@ -2031,7 +2032,6 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             <div style="font-weight:600; margin-bottom:6px;">No data fetched yet</div>
             <div style="font-size:13px;">Click <strong>Fetch IPO Guru Data</strong> to manually pull from IPO Guru v1 API.</div>
           </div>
-        </div>
         </div>
 
       </div>
