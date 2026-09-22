@@ -10,6 +10,7 @@ import { ConsoleService } from './console.service';
 import { ConsoleEnabledGuard } from './console.guard';
 
 import { AdminModule } from '../admin/admin.module';
+import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { AdminModule } from '../admin/admin.module';
     AdminModule,
   ],
   controllers: [ConsoleController],
-  providers: [ConsoleService, ConsoleEnabledGuard],
+  providers: [ConsoleService, ConsoleEnabledGuard, IpoGuruService],
   exports: [ConsoleService],
 })
 export class ConsoleModule {}

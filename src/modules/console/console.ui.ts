@@ -1,4 +1,4 @@
-import { FAVICON_DATA_URI } from './console.favicon';
+﻿import { FAVICON_DATA_URI } from './console.favicon';
 
 export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
   return `<!DOCTYPE html>
@@ -1946,6 +1946,88 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             <div class="stat-card"><div class="stat-title">Observations</div><div class="stat-value" id="allot-observations">-</div></div>
             <div class="stat-card"><div class="stat-title">Positive Allotments</div><div class="stat-value" style="color:#4F46E5" id="allot-positive">-</div></div>
           </div>
+
+        <!-- 9. IPO GURU v1 TAB -->
+        <div id="tab-ipo-guru" class="section-view">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+            <div>
+              <div style="font-weight:700; font-size:17px; color:var(--text-main); margin-bottom:4px;">IPO Guru v1 Inspector</div>
+              <div style="font-size:12px; color:var(--text-muted);">
+                READ-ONLY. Fetches from <code style="font-family:monospace; background:var(--bg-hover); padding:1px 5px; border-radius:4px;">GET https://www.ipoguru.in/api/v1/ipos</code>
+                via the backend using <code style="font-family:monospace; background:var(--bg-hover); padding:1px 5px; border-radius:4px;">IPOGURU_API_KEY</code>.
+                <strong style="color:#F59E0B;">Rate limit: 10 req/day &middot; 1 req/min.</strong>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+              <div id="ipo-guru-status-badge" style="display:none; font-size:11px; padding:3px 10px; border-radius:12px; font-weight:600;"></div>
+              <button id="ipo-guru-fetch-btn" class="btn-primary" onclick="fetchIpoGuruData()">
+                <i data-feather="download"></i>
+                <span>Fetch IPO Guru Data</span>
+              </button>
+            </div>
+          </div>
+          <div id="ipo-guru-meta" style="display:none; padding:10px 14px; background:var(--bg-hover); border:1px solid var(--border-color); border-radius:10px; margin-bottom:14px; font-size:12px; color:var(--text-muted);">
+            <span>Last Fetch: <strong id="ipo-guru-last-fetch" style="color:var(--text-main);">&mdash;</strong></span>&nbsp;&nbsp;
+            <span>HTTP Status: <strong id="ipo-guru-http-status" style="color:var(--text-main);">&mdash;</strong></span>&nbsp;&nbsp;
+            <span>Total IPOs: <strong id="ipo-guru-total" style="color:var(--primary);">&mdash;</strong></span>
+          </div>
+          <div id="ipo-guru-error" style="display:none; padding:12px 16px; background:#FEF2F2; border:1px solid #EF4444; border-radius:10px; color:#991B1B; font-size:13px; margin-bottom:14px;"></div>
+          <div id="ipo-guru-table-wrap" style="display:none;">
+            <div class="grid-table-box">
+              <div style="padding:14px 18px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:600; font-size:14px;">IPO Guru v1 Data</span>
+                <span id="ipo-guru-row-count" style="font-size:12px; color:var(--text-muted);"></span>
+              </div>
+              <table style="min-width:1400px;">
+                <thead>
+                  <tr>
+                    <th style="width:36px;">#</th>
+                    <th>IPO Name</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Open</th>
+                    <th>Close</th>
+                    <th>Allotment</th>
+                    <th>Listing</th>
+                    <th>Price Band</th>
+                    <th style="text-align:right;">Issue Price</th>
+                    <th style="text-align:right;">Lot Size</th>
+                    <th style="text-align:right;">Issue Size (Cr)</th>
+                    <th>Fresh/OFS</th>
+                    <th>Exchange</th>
+                    <th>Registrar</th>
+                    <th style="text-align:right;">QIB (x)</th>
+                    <th style="text-align:right;">NII (x)</th>
+                    <th style="text-align:right;">Retail (x)</th>
+                    <th style="text-align:right;">Total (x)</th>
+                    <th style="text-align:right;">GMP (&#8377;)</th>
+                    <th style="text-align:right;">GMP %</th>
+                    <th>GMP Updated</th>
+                    <th>Sub Updated</th>
+                    <th style="width:80px; text-align:center;">Raw</th>
+                  </tr>
+                </thead>
+                <tbody id="ipo-guru-table-body">
+                  <tr><td colspan="24" style="text-align:center; padding:24px; color:var(--text-muted);">No data yet. Click &ldquo;Fetch IPO Guru Data&rdquo;.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div id="ipo-guru-raw-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
+            <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:720px; max-height:80vh; display:flex; flex-direction:column; overflow:hidden;">
+              <div style="padding:14px 18px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:14px;">Raw API Data</strong>
+                <button type="button" onclick="closeIpoGuruRaw()" style="background:transparent; border:none; cursor:pointer; color:var(--text-muted); font-size:18px; line-height:1;">&times;</button>
+              </div>
+              <pre id="ipo-guru-raw-pre" style="margin:0; padding:16px; overflow:auto; font-size:12px; font-family:monospace; background:var(--bg-hover); color:var(--text-main); flex:1; white-space:pre-wrap; word-break:break-all;"></pre>
+            </div>
+          </div>
+          <div id="ipo-guru-empty" style="text-align:center; padding:48px 16px; color:var(--text-muted);">
+            <div style="font-size:32px; margin-bottom:12px;">&#128202;</div>
+            <div style="font-weight:600; margin-bottom:6px;">No data fetched yet</div>
+            <div style="font-size:13px;">Click <strong>Fetch IPO Guru Data</strong> to manually pull from IPO Guru v1 API.</div>
+          </div>
+        </div>
         </div>
 
       </div>
@@ -2156,7 +2238,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         'quality': 'Data Quality Overview',
         'sources': 'Upstream Source Health',
         'notifications': 'Notification Delivery Ops',
-        'allotment': 'Allotment Check Ops'
+        'allotment': 'Allotment Check Ops',
+        'ipo-guru': 'IPO Guru v1 Inspector'
       };
       const breadcrumbEl = document.getElementById('active-breadcrumb-title');
       if (breadcrumbEl) breadcrumbEl.textContent = titleMap[tabId] || 'Dashboard';
@@ -3648,6 +3731,182 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         document.getElementById('allot-positive').textContent = data.positiveAllotments ?? 0;
       } catch (err) {
         console.error('Allotment ops error:', err);
+      }
+    }
+
+
+    // â”€â”€ IPO GURU v1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    let ipoGuruLastData = [];
+
+    function igFmtVal(v) {
+      if (v == null || v === '' || v === 'null') return '<span style="color:var(--text-subtle);">&#8212;</span>';
+      return String(v).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function igFmtNum(v, decimals) {
+      decimals = decimals == null ? 2 : decimals;
+      if (v == null || v === '') return '<span style="color:var(--text-subtle);">&#8212;</span>';
+      var n = parseFloat(String(v));
+      return isNaN(n) ? igFmtVal(v) : n.toFixed(decimals);
+    }
+
+    function igFmtPriceBand(ipo) {
+      var lo = ipo.price_band_min || ipo.priceBandMin;
+      var hi = ipo.price_band_max || ipo.priceBandMax;
+      if (!lo && !hi) return '<span style="color:var(--text-subtle);">&#8212;</span>';
+      if (lo && hi) return '\u20B9' + parseFloat(lo).toFixed(0) + ' \u2013 \u20B9' + parseFloat(hi).toFixed(0);
+      return '\u20B9' + parseFloat(lo || hi).toFixed(0);
+    }
+
+    function igFmtFreshOfs(ipo) {
+      var fresh = ipo.fresh_issue || ipo.freshIssue;
+      var ofs = ipo.ofs;
+      if (!fresh && !ofs) return igFmtVal(ipo.issue_type || ipo.issueType);
+      var parts = [];
+      if (fresh) parts.push('F: \u20B9' + parseFloat(fresh).toFixed(0) + ' Cr');
+      if (ofs) parts.push('O: \u20B9' + parseFloat(ofs).toFixed(0) + ' Cr');
+      return parts.join('<br/>');
+    }
+
+    function igKnownKeys() {
+      return ['id','name','company_name','symbol','isin','ipo_type','issue_type','status',
+        'open_date','close_date','allotment_date','listing_date','anchor_date',
+        'price_band_min','price_band_max','issue_price','lot_size','min_investment',
+        'issue_size','fresh_issue','ofs','exchange','registrar',
+        'qib_sub','nii_sub','retail_sub','employee_sub','total_sub','sub_updated_at',
+        'gmp','gmp_pct','gmp_updated_at'];
+    }
+
+    function igBuildRaw(ipo) {
+      var known = new Set(igKnownKeys());
+      var extra = {};
+      Object.keys(ipo).forEach(function(k) { if (!known.has(k)) extra[k] = ipo[k]; });
+      return Object.assign({}, ipo, { _extra_keys: extra });
+    }
+
+    function showIpoGuruRaw(idx) {
+      var ipo = ipoGuruLastData[idx];
+      if (!ipo) return;
+      var pre = document.getElementById('ipo-guru-raw-pre');
+      if (pre) pre.textContent = JSON.stringify(igBuildRaw(ipo), null, 2);
+      var overlay = document.getElementById('ipo-guru-raw-overlay');
+      if (overlay) overlay.style.display = 'flex';
+    }
+
+    function closeIpoGuruRaw() {
+      var overlay = document.getElementById('ipo-guru-raw-overlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+
+    function renderIpoGuruTable(ipos) {
+      var tbody = document.getElementById('ipo-guru-table-body');
+      if (!tbody) return;
+      if (!ipos || ipos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;padding:24px;color:var(--text-muted);">No IPOs returned by the API.</td></tr>';
+        return;
+      }
+      var rows = [];
+      for (var i = 0; i < ipos.length; i++) {
+        var ipo = ipos[i];
+        var idx = i;
+        var name = ipo.name || ipo.company_name || '';
+        var sc = ipo.status === 'Open' ? '#10B981' : ipo.status === 'Upcoming' ? '#F59E0B' : ipo.status === 'Listed' ? '#4F46E5' : '#64748B';
+        var dash = '<span style="color:var(--text-subtle);">&#8212;</span>';
+        var ip = ipo.issue_price != null ? '\u20B9' + parseFloat(ipo.issue_price).toFixed(0) : dash;
+        var isz = ipo.issue_size != null ? '\u20B9' + parseFloat(ipo.issue_size).toFixed(2) : dash;
+        var gmpColor = (ipo.gmp || 0) > 0 ? '#10B981' : '#EF4444';
+        var gmpVal = ipo.gmp != null ? (ipo.gmp > 0 ? '+' : '') + parseFloat(ipo.gmp).toFixed(2) : dash;
+        var gmpPctColor = (ipo.gmp_pct || 0) > 0 ? '#10B981' : '#EF4444';
+        var gmpPctVal = ipo.gmp_pct != null ? (ipo.gmp_pct > 0 ? '+' : '') + parseFloat(ipo.gmp_pct).toFixed(2) + '%' : dash;
+        var sym = ipo.symbol ? '<br/><span style="font-size:10px;color:var(--text-muted);font-family:monospace;">' + ipo.symbol + '</span>' : '';
+        rows.push('<tr>'
+          + '<td style="color:var(--text-muted);font-size:11px;">' + (idx + 1) + '</td>'
+          + '<td><strong style="font-size:12px;">' + igFmtVal(name) + '</strong>' + sym + '</td>'
+          + '<td>' + igFmtVal(ipo.ipo_type) + '</td>'
+          + '<td><span style="font-size:11px;font-weight:600;color:' + sc + ';">' + igFmtVal(ipo.status) + '</span></td>'
+          + '<td style="font-family:monospace;font-size:11px;">' + igFmtVal(ipo.open_date) + '</td>'
+          + '<td style="font-family:monospace;font-size:11px;">' + igFmtVal(ipo.close_date) + '</td>'
+          + '<td style="font-family:monospace;font-size:11px;">' + igFmtVal(ipo.allotment_date) + '</td>'
+          + '<td style="font-family:monospace;font-size:11px;">' + igFmtVal(ipo.listing_date) + '</td>'
+          + '<td style="font-size:12px;">' + igFmtPriceBand(ipo) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + ip + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + igFmtVal(ipo.lot_size) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + isz + '</td>'
+          + '<td style="font-size:11px;">' + igFmtFreshOfs(ipo) + '</td>'
+          + '<td style="font-size:11px;">' + igFmtVal(ipo.exchange) + '</td>'
+          + '<td style="font-size:11px;">' + igFmtVal(ipo.registrar) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(ipo.qib_sub) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(ipo.nii_sub) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(ipo.retail_sub) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(ipo.total_sub) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;color:' + gmpColor + ';">' + gmpVal + '</td>'
+          + '<td style="text-align:right;font-family:monospace;color:' + gmpPctColor + ';">' + gmpPctVal + '</td>'
+          + '<td style="font-family:monospace;font-size:10px;">' + igFmtVal(ipo.gmp_updated_at) + '</td>'
+          + '<td style="font-family:monospace;font-size:10px;">' + igFmtVal(ipo.sub_updated_at) + '</td>'
+          + '<td style="text-align:center;"><button type="button" class="btn-secondary" style="font-size:10px;padding:3px 8px;min-height:28px;" onclick="showIpoGuruRaw(' + idx + ')">Raw</button></td>'
+          + '</tr>');
+      }
+      tbody.innerHTML = rows.join('');
+    }
+
+    async function fetchIpoGuruData() {
+      var btn = document.getElementById('ipo-guru-fetch-btn');
+      var errEl = document.getElementById('ipo-guru-error');
+      var metaEl = document.getElementById('ipo-guru-meta');
+      var tableWrap = document.getElementById('ipo-guru-table-wrap');
+      var emptyEl = document.getElementById('ipo-guru-empty');
+      var badge = document.getElementById('ipo-guru-status-badge');
+
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-feather="loader"></i> <span>Fetching...</span>'; if (window.feather) feather.replace(); }
+      if (errEl) errEl.style.display = 'none';
+      if (tableWrap) tableWrap.style.display = 'none';
+      if (emptyEl) emptyEl.style.display = 'none';
+      if (badge) badge.style.display = 'none';
+
+      try {
+        var res = await fetch(API_BASE + '/ipo-guru/fetch', { method: 'POST' });
+        var json = await res.json();
+        var result = json.data || json;
+
+        if (metaEl) metaEl.style.display = 'block';
+        var lastFetchEl = document.getElementById('ipo-guru-last-fetch');
+        var httpEl = document.getElementById('ipo-guru-http-status');
+        var totalEl = document.getElementById('ipo-guru-total');
+        if (lastFetchEl) lastFetchEl.textContent = result.fetchedAt ? new Date(result.fetchedAt).toLocaleString() : '&#8212;';
+        if (httpEl) httpEl.textContent = result.httpStatus != null ? result.httpStatus : '&#8212;';
+        if (totalEl) totalEl.textContent = result.total != null ? result.total : 0;
+
+        if (!res.ok || result.message) {
+          var errMsg = result.details || result.message || 'Unknown error';
+          if (errEl) { errEl.textContent = '\u26A0\uFE0F Error: ' + errMsg; errEl.style.display = 'block'; }
+          if (badge) { badge.textContent = 'HTTP ' + (result.httpStatus || res.status); badge.style.background = '#FEF2F2'; badge.style.color = '#991B1B'; badge.style.display = 'inline-block'; }
+          if (emptyEl) emptyEl.style.display = 'block';
+          return;
+        }
+
+        var ipos = result.ipos || [];
+        ipoGuruLastData = ipos;
+
+        var rowCountEl = document.getElementById('ipo-guru-row-count');
+        if (rowCountEl) rowCountEl.textContent = ipos.length + ' IPOs';
+
+        if (badge) {
+          badge.textContent = 'HTTP ' + result.httpStatus;
+          badge.style.background = '#DCFCE7';
+          badge.style.color = '#15803D';
+          badge.style.display = 'inline-block';
+        }
+
+        renderIpoGuruTable(ipos);
+        if (tableWrap) tableWrap.style.display = 'block';
+
+      } catch (err) {
+        console.error('IPO Guru fetch error:', err);
+        if (errEl) { errEl.textContent = '\u26A0\uFE0F Network or parse error: ' + err.message; errEl.style.display = 'block'; }
+        if (emptyEl) emptyEl.style.display = 'block';
+        if (badge) { badge.textContent = 'Error'; badge.style.background = '#FEF2F2'; badge.style.color = '#991B1B'; badge.style.display = 'inline-block'; }
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i data-feather="download"></i> <span>Fetch IPO Guru Data</span>'; if (window.feather) feather.replace(); }
       }
     }
 

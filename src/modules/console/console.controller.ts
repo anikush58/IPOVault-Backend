@@ -46,6 +46,7 @@ import {
   ImportAdminIpoJsonDto,
   UpdateAdminIpoDto,
 } from '../admin/admin-ipo.dto';
+import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 
 @Controller('console')
 @UseGuards(ConsoleEnabledGuard)
@@ -55,6 +56,7 @@ export class ConsoleController {
   constructor(
     private readonly consoleService: ConsoleService,
     private readonly adminIpoService: AdminIpoService,
+    private readonly ipoGuruService: IpoGuruService,
     private readonly configService: ConfigService<Env, true>,
   ) {}
 
@@ -362,5 +364,30 @@ export class ConsoleController {
     @Body() dto: ConfigureAllotmentDto,
   ) {
     return this.adminIpoService.configureAllotment(id, dto);
+  }
+
+  // ==========================================
+  // IPO GURU v1 INSPECTION ENDPOINTS (READ-ONLY)
+  // ==========================================
+
+  /**
+   * Manual one-shot fetch from IPO Guru v1 API.
+   *
+   * READ-ONLY: does NOT insert/update/delete anything in the database.
+   * Rate limited by IPO Guru: 10 requests/day, 1 request/minute.
+   * API key is read from IPOGURU_API_KEY env var and never returned in this response.
+   */
+  @Post('api/ipo-guru/fetch')
+  async fetchIpoGuruData() {
+    try {
+      return await this.ipoGuruService.fetchIpos();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`IPO Guru fetch error: ${msg}`);
+      throw new BadRequestException({
+        message: 'IPO Guru fetch failed',
+        details: msg,
+      });
+    }
   }
 }

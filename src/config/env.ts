@@ -60,6 +60,49 @@ export const envSchema = z.object({
   CONSOLE_ADMIN_PASSWORD: z.string().optional(),
   CONSOLE_SESSION_SECRET: z.string().optional(),
   BROKER_TOKEN_ENCRYPTION_SECRET: z.string().optional(),
+  UPSTOX_API_KEY: z.string().optional(),
+  UPSTOX_API_SECRET: z.string().optional(),
+  UPSTOX_REDIRECT_URI: z.string().optional(),
+  UPSTOX_BASE_URL: z.string().optional().default('https://api.upstox.com/v2'),
+  DHAN_API_KEY: z.string().optional(),
+  DHAN_API_SECRET: z.string().optional(),
+  DHAN_REDIRECT_URI: z.string().optional(),
+  DHAN_BASE_URL: z.string().optional().default('https://api.dhan.co/v2'),
+  DHAN_AUTH_BASE_URL: z.string().optional().default('https://auth.dhan.co'),
+  FYERS_APP_ID: z.string().optional(),
+  FYERS_SECRET_KEY: z.string().optional(),
+  FYERS_REDIRECT_URI: z.string().optional(),
+  FYERS_BASE_URL: z
+    .string()
+    .optional()
+    .default('https://api-t1.fyers.in/api/v3'),
+  ZERODHA_API_KEY: z.string().optional(),
+  ZERODHA_API_SECRET: z.string().optional(),
+  ZERODHA_REDIRECT_URI: z.string().optional(),
+  ZERODHA_BASE_URL: z.string().optional().default('https://api.kite.trade'),
+  ZERODHA_LOGIN_URL: z
+    .string()
+    .optional()
+    .default('https://kite.zerodha.com/connect/login'),
+  GROWW_API_KEY: z.string().optional(),
+  GROWW_API_SECRET: z.string().optional(),
+  GROWW_REDIRECT_URI: z.string().optional(),
+  GROWW_BASE_URL: z
+    .string()
+    .optional()
+    .default('https://api.groww.in/v1'),
+  GROWW_AUTH_BASE_URL: z
+    .string()
+    .optional()
+    .default('https://groww.in/oauth'),
+  BROKER_SYNC_SCHEDULER_ENABLED: z.coerce.boolean().optional().default(false),
+  BROKER_SYNC_SCHEDULER_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .default(60_000),
+  /** IPO Guru v1 API key — 10 req/day, 1 req/min — manual fetch only. */
+  IPOGURU_API_KEY: z.string().optional(),
 })
 .superRefine((val, ctx) => {
   if (val.NODE_ENV === 'production' && !val.CONSOLE_SESSION_SECRET) {
