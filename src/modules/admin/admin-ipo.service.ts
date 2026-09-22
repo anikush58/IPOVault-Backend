@@ -735,7 +735,9 @@ export class AdminIpoService {
       sourceIdentities: {
         some: {
           source: {
-            code: 'ADMIN',
+            code: {
+              in: ['ADMIN', 'IPOGURU'],
+            },
           },
         },
       },

@@ -391,13 +391,13 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(config.registrar).toBe('kfintech');
     });
 
-    it('enforces ADMIN source identity filter on listIpos so background discovery IPOs without ADMIN identity are excluded', async () => {
+    it('enforces ADMIN and IPOGURU source identity filter on listIpos so background discovery IPOs without ADMIN/IPOGURU identity are excluded', async () => {
       await adminIpoService.listIpos({ publicationStatus: 'DRAFT' });
 
       expect(mockPrisma.ipo.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            sourceIdentities: { some: { source: { code: 'ADMIN' } } },
+            sourceIdentities: { some: { source: { code: { in: ['ADMIN', 'IPOGURU'] } } } },
             publicationStatus: 'DRAFT',
           }),
         }),
