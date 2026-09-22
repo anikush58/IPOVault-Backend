@@ -3755,6 +3755,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
 
     function igFmtPriceBand(ipo) {
+      if (ipo.price_band != null && ipo.price_band !== '') {
+        return '\u20B9' + String(ipo.price_band).replace(/-/g, ' \u2013 \u20B9');
+      }
       var lo = ipo.price_band_min || ipo.priceBandMin;
       var hi = ipo.price_band_max || ipo.priceBandMax;
       if (!lo && !hi) return '<span style="color:var(--text-subtle);">&#8212;</span>';
@@ -3765,19 +3768,21 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     function igFmtFreshOfs(ipo) {
       var fresh = ipo.fresh_issue || ipo.freshIssue;
       var ofs = ipo.ofs;
-      if (!fresh && !ofs) return igFmtVal(ipo.issue_type || ipo.issueType);
-      var parts = [];
-      if (fresh) parts.push('F: \u20B9' + parseFloat(fresh).toFixed(0) + ' Cr');
-      if (ofs) parts.push('O: \u20B9' + parseFloat(ofs).toFixed(0) + ' Cr');
-      return parts.join('<br/>');
+      if (fresh || ofs) {
+        var parts = [];
+        if (fresh) parts.push('F: \u20B9' + parseFloat(fresh).toFixed(0) + ' Cr');
+        if (ofs) parts.push('O: \u20B9' + parseFloat(ofs).toFixed(0) + ' Cr');
+        return parts.join('<br/>');
+      }
+      return igFmtVal(ipo.sale_type || ipo.issue_type || ipo.issueType);
     }
 
     function igKnownKeys() {
-      return ['id','name','company_name','symbol','isin','ipo_type','issue_type','status',
+      return ['id','name','company_name','symbol','isin','ipo_type','type','issue_type','sale_type','status',
         'open_date','close_date','allotment_date','listing_date','anchor_date',
-        'price_band_min','price_band_max','issue_price','lot_size','min_investment',
-        'issue_size','fresh_issue','ofs','exchange','registrar',
-        'qib_sub','nii_sub','retail_sub','employee_sub','total_sub','sub_updated_at',
+        'price_band','price_band_min','price_band_max','issue_price','lot_size','min_investment',
+        'issue_size','fresh_issue','ofs','exchange','listing_on','registrar',
+        'subscription','qib_sub','nii_sub','retail_sub','employee_sub','total_sub','sub_updated_at',
         'gmp','gmp_pct','gmp_updated_at'];
     }
 
@@ -3816,17 +3821,34 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         var name = ipo.name || ipo.company_name || '';
         var sc = ipo.status === 'Open' ? '#10B981' : ipo.status === 'Upcoming' ? '#F59E0B' : ipo.status === 'Listed' ? '#4F46E5' : '#64748B';
         var dash = '<span style="color:var(--text-subtle);">&#8212;</span>';
-        var ip = ipo.issue_price != null ? '\u20B9' + parseFloat(ipo.issue_price).toFixed(0) : dash;
-        var isz = ipo.issue_size != null ? '\u20B9' + parseFloat(ipo.issue_size).toFixed(2) : dash;
-        var gmpColor = (ipo.gmp || 0) > 0 ? '#10B981' : '#EF4444';
-        var gmpVal = ipo.gmp != null ? (ipo.gmp > 0 ? '+' : '') + parseFloat(ipo.gmp).toFixed(2) : dash;
-        var gmpPctColor = (ipo.gmp_pct || 0) > 0 ? '#10B981' : '#EF4444';
-        var gmpPctVal = ipo.gmp_pct != null ? (ipo.gmp_pct > 0 ? '+' : '') + parseFloat(ipo.gmp_pct).toFixed(2) + '%' : dash;
+
+        var ip = ipo.issue_price != null ? (String(ipo.issue_price).startsWith('\u20B9') ? ipo.issue_price : '\u20B9' + ipo.issue_price) : dash;
+        var isz = ipo.issue_size != null ? igFmtVal(ipo.issue_size) : dash;
+
+        var sub = ipo.subscription || {};
+        var qibSub = sub.qib != null ? sub.qib : ipo.qib_sub;
+        var niiSub = sub.nii != null ? sub.nii : ipo.nii_sub;
+        var retSub = sub.retail != null ? sub.retail : ipo.retail_sub;
+        var totSub = sub.total != null ? sub.total : ipo.total_sub;
+        var subUpdated = sub.updated_at || ipo.sub_updated_at;
+
+        var gmpObj = (ipo.gmp && typeof ipo.gmp === 'object') ? ipo.gmp : null;
+        var gmpRaw = gmpObj ? gmpObj.price : ipo.gmp;
+        var gmpPctRaw = gmpObj ? gmpObj.percentage : ipo.gmp_pct;
+        var gmpUpdated = gmpObj ? gmpObj.updated_at : ipo.gmp_updated_at;
+
+        var gmpNum = parseFloat(gmpRaw);
+        var gmpPctNum = parseFloat(gmpPctRaw);
+        var gmpColor = !isNaN(gmpNum) && gmpNum > 0 ? '#10B981' : (!isNaN(gmpNum) && gmpNum < 0 ? '#EF4444' : '#64748B');
+        var gmpVal = !isNaN(gmpNum) ? (gmpNum > 0 ? '+' : '') + gmpNum.toFixed(2) : (gmpRaw ? igFmtVal(gmpRaw) : dash);
+        var gmpPctColor = !isNaN(gmpPctNum) && gmpPctNum > 0 ? '#10B981' : (!isNaN(gmpPctNum) && gmpPctNum < 0 ? '#EF4444' : '#64748B');
+        var gmpPctVal = !isNaN(gmpPctNum) ? (gmpPctNum > 0 ? '+' : '') + gmpPctNum.toFixed(2) + '%' : (gmpPctRaw ? igFmtVal(gmpPctRaw) : dash);
+
         var sym = ipo.symbol ? '<br/><span style="font-size:10px;color:var(--text-muted);font-family:monospace;">' + ipo.symbol + '</span>' : '';
         rows.push('<tr>'
           + '<td style="color:var(--text-muted);font-size:11px;">' + (idx + 1) + '</td>'
           + '<td><strong style="font-size:12px;">' + igFmtVal(name) + '</strong>' + sym + '</td>'
-          + '<td>' + igFmtVal(ipo.ipo_type) + '</td>'
+          + '<td>' + igFmtVal(ipo.ipo_type || ipo.type) + '</td>'
           + '<td><span style="font-size:11px;font-weight:600;color:' + sc + ';">' + igFmtVal(ipo.status) + '</span></td>'
           + '<td style="font-family:monospace;font-size:11px;">' + igFmtVal(ipo.open_date) + '</td>'
           + '<td style="font-family:monospace;font-size:11px;">' + igFmtVal(ipo.close_date) + '</td>'
@@ -3837,16 +3859,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           + '<td style="text-align:right;font-family:monospace;">' + igFmtVal(ipo.lot_size) + '</td>'
           + '<td style="text-align:right;font-family:monospace;">' + isz + '</td>'
           + '<td style="font-size:11px;">' + igFmtFreshOfs(ipo) + '</td>'
-          + '<td style="font-size:11px;">' + igFmtVal(ipo.exchange) + '</td>'
+          + '<td style="font-size:11px;">' + igFmtVal(ipo.exchange || ipo.listing_on) + '</td>'
           + '<td style="font-size:11px;">' + igFmtVal(ipo.registrar) + '</td>'
-          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(ipo.qib_sub) + '</td>'
-          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(ipo.nii_sub) + '</td>'
-          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(ipo.retail_sub) + '</td>'
-          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(ipo.total_sub) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(qibSub) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(niiSub) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(retSub) + '</td>'
+          + '<td style="text-align:right;font-family:monospace;">' + igFmtNum(totSub) + '</td>'
           + '<td style="text-align:right;font-family:monospace;color:' + gmpColor + ';">' + gmpVal + '</td>'
           + '<td style="text-align:right;font-family:monospace;color:' + gmpPctColor + ';">' + gmpPctVal + '</td>'
-          + '<td style="font-family:monospace;font-size:10px;">' + igFmtVal(ipo.gmp_updated_at) + '</td>'
-          + '<td style="font-family:monospace;font-size:10px;">' + igFmtVal(ipo.sub_updated_at) + '</td>'
+          + '<td style="font-family:monospace;font-size:10px;">' + igFmtVal(gmpUpdated) + '</td>'
+          + '<td style="font-family:monospace;font-size:10px;">' + igFmtVal(subUpdated) + '</td>'
           + '<td style="text-align:center;"><button type="button" class="btn-secondary" style="font-size:10px;padding:3px 8px;min-height:28px;" onclick="showIpoGuruRaw(' + idx + ')">Raw</button></td>'
           + '</tr>');
       }
@@ -3876,12 +3898,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         var lastFetchEl = document.getElementById('ipo-guru-last-fetch');
         var httpEl = document.getElementById('ipo-guru-http-status');
         var totalEl = document.getElementById('ipo-guru-total');
-        if (lastFetchEl) lastFetchEl.textContent = result.fetchedAt ? new Date(result.fetchedAt).toLocaleString() : '&#8212;';
-        if (httpEl) httpEl.textContent = result.httpStatus != null ? result.httpStatus : '&#8212;';
+        if (lastFetchEl) lastFetchEl.textContent = result.fetchedAt ? new Date(result.fetchedAt).toLocaleString() : '\u2014';
+        if (httpEl) httpEl.textContent = result.httpStatus != null ? result.httpStatus : (res.status || '\u2014');
         if (totalEl) totalEl.textContent = result.total != null ? result.total : 0;
 
-        if (!res.ok || result.message) {
-          var errMsg = result.details || result.message || 'Unknown error';
+        if (!res.ok || json.error || result.error || (result.message && !result.ipos)) {
+          var errMsg = (json.error && json.error.message) || (result.error && result.error.message) || result.details || result.message || ('HTTP ' + res.status);
           if (errEl) { errEl.textContent = '\u26A0\uFE0F Error: ' + errMsg; errEl.style.display = 'block'; }
           if (badge) { badge.textContent = 'HTTP ' + (result.httpStatus || res.status); badge.style.background = '#FEF2F2'; badge.style.color = '#991B1B'; badge.style.display = 'inline-block'; }
           if (emptyEl) emptyEl.style.display = 'block';
@@ -3895,7 +3917,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (rowCountEl) rowCountEl.textContent = ipos.length + ' IPOs';
 
         if (badge) {
-          badge.textContent = 'HTTP ' + result.httpStatus;
+          badge.textContent = 'HTTP ' + (result.httpStatus || 200);
           badge.style.background = '#DCFCE7';
           badge.style.color = '#15803D';
           badge.style.display = 'inline-block';
