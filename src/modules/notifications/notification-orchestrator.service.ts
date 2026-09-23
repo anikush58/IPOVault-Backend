@@ -393,6 +393,133 @@ export class NotificationOrchestratorService {
   }
 
   /**
+   * Evaluates and triggers system push notification when an IPO's allotment result
+   * is first detected as available (ALLOTMENT_OUT / ALLOTMENT_COMPLETED).
+   *
+   * Targeted delivery: Only users with an active application/investment relationship
+   * (IpoInvestment, AllotmentCheckJob, or saved PAN with check log) receive this notification.
+   *
+   * Restart & duplicate safe: Uses persistent PostgreSQL unique constraint on (userId, deduplicationKey).
+   * Failure isolated: errors log diagnostics without throwing.
+   */
+  async processAllotmentOutEvent(ipoId: string): Promise<OrchestrationResult> {
+    const result: OrchestrationResult = {
+      evaluatedCount: 0,
+      createdCount: 0,
+      suppressedCount: 0,
+    };
+
+    try {
+      const ipo = await this.prisma.ipo.findUnique({
+        where: { id: ipoId },
+        include: { company: true },
+      });
+
+      if (!ipo) {
+        this.logger.warn(`processAllotmentOutEvent: IPO ${ipoId} not found`);
+        return result;
+      }
+
+      // Safety check: Only trigger when actual availability has been detected or status is completed
+      if (!ipo.allotmentResultAvailableAt && ipo.status !== 'ALLOTMENT_COMPLETED') {
+        this.logger.debug(
+          `processAllotmentOutEvent: Skipped for IPO ${ipoId} (allotment not yet confirmed available)`,
+        );
+        return result;
+      }
+
+      // Query eligible users with relevant investments or applications for this IPO
+      const [investments, checkJobs, checkLogs] = await Promise.all([
+        this.prisma.ipoInvestment.findMany({
+          where: { ipoId },
+          select: { brokerAccount: { select: { userId: true } } },
+        }),
+        this.prisma.allotmentCheckJob.findMany({
+          where: { ipoId, userId: { not: null } },
+          select: { userId: true },
+          distinct: ['userId'],
+        }),
+        this.prisma.allotmentCheckLog.findMany({
+          where: { ipoId },
+          select: { identifierHash: true },
+          distinct: ['identifierHash'],
+        }),
+      ]);
+
+      let panLogUsers: { userId: string }[] = [];
+      const hashes = checkLogs
+        .map((l) => l.identifierHash)
+        .filter((h): h is string => Boolean(h));
+
+      if (hashes.length > 0) {
+        panLogUsers = await this.prisma.userSavedPan.findMany({
+          where: { panHash: { in: hashes } },
+          select: { userId: true },
+          distinct: ['userId'],
+        });
+      }
+
+      const eligibleUserIds = new Set<string>();
+      for (const inv of investments) {
+        if (inv.brokerAccount?.userId) {
+          eligibleUserIds.add(inv.brokerAccount.userId);
+        }
+      }
+      for (const job of checkJobs) {
+        if (job.userId) {
+          eligibleUserIds.add(job.userId);
+        }
+      }
+      for (const pan of panLogUsers) {
+        if (pan.userId) {
+          eligibleUserIds.add(pan.userId);
+        }
+      }
+
+      if (eligibleUserIds.size === 0) {
+        this.logger.debug(
+          `processAllotmentOutEvent: No eligible investment/application users found for IPO ${ipoId}`,
+        );
+        return result;
+      }
+
+      const ipoContext: IpoNotificationContext = {
+        id: ipo.id,
+        companyName: ipo.company.displayName || ipo.company.legalName,
+        symbol: ipo.symbol,
+        status: ipo.status,
+        lotSize: ipo.lotSize,
+        priceBandHigh: ipo.priceBandHigh ? Number(ipo.priceBandHigh) : null,
+      };
+
+      for (const userId of eligibleUserIds) {
+        result.evaluatedCount++;
+        const input = this.generator.generateAllotmentOutNotification(
+          userId,
+          ipoContext,
+        );
+
+        const created = await this.repository.createNotification(input);
+        if (created) {
+          result.createdCount++;
+          this.logger.log(
+            `Generated Allotment Out notification for user ${userId} (IPO ${ipo.id})`,
+          );
+        } else {
+          result.suppressedCount++;
+        }
+      }
+    } catch (err: unknown) {
+      this.logger.error(
+        `Allotment out notification orchestration failure for IPO ${ipoId}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+
+    return result;
+  }
+
+  /**
    * Resolves target user IDs for system-wide events (lifecycle, change, quality warnings).
    */
   private async resolveTargetUserIds(options?: {

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { DiscoveryModule } from '../discovery/discovery.module';
 import { InAppDeliveryAdapter } from './adapters/in-app-delivery.adapter';
+import { ExpoPushDeliveryAdapter } from './adapters/expo-push-delivery.adapter';
 import { NotificationEventGenerator } from './notification-event.generator';
 import { NotificationDeliveryRepository } from './notification-delivery.repository';
 import { NotificationDeliveryService } from './notification-delivery.service';
@@ -21,6 +22,7 @@ import { NotificationService } from './notification.service';
     // Phase 29.4, 29.6 & 29.8 — Delivery Infrastructure, Automation & Operations
     NotificationDeliveryRepository,
     InAppDeliveryAdapter,
+    ExpoPushDeliveryAdapter,
     NotificationDeliveryService,
     NotificationDeliveryRetryPolicy,
     NotificationDeliveryWorkerService,

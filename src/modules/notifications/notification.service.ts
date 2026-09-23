@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../database/prisma.service';
 import { AppException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import {
@@ -7,7 +8,9 @@ import {
   NotificationPreferencesListResponseDto,
   NotificationQueryDto,
   NotificationResponseDto,
+  PushTokenResponseDto,
   ReadNotificationsResponseDto,
+  RegisterPushTokenDto,
 } from './dto/notification.dto';
 import { NotificationEventGenerator } from './notification-event.generator';
 import { NotificationRepository } from './notification.repository';
@@ -16,6 +19,7 @@ import { NotificationType } from './notification.types';
 @Injectable()
 export class NotificationService {
   constructor(
+    private readonly prisma: PrismaService,
     private readonly repository: NotificationRepository,
     public readonly generator: NotificationEventGenerator,
   ) {}
@@ -125,6 +129,64 @@ export class NotificationService {
     const validUserId = this.validateUserId(userId);
     const preferences = await this.repository.resetUserPreferences(validUserId);
     return { preferences };
+  }
+
+  /**
+   * Registers or updates an active device push token for the authenticated user.
+   */
+  async registerPushToken(
+    userId: string | undefined,
+    dto: RegisterPushTokenDto,
+  ): Promise<PushTokenResponseDto> {
+    const validUserId = this.validateUserId(userId);
+    const tokenClean = dto.token.trim();
+
+    await this.prisma.userPushToken.upsert({
+      where: {
+        userId_token: {
+          userId: validUserId,
+          token: tokenClean,
+        },
+      },
+      create: {
+        userId: validUserId,
+        token: tokenClean,
+        platform: dto.platform || null,
+        isActive: true,
+      },
+      update: {
+        platform: dto.platform || undefined,
+        isActive: true,
+        updatedAt: new Date(),
+      },
+    });
+
+    return {
+      success: true,
+      token: tokenClean,
+    };
+  }
+
+  /**
+   * Deactivates a device push token for the authenticated user.
+   */
+  async deactivatePushToken(
+    userId: string | undefined,
+    token: string,
+  ): Promise<{ success: boolean }> {
+    const validUserId = this.validateUserId(userId);
+    await this.prisma.userPushToken.updateMany({
+      where: {
+        userId: validUserId,
+        token: token.trim(),
+      },
+      data: {
+        isActive: false,
+        updatedAt: new Date(),
+      },
+    });
+
+    return { success: true };
   }
 
   /**

@@ -24,8 +24,21 @@ export const updatePreferenceBodySchema = z.object({
 
 export type UpdatePreferenceBodyDto = z.infer<typeof updatePreferenceBodySchema>;
 
+export const registerPushTokenSchema = z.object({
+  token: z.string().min(1).max(512),
+  platform: z.string().max(50).optional(),
+});
+
+export type RegisterPushTokenDto = z.infer<typeof registerPushTokenSchema>;
+
+export interface PushTokenResponseDto {
+  success: boolean;
+  token: string;
+}
+
 export interface NotificationResponseDto {
   id: string;
+  userId?: string;
   type: NotificationType;
   title: string;
   message: string;

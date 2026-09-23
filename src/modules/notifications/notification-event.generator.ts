@@ -6,6 +6,7 @@ import {
 } from '@prisma/client';
 import {
   buildAllotmentResultDeduplicationKey,
+  buildIpoAllotmentOutDeduplicationKey,
   buildIpoClosedDeduplicationKey,
   buildIpoDataChangedDeduplicationKey,
   buildIpoDataQualityWarningDeduplicationKey,
@@ -257,6 +258,32 @@ export class NotificationEventGenerator {
         ipo.id,
         observation.id,
       ),
+    };
+  }
+
+  /**
+   * Generates system notification when an IPO's allotment result availability is first detected.
+   * Format:
+   * Title: "IPO Allotment Out"
+   * Body: "The allotment status for {companyName} is now available. Check your allotment status."
+   */
+  generateAllotmentOutNotification(
+    userId: string,
+    ipo: IpoNotificationContext,
+  ): CreateNotificationInput {
+    return {
+      userId,
+      type: NotificationType.ALLOTTED_RESULT_AVAILABLE,
+      title: 'IPO Allotment Out',
+      message: `The allotment status for ${ipo.companyName} is now available. Check your allotment status.`,
+      relatedEntityType: 'IPO',
+      relatedEntityId: ipo.id,
+      metadata: {
+        ipoId: ipo.id,
+        companyName: ipo.companyName,
+        symbol: ipo.symbol ?? null,
+      },
+      deduplicationKey: buildIpoAllotmentOutDeduplicationKey(ipo.id),
     };
   }
 }

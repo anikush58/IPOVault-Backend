@@ -80,6 +80,10 @@ export function buildAllotmentResultDeduplicationKey(
   return `allotment_result:${ipoId}:${jobItemId}`;
 }
 
+export function buildIpoAllotmentOutDeduplicationKey(ipoId: string): string {
+  return `ipo_allotment_out:${ipoId}`;
+}
+
 // ─────────────────────────────────────────────────────────
 // Phase 29.4 — Delivery Infrastructure Types
 // ─────────────────────────────────────────────────────────

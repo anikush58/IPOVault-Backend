@@ -3,10 +3,12 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { IpoStatus, LifecycleEventType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RegistrarResolver } from '../allotment/registrar.resolver';
+import { NotificationOrchestratorService } from '../notifications/notification-orchestrator.service';
 import {
   AllotmentIdentifierType,
   CheckAllotmentRequest,
@@ -95,6 +97,8 @@ export class IpoTimelineSchedulerService
   constructor(
     private readonly prisma: PrismaService,
     private readonly resolver: RegistrarResolver,
+    @Optional()
+    private readonly notificationOrchestrator?: NotificationOrchestratorService,
   ) {}
 
   public getConfig(): TimelineSchedulerConfig {
@@ -311,6 +315,15 @@ export class IpoTimelineSchedulerService
               this.logger.log(
                 `[Timeline] Confirmed allotment results live for IPO '${ipo.company.displayName}' (${ipo.id}). Transitioned to ALLOTMENT_COMPLETED`,
               );
+              if (this.notificationOrchestrator) {
+                this.notificationOrchestrator
+                  .processAllotmentOutEvent(ipo.id)
+                  .catch((notifErr: unknown) => {
+                    this.logger.error(
+                      `Failed to orchestrate allotment out notification for IPO ${ipo.id} (isolated): ${(notifErr as Error)?.message || notifErr}`,
+                    );
+                  });
+              }
             }
           }
         }

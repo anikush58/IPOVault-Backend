@@ -142,6 +142,22 @@ export class NotificationRepository {
     }
 
     try {
+      const existing = await this.prisma.notification.findUnique({
+        where: {
+          userId_deduplicationKey: {
+            userId: input.userId,
+            deduplicationKey: input.deduplicationKey,
+          },
+        },
+      });
+
+      if (existing) {
+        this.logger.debug(
+          `Notification duplicate suppressed for key: ${input.deduplicationKey}`,
+        );
+        return null;
+      }
+
       const created = await this.prisma.notification.upsert({
         where: {
           userId_deduplicationKey: {
@@ -164,13 +180,22 @@ export class NotificationRepository {
 
       const dto = this.mapToDto(created);
 
-      // Initiate IN_APP delivery. Fire-and-forget: isolated in try/catch so
+      // Initiate IN_APP and PUSH delivery. Fire-and-forget: isolated in try/catch so
       // delivery failures NEVER cause notification creation to fail.
       this.deliveryService
         .initDelivery(dto, DeliveryChannel.IN_APP)
         .catch((err: unknown) => {
           this.logger.error(
-            `Delivery init error (isolated from notification creation): notificationId=${created.id} — ${(err as Error).message}`,
+            `IN_APP Delivery init error (isolated): notificationId=${created.id} — ${(err as Error).message}`,
+            (err as Error).stack,
+          );
+        });
+
+      this.deliveryService
+        .initDelivery(dto, DeliveryChannel.PUSH)
+        .catch((err: unknown) => {
+          this.logger.error(
+            `PUSH Delivery init error (isolated): notificationId=${created.id} — ${(err as Error).message}`,
             (err as Error).stack,
           );
         });
@@ -309,6 +334,7 @@ export class NotificationRepository {
 
   private mapToDto(item: {
     id: string;
+    userId?: string;
     type: NotificationType;
     title: string;
     message: string;
@@ -320,6 +346,7 @@ export class NotificationRepository {
   }): NotificationResponseDto {
     return {
       id: item.id,
+      userId: item.userId,
       type: item.type,
       title: item.title,
       message: item.message,

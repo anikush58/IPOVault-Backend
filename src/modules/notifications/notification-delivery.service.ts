@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { NotificationDeliveryAdapter } from './notification-delivery.adapter';
 import { NotificationDeliveryRepository } from './notification-delivery.repository';
 import { InAppDeliveryAdapter } from './adapters/in-app-delivery.adapter';
+import { ExpoPushDeliveryAdapter } from './adapters/expo-push-delivery.adapter';
 import { NotificationResponseDto } from './dto/notification.dto';
 import {
   DeliveryChannel,
@@ -21,13 +22,6 @@ import {
  *   - Support idempotent delivery (DELIVERED → no-op).
  *   - Support retry semantics (FAILED → PROCESSING → DELIVERED/FAILED).
  *
- * Does NOT:
- *   - Generate notifications.
- *   - Evaluate user preferences.
- *   - Inspect PAN/hash/encrypted identifiers.
- *   - Implement external provider logic.
- *   - Run background workers or schedulers.
- *
  * State machine (legal transitions):
  *   PENDING    → PROCESSING
  *   PROCESSING → DELIVERED
@@ -36,8 +30,7 @@ import {
  *   DELIVERED  → (terminal, idempotent on re-delivery request)
  *
  * Privacy: DeliveryResult must never contain PAN, panHash, panEncrypted,
- * identifierHash, or raw secrets. The InAppDeliveryAdapter does not use
- * any of these fields (they are not present on NotificationResponseDto).
+ * identifierHash, or raw secrets.
  */
 @Injectable()
 export class NotificationDeliveryService {
@@ -45,17 +38,17 @@ export class NotificationDeliveryService {
 
   /**
    * Registry of adapters keyed by channel.
-   * In Phase 29.4 only IN_APP is registered.
-   * Future channels: inject additional adapters and register here.
    */
   private readonly adapterRegistry: Map<DeliveryChannel, NotificationDeliveryAdapter>;
 
   constructor(
     private readonly deliveryRepository: NotificationDeliveryRepository,
     private readonly inAppAdapter: InAppDeliveryAdapter,
+    private readonly pushAdapter: ExpoPushDeliveryAdapter,
   ) {
     this.adapterRegistry = new Map();
     this.adapterRegistry.set(DeliveryChannel.IN_APP, this.inAppAdapter);
+    this.adapterRegistry.set(DeliveryChannel.PUSH, this.pushAdapter);
   }
 
   /**

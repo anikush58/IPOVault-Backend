@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
@@ -20,7 +21,10 @@ import {
   NotificationQueryDto,
   notificationQuerySchema,
   NotificationResponseDto,
+  PushTokenResponseDto,
   ReadNotificationsResponseDto,
+  RegisterPushTokenDto,
+  registerPushTokenSchema,
   UpdatePreferenceBodyDto,
   updatePreferenceBodySchema,
 } from './dto/notification.dto';
@@ -105,5 +109,24 @@ export class NotificationController {
     @Headers('x-user-id') userId?: string,
   ): Promise<ReadNotificationsResponseDto> {
     return this.notificationService.markAllNotificationsAsRead(userId);
+  }
+
+  @Post('push-token')
+  @HttpCode(HttpStatus.OK)
+  async registerPushToken(
+    @Body(new ZodValidationPipe(registerPushTokenSchema))
+    body: RegisterPushTokenDto,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<PushTokenResponseDto> {
+    return this.notificationService.registerPushToken(userId, body);
+  }
+
+  @Delete('push-token/:token')
+  @HttpCode(HttpStatus.OK)
+  async deactivatePushToken(
+    @Param('token') token: string,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<{ success: boolean }> {
+    return this.notificationService.deactivatePushToken(userId, token);
   }
 }
