@@ -42,6 +42,10 @@ export type IpoWithRelations = Omit<
   | 'postIpoPromoterHolding'
   | 'preIpoMarketCap'
   | 'postIpoMarketCap'
+  | 'allotmentResultAvailableAt'
+  | 'isin'
+  | 'nseSymbol'
+  | 'bseSymbol'
 > & {
   listingPrice?: BaseIpoWithRelations['listingPrice'];
   listingGainPct?: BaseIpoWithRelations['listingGainPct'];
@@ -55,6 +59,10 @@ export type IpoWithRelations = Omit<
   postIpoPromoterHolding?: BaseIpoWithRelations['postIpoPromoterHolding'];
   preIpoMarketCap?: BaseIpoWithRelations['preIpoMarketCap'];
   postIpoMarketCap?: BaseIpoWithRelations['postIpoMarketCap'];
+  allotmentResultAvailableAt?: BaseIpoWithRelations['allotmentResultAvailableAt'];
+  isin?: BaseIpoWithRelations['isin'];
+  nseSymbol?: BaseIpoWithRelations['nseSymbol'];
+  bseSymbol?: BaseIpoWithRelations['bseSymbol'];
   company: Partial<BaseIpoWithRelations['company']> & {
     id: string;
     legalName: string;

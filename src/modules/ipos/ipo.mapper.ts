@@ -199,6 +199,10 @@ export function toIpoResponseDto(
     lifecycle[LIFECYCLE_FIELD[event.eventType]] = toDateOnly(event.eventDate);
   }
 
+  if (ipo.allotmentResultAvailableAt) {
+    lifecycle.allotmentResultAvailableAt = ipo.allotmentResultAvailableAt.toISOString();
+  }
+
   // Derived minimum investment amount (lotSize * priceBandHigh)
   let minimumInvestmentAmount: string | null = null;
   if (ipo.lotSize != null && ipo.priceBandHigh != null) {
@@ -389,6 +393,9 @@ export function toIpoResponseDto(
     currentGmp,
     currentSubscription,
     ...(dataReadiness ? { dataReadiness } : {}),
+    allotmentResultAvailableAt: ipo.allotmentResultAvailableAt
+      ? ipo.allotmentResultAvailableAt.toISOString()
+      : null,
     createdAt: ipo.createdAt.toISOString(),
     updatedAt: ipo.updatedAt.toISOString(),
   };

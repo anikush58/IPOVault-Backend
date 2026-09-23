@@ -161,11 +161,12 @@ model Ipo {
   preIpoPe               Decimal?          @map("pre_ipo_pe") @db.Decimal(10, 2)
   postIpoPe              Decimal?          @map("post_ipo_pe") @db.Decimal(10, 2)
   preIpoPromoterHolding  Decimal?          @map("pre_ipo_promoter_holding") @db.Decimal(6, 2)
-  postIpoPromoterHolding Decimal?          @map("post_ipo_promoter_holding") @db.Decimal(6, 2)
-  preIpoMarketCap        Decimal?          @map("pre_ipo_market_cap") @db.Decimal(20, 2)
-  postIpoMarketCap       Decimal?          @map("post_ipo_market_cap") @db.Decimal(20, 2)
-  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  postIpoPromoterHolding     Decimal?          @map("post_ipo_promoter_holding") @db.Decimal(6, 2)
+  preIpoMarketCap            Decimal?          @map("pre_ipo_market_cap") @db.Decimal(20, 2)
+  postIpoMarketCap           Decimal?          @map("post_ipo_market_cap") @db.Decimal(20, 2)
+  allotmentResultAvailableAt DateTime?         @map("allotment_result_available_at") @db.Timestamptz(6)
+  createdAt                  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   company                  Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
   lifecycleEvents          IpoLifecycleEvent[]

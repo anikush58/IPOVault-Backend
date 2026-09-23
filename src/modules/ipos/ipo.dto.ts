@@ -449,6 +449,7 @@ export type IpoLifecycleDto = {
   refundInitiationDate: string | null;
   dematCreditDate: string | null;
   listingDate: string | null;
+  allotmentResultAvailableAt?: string | null;
 };
 
 /**
@@ -540,6 +541,7 @@ export type IpoResponseDto = {
   currentGmp?: CurrentGmpSnapshotDto | null;
   currentSubscription?: CurrentSubscriptionSnapshotDto | null;
   dataReadiness?: IpoDataReadinessDto;
+  allotmentResultAvailableAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
