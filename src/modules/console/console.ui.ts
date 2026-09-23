@@ -1110,7 +1110,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
       <div id="login-error-alert" class="auth-error-alert"></div>
 
-      <form class="auth-form" onsubmit="handleLogin(event)">
+      <form class="auth-form" onsubmit="handleLogin(event); return false;">
         <div class="auth-input-group">
           <label for="login-username">Username</label>
           <input type="text" id="login-username" name="username" placeholder="Enter admin username" autocomplete="username" required autofocus />
@@ -2158,18 +2158,35 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     let currentTab = 'dashboard';
     let currentIpoData = null;
     let isAuthenticated = false;
+    let consoleToken = '';
+    try {
+      consoleToken = localStorage.getItem('ipovault_console_token') || '';
+    } catch (e) {}
 
-    // Intercept 401 Unauthorized globally for console API requests
+    // Intercept 401 Unauthorized globally and inject authorization header for console API requests
     const originalFetch = window.fetch;
     window.fetch = async function(...args) {
-      const res = await originalFetch.apply(this, args);
+      let [resource, config] = args;
+      config = config ? Object.assign({}, config) : {};
+      const headers = new Headers(config.headers || {});
+      if (consoleToken && !headers.has('Authorization')) {
+        headers.set('Authorization', 'Bearer ' + consoleToken);
+      }
+      config.headers = headers;
+      if (!config.credentials) {
+        config.credentials = 'include';
+      }
+
+      const res = await originalFetch.call(this, resource, config);
       if (
         res.status === 401 &&
-        typeof args[0] === 'string' &&
-        args[0].includes('/api/') &&
-        !args[0].endsWith('/login') &&
-        !args[0].endsWith('/session')
+        typeof resource === 'string' &&
+        resource.includes('/api/') &&
+        !resource.endsWith('/login') &&
+        !resource.endsWith('/session')
       ) {
+        try { localStorage.removeItem('ipovault_console_token'); } catch (e) {}
+        consoleToken = '';
         showLoginModal('Session expired or unauthorized. Please sign in again.');
       }
       return res;
@@ -2201,7 +2218,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
 
     async function handleLogin(e) {
-      if (e) e.preventDefault();
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
       const usernameInput = document.getElementById('login-username');
       const passwordInput = document.getElementById('login-password');
       const submitBtn = document.getElementById('login-submit-btn');
@@ -2215,12 +2232,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           errEl.textContent = 'Please enter both username and password.';
           errEl.style.display = 'block';
         }
-        return;
+        return false;
       }
 
       if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Signing in...';
+        submitBtn.innerHTML = '<span>Signing in...</span>';
       }
       if (errEl) errEl.style.display = 'none';
 
@@ -2228,39 +2245,49 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const res = await originalFetch(API_BASE + '/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ username, password }),
         });
 
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
+          if (data.token) {
+            consoleToken = data.token;
+            try { localStorage.setItem('ipovault_console_token', data.token); } catch (e) {}
+          }
           const userDisplay = document.getElementById('sidebar-user-name');
-          if (userDisplay && data.username) {
-            userDisplay.textContent = data.username;
+          if (userDisplay && (data.username || username)) {
+            userDisplay.textContent = data.username || username;
           }
           hideLoginModal();
           initConsoleApp();
         } else {
+          const errData = await res.json().catch(() => ({}));
+          const msg = errData?.message || (res.status === 401 ? 'Invalid username or password.' : 'Sign in failed (HTTP ' + res.status + ').');
           if (errEl) {
-            errEl.textContent = 'Invalid username or password.';
+            errEl.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg);
             errEl.style.display = 'block';
           }
         }
       } catch (err) {
         if (errEl) {
-          errEl.textContent = 'Network or server error. Please try again.';
+          errEl.textContent = 'Network or connection error. Please verify the backend is reachable and try again.';
           errEl.style.display = 'block';
         }
       } finally {
         if (submitBtn) {
           submitBtn.disabled = false;
-          submitBtn.textContent = 'Sign In';
+          submitBtn.innerHTML = '<span>Sign In</span>';
         }
       }
+      return false;
     }
 
     async function handleLogout() {
+      try { localStorage.removeItem('ipovault_console_token'); } catch (e) {}
+      consoleToken = '';
       try {
-        await originalFetch(API_BASE + '/logout', { method: 'POST' });
+        await originalFetch(API_BASE + '/logout', { method: 'POST', credentials: 'include' });
       } catch (err) {
         console.warn('Logout error:', err);
       }
@@ -2275,7 +2302,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (window.feather) feather.replace();
 
       try {
-        const res = await originalFetch(API_BASE + '/session');
+        const headers = {};
+        if (consoleToken) headers['Authorization'] = 'Bearer ' + consoleToken;
+        const res = await originalFetch(API_BASE + '/session', {
+          credentials: 'include',
+          headers: headers,
+        });
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
           const userDisplay = document.getElementById('sidebar-user-name');

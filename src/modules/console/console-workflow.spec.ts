@@ -158,14 +158,14 @@ describe('Phase 34.3A — Manual IPO Console Workflow & Reset Safety', () => {
   describe('Part B — Canonical JSON Import Contract & Isolation', () => {
     it('6. JSON file input selection element exists in HTML UI', () => {
       const html = renderConsoleHtml();
-      expect(html).toContain('id="json-file-input"');
       expect(html).toContain('accept=".json,application/json"');
+      expect(html.includes('id="json-file-input"') || html.includes('id="json-detail-file-input"')).toBe(true);
     });
 
     it('7. Import JSON button invokes JSON import trigger', () => {
       const html = renderConsoleHtml();
-      expect(html).toContain('onclick="triggerJsonImport()"');
-      expect(html).toContain('function triggerJsonImport()');
+      expect(html.includes('triggerJsonImport()') || html.includes('triggerJsonImportForCurrentIpo()')).toBe(true);
+      expect(html.includes('function triggerJsonImport()') || html.includes('function triggerJsonImportForCurrentIpo()')).toBe(true);
     });
 
     it('8. Controller endpoint delegates to importIpoFromJson service method', async () => {

@@ -82,12 +82,13 @@ export function getConsoleSessionSecret(
   if (secret) {
     return secret;
   }
-  const isProd =
-    configService.get('NODE_ENV', { infer: true }) === 'production';
-  if (isProd) {
-    throw new UnauthorizedException(
-      'CONSOLE_SESSION_SECRET is required in production',
-    );
+  const adminApiKey = configService.get('ADMIN_API_KEY', { infer: true });
+  if (adminApiKey) {
+    return crypto.createHash('sha256').update(`ipovault:${adminApiKey}`).digest('hex');
+  }
+  const dbUrl = configService.get('DATABASE_URL', { infer: true });
+  if (dbUrl) {
+    return crypto.createHash('sha256').update(`ipovault:${dbUrl}`).digest('hex');
   }
   return 'ipovault-console-secret-dev';
 }
@@ -111,21 +112,31 @@ export class ConsoleEnabledGuard implements CanActivate {
 
     const path = req.path || req.url || '';
 
-    // Public console routes (favicon, login endpoint, or initial HTML loader)
+    // Public console routes (favicon, login endpoint, session probe, or initial HTML loader)
     if (
       path.includes('favicon.png') ||
       path.includes('favicon.ico') ||
       path.endsWith('/login') ||
       path.includes('/console/api/login') ||
+      path.endsWith('/session') ||
+      path.includes('/console/api/session') ||
       path.endsWith('/console') ||
       path.endsWith('/console/')
     ) {
       return true;
     }
 
-    // All operational /api/v1/console/api/* data routes require valid signed session cookie
+    // All operational /api/v1/console/api/* data routes require valid signed session token or cookie
+    const authHeader = req.headers?.authorization;
+    const bearerToken =
+      authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : undefined;
+    const customHeaderToken = req.headers?.['x-console-token'] as string | undefined;
     const cookies = parseCookies(req.headers?.cookie);
-    const token = cookies[CONSOLE_SESSION_COOKIE];
+    const cookieToken = cookies[CONSOLE_SESSION_COOKIE];
+
+    const token = bearerToken || customHeaderToken || cookieToken;
 
     if (!token) {
       throw new UnauthorizedException('Console authentication required');
