@@ -106,6 +106,9 @@ export interface IRegistrarAdapter {
   checkAllotment(
     request: CheckAllotmentRequest,
   ): Promise<NormalizedAllotmentResult>;
+  resolveRegistrarIpoCode?(
+    request: CheckAllotmentRequest,
+  ): Promise<string | NormalizedAllotmentResult>;
 }
 
 /**

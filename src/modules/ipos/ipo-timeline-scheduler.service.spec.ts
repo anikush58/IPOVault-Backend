@@ -154,7 +154,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
   });
 
   describe('Transition 3: CLOSED -> ALLOTMENT_COMPLETED (Only on actual confirmation)', () => {
-    it('7. should NOT transition when registrar probe returns NOT_YET_AVAILABLE', async () => {
+    it('7. should NOT transition when registrar code resolution returns NOT_YET_AVAILABLE', async () => {
       const allotmentDate = new Date('2026-09-26T00:00:00.000Z');
       const nowOnAllotmentDate = new Date('2026-09-26T04:00:00.000Z'); // 09:30:00 IST
 
@@ -173,7 +173,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       ]);
 
       const mockAdapter = {
-        checkAllotment: jest.fn().mockResolvedValue({
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue({
           status: AllotmentStatus.NOT_YET_AVAILABLE,
         }),
       };
@@ -185,6 +185,12 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       const result =
         await service.processTimelineTransitions(nowOnAllotmentDate);
       expect(result.allotmentConfirmedCount).toBe(0);
+      expect(mockAdapter.resolveRegistrarIpoCode).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ipoId: 'ipo-3',
+          identifierValue: '', // No fake applicant identifier
+        }),
+      );
       expect(prismaMock.ipo.updateMany).not.toHaveBeenCalled();
     });
 
@@ -207,11 +213,9 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         },
       ]);
 
-      // When allotment DB is live, dummy probe returns APPLICATION_NOT_FOUND
+      // When allotment dataset is live on registrar portal, resolveRegistrarIpoCode returns company code
       const mockAdapter = {
-        checkAllotment: jest.fn().mockResolvedValue({
-          status: AllotmentStatus.APPLICATION_NOT_FOUND,
-        }),
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue('GAMMA_1024'),
       };
       resolverMock.resolveAdapter.mockResolvedValue({
         adapter: mockAdapter,
@@ -253,9 +257,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       ]);
 
       const mockAdapter = {
-        checkAllotment: jest.fn().mockResolvedValue({
-          status: AllotmentStatus.APPLICATION_NOT_FOUND,
-        }),
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue('GAMMA_1024'),
       };
       resolverMock.resolveAdapter.mockResolvedValue({
         adapter: mockAdapter,

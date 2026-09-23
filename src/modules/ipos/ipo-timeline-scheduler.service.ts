@@ -9,7 +9,6 @@ import { PrismaService } from '../../database/prisma.service';
 import { RegistrarResolver } from '../allotment/registrar.resolver';
 import {
   AllotmentIdentifierType,
-  AllotmentStatus,
   CheckAllotmentRequest,
 } from '../allotment/allotment.types';
 
@@ -354,7 +353,8 @@ export class IpoTimelineSchedulerService
 
   /**
    * Confirms actual allotment-result availability from the registrar's official lookup service.
-   * An active-company-list match alone is NOT sufficient; the live allotment query engine must respond.
+   * Leverages the registrar adapter's authoritative active-issue resolution mechanism (KFin React bundle,
+   * MUFG GetDetails XML, or Maashitla companies endpoint) without sending any fake applicant identifiers.
    */
   public async confirmActualAllotmentAvailability(
     ipo: Prisma.IpoGetPayload<{
@@ -373,33 +373,38 @@ export class IpoTimelineSchedulerService
 
       const { adapter, registrarIpoCode } = resolved;
 
-      // Use a safe, synthetic non-existent probe PAN to verify query endpoint responsiveness
-      const probeRequest: CheckAllotmentRequest = {
-        ipoId: ipo.id,
-        registrarIpoCode,
-        identifierType: AllotmentIdentifierType.PAN,
-        identifierValue: 'AAAAA0000A',
-        companyName: ipo.company.displayName,
-        companyLegalName: ipo.company.legalName,
-        symbol: ipo.symbol || undefined,
-      };
+      if (typeof adapter.resolveRegistrarIpoCode === 'function') {
+        const checkRequest: CheckAllotmentRequest = {
+          ipoId: ipo.id,
+          registrarIpoCode,
+          identifierType: AllotmentIdentifierType.PAN,
+          identifierValue: '', // No fake applicant PAN or identifier sent
+          companyName: ipo.company.displayName,
+          companyLegalName: ipo.company.legalName,
+          symbol: ipo.symbol || undefined,
+        };
 
-      const result = await adapter.checkAllotment(probeRequest);
+        const result = await adapter.resolveRegistrarIpoCode(checkRequest);
 
-      // Definite confirmation: The registrar backend allotment dataset is active and returned a result
-      if (
-        result.status === AllotmentStatus.APPLICATION_NOT_FOUND ||
-        result.status === AllotmentStatus.ALLOTTED ||
-        result.status === AllotmentStatus.PARTIALLY_ALLOTTED ||
-        result.status === AllotmentStatus.NOT_ALLOTTED
-      ) {
-        return true;
+        // A valid resolved string code (non-empty and not a UUID fallback) indicates
+        // that the IPO is actively published and available in the registrar's allotment dataset.
+        if (
+          typeof result === 'string' &&
+          result.trim().length > 0 &&
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            result.trim(),
+          )
+        ) {
+          return true;
+        }
+
+        return false;
       }
 
       return false;
     } catch (err: unknown) {
       this.logger.debug(
-        `Registrar allotment probe failed for IPO ${ipo.id}: ${(err as Error)?.message || err}`,
+        `Registrar allotment availability check failed for IPO ${ipo.id}: ${(err as Error)?.message || err}`,
       );
       return false;
     }

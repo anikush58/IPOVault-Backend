@@ -27,6 +27,10 @@ export abstract class BaseRegistrarAdapter implements IRegistrarAdapter {
     request: CheckAllotmentRequest,
   ): Promise<NormalizedAllotmentResult>;
 
+  abstract resolveRegistrarIpoCode(
+    request: CheckAllotmentRequest,
+  ): Promise<string | NormalizedAllotmentResult>;
+
   /**
    * Safe fetch utility with configurable request timeout, standard application User-Agent header,
    * bounded retries, and exponential backoff for transient network issues.
