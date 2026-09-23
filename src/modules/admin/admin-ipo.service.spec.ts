@@ -1392,4 +1392,85 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(commitResult.items[1].status).toBe('SKIPPED_UNMATCHED');
     });
   });
+
+  describe('Admin IPO List Sorting & Tab Counts', () => {
+    it('1. sorts OPEN ipos by closing date ASC (closing soonest on top)', async () => {
+      const ipoOpenFar = {
+        id: 'ipo-far',
+        company: { legalName: 'Far Close Corp', displayName: 'Far Close' },
+        status: 'OPEN',
+        publicationStatus: 'PUBLISHED',
+        lifecycleEvents: [{ eventType: 'CLOSE', eventDate: new Date('2026-09-30T17:00:00.000Z') }],
+        createdAt: new Date('2026-09-01'),
+        updatedAt: new Date('2026-09-01'),
+      };
+      const ipoOpenNear = {
+        id: 'ipo-near',
+        company: { legalName: 'Near Close Corp', displayName: 'Near Close' },
+        status: 'OPEN',
+        publicationStatus: 'PUBLISHED',
+        lifecycleEvents: [{ eventType: 'CLOSE', eventDate: new Date('2026-09-24T17:00:00.000Z') }],
+        createdAt: new Date('2026-09-02'),
+        updatedAt: new Date('2026-09-02'),
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([ipoOpenFar, ipoOpenNear]).mockResolvedValueOnce([ipoOpenFar, ipoOpenNear]);
+
+      const res = await adminIpoService.listIpos({ status: 'OPEN' });
+      expect(res.items.length).toBe(2);
+      expect(res.items[0].id).toBe('ipo-near');
+      expect(res.items[1].id).toBe('ipo-far');
+    });
+
+    it('2. sorts CLOSED ipos by closing date DESC (closed recently on top)', async () => {
+      const ipoClosedOld = {
+        id: 'ipo-old-closed',
+        company: { legalName: 'Old Closed Corp', displayName: 'Old Closed' },
+        status: 'CLOSED',
+        publicationStatus: 'PUBLISHED',
+        lifecycleEvents: [{ eventType: 'CLOSE', eventDate: new Date('2026-08-01T17:00:00.000Z') }],
+        createdAt: new Date('2026-08-01'),
+        updatedAt: new Date('2026-08-01'),
+      };
+      const ipoClosedRecent = {
+        id: 'ipo-recent-closed',
+        company: { legalName: 'Recent Closed Corp', displayName: 'Recent Closed' },
+        status: 'CLOSED',
+        publicationStatus: 'PUBLISHED',
+        lifecycleEvents: [{ eventType: 'CLOSE', eventDate: new Date('2026-09-20T17:00:00.000Z') }],
+        createdAt: new Date('2026-09-20'),
+        updatedAt: new Date('2026-09-20'),
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([ipoClosedOld, ipoClosedRecent]).mockResolvedValueOnce([ipoClosedOld, ipoClosedRecent]);
+
+      const res = await adminIpoService.listIpos({ status: 'CLOSED' });
+      expect(res.items.length).toBe(2);
+      expect(res.items[0].id).toBe('ipo-recent-closed');
+      expect(res.items[1].id).toBe('ipo-old-closed');
+    });
+
+    it('3. returns status and publication breakdown counts', async () => {
+      const ipos = [
+        { id: '1', status: 'OPEN', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
+        { id: '2', status: 'UPCOMING', publicationStatus: 'DRAFT', lifecycleEvents: [] },
+        { id: '3', status: 'CLOSED', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
+        { id: '4', status: 'ALLOTMENT_COMPLETED', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
+        { id: '5', status: 'LISTED', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
+      ];
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce(ipos).mockResolvedValueOnce(ipos);
+
+      const res = await adminIpoService.listIpos({});
+      expect(res.counts).toBeDefined();
+      expect(res.counts.statuses.ALL).toBe(5);
+      expect(res.counts.statuses.OPEN).toBe(1);
+      expect(res.counts.statuses.UPCOMING).toBe(1);
+      expect(res.counts.statuses.CLOSED).toBe(1);
+      expect(res.counts.statuses.ALLOTMENT_COMPLETED).toBe(1);
+      expect(res.counts.statuses.LISTED).toBe(1);
+      expect(res.counts.publication.PUBLISHED).toBe(4);
+      expect(res.counts.publication.DRAFT).toBe(1);
+    });
+  });
 });

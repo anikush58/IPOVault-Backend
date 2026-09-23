@@ -496,6 +496,24 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       font-weight: 600;
       box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
     }
+    .filter-pill .pill-badge {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.08);
+      color: inherit;
+      font-weight: 700;
+      margin-left: 6px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    body.dark-mode .filter-pill .pill-badge {
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .filter-pill.active .pill-badge {
+      background: rgba(255, 255, 255, 0.28) !important;
+      color: #FFFFFF !important;
+    }
 
     /* Grid Table System */
     .grid-table-box {
@@ -1142,6 +1160,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         <button class="nav-item" id="nav-btn-manual" title="Manual IPO Manager" onclick="switchTab('manual')">
           <i data-feather="edit-3"></i>
           <span>Manual IPO Manager</span>
+          <span class="nav-badge" id="nav-manual-count" style="margin-left:auto; font-size:11px; padding:2px 7px; border-radius:10px; background:var(--bg-hover); color:var(--text-muted); font-weight:700;"></span>
         </button>
         <button class="nav-item" id="nav-btn-explorer" title="IPO Explorer" onclick="switchTab('explorer')">
           <i data-feather="search"></i>
@@ -1263,7 +1282,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               <button class="btn-secondary" onclick="triggerJsonImport()">Import JSON</button>
               <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
             </div>
-            <div class="manual-toolbar-filters" style="display:flex; gap:10px; flex-wrap:wrap;">
+            <div class="manual-toolbar-filters" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
               <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
               <select id="man-filter-pub" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
                 <option value="">All Publication States</option>
@@ -1279,28 +1298,45 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <option value="LISTED">Listed</option>
                 <option value="ALL">All Statuses</option>
               </select>
+              <div class="sort-control-group" style="display:flex; align-items:center; gap:6px;">
+                <select id="man-sort-by" onchange="onManualSortChange()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" title="Sort IPOs">
+                  <option value="smart">⚡ Smart Sort</option>
+                  <option value="closeDate">📅 Closing Date</option>
+                  <option value="openDate">🚀 Opening Date</option>
+                  <option value="allotmentDate">🎯 Allotment Date</option>
+                  <option value="listingDate">🔔 Listing Date</option>
+                  <option value="gmp">📈 GMP</option>
+                  <option value="companyName">🏢 Company Name</option>
+                  <option value="issueSize">💰 Issue Size</option>
+                  <option value="createdAt">🕒 Date Added</option>
+                </select>
+                <button type="button" class="btn-secondary" id="btn-sort-order" onclick="toggleManualSortOrder()" title="Toggle Sort Order (Ascending / Descending)" style="padding:7px 10px; font-size:13px; display:flex; align-items:center; gap:4px;">
+                  <span id="sort-order-icon">↓</span>
+                  <span id="sort-order-text">Desc</span>
+                </button>
+              </div>
             </div>
           </div>
 
           <!-- Status Filter Pills -->
           <div class="status-filter-pills" style="margin-top:14px; margin-bottom:4px;">
             <button type="button" class="filter-pill active" id="pill-filter-OPEN" onclick="setStatusFilter('OPEN')">
-              Open
+              <span>Open</span><span class="pill-badge" id="count-pill-OPEN">0</span>
             </button>
             <button type="button" class="filter-pill" id="pill-filter-UPCOMING" onclick="setStatusFilter('UPCOMING')">
-              Upcoming
+              <span>Upcoming</span><span class="pill-badge" id="count-pill-UPCOMING">0</span>
             </button>
             <button type="button" class="filter-pill" id="pill-filter-CLOSED" onclick="setStatusFilter('CLOSED')">
-              Closed
+              <span>Closed</span><span class="pill-badge" id="count-pill-CLOSED">0</span>
             </button>
             <button type="button" class="filter-pill" id="pill-filter-ALLOTMENT_COMPLETED" onclick="setStatusFilter('ALLOTMENT_COMPLETED')">
-              Allotment Out
+              <span>Allotment Out</span><span class="pill-badge" id="count-pill-ALLOTMENT_COMPLETED">0</span>
             </button>
             <button type="button" class="filter-pill" id="pill-filter-LISTED" onclick="setStatusFilter('LISTED')">
-              Listed
+              <span>Listed</span><span class="pill-badge" id="count-pill-LISTED">0</span>
             </button>
             <button type="button" class="filter-pill" id="pill-filter-ALL" onclick="setStatusFilter('ALL')">
-              All Statuses
+              <span>All Statuses</span><span class="pill-badge" id="count-pill-ALL">0</span>
             </button>
           </div>
 
@@ -2624,6 +2660,77 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
 
     let currentStatusFilter = 'OPEN';
+    let currentManualSort = 'smart';
+    let currentManualOrder = 'desc';
+
+    function onManualSortChange() {
+      const select = document.getElementById('man-sort-by');
+      if (select) {
+        currentManualSort = select.value;
+        if (currentManualSort === 'companyName' || currentManualSort === 'openDate' || currentManualSort === 'closeDate') {
+          currentManualOrder = 'asc';
+        } else {
+          currentManualOrder = 'desc';
+        }
+        updateSortOrderButtonUI();
+        fetchManualIpos();
+      }
+    }
+
+    function toggleManualSortOrder() {
+      currentManualOrder = currentManualOrder === 'asc' ? 'desc' : 'asc';
+      updateSortOrderButtonUI();
+      fetchManualIpos();
+    }
+
+    function updateSortOrderButtonUI() {
+      const icon = document.getElementById('sort-order-icon');
+      const text = document.getElementById('sort-order-text');
+      if (icon) icon.textContent = currentManualOrder === 'asc' ? '↑' : '↓';
+      if (text) text.textContent = currentManualOrder === 'asc' ? 'Asc' : 'Desc';
+    }
+
+    function updateManualTabCounts(counts) {
+      if (!counts) return;
+      const st = counts.statuses || {};
+      const pb = counts.publication || {};
+
+      const setBadge = (id, cnt) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = cnt !== undefined && cnt !== null ? cnt : '0';
+      };
+
+      setBadge('count-pill-OPEN', st.OPEN || 0);
+      setBadge('count-pill-UPCOMING', st.UPCOMING || 0);
+      setBadge('count-pill-CLOSED', st.CLOSED || 0);
+      setBadge('count-pill-ALLOTMENT_COMPLETED', st.ALLOTMENT_COMPLETED || 0);
+      setBadge('count-pill-LISTED', st.LISTED || 0);
+      setBadge('count-pill-ALL', st.ALL || 0);
+
+      const navBadge = document.getElementById('nav-manual-count');
+      if (navBadge) {
+        navBadge.textContent = st.ALL || 0;
+      }
+
+      // Update dashboard KPI stats
+      const kpiTotal = document.getElementById('kpi-total');
+      if (kpiTotal) kpiTotal.textContent = st.ALL || 0;
+      const kpiPub = document.getElementById('kpi-published');
+      if (kpiPub) kpiPub.textContent = pb.PUBLISHED || 0;
+      const kpiOpen = document.getElementById('kpi-open');
+      if (kpiOpen) kpiOpen.textContent = st.OPEN || 0;
+      const kpiDrafts = document.getElementById('kpi-drafts');
+      if (kpiDrafts) kpiDrafts.textContent = pb.DRAFT || 0;
+
+      // Update publication filter options
+      const pubSelect = document.getElementById('man-filter-pub');
+      if (pubSelect && pubSelect.options) {
+        if (pubSelect.options[0]) pubSelect.options[0].text = 'All Publication States (' + (pb.ALL || 0) + ')';
+        if (pubSelect.options[1]) pubSelect.options[1].text = 'Published (' + (pb.PUBLISHED || 0) + ')';
+        if (pubSelect.options[2]) pubSelect.options[2].text = 'Draft (' + (pb.DRAFT || 0) + ')';
+        if (pubSelect.options[3]) pubSelect.options[3].text = 'Archived (' + (pb.ARCHIVED || 0) + ')';
+      }
+    }
 
     function setStatusFilter(filterKey) {
       currentStatusFilter = filterKey;
@@ -2668,10 +2775,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (q) query.set('q', q);
         if (pub) query.set('publicationStatus', pub);
         if (statusParam) query.set('status', statusParam);
+        if (currentManualSort) query.set('sort', currentManualSort);
+        if (currentManualOrder) query.set('order', currentManualOrder);
 
         const res = await fetch(API_BASE + '/manual-ipos?' + query.toString());
         const json = await res.json();
-        const items = json.data?.items || json.items || [];
+        const dataObj = json.data || json;
+        const items = dataObj.items || [];
+        const counts = dataObj.counts || json.counts;
+
+        if (counts) {
+          updateManualTabCounts(counts);
+        }
+
         const tbody = document.getElementById('manual-ipos-table-body');
         
         if (items.length === 0) {

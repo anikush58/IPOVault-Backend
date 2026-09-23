@@ -41,6 +41,12 @@ export const ipoSortFieldSchema = z.enum([
   'priceBandLow',
   'price',
   'lotSize',
+  'closeDate',
+  'openDate',
+  'listingDate',
+  'allotmentDate',
+  'gmp',
+  'smart',
 ]);
 
 export const sortOrderSchema = z.enum(['asc', 'desc']);

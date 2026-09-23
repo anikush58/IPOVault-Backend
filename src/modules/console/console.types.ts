@@ -57,8 +57,11 @@ export interface ConsoleDashboardSummaryDto {
 export interface ConsoleIpoListQueryDto {
   q?: string;
   status?: string;
+  publicationStatus?: string;
   marketSegment?: string;
   exchange?: string;
+  sort?: string;
+  order?: 'asc' | 'desc';
   page?: number;
   limit?: number;
 }

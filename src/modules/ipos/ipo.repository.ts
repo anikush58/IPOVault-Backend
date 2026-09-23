@@ -44,13 +44,14 @@ export class IpoRepository {
     query: IpoListQuery,
     skip: number,
   ): Promise<IpoWithRelations[]> {
-    return this.prisma.ipo.findMany({
+    const rows = await this.prisma.ipo.findMany({
       where: this.where(query),
       include: ipoInclude,
       orderBy: this.orderBy(query),
-      skip,
-      take: query.limit,
     });
+
+    const sorted = this.sortIposSmartly(rows, query);
+    return sorted.slice(skip, skip + query.limit);
   }
 
 
@@ -294,5 +295,192 @@ export class IpoRepository {
       default:
         return [{ createdAt: order }, { id: 'desc' }];
     }
+  }
+
+  private sortIposSmartly(items: IpoWithRelations[], query: IpoListQuery): IpoWithRelations[] {
+    const extractDate = (ipo: IpoWithRelations, eventType: string): Date | null => {
+      if (!ipo || !ipo.lifecycleEvents) return null;
+      const ev = ipo.lifecycleEvents.find((e) => e.eventType === eventType);
+      if (!ev || !ev.eventDate) return null;
+      return ev.eventDate instanceof Date ? ev.eventDate : new Date(ev.eventDate);
+    };
+
+    const extractAllotmentDate = (ipo: IpoWithRelations): Date | null => {
+      if (ipo?.allotmentResultAvailableAt) {
+        return ipo.allotmentResultAvailableAt instanceof Date
+          ? ipo.allotmentResultAvailableAt
+          : new Date(ipo.allotmentResultAvailableAt);
+      }
+      return extractDate(ipo, 'BASIS_OF_ALLOTMENT') || extractDate(ipo, 'ALLOTMENT');
+    };
+
+    const extractGmp = (ipo: IpoWithRelations): number | null => {
+      if (ipo.gmpObservations && ipo.gmpObservations.length > 0 && ipo.gmpObservations[0].gmpAmount !== null && ipo.gmpObservations[0].gmpAmount !== undefined) {
+        return Number(ipo.gmpObservations[0].gmpAmount);
+      }
+      return null;
+    };
+
+    const sort = query.sort;
+    const order = query.order ?? (sort === 'companyName' || sort === 'legalName' || sort === 'openDate' || sort === 'closeDate' ? 'asc' : 'desc');
+
+    if (sort && sort !== 'smart') {
+      return [...items].sort((a, b) => {
+        let diff = 0;
+        if (sort === 'closeDate') {
+          const dA = extractDate(a, 'CLOSE');
+          const dB = extractDate(b, 'CLOSE');
+          if (dA && dB) diff = dA.getTime() - dB.getTime();
+          else if (dA) return -1;
+          else if (dB) return 1;
+        } else if (sort === 'openDate') {
+          const dA = extractDate(a, 'OPEN');
+          const dB = extractDate(b, 'OPEN');
+          if (dA && dB) diff = dA.getTime() - dB.getTime();
+          else if (dA) return -1;
+          else if (dB) return 1;
+        } else if (sort === 'listingDate') {
+          const dA = extractDate(a, 'LISTING');
+          const dB = extractDate(b, 'LISTING');
+          if (dA && dB) diff = dA.getTime() - dB.getTime();
+          else if (dA) return -1;
+          else if (dB) return 1;
+        } else if (sort === 'allotmentDate') {
+          const dA = extractAllotmentDate(a);
+          const dB = extractAllotmentDate(b);
+          if (dA && dB) diff = dA.getTime() - dB.getTime();
+          else if (dA) return -1;
+          else if (dB) return 1;
+        } else if (sort === 'gmp') {
+          const gA = extractGmp(a);
+          const gB = extractGmp(b);
+          if (gA !== null && gB !== null) diff = gA - gB;
+          else if (gA !== null) return -1;
+          else if (gB !== null) return 1;
+        } else if (sort === 'companyName' || sort === 'legalName') {
+          const nA = (a.company?.displayName || a.company?.legalName || '').toLowerCase();
+          const nB = (b.company?.displayName || b.company?.legalName || '').toLowerCase();
+          diff = nA.localeCompare(nB);
+        } else if (sort === 'issueSize') {
+          const sA = a.issueSize ? Number(a.issueSize) : null;
+          const sB = b.issueSize ? Number(b.issueSize) : null;
+          if (sA !== null && sB !== null) diff = sA - sB;
+          else if (sA !== null) return -1;
+          else if (sB !== null) return 1;
+        } else if (sort === 'price' || sort === 'priceBandLow') {
+          const pA = a.priceBandLow ? Number(a.priceBandLow) : null;
+          const pB = b.priceBandLow ? Number(b.priceBandLow) : null;
+          if (pA !== null && pB !== null) diff = pA - pB;
+          else if (pA !== null) return -1;
+          else if (pB !== null) return 1;
+        } else if (sort === 'lotSize') {
+          const lA = a.lotSize ?? null;
+          const lB = b.lotSize ?? null;
+          if (lA !== null && lB !== null) diff = lA - lB;
+          else if (lA !== null) return -1;
+          else if (lB !== null) return 1;
+        } else if (sort === 'updatedAt') {
+          diff = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+        } else {
+          diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        }
+
+        return order === 'asc' ? diff : -diff;
+      });
+    }
+
+    // Default Smart status-aware sorting:
+    return [...items].sort((a, b) => {
+      const getStatusRank = (st: string) => {
+        switch (st) {
+          case 'CLOSING_TODAY': return 1;
+          case 'OPEN': return 2;
+          case 'UPCOMING': return 3;
+          case 'CLOSED':
+          case 'ALLOTMENT_PENDING': return 4;
+          case 'ALLOTMENT_COMPLETED': return 5;
+          case 'LISTING_PENDING':
+          case 'LISTED': return 6;
+          default: return 7;
+        }
+      };
+
+      const rankA = getStatusRank(a.status);
+      const rankB = getStatusRank(b.status);
+
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+
+      if (a.status === 'OPEN' || a.status === 'CLOSING_TODAY') {
+        // Closing soon comes on top (ASC closeDate)
+        const cA = extractDate(a, 'CLOSE');
+        const cB = extractDate(b, 'CLOSE');
+        if (cA && cB) {
+          const diff = cA.getTime() - cB.getTime();
+          if (diff !== 0) return diff;
+        } else if (cA) return -1;
+        else if (cB) return 1;
+
+        const oA = extractDate(a, 'OPEN');
+        const oB = extractDate(b, 'OPEN');
+        if (oA && oB) {
+          const diff = oA.getTime() - oB.getTime();
+          if (diff !== 0) return diff;
+        }
+      } else if (a.status === 'UPCOMING') {
+        // Opening / closing soon comes on top (ASC openDate, then ASC closeDate)
+        const oA = extractDate(a, 'OPEN');
+        const oB = extractDate(b, 'OPEN');
+        if (oA && oB) {
+          const diff = oA.getTime() - oB.getTime();
+          if (diff !== 0) return diff;
+        } else if (oA) return -1;
+        else if (oB) return 1;
+
+        const cA = extractDate(a, 'CLOSE');
+        const cB = extractDate(b, 'CLOSE');
+        if (cA && cB) {
+          const diff = cA.getTime() - cB.getTime();
+          if (diff !== 0) return diff;
+        }
+      } else if (a.status === 'CLOSED' || a.status === 'ALLOTMENT_PENDING') {
+        // Closed recently comes on top (DESC closeDate)
+        const cA = extractDate(a, 'CLOSE');
+        const cB = extractDate(b, 'CLOSE');
+        if (cA && cB) {
+          const diff = cB.getTime() - cA.getTime();
+          if (diff !== 0) return diff;
+        } else if (cA) return -1;
+        else if (cB) return 1;
+      } else if (a.status === 'ALLOTMENT_COMPLETED') {
+        // Allotment out recently comes on top (DESC allotmentDate)
+        const alA = extractAllotmentDate(a);
+        const alB = extractAllotmentDate(b);
+        if (alA && alB) {
+          const diff = alB.getTime() - alA.getTime();
+          if (diff !== 0) return diff;
+        } else if (alA) return -1;
+        else if (alB) return 1;
+
+        const cA = extractDate(a, 'CLOSE');
+        const cB = extractDate(b, 'CLOSE');
+        if (cA && cB) {
+          const diff = cB.getTime() - cA.getTime();
+          if (diff !== 0) return diff;
+        }
+      } else if (a.status === 'LISTED' || a.status === 'LISTING_PENDING') {
+        // Listed recently comes on top (DESC listingDate)
+        const lA = extractDate(a, 'LISTING');
+        const lB = extractDate(b, 'LISTING');
+        if (lA && lB) {
+          const diff = lB.getTime() - lA.getTime();
+          if (diff !== 0) return diff;
+        } else if (lA) return -1;
+        else if (lB) return 1;
+      }
+
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   }
 }

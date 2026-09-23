@@ -739,7 +739,7 @@ export class AdminIpoService {
     const limit = query.limit && query.limit > 0 ? Math.min(query.limit, 100) : 20;
     const skip = (page - 1) * limit;
 
-    const where: Prisma.IpoWhereInput = {
+    const baseSourceWhere: Prisma.IpoWhereInput = {
       sourceIdentities: {
         some: {
           source: {
@@ -749,6 +749,10 @@ export class AdminIpoService {
           },
         },
       },
+    };
+
+    const where: Prisma.IpoWhereInput = {
+      ...baseSourceWhere,
     };
 
     const trimmedQ = query.q?.trim();
@@ -781,7 +785,7 @@ export class AdminIpoService {
     if (query.marketSegment) where.marketSegment = query.marketSegment;
     if (query.exchange) where.exchange = query.exchange;
 
-    const [items, total] = await Promise.all([
+    const [matchedIpos, allAdminIpos] = await Promise.all([
       this.prisma.ipo.findMany({
         where,
         include: {
@@ -794,16 +798,67 @@ export class AdminIpoService {
           },
         },
         orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
       }),
-      this.prisma.ipo.count({ where }),
+      this.prisma.ipo.findMany({
+        where: baseSourceWhere,
+        select: {
+          id: true,
+          status: true,
+          publicationStatus: true,
+        },
+      }),
     ]);
 
+    const total = matchedIpos.length;
+
+    // Smart status and lifecycle date sorting
+    const sorted = this.sortAdminIpos(matchedIpos, query);
+    const paginatedItems = sorted.slice(skip, skip + limit);
+
+    // Compute status and publication tab breakdown counts
+    const statusCounts: Record<string, number> = {
+      ALL: allAdminIpos.length,
+      OPEN: 0,
+      UPCOMING: 0,
+      CLOSED: 0,
+      ALLOTMENT_COMPLETED: 0,
+      LISTED: 0,
+      DRAFT: 0,
+    };
+
+    const publicationCounts: Record<string, number> = {
+      ALL: allAdminIpos.length,
+      PUBLISHED: 0,
+      DRAFT: 0,
+      ARCHIVED: 0,
+    };
+
+    for (const ipo of allAdminIpos) {
+      if (ipo.status === 'OPEN' || ipo.status === 'CLOSING_TODAY' || ipo.status === 'DRAFT') {
+        statusCounts.OPEN = (statusCounts.OPEN || 0) + 1;
+      }
+      if (ipo.status === 'UPCOMING') {
+        statusCounts.UPCOMING = (statusCounts.UPCOMING || 0) + 1;
+      }
+      if (ipo.status === 'CLOSED' || ipo.status === 'ALLOTMENT_PENDING') {
+        statusCounts.CLOSED = (statusCounts.CLOSED || 0) + 1;
+      }
+      if (ipo.status === 'ALLOTMENT_COMPLETED') {
+        statusCounts.ALLOTMENT_COMPLETED = (statusCounts.ALLOTMENT_COMPLETED || 0) + 1;
+      }
+      if (ipo.status === 'LISTED' || ipo.status === 'LISTING_PENDING') {
+        statusCounts.LISTED = (statusCounts.LISTED || 0) + 1;
+      }
+
+      if (ipo.publicationStatus === 'PUBLISHED') publicationCounts.PUBLISHED = (publicationCounts.PUBLISHED || 0) + 1;
+      else if (ipo.publicationStatus === 'DRAFT') publicationCounts.DRAFT = (publicationCounts.DRAFT || 0) + 1;
+      else if (ipo.publicationStatus === 'ARCHIVED') publicationCounts.ARCHIVED = (publicationCounts.ARCHIVED || 0) + 1;
+    }
+
     return {
-      items: items.map((ipo) => {
-        const openEv = ipo.lifecycleEvents.find((e) => e.eventType === 'OPEN');
-        const closeEv = ipo.lifecycleEvents.find((e) => e.eventType === 'CLOSE');
+      items: paginatedItems.map((ipo) => {
+        const openEv = ipo.lifecycleEvents?.find((e: any) => e.eventType === 'OPEN');
+        const closeEv = ipo.lifecycleEvents?.find((e: any) => e.eventType === 'CLOSE');
         const latestGmpObs = ipo.gmpObservations?.[0];
         const latestGmp = latestGmpObs
           ? {
@@ -816,8 +871,8 @@ export class AdminIpoService {
 
         return {
           id: ipo.id,
-          legalName: ipo.company.legalName,
-          displayName: ipo.company.displayName,
+          legalName: ipo.company?.legalName || '',
+          displayName: ipo.company?.displayName || ipo.company?.legalName || '',
           symbol: ipo.symbol,
           marketSegment: ipo.marketSegment,
           exchange: ipo.exchange,
@@ -846,7 +901,187 @@ export class AdminIpoService {
         total,
         totalPages: Math.ceil(total / limit),
       },
+      counts: {
+        statuses: statusCounts,
+        publication: publicationCounts,
+      },
     };
+  }
+
+  private sortAdminIpos(items: any[], query: AdminIpoQueryDto): any[] {
+    const extractDate = (ipo: any, eventType: string): Date | null => {
+      if (!ipo || !ipo.lifecycleEvents) return null;
+      const ev = ipo.lifecycleEvents.find((e: any) => e.eventType === eventType);
+      if (!ev || !ev.eventDate) return null;
+      return ev.eventDate instanceof Date ? ev.eventDate : new Date(ev.eventDate);
+    };
+
+    const extractAllotmentDate = (ipo: any): Date | null => {
+      if (ipo?.allotmentResultAvailableAt) {
+        return ipo.allotmentResultAvailableAt instanceof Date
+          ? ipo.allotmentResultAvailableAt
+          : new Date(ipo.allotmentResultAvailableAt);
+      }
+      return extractDate(ipo, 'BASIS_OF_ALLOTMENT') || extractDate(ipo, 'ALLOTMENT');
+    };
+
+    const extractGmp = (ipo: any): number | null => {
+      if (ipo.gmpObservations && ipo.gmpObservations.length > 0 && ipo.gmpObservations[0].gmpAmount !== null && ipo.gmpObservations[0].gmpAmount !== undefined) {
+        return Number(ipo.gmpObservations[0].gmpAmount);
+      }
+      if (ipo.gmpAmount !== undefined && ipo.gmpAmount !== null) return Number(ipo.gmpAmount);
+      return null;
+    };
+
+    const sort = query.sort;
+    const order = query.order ?? (sort === 'companyName' || sort === 'legalName' || sort === 'openDate' || sort === 'closeDate' ? 'asc' : 'desc');
+
+    if (sort && sort !== 'smart') {
+      return [...items].sort((a, b) => {
+        let diff = 0;
+        if (sort === 'closeDate') {
+          const dA = extractDate(a, 'CLOSE');
+          const dB = extractDate(b, 'CLOSE');
+          if (dA && dB) diff = dA.getTime() - dB.getTime();
+          else if (dA) return -1;
+          else if (dB) return 1;
+        } else if (sort === 'openDate') {
+          const dA = extractDate(a, 'OPEN');
+          const dB = extractDate(b, 'OPEN');
+          if (dA && dB) diff = dA.getTime() - dB.getTime();
+          else if (dA) return -1;
+          else if (dB) return 1;
+        } else if (sort === 'listingDate') {
+          const dA = extractDate(a, 'LISTING');
+          const dB = extractDate(b, 'LISTING');
+          if (dA && dB) diff = dA.getTime() - dB.getTime();
+          else if (dA) return -1;
+          else if (dB) return 1;
+        } else if (sort === 'allotmentDate') {
+          const dA = extractAllotmentDate(a);
+          const dB = extractAllotmentDate(b);
+          if (dA && dB) diff = dA.getTime() - dB.getTime();
+          else if (dA) return -1;
+          else if (dB) return 1;
+        } else if (sort === 'gmp') {
+          const gA = extractGmp(a);
+          const gB = extractGmp(b);
+          if (gA !== null && gB !== null) diff = gA - gB;
+          else if (gA !== null) return -1;
+          else if (gB !== null) return 1;
+        } else if (sort === 'companyName' || sort === 'legalName') {
+          const nA = (a.company?.displayName || a.company?.legalName || '').toLowerCase();
+          const nB = (b.company?.displayName || b.company?.legalName || '').toLowerCase();
+          diff = nA.localeCompare(nB);
+        } else if (sort === 'issueSize') {
+          const sA = a.issueSize ? Number(a.issueSize) : null;
+          const sB = b.issueSize ? Number(b.issueSize) : null;
+          if (sA !== null && sB !== null) diff = sA - sB;
+          else if (sA !== null) return -1;
+          else if (sB !== null) return 1;
+        } else if (sort === 'updatedAt') {
+          diff = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+        } else {
+          diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        }
+
+        return order === 'asc' ? diff : -diff;
+      });
+    }
+
+    // Default Smart status-aware sorting:
+    return [...items].sort((a, b) => {
+      const getStatusRank = (st: string) => {
+        switch (st) {
+          case 'CLOSING_TODAY': return 1;
+          case 'OPEN': return 2;
+          case 'UPCOMING': return 3;
+          case 'CLOSED':
+          case 'ALLOTMENT_PENDING': return 4;
+          case 'ALLOTMENT_COMPLETED': return 5;
+          case 'LISTING_PENDING':
+          case 'LISTED': return 6;
+          default: return 7;
+        }
+      };
+
+      const rankA = getStatusRank(a.status);
+      const rankB = getStatusRank(b.status);
+
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+
+      if (a.status === 'OPEN' || a.status === 'CLOSING_TODAY') {
+        // Closing soon comes on top (ASC closeDate)
+        const cA = extractDate(a, 'CLOSE');
+        const cB = extractDate(b, 'CLOSE');
+        if (cA && cB) {
+          const diff = cA.getTime() - cB.getTime();
+          if (diff !== 0) return diff;
+        } else if (cA) return -1;
+        else if (cB) return 1;
+
+        const oA = extractDate(a, 'OPEN');
+        const oB = extractDate(b, 'OPEN');
+        if (oA && oB) {
+          const diff = oA.getTime() - oB.getTime();
+          if (diff !== 0) return diff;
+        }
+      } else if (a.status === 'UPCOMING') {
+        // Opening / closing soon comes on top (ASC openDate, then ASC closeDate)
+        const oA = extractDate(a, 'OPEN');
+        const oB = extractDate(b, 'OPEN');
+        if (oA && oB) {
+          const diff = oA.getTime() - oB.getTime();
+          if (diff !== 0) return diff;
+        } else if (oA) return -1;
+        else if (oB) return 1;
+
+        const cA = extractDate(a, 'CLOSE');
+        const cB = extractDate(b, 'CLOSE');
+        if (cA && cB) {
+          const diff = cA.getTime() - cB.getTime();
+          if (diff !== 0) return diff;
+        }
+      } else if (a.status === 'CLOSED' || a.status === 'ALLOTMENT_PENDING') {
+        // Closed recently comes on top (DESC closeDate)
+        const cA = extractDate(a, 'CLOSE');
+        const cB = extractDate(b, 'CLOSE');
+        if (cA && cB) {
+          const diff = cB.getTime() - cA.getTime();
+          if (diff !== 0) return diff;
+        } else if (cA) return -1;
+        else if (cB) return 1;
+      } else if (a.status === 'ALLOTMENT_COMPLETED') {
+        // Allotment out recently comes on top (DESC allotmentDate)
+        const alA = extractAllotmentDate(a);
+        const alB = extractAllotmentDate(b);
+        if (alA && alB) {
+          const diff = alB.getTime() - alA.getTime();
+          if (diff !== 0) return diff;
+        } else if (alA) return -1;
+        else if (alB) return 1;
+
+        const cA = extractDate(a, 'CLOSE');
+        const cB = extractDate(b, 'CLOSE');
+        if (cA && cB) {
+          const diff = cB.getTime() - cA.getTime();
+          if (diff !== 0) return diff;
+        }
+      } else if (a.status === 'LISTED' || a.status === 'LISTING_PENDING') {
+        // Listed recently comes on top (DESC listingDate)
+        const lA = extractDate(a, 'LISTING');
+        const lB = extractDate(b, 'LISTING');
+        if (lA && lB) {
+          const diff = lB.getTime() - lA.getTime();
+          if (diff !== 0) return diff;
+        } else if (lA) return -1;
+        else if (lB) return 1;
+      }
+
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   }
 
   /**

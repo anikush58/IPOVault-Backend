@@ -223,6 +223,8 @@ export class AdminIpoQueryDto {
   publicationStatus?: PublicationStatus;
   marketSegment?: MarketSegment;
   exchange?: ExchangeListing;
+  sort?: string;
+  order?: 'asc' | 'desc';
   page?: number;
   limit?: number;
 }
