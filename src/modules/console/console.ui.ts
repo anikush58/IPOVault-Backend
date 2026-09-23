@@ -2020,6 +2020,40 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               </button>
             </div>
           </div>
+          <!-- API Request Budget & Schedule Counter Grid -->
+          <div style="margin-bottom:16px;">
+            <div style="font-weight:700; font-size:13px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+              <span>API Request Budget &amp; Automatic Schedule</span>
+              <span id="ig-ist-date-badge" style="font-size:11px; text-transform:none; font-weight:600; color:var(--primary); background:var(--bg-hover); padding:2px 8px; border-radius:6px;">IST Date: &mdash;</span>
+            </div>
+            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
+              <div class="stat-card" style="padding:10px;">
+                <div class="stat-title">Requests Used Today</div>
+                <div class="stat-value" id="ig-requests-used" style="font-size:17px; font-weight:700;">&mdash;</div>
+              </div>
+              <div class="stat-card" style="padding:10px;">
+                <div class="stat-title">Requests Remaining Today</div>
+                <div class="stat-value" id="ig-requests-remaining" style="font-size:17px; font-weight:700; color:#10B981;">&mdash;</div>
+              </div>
+              <div class="stat-card" style="padding:10px;">
+                <div class="stat-title">Auto Requests Used Today</div>
+                <div class="stat-value" id="ig-auto-requests-used" style="font-size:17px; font-weight:700; color:#4F46E5;">&mdash;</div>
+              </div>
+              <div class="stat-card" style="padding:10px;">
+                <div class="stat-title">Next Scheduled Auto Sync</div>
+                <div class="stat-value" id="ig-next-scheduled" style="font-size:13px; font-weight:700; color:#F59E0B;">&mdash;</div>
+              </div>
+              <div class="stat-card" style="padding:10px;">
+                <div class="stat-title">Last Successful Fetch</div>
+                <div class="stat-value" id="ig-last-success" style="font-size:12px; font-weight:600;">&mdash;</div>
+              </div>
+              <div class="stat-card" style="padding:10px;">
+                <div class="stat-title">Last Fetch Status</div>
+                <div class="stat-value" id="ig-last-status" style="font-size:12px; font-weight:600;">&mdash;</div>
+              </div>
+            </div>
+          </div>
+
           <div id="ipo-guru-meta" style="display:none; padding:10px 14px; background:var(--bg-hover); border:1px solid var(--border-color); border-radius:10px; margin-bottom:14px; font-size:12px; color:var(--text-muted);">
             <span>Last Fetch: <strong id="ipo-guru-last-fetch" style="color:var(--text-main);">&mdash;</strong></span>&nbsp;&nbsp;
             <span>HTTP Status: <strong id="ipo-guru-http-status" style="color:var(--text-main);">&mdash;</strong></span>&nbsp;&nbsp;
@@ -2402,6 +2436,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (tabId === 'sources') loadSources();
       if (tabId === 'notifications') loadNotifications();
       if (tabId === 'allotment') loadAllotment();
+      if (tabId === 'ipo-guru') fetchIpoGuruStatus();
 
       if (window.feather) feather.replace();
     }
@@ -4335,6 +4370,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         renderIpoGuruTable(ipos);
         if (tableWrap) tableWrap.style.display = 'block';
 
+        fetchIpoGuruStatus();
       } catch (err) {
         console.error('IPO Guru fetch error:', err);
         if (errEl) { errEl.textContent = '\u26A0\uFE0F Network or parse error: ' + err.message; errEl.style.display = 'block'; }
@@ -4342,6 +4378,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (badge) { badge.textContent = 'Error'; badge.style.background = '#FEF2F2'; badge.style.color = '#991B1B'; badge.style.display = 'inline-block'; }
       } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i data-feather="download"></i> <span>Fetch IPO Guru Data</span>'; if (window.feather) feather.replace(); }
+        fetchIpoGuruStatus();
       }
     }
 
@@ -4425,6 +4462,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           if (emptyEl) emptyEl.style.display = 'none';
         }
 
+        fetchIpoGuruStatus();
       } catch (err) {
         console.error('IPO Guru sync error:', err);
         if (errEl) { errEl.textContent = '\u26A0\uFE0F Sync error: ' + err.message; errEl.style.display = 'block'; }
@@ -4433,6 +4471,40 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i data-feather="refresh-cw"></i> <span>Sync to IPO Database</span>'; }
         if (fetchBtn) { fetchBtn.disabled = false; }
         if (window.feather) feather.replace();
+        fetchIpoGuruStatus();
+      }
+    }
+
+    async function fetchIpoGuruStatus() {
+      try {
+        var res = await fetch(API_BASE + '/ipo-guru/status');
+        var json = await res.json();
+        var data = json.data || json;
+        if (!data || !data.istDate) return;
+
+        var usedEl = document.getElementById('ig-requests-used');
+        var remEl = document.getElementById('ig-requests-remaining');
+        var autoEl = document.getElementById('ig-auto-requests-used');
+        var nextEl = document.getElementById('ig-next-scheduled');
+        var lastSuccessEl = document.getElementById('ig-last-success');
+        var lastStatusEl = document.getElementById('ig-last-status');
+        var dateBadge = document.getElementById('ig-ist-date-badge');
+
+        if (usedEl) usedEl.textContent = data.requestsUsedToday + ' / 10';
+        if (remEl) {
+          remEl.textContent = data.requestsRemainingToday + ' total (' + data.manualRequestsRemaining + ' manual left)';
+          remEl.style.color = data.requestsRemainingToday > 2 ? '#10B981' : (data.requestsRemainingToday > 0 ? '#F59E0B' : '#EF4444');
+        }
+        if (autoEl) autoEl.textContent = data.autoRequestsUsedToday + ' / ' + data.autoRequestsTotal;
+        if (nextEl) nextEl.textContent = data.nextScheduledAutoSync || '\u2014';
+        if (lastSuccessEl) lastSuccessEl.textContent = data.lastSuccessfulFetch || '\u2014';
+        if (lastStatusEl) {
+          lastStatusEl.textContent = data.lastFetchStatus || 'IDLE';
+          lastStatusEl.style.color = String(data.lastFetchStatus).includes('200') ? '#10B981' : (data.lastFetchStatus === 'IDLE' ? 'var(--text-muted)' : '#EF4444');
+        }
+        if (dateBadge) dateBadge.textContent = 'IST Date: ' + data.istDate;
+      } catch (e) {
+        console.error('Failed to load IPO Guru status:', e);
       }
     }
 

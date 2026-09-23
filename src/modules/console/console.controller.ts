@@ -393,21 +393,32 @@ export class ConsoleController {
   }
 
   // ==========================================
-  // IPO GURU v1 INSPECTION & SYNC ENDPOINTS
+  // IPO GURU v2 INSPECTION, STATUS & SYNC ENDPOINTS
   // ==========================================
 
   /**
-   * Manual one-shot fetch from IPO Guru v1 API.
+   * Retrieves operational usage counter, budget status, and next scheduled automatic sync.
+   */
+  @Get('api/ipo-guru/status')
+  async getIpoGuruStatus() {
+    return this.ipoGuruService.getStatus();
+  }
+
+  /**
+   * Manual one-shot fetch from IPO Guru v2 API.
    *
    * READ-ONLY: does NOT insert/update/delete anything in the database.
-   * Rate limited by IPO Guru: 10 requests/day, 1 request/minute.
+   * Budget enforced: shares 10 requests/day, 1 request/minute quota with scheduler.
    * API key is read from IPOGURU_API_KEY env var and never returned in this response.
    */
   @Post('api/ipo-guru/fetch')
   async fetchIpoGuruData() {
     try {
-      return await this.ipoGuruService.fetchIpos();
+      return await this.ipoGuruService.fetchIpos('MANUAL');
     } catch (err: unknown) {
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`IPO Guru fetch error: ${msg}`);
       throw new BadRequestException({
@@ -418,14 +429,17 @@ export class ConsoleController {
   }
 
   /**
-   * Manual transactional synchronization of IPO Guru v1 data into canonical IPOVault database.
-   * Rate limited by IPO Guru: 10 requests/day, 1 request/minute.
+   * Manual transactional synchronization of IPO Guru v2 data into canonical IPOVault database.
+   * Budget enforced: shares 10 requests/day, 1 request/minute quota with scheduler.
    */
   @Post('api/ipo-guru/sync')
   async syncIpoGuruData() {
     try {
-      return await this.ipoGuruService.syncIpos();
+      return await this.ipoGuruService.syncIpos('MANUAL');
     } catch (err: unknown) {
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`IPO Guru sync error: ${msg}`);
       throw new BadRequestException({

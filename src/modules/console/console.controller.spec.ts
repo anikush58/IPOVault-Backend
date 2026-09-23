@@ -48,6 +48,22 @@ describe('ConsoleController', () => {
     };
 
     const ipoGuruService = {
+      getStatus: jest.fn().mockResolvedValue({
+        istDate: '2026-09-23',
+        requestsUsedToday: 0,
+        requestsRemainingToday: 10,
+        autoRequestsUsedToday: 0,
+        autoRequestsTotal: 4,
+        manualRequestsUsedToday: 0,
+        manualRequestsRemaining: 6,
+        nextScheduledAutoSync: 'Today at 10:00 AM IST',
+        nextScheduledIso: '2026-09-23T04:30:00.000Z',
+        lastSuccessfulFetch: null,
+        lastFetchStatus: 'IDLE',
+        lastRequestAt: null,
+        scheduledSlots: ['10:00', '13:00', '15:00', '17:30'],
+        completedSlots: [],
+      }),
       fetchIpos: jest.fn().mockResolvedValue({ httpStatus: 200, ipos: [], total: 0 }),
       syncIpos: jest.fn().mockResolvedValue({ totalFetched: 0, matchedUpdated: 0, newlyCreated: 0, skipped: 0, errorCount: 0, items: [] }),
     };
@@ -169,5 +185,11 @@ describe('ConsoleController', () => {
   it('should delegate data quality query to service', async () => {
     await controller.getDataQualitySummary();
     expect(service.getDataQualitySummary).toHaveBeenCalled();
+  });
+
+  it('should delegate ipo-guru status query to ipoGuruService', async () => {
+    const res = await controller.getIpoGuruStatus();
+    expect(res.istDate).toBe('2026-09-23');
+    expect(res.requestsRemainingToday).toBe(10);
   });
 });

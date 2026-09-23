@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   ExchangeListing,
@@ -13,17 +17,29 @@ import { PrismaService } from '../../database/prisma.service';
 import { Env } from '../../config/env';
 import {
   IpoGuruFetchResult,
+  IpoGuruStatusResponse,
   IpoGuruSyncItemDetail,
   IpoGuruSyncResult,
+  IpoGuruUsageState,
   IpoGuruV1Ipo,
   IpoGuruV1Response,
+  IPOGURU_AUTO_DAILY_LIMIT,
+  IPOGURU_MAX_MANUAL_LIMIT,
+  IPOGURU_MIN_REQUEST_INTERVAL_MS,
+  IPOGURU_SCHEDULED_SLOTS,
+  IPOGURU_TOTAL_DAILY_LIMIT,
+  computeNextScheduledSync,
+  formatIstDisplay,
+  getIstNow,
+  parseSlotToMinutes,
 } from './ipo-guru.types';
 
 /**
  * IPO Guru v2 Service
  *
- * READ-ONLY manual fetch and manual transactional sync to canonical IPOVault database.
- * Rate limits: 10 requests/day, 1 request/minute — manual operations only.
+ * Automatic and manual fetch and transactional sync to canonical IPOVault database.
+ * Rate limits: 10 requests/day, 1 request/minute.
+ * Schedule: exactly 4 automatic requests/day (10:00, 13:00, 15:00, 17:30 IST).
  */
 @Injectable()
 export class IpoGuruService {
@@ -36,12 +52,239 @@ export class IpoGuruService {
   ) {}
 
   /**
-   * Manually fetch IPO data from IPO Guru v2 API.
+   * Retrieves or initializes persistent daily usage state from PostgreSQL `sources.rate_limit_policy`.
+   * Automatically resets counter at the start of each IST calendar day.
+   */
+  async getPersistedUsageState(now = new Date()): Promise<IpoGuruUsageState> {
+    const { istDate } = getIstNow(now);
+
+    const source = await this.prisma.source.upsert({
+      where: { code: 'IPOGURU' },
+      update: {},
+      create: {
+        code: 'IPOGURU',
+        name: 'IPO Guru v2',
+        sourceType: 'SECONDARY',
+        baseUrl: this.BASE_URL,
+        priority: 50,
+      },
+    });
+
+    const rawPolicy = source.rateLimitPolicy as Record<string, unknown> | null;
+    let state: IpoGuruUsageState;
+
+    if (rawPolicy && rawPolicy.istDate === istDate) {
+      state = {
+        istDate,
+        totalRequestsToday: Number(rawPolicy.totalRequestsToday) || 0,
+        autoRequestsToday: Number(rawPolicy.autoRequestsToday) || 0,
+        manualRequestsToday: Number(rawPolicy.manualRequestsToday) || 0,
+        lastRequestAt: (rawPolicy.lastRequestAt as string) || null,
+        lastSuccessAt: (rawPolicy.lastSuccessAt as string) || null,
+        lastFetchStatus: (rawPolicy.lastFetchStatus as string) || null,
+        completedSlots: Array.isArray(rawPolicy.completedSlots)
+          ? (rawPolicy.completedSlots as string[])
+          : [],
+      };
+    } else {
+      // IST day rollover or initial state
+      state = {
+        istDate,
+        totalRequestsToday: 0,
+        autoRequestsToday: 0,
+        manualRequestsToday: 0,
+        lastRequestAt: (rawPolicy?.lastRequestAt as string) || null,
+        lastSuccessAt: (rawPolicy?.lastSuccessAt as string) || null,
+        lastFetchStatus: (rawPolicy?.lastFetchStatus as string) || 'IDLE',
+        completedSlots: [],
+      };
+
+      await this.prisma.source.update({
+        where: { id: source.id },
+        data: { rateLimitPolicy: state as unknown as Prisma.InputJsonValue },
+      });
+    }
+
+    return state;
+  }
+
+  /**
+   * Calculates comprehensive operational status and remaining budget metrics for Console UI.
+   */
+  async getStatus(now = new Date()): Promise<IpoGuruStatusResponse> {
+    const state = await this.getPersistedUsageState(now);
+    const { timeMinutes } = getIstNow(now);
+
+    const remainingAutoSlots = IPOGURU_SCHEDULED_SLOTS.filter(
+      (slot) =>
+        !state.completedSlots.includes(slot) &&
+        parseSlotToMinutes(slot) >= timeMinutes,
+    ).length;
+
+    const manualAllowed = Math.max(
+      0,
+      IPOGURU_TOTAL_DAILY_LIMIT - state.totalRequestsToday - remainingAutoSlots,
+    );
+    const manualRequestsRemaining = Math.max(
+      0,
+      Math.min(
+        IPOGURU_MAX_MANUAL_LIMIT - state.manualRequestsToday,
+        manualAllowed,
+      ),
+    );
+
+    const nextScheduled = computeNextScheduledSync(now, state.completedSlots);
+
+    return {
+      istDate: state.istDate,
+      requestsUsedToday: state.totalRequestsToday,
+      requestsRemainingToday: Math.max(
+        0,
+        IPOGURU_TOTAL_DAILY_LIMIT - state.totalRequestsToday,
+      ),
+      autoRequestsUsedToday: state.autoRequestsToday,
+      autoRequestsTotal: IPOGURU_AUTO_DAILY_LIMIT,
+      manualRequestsUsedToday: state.manualRequestsToday,
+      manualRequestsRemaining,
+      nextScheduledAutoSync: nextScheduled.label,
+      nextScheduledIso: nextScheduled.iso,
+      lastSuccessfulFetch: formatIstDisplay(state.lastSuccessAt),
+      lastFetchStatus: state.lastFetchStatus || 'IDLE',
+      lastRequestAt: state.lastRequestAt,
+      scheduledSlots: [...IPOGURU_SCHEDULED_SLOTS],
+      completedSlots: state.completedSlots,
+    };
+  }
+
+  /**
+   * Validates budget and rate limit guards before an outbound API call is dispatched.
+   */
+  async checkBudgetAndRateLimit(
+    mode: 'AUTO' | 'MANUAL',
+    slot?: string,
+    now = new Date(),
+  ): Promise<{ allowed: boolean; reason?: string }> {
+    const state = await this.getPersistedUsageState(now);
+
+    // 1. Rate-limit: 1 request/minute
+    if (state.lastRequestAt) {
+      const elapsedMs =
+        now.getTime() - new Date(state.lastRequestAt).getTime();
+      if (elapsedMs < IPOGURU_MIN_REQUEST_INTERVAL_MS) {
+        return {
+          allowed: false,
+          reason: 'Rate limit: Please wait at least 1 minute between IPO Guru requests.',
+        };
+      }
+    }
+
+    // 2. Hard daily limit: 10 requests/day
+    if (state.totalRequestsToday >= IPOGURU_TOTAL_DAILY_LIMIT) {
+      return {
+        allowed: false,
+        reason: `Daily IPO Guru quota limit reached (${state.totalRequestsToday}/${IPOGURU_TOTAL_DAILY_LIMIT} requests used today).`,
+      };
+    }
+
+    // 3. Mode-specific budget enforcement
+    if (mode === 'AUTO') {
+      if (state.autoRequestsToday >= IPOGURU_AUTO_DAILY_LIMIT) {
+        return {
+          allowed: false,
+          reason: `Daily automatic IPO Guru quota reached (${state.autoRequestsToday}/${IPOGURU_AUTO_DAILY_LIMIT} slots used today).`,
+        };
+      }
+      if (slot && state.completedSlots.includes(slot)) {
+        return {
+          allowed: false,
+          reason: `Automatic sync slot ${slot} IST has already been completed today.`,
+        };
+      }
+    } else {
+      // MANUAL MODE
+      const { timeMinutes } = getIstNow(now);
+      const remainingAutoSlots = IPOGURU_SCHEDULED_SLOTS.filter(
+        (s) =>
+          !state.completedSlots.includes(s) &&
+          parseSlotToMinutes(s) >= timeMinutes,
+      ).length;
+
+      const maxManualAllowed = Math.max(
+        0,
+        IPOGURU_TOTAL_DAILY_LIMIT - state.totalRequestsToday - remainingAutoSlots,
+      );
+      const manualRemaining = Math.min(
+        maxManualAllowed,
+        IPOGURU_MAX_MANUAL_LIMIT - state.manualRequestsToday,
+      );
+
+      if (manualRemaining <= 0) {
+        return {
+          allowed: false,
+          reason:
+            'Manual request blocked: Remaining quota is reserved for scheduled automatic syncs (4 slots/day).',
+        };
+      }
+    }
+
+    return { allowed: true };
+  }
+
+  /**
+   * Persists outbound request execution count and timestamp to DB.
+   */
+  async recordRequestExecution(
+    mode: 'AUTO' | 'MANUAL',
+    slot?: string,
+    httpStatus?: number,
+    errorMsg?: string,
+    now = new Date(),
+  ): Promise<IpoGuruUsageState> {
+    const state = await this.getPersistedUsageState(now);
+    state.totalRequestsToday += 1;
+
+    if (mode === 'AUTO') {
+      state.autoRequestsToday += 1;
+      if (slot && !state.completedSlots.includes(slot)) {
+        state.completedSlots.push(slot);
+      }
+    } else {
+      state.manualRequestsToday += 1;
+    }
+
+    state.lastRequestAt = now.toISOString();
+
+    if (httpStatus === 200) {
+      state.lastSuccessAt = now.toISOString();
+      state.lastFetchStatus = 'HTTP 200 (Success)';
+    } else if (httpStatus && httpStatus > 0) {
+      state.lastFetchStatus = `HTTP ${httpStatus}`;
+    } else if (errorMsg) {
+      state.lastFetchStatus = `ERROR: ${errorMsg.substring(0, 50)}`;
+    }
+
+    await this.prisma.source.update({
+      where: { code: 'IPOGURU' },
+      data: {
+        rateLimitPolicy: state as unknown as Prisma.InputJsonValue,
+        lastCheckedAt: now,
+        ...(httpStatus === 200 ? { lastSuccessAt: now } : {}),
+      },
+    });
+
+    return state;
+  }
+
+  /**
+   * Fetch IPO data from IPO Guru v2 API with budget enforcement and persistence.
    *
    * The API key is read from IPOGURU_API_KEY environment variable and sent
    * as an X-API-KEY header. It is never included in the returned result.
    */
-  async fetchIpos(): Promise<IpoGuruFetchResult> {
+  async fetchIpos(
+    mode: 'AUTO' | 'MANUAL' = 'MANUAL',
+    slot?: string,
+  ): Promise<IpoGuruFetchResult> {
     const apiKey = this.configService.get('IPOGURU_API_KEY' as keyof Env, {
       infer: true,
     }) as string | undefined;
@@ -55,11 +298,23 @@ export class IpoGuruService {
       );
     }
 
+    // Check budget guard
+    const guard = await this.checkBudgetAndRateLimit(mode, slot);
+    if (!guard.allowed) {
+      this.logger.warn(`IPO Guru ${mode} fetch blocked: ${guard.reason}`);
+      throw new BadRequestException({
+        message: guard.reason,
+        mode,
+        slot,
+      });
+    }
+
     const url = `${this.BASE_URL}/ipos`;
-    this.logger.log(`IPO Guru v2 manual fetch: GET ${url}`);
+    this.logger.log(`IPO Guru v2 ${mode} fetch: GET ${url}`);
 
     let httpStatus = 0;
     let rawBody: IpoGuruV1Response = {};
+    let fetchError: string | undefined;
 
     try {
       const response = await fetch(url, {
@@ -76,23 +331,31 @@ export class IpoGuruService {
 
       if (!response.ok) {
         const errText = await response.text().catch(() => '');
-        this.logger.error(
-          `IPO Guru API error: HTTP ${httpStatus} — ${errText.substring(0, 200)}`,
-        );
-        return {
-          httpStatus,
-          ipos: [],
-          total: 0,
-          fetchedAt: new Date().toISOString(),
-          responseKeys: [],
-        };
+        fetchError = `HTTP ${httpStatus} — ${errText.substring(0, 200)}`;
+        this.logger.error(`IPO Guru API error: ${fetchError}`);
+      } else {
+        rawBody = (await response.json()) as IpoGuruV1Response;
       }
-
-      rawBody = (await response.json()) as IpoGuruV1Response;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      fetchError = msg;
       this.logger.error(`IPO Guru network/parse error: ${msg}`);
+      // Record failed execution since request was dispatched
+      await this.recordRequestExecution(mode, slot, httpStatus, fetchError);
       throw new Error(`IPO Guru API request failed: ${msg}`);
+    }
+
+    // Record request execution (consumes daily quota)
+    await this.recordRequestExecution(mode, slot, httpStatus, fetchError);
+
+    if (httpStatus !== 200 && httpStatus !== 0) {
+      return {
+        httpStatus,
+        ipos: [],
+        total: 0,
+        fetchedAt: new Date().toISOString(),
+        responseKeys: [],
+      };
     }
 
     const ipos: IpoGuruV1Ipo[] = this.extractIpos(rawBody);
@@ -106,7 +369,7 @@ export class IpoGuruService {
     );
 
     this.logger.log(
-      `IPO Guru v2 fetch complete: ${ipos.length} IPOs returned (HTTP ${httpStatus})`,
+      `IPO Guru v2 ${mode} fetch complete: ${ipos.length} IPOs returned (HTTP ${httpStatus})`,
     );
 
     return {
@@ -122,8 +385,11 @@ export class IpoGuruService {
    * Synchronizes IPO Guru v2 records into the canonical IPOVault database.
    * Transactional per IPO record.
    */
-  async syncIpos(): Promise<IpoGuruSyncResult> {
-    const fetchResult = await this.fetchIpos();
+  async syncIpos(
+    mode: 'AUTO' | 'MANUAL' = 'MANUAL',
+    slot?: string,
+  ): Promise<IpoGuruSyncResult> {
+    const fetchResult = await this.fetchIpos(mode, slot);
     const rawIpos = fetchResult.ipos;
     const syncedAt = new Date().toISOString();
 

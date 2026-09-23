@@ -101,8 +101,14 @@ export const envSchema = z.object({
     .int()
     .min(1000)
     .default(60_000),
-  /** IPO Guru v1 API key — 10 req/day, 1 req/min — manual fetch only. */
+  /** IPO Guru v2 API key — 10 req/day, 1 req/min. */
   IPOGURU_API_KEY: z.string().optional(),
+  IPOGURU_SCHEDULER_ENABLED: z.coerce.boolean().optional().default(true),
+  IPOGURU_SCHEDULER_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .default(15_000),
 })
 .superRefine((val, ctx) => {
   if (val.NODE_ENV === 'production' && !val.CONSOLE_SESSION_SECRET) {

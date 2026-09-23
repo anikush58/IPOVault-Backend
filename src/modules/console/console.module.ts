@@ -10,7 +10,7 @@ import { ConsoleService } from './console.service';
 import { ConsoleEnabledGuard } from './console.guard';
 
 import { AdminModule } from '../admin/admin.module';
-import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
+import { IpoGuruModule } from '../ipo-guru/ipo-guru.module';
 
 @Module({
   imports: [
@@ -21,9 +21,10 @@ import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
     NotificationModule,
     AllotmentModule,
     AdminModule,
+    IpoGuruModule,
   ],
   controllers: [ConsoleController],
-  providers: [ConsoleService, ConsoleEnabledGuard, IpoGuruService],
+  providers: [ConsoleService, ConsoleEnabledGuard],
   exports: [ConsoleService],
 })
 export class ConsoleModule {}

@@ -20,6 +20,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ConsoleModule } from './modules/console/console.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { BrokerModule } from './modules/broker/broker.module';
+import { IpoGuruModule } from './modules/ipo-guru/ipo-guru.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { BrokerModule } from './modules/broker/broker.module';
     ConsoleModule,
     AdminModule,
     BrokerModule,
+    IpoGuruModule,
     HealthModule,
   ],
   providers: [

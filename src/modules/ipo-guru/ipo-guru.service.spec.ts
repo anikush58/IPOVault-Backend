@@ -53,10 +53,14 @@ describe('IpoGuruService', () => {
 
     mockPrisma = {
       source: {
-        upsert: jest.fn().mockResolvedValue({ id: 'source-ipoguru' }),
+        upsert: jest.fn().mockResolvedValue({ id: 'source-ipoguru', rateLimitPolicy: null }),
+        update: jest.fn().mockResolvedValue({ id: 'source-ipoguru' }),
       },
       ipo: {
         findMany: jest.fn().mockResolvedValue([]),
+      },
+      discoveryRecord: {
+        create: jest.fn().mockResolvedValue({ id: 'dr-1' }),
       },
       $transaction: jest.fn((callback) => callback(txMock)),
       _txMock: txMock,
@@ -522,6 +526,145 @@ describe('IpoGuruService', () => {
       expect(tx.ipo.update).not.toHaveBeenCalled();
       expect(tx.company.create).not.toHaveBeenCalled();
       expect(tx.ipo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Test 6: Quota, Budget & Persistent Counter Tests ────────────────────
+
+  describe('Budget & Usage Counter', () => {
+    it('should reset counter when IST date changes', async () => {
+      // Mock state from previous date
+      mockPrisma.source.upsert.mockResolvedValueOnce({
+        id: 'source-ipoguru',
+        rateLimitPolicy: {
+          istDate: '2026-09-20',
+          totalRequestsToday: 10,
+          autoRequestsToday: 4,
+          manualRequestsToday: 6,
+          lastRequestAt: '2026-09-20T17:30:00.000Z',
+          lastSuccessAt: '2026-09-20T17:30:00.000Z',
+          lastFetchStatus: 'HTTP 200 (Success)',
+          completedSlots: ['10:00', '13:00', '15:00', '17:30'],
+        },
+      });
+
+      const today = new Date('2026-09-23T10:00:00.000Z');
+      const state = await service.getPersistedUsageState(today);
+
+      expect(state.istDate).toBe('2026-09-23');
+      expect(state.totalRequestsToday).toBe(0);
+      expect(state.autoRequestsToday).toBe(0);
+      expect(state.manualRequestsToday).toBe(0);
+      expect(state.completedSlots).toHaveLength(0);
+      expect(mockPrisma.source.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            rateLimitPolicy: expect.objectContaining({
+              istDate: '2026-09-23',
+              totalRequestsToday: 0,
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should block requests when 10-request hard daily limit is reached', async () => {
+      mockPrisma.source.upsert.mockResolvedValueOnce({
+        id: 'source-ipoguru',
+        rateLimitPolicy: {
+          istDate: '2026-09-23',
+          totalRequestsToday: 10,
+          autoRequestsToday: 4,
+          manualRequestsToday: 6,
+          lastRequestAt: '2026-09-23T08:00:00.000Z',
+          completedSlots: ['10:00', '13:00', '15:00', '17:30'],
+        },
+      });
+
+      const check = await service.checkBudgetAndRateLimit(
+        'MANUAL',
+        undefined,
+        new Date('2026-09-23T12:00:00.000Z'),
+      );
+
+      expect(check.allowed).toBe(false);
+      expect(check.reason).toContain('Daily IPO Guru quota limit reached (10/10 requests used today)');
+    });
+
+    it('should block manual requests when remaining quota is reserved for auto syncs', async () => {
+      // 0 auto executed, but 6 manual already used (total 6).
+      // Remaining auto slots today = 4. Total = 6 + 4 = 10. Manual should have 0 remaining.
+      mockPrisma.source.upsert.mockResolvedValueOnce({
+        id: 'source-ipoguru',
+        rateLimitPolicy: {
+          istDate: '2026-09-23',
+          totalRequestsToday: 6,
+          autoRequestsToday: 0,
+          manualRequestsToday: 6,
+          lastRequestAt: '2026-09-23T02:00:00.000Z', // 7:30 AM IST (before 10:00)
+          completedSlots: [],
+        },
+      });
+
+      const check = await service.checkBudgetAndRateLimit(
+        'MANUAL',
+        undefined,
+        new Date('2026-09-23T02:30:00.000Z'), // 8:00 AM IST
+      );
+
+      expect(check.allowed).toBe(false);
+      expect(check.reason).toContain('Manual request blocked: Remaining quota is reserved for scheduled automatic syncs');
+    });
+
+    it('should enforce 1-minute rate-limit between requests', async () => {
+      const lastReq = new Date('2026-09-23T10:00:00.000Z');
+      const nextReq = new Date('2026-09-23T10:00:30.000Z'); // only 30s later
+
+      mockPrisma.source.upsert.mockResolvedValueOnce({
+        id: 'source-ipoguru',
+        rateLimitPolicy: {
+          istDate: '2026-09-23',
+          totalRequestsToday: 1,
+          autoRequestsToday: 0,
+          manualRequestsToday: 1,
+          lastRequestAt: lastReq.toISOString(),
+          completedSlots: [],
+        },
+      });
+
+      const check = await service.checkBudgetAndRateLimit('MANUAL', undefined, nextReq);
+      expect(check.allowed).toBe(false);
+      expect(check.reason).toContain('Please wait at least 1 minute');
+    });
+
+    it('should return accurate getStatus response with IST times and remaining budget', async () => {
+      mockPrisma.source.upsert.mockResolvedValueOnce({
+        id: 'source-ipoguru',
+        rateLimitPolicy: {
+          istDate: '2026-09-23',
+          totalRequestsToday: 2,
+          autoRequestsToday: 1,
+          manualRequestsToday: 1,
+          lastRequestAt: '2026-09-23T04:30:00.000Z', // 10:00 AM IST
+          lastSuccessAt: '2026-09-23T04:30:00.000Z',
+          lastFetchStatus: 'HTTP 200 (Success)',
+          completedSlots: ['10:00'],
+        },
+      });
+
+      // Query at 11:00 AM IST (05:30 UTC)
+      const now = new Date('2026-09-23T05:30:00.000Z');
+      const status = await service.getStatus(now);
+
+      expect(status.istDate).toBe('2026-09-23');
+      expect(status.requestsUsedToday).toBe(2);
+      expect(status.requestsRemainingToday).toBe(8);
+      expect(status.autoRequestsUsedToday).toBe(1);
+      expect(status.autoRequestsTotal).toBe(4);
+      expect(status.manualRequestsUsedToday).toBe(1);
+      expect(status.nextScheduledAutoSync).toBe('Today at 1:00 PM IST');
+      expect(status.completedSlots).toEqual(['10:00']);
+      expect(status.lastFetchStatus).toBe('HTTP 200 (Success)');
     });
   });
 });

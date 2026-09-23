@@ -154,3 +154,157 @@ export interface IpoGuruSyncResult {
   syncedAt: string;
   items: IpoGuruSyncItemDetail[];
 }
+
+// ==========================================
+// IPO GURU SCHEDULE & BUDGET CONSTANTS
+// ==========================================
+
+export const IPOGURU_SCHEDULED_SLOTS = [
+  '10:00',
+  '13:00',
+  '15:00',
+  '17:30',
+] as const;
+
+export type IpoGuruSlot = (typeof IPOGURU_SCHEDULED_SLOTS)[number];
+
+export const IPOGURU_TOTAL_DAILY_LIMIT = 10;
+export const IPOGURU_AUTO_DAILY_LIMIT = 4;
+export const IPOGURU_MAX_MANUAL_LIMIT = 6;
+export const IPOGURU_MIN_REQUEST_INTERVAL_MS = 60_000; // 1 minute
+
+/**
+ * Persisted server-side rate limit & daily quota usage state.
+ * Stored in PostgreSQL `sources.rate_limit_policy` for source 'IPOGURU'.
+ */
+export interface IpoGuruUsageState {
+  istDate: string; // "YYYY-MM-DD"
+  totalRequestsToday: number;
+  autoRequestsToday: number;
+  manualRequestsToday: number;
+  lastRequestAt: string | null;
+  lastSuccessAt: string | null;
+  lastFetchStatus: string | null;
+  completedSlots: string[];
+}
+
+/**
+ * Public status & counter model returned to Admin Console UI.
+ */
+export interface IpoGuruStatusResponse {
+  istDate: string;
+  requestsUsedToday: number;
+  requestsRemainingToday: number;
+  autoRequestsUsedToday: number;
+  autoRequestsTotal: number;
+  manualRequestsUsedToday: number;
+  manualRequestsRemaining: number;
+  nextScheduledAutoSync: string;
+  nextScheduledIso: string | null;
+  lastSuccessfulFetch: string | null;
+  lastFetchStatus: string;
+  lastRequestAt: string | null;
+  scheduledSlots: string[];
+  completedSlots: string[];
+}
+
+/**
+ * Helper to get current date, hours, minutes, and time slot string in IST (Asia/Kolkata, UTC+05:30).
+ */
+export function getIstNow(now = new Date()): {
+  istDate: string; // "YYYY-MM-DD"
+  hours: number;
+  minutes: number;
+  seconds: number;
+  timeStr: string; // "HH:mm"
+  timeMinutes: number; // hours * 60 + minutes
+} {
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffsetMs);
+  const y = istTime.getUTCFullYear();
+  const m = String(istTime.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(istTime.getUTCDate()).padStart(2, '0');
+  const istDate = `${y}-${m}-${d}`;
+  const hours = istTime.getUTCHours();
+  const minutes = istTime.getUTCMinutes();
+  const seconds = istTime.getUTCSeconds();
+  const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  const timeMinutes = hours * 60 + minutes;
+  return { istDate, hours, minutes, seconds, timeStr, timeMinutes };
+}
+
+/**
+ * Converts "HH:mm" string to total minutes from midnight.
+ */
+export function parseSlotToMinutes(slot: string): number {
+  const [h, m] = slot.split(':').map((v) => parseInt(v, 10));
+  return (h || 0) * 60 + (m || 0);
+}
+
+/**
+ * Formats a slot like "10:00" or "17:30" to readable IST label like "10:00 AM IST" or "5:30 PM IST".
+ */
+export function formatSlotDisplay(slot: string): string {
+  const [hStr, mStr] = slot.split(':');
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const displayH = h % 12 === 0 ? 12 : h % 12;
+  const displayM = m === 0 ? ':00' : `:${String(m).padStart(2, '0')}`;
+  return `${displayH}${displayM} ${ampm} IST`;
+}
+
+/**
+ * Formats an ISO date timestamp to Indian Standard Time display string.
+ */
+export function formatIstDisplay(isoString?: string | null): string {
+  if (!isoString) return '—';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '—';
+    const formatter = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+    return `${formatter.format(d)} IST`;
+  } catch {
+    return isoString;
+  }
+}
+
+/**
+ * Computes human-readable and ISO timestamp for next upcoming scheduled automatic sync.
+ */
+export function computeNextScheduledSync(
+  now = new Date(),
+  completedSlots: string[] = [],
+): { label: string; iso: string | null } {
+  const { istDate, timeMinutes } = getIstNow(now);
+  const slots = IPOGURU_SCHEDULED_SLOTS;
+
+  // Check today's upcoming uncompleted slots
+  for (const slot of slots) {
+    const slotMins = parseSlotToMinutes(slot);
+    // If slot is strictly in the future (or current minute) and not completed yet
+    if (slotMins >= timeMinutes && !completedSlots.includes(slot)) {
+      return {
+        label: `Today at ${formatSlotDisplay(slot)}`,
+        iso: new Date(`${istDate}T${slot}:00+05:30`).toISOString(),
+      };
+    }
+  }
+
+  // If all today's slots have passed or completed, next is tomorrow at 10:00 AM IST
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowIst = getIstNow(tomorrow).istDate;
+  return {
+    label: 'Tomorrow at 10:00 AM IST',
+    iso: new Date(`${tomorrowIst}T10:00:00+05:30`).toISOString(),
+  };
+}
+
