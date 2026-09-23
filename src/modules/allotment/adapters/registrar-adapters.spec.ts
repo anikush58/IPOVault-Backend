@@ -1,6 +1,8 @@
 import { AllotmentIdentifierType, AllotmentStatus } from '../allotment.types';
 import { KfinRegistrarAdapter } from './kfin-registrar.adapter';
 import { MufgIntimeRegistrarAdapter } from './mufg-intime-registrar.adapter';
+import { PurvaRegistrarAdapter } from './purva-registrar.adapter';
+import { RegistrarAdapterRegistry, normalizeRegistrarCode } from './registrar-adapter.registry';
 
 describe('KfinRegistrarAdapter Production Contract Tests', () => {
   let adapter: KfinRegistrarAdapter;
@@ -754,5 +756,109 @@ describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {
 
     const result = await adapter.checkAllotment(mockRequest);
     expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
+  });
+});
+
+describe('PurvaRegistrarAdapter Contract & Registry Tests', () => {
+  let adapter: PurvaRegistrarAdapter;
+  let registry: RegistrarAdapterRegistry;
+
+  beforeEach(() => {
+    adapter = new PurvaRegistrarAdapter();
+    registry = new RegistrarAdapterRegistry();
+    registry.register(adapter);
+  });
+
+  it('1. should declare correct metadata and identifier support', () => {
+    expect(adapter.code).toBe('PURVA');
+    expect(adapter.name).toBe('Purva Sharegistry');
+    expect(adapter.supportsIdentifier(AllotmentIdentifierType.PAN)).toBe(true);
+    expect(
+      adapter.supportsIdentifier(AllotmentIdentifierType.APPLICATION_NUMBER),
+    ).toBe(true);
+    expect(
+      adapter.supportsIdentifier(AllotmentIdentifierType.DP_CLIENT_ID),
+    ).toBe(false);
+  });
+
+  it('2. should correctly normalize Purva registrar aliases', () => {
+    expect(normalizeRegistrarCode('PURVA')).toBe('PURVA');
+    expect(normalizeRegistrarCode('purva_sharegistry')).toBe('PURVA');
+    expect(normalizeRegistrarCode('Purva Sharegistry India Pvt Ltd')).toBe(
+      'PURVA',
+    );
+    expect(
+      normalizeRegistrarCode('PURVA SHAREGISTRY (INDIA) PVT. LTD.'),
+    ).toBe('PURVA');
+    expect(normalizeRegistrarCode('PurvaShare')).toBe('PURVA');
+  });
+
+  it('3. should retrieve registered Purva adapter via aliases from registry', () => {
+    expect(registry.get('PURVA')).toBe(adapter);
+    expect(registry.get('PURVA_SHAREGISTRY')).toBe(adapter);
+    expect(registry.get('Purva Sharegistry')).toBe(adapter);
+    expect(registry.get('PURVA SHAREGISTRY INDIA PVT LTD')).toBe(adapter);
+  });
+
+  it('4. should parse HTML tables for ALLOTTED status', () => {
+    const html = `
+      <section class="ipo-query-section">
+        <div class="results-section">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Applicant Name</th>
+                <th>Application No</th>
+                <th>Shares Applied</th>
+                <th>Shares Allotted</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>TEST APPLICANT</td>
+                <td>APP123</td>
+                <td>500</td>
+                <td>500</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+    const res = adapter.parseAllotmentResultHtml(html, new Date());
+    expect(res.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(res.applicantName).toBe('TEST APPLICANT');
+    expect(res.sharesApplied).toBe(500);
+    expect(res.sharesAllotted).toBe(500);
+  });
+
+  it('5. should parse HTML tables for NOT_ALLOTTED status', () => {
+    const html = `
+      <section class="ipo-query-section">
+        <div class="results-section">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Applicant Name</th>
+                <th>Application No</th>
+                <th>Shares Applied</th>
+                <th>Shares Allotted</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>TEST APPLICANT</td>
+                <td>APP123</td>
+                <td>500</td>
+                <td>0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+    const res = adapter.parseAllotmentResultHtml(html, new Date());
+    expect(res.status).toBe(AllotmentStatus.NOT_ALLOTTED);
+    expect(res.sharesAllotted).toBe(0);
   });
 });

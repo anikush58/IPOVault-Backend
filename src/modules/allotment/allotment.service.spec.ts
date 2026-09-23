@@ -4,6 +4,7 @@ import { KfinRegistrarAdapter } from './adapters/kfin-registrar.adapter';
 import { MufgIntimeRegistrarAdapter } from './adapters/mufg-intime-registrar.adapter';
 import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
 import { SkylineRegistrarAdapter } from './adapters/skyline-registrar.adapter';
+import { PurvaRegistrarAdapter } from './adapters/purva-registrar.adapter';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import { AllotmentRepository } from './allotment.repository';
 import { AllotmentService } from './allotment.service';
@@ -38,6 +39,7 @@ describe('AllotmentService & Resolver Integration', () => {
         MufgIntimeRegistrarAdapter,
         MaashitlaRegistrarAdapter,
         SkylineRegistrarAdapter,
+        PurvaRegistrarAdapter,
         { provide: PrismaService, useValue: prismaMock },
         { provide: AllotmentRepository, useValue: repositoryMock },
       ],

@@ -77,6 +77,26 @@ export function normalizeRegistrarCode(rawCode?: string | null): string {
     return 'SKYLINE';
   }
 
+  // Explicit deterministic mapping for known Purva Sharegistry display names and aliases
+  if (
+    trimmed === 'PURVA' ||
+    trimmed === 'PURVA_SHAREGISTRY' ||
+    trimmed === 'PURVA SHAREGISTRY' ||
+    trimmed === 'PURVA SHAREGISTRY (INDIA) PVT. LTD.' ||
+    trimmed === 'PURVA SHAREGISTRY (INDIA) PVT LTD' ||
+    trimmed === 'PURVA SHAREGISTRY INDIA PVT LTD' ||
+    trimmed === 'PURVA SHAREGISTRY INDIA PRIVATE LIMITED' ||
+    trimmed === 'PURVA_SHAREGISTRY_INDIA_PVT_LTD' ||
+    trimmed === 'PURVA_SHAREGISTRY_INDIA_PRIVATE_LIMITED' ||
+    trimmed === 'PURVA SHAREGISTRY PVT LTD' ||
+    trimmed === 'PURVA SHAREGISTRY PRIVATE LIMITED' ||
+    trimmed === 'PURVASHAREREGISTRY' ||
+    trimmed === 'PURVA_SHARE' ||
+    trimmed === 'PURVASHARE'
+  ) {
+    return 'PURVA';
+  }
+
   return trimmed;
 }
 
@@ -144,6 +164,22 @@ export class RegistrarAdapterRegistry {
       this.adapters.set('SKYLINERTA', adapter);
       this.adapters.set('SKYLINE_RTA', adapter);
       this.adapters.set('SKYLINE RTA', adapter);
+    }
+    if (code === 'PURVA' || code === 'PURVA_SHAREGISTRY') {
+      this.adapters.set('PURVA', adapter);
+      this.adapters.set('PURVA_SHAREGISTRY', adapter);
+      this.adapters.set('PURVA SHAREGISTRY', adapter);
+      this.adapters.set('PURVA SHAREGISTRY (INDIA) PVT. LTD.', adapter);
+      this.adapters.set('PURVA SHAREGISTRY (INDIA) PVT LTD', adapter);
+      this.adapters.set('PURVA SHAREGISTRY INDIA PVT LTD', adapter);
+      this.adapters.set('PURVA SHAREGISTRY INDIA PRIVATE LIMITED', adapter);
+      this.adapters.set('PURVA_SHAREGISTRY_INDIA_PVT_LTD', adapter);
+      this.adapters.set('PURVA_SHAREGISTRY_INDIA_PRIVATE_LIMITED', adapter);
+      this.adapters.set('PURVA SHAREGISTRY PVT LTD', adapter);
+      this.adapters.set('PURVA SHAREGISTRY PRIVATE LIMITED', adapter);
+      this.adapters.set('PURVASHAREREGISTRY', adapter);
+      this.adapters.set('PURVA_SHARE', adapter);
+      this.adapters.set('PURVASHARE', adapter);
     }
 
     this.logger.log(`Registered Registrar Adapter: ${adapter.name} (${code})`);
