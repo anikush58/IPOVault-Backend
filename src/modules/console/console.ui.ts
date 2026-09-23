@@ -3945,7 +3945,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           const modal = document.getElementById('json-import-modal-overlay');
           if (modal) modal.style.display = 'flex';
         } catch (err) {
-          alert('Failed to parse or preview JSON file:\n' + formatApiError(err));
+          alert('Failed to parse or preview JSON file:\\n' + formatApiError(err));
         } finally {
           evt.target.value = '';
         }
@@ -4067,14 +4067,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
 
         const result = body.data || body;
-        alert('Add-Only Import Complete!\n\nUpdated: ' + (result.updatedCount || 0) + ' IPOs\nSkipped (No changes / Unmatched): ' + (result.skippedCount || 0) + '\nFailed: ' + (result.failedCount || 0));
+        alert('Add-Only Import Complete!\\n\\nUpdated: ' + (result.updatedCount || 0) + ' IPOs\\nSkipped (No changes / Unmatched): ' + (result.skippedCount || 0) + '\\nFailed: ' + (result.failedCount || 0));
         closeJsonImportModal();
         if (targetDetailIpoId) {
           await editManualIpo(targetDetailIpoId);
         }
         fetchManualIpos();
       } catch (err) {
-        alert('Add-only import commit failed:\n' + formatApiError(err));
+        alert('Add-only import commit failed:\\n' + formatApiError(err));
       } finally {
         if (btnConfirm) btnConfirm.disabled = false;
         if (btnText) btnText.textContent = 'Confirm & Apply Add-Only Import';

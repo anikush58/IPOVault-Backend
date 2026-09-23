@@ -35,6 +35,11 @@ export function configureApp(app: INestApplication): void {
   // Serve static Web Admin Portal at /admin
   app.use('/admin', express.static(join(process.cwd(), 'public', 'admin')));
 
+  // Redirect /console to /api/v1/console
+  app.use('/console', (req: express.Request, res: express.Response) => {
+    res.redirect(301, '/api/v1/console' + (req.url === '/' ? '' : req.url));
+  });
+
   app.setGlobalPrefix('api/v1');
   const isDev = config.get('NODE_ENV', { infer: true }) === 'development';
   app.enableCors({
