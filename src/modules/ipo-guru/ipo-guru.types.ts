@@ -1,31 +1,41 @@
 /**
- * IPO Guru v1 API types.
+ * IPO Guru v2 API types.
  *
- * All types are scoped to this module so v1 can be replaced with v2
- * without touching the rest of IPOVault.
+ * Scoped to this module to encapsulate IPO Guru API shapes.
  */
 
 /**
- * One IPO record as returned by GET https://www.ipoguru.in/api/v1/ipos
+ * Subscription data shape in v2 API.
+ * In v2 list response, subscription provides subscription_total or nested total.
  */
-export interface IpoGuruV1Subscription {
+export interface IpoGuruV2Subscription {
+  total?: string | number | null;
   qib?: string | number | null;
   nii?: string | number | null;
   retail?: string | number | null;
-  total?: string | number | null;
   updated_at?: string | null;
+  updated_at_label?: string | null;
   [key: string]: unknown;
 }
 
-export interface IpoGuruV1Gmp {
+/**
+ * GMP data shape in v2 API.
+ * updated_at is UTC ISO-8601; updated_at_label is display timestamp.
+ */
+export interface IpoGuruV2Gmp {
   price?: string | number | null;
   percentage?: string | number | null;
   updated_at?: string | null;
+  updated_at_label?: string | null;
   [key: string]: unknown;
 }
 
-export interface IpoGuruV1Ipo {
-  // Core identity
+/**
+ * One IPO record as returned by GET https://www.ipoguru.in/api/v2/ipos
+ */
+export interface IpoGuruV2Ipo {
+  // Core identity (v2 uses slug as primary identifier)
+  slug?: string;
   id?: string | number;
   name?: string;
   company_name?: string;
@@ -53,52 +63,67 @@ export interface IpoGuruV1Ipo {
   price_band_max?: number | string | null;
   issue_price?: number | string | null;
   listing_price?: number | string | null;
-  face_value?: number | string | null;
+  face_value?: number | string | null; // Optional in v2 list response
   lot_size?: number | string | null;
   min_investment?: number | string | null;
 
-  // Size
-  issue_size?: number | string | null; // in crore e.g. "₹22561.57 Cr"
+  // Size (unformatted numeric value in v2)
+  issue_size?: number | string | null; // e.g. 22561.57 or 500
   fresh_issue?: number | string | null;
+  fresh_issue_size?: number | string | null;
+  fresh_size?: number | string | null;
   ofs?: number | string | null;
+  ofs_size?: number | string | null;
+  ofs_issue_size?: number | string | null;
 
   // Exchange & registrar
   exchange?: string;
   listing_on?: string; // e.g. "BSE, NSE" | "BSE SME"
-  registrar?: string;
+  registrar?: string | null; // Optional in v2 list response
 
-  // Subscription (nested object or flat fields)
-  subscription?: IpoGuruV1Subscription;
+  // Subscription (v2 list response provides subscription_total)
+  subscription_total?: number | string | null;
+  subscription?: IpoGuruV2Subscription;
   qib_sub?: number | string | null;
   nii_sub?: number | string | null;
   retail_sub?: number | string | null;
   employee_sub?: number | string | null;
   total_sub?: number | string | null;
   sub_updated_at?: string | null;
+  sub_updated_at_label?: string | null;
 
-  // GMP (nested object or flat fields)
-  gmp?: IpoGuruV1Gmp | number | string | null;
+  // GMP
+  gmp?: IpoGuruV2Gmp | number | string | null;
   gmp_pct?: number | string | null;
   gmp_updated_at?: string | null;
+  gmp_updated_at_label?: string | null;
 
   // Additional fields from API
   [key: string]: unknown;
 }
 
-export interface IpoGuruV1Response {
-  data?: IpoGuruV1Ipo[];
-  ipos?: IpoGuruV1Ipo[];
+export interface IpoGuruV2Response {
+  data?: IpoGuruV2Ipo[];
+  ipos?: IpoGuruV2Ipo[];
   total?: number;
   count?: number;
   success?: boolean;
   [key: string]: unknown;
 }
 
+// Backward-compatible aliases
+export type IpoGuruV1Subscription = IpoGuruV2Subscription;
+export type IpoGuruV1Gmp = IpoGuruV2Gmp;
+export type IpoGuruV1Ipo = IpoGuruV2Ipo;
+export type IpoGuruV1Response = IpoGuruV2Response;
+export type IpoGuruIpo = IpoGuruV2Ipo;
+export type IpoGuruResponse = IpoGuruV2Response;
+
 export interface IpoGuruFetchResult {
   /** HTTP status code from the IPO Guru API */
   httpStatus: number;
   /** Normalised list of IPOs (empty array if none returned) */
-  ipos: IpoGuruV1Ipo[];
+  ipos: IpoGuruV2Ipo[];
   /** Total count as reported by the API */
   total: number;
   /** UTC timestamp when this fetch completed */

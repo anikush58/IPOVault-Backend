@@ -1997,13 +1997,13 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           </div>
         </div>
 
-        <!-- 9. IPO GURU v1 TAB -->
+        <!-- 9. IPO GURU v2 TAB -->
         <div id="tab-ipo-guru" class="section-view">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
             <div>
-              <div style="font-weight:700; font-size:17px; color:var(--text-main); margin-bottom:4px;">IPO Guru v1 Inspector</div>
+              <div style="font-weight:700; font-size:17px; color:var(--text-main); margin-bottom:4px;">IPO Guru v2 Inspector</div>
               <div style="font-size:12px; color:var(--text-muted);">
-                READ-ONLY. Fetches from <code style="font-family:monospace; background:var(--bg-hover); padding:1px 5px; border-radius:4px;">GET https://www.ipoguru.in/api/v1/ipos</code>
+                READ-ONLY. Fetches from <code style="font-family:monospace; background:var(--bg-hover); padding:1px 5px; border-radius:4px;">GET https://www.ipoguru.in/api/v2/ipos</code>
                 via the backend using <code style="font-family:monospace; background:var(--bg-hover); padding:1px 5px; border-radius:4px;">IPOGURU_API_KEY</code>.
                 <strong style="color:#F59E0B;">Rate limit: 10 req/day &middot; 1 req/min.</strong>
               </div>
@@ -2042,7 +2042,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <div id="ipo-guru-table-wrap" style="display:none;">
             <div class="grid-table-box">
               <div style="padding:14px 18px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-weight:600; font-size:14px;">IPO Guru v1 Data</span>
+                <span style="font-weight:600; font-size:14px;">IPO Guru v2 Data</span>
                 <span id="ipo-guru-row-count" style="font-size:12px; color:var(--text-muted);"></span>
               </div>
               <table style="min-width:1400px;">
@@ -2390,7 +2390,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         'sources': 'Upstream Source Health',
         'notifications': 'Notification Delivery Ops',
         'allotment': 'Allotment Check Ops',
-        'ipo-guru': 'IPO Guru v1 Inspector'
+        'ipo-guru': 'IPO Guru v2 Inspector'
       };
       const breadcrumbEl = document.getElementById('active-breadcrumb-title');
       if (breadcrumbEl) breadcrumbEl.textContent = titleMap[tabId] || 'Dashboard';
@@ -4238,13 +4238,13 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         var qibSub = sub.qib != null ? sub.qib : ipo.qib_sub;
         var niiSub = sub.nii != null ? sub.nii : ipo.nii_sub;
         var retSub = sub.retail != null ? sub.retail : ipo.retail_sub;
-        var totSub = sub.total != null ? sub.total : ipo.total_sub;
-        var subUpdated = sub.updated_at || ipo.sub_updated_at;
+        var totSub = ipo.subscription_total != null ? ipo.subscription_total : (sub.total != null ? sub.total : ipo.total_sub);
+        var subUpdated = sub.updated_at_label || sub.updated_at || ipo.sub_updated_at_label || ipo.sub_updated_at;
 
         var gmpObj = (ipo.gmp && typeof ipo.gmp === 'object') ? ipo.gmp : null;
         var gmpRaw = gmpObj ? gmpObj.price : ipo.gmp;
         var gmpPctRaw = gmpObj ? gmpObj.percentage : ipo.gmp_pct;
-        var gmpUpdated = gmpObj ? gmpObj.updated_at : ipo.gmp_updated_at;
+        var gmpUpdated = gmpObj ? (gmpObj.updated_at_label || gmpObj.updated_at) : (ipo.gmp_updated_at_label || ipo.gmp_updated_at);
 
         var gmpNum = parseFloat(gmpRaw);
         var gmpPctNum = parseFloat(gmpPctRaw);

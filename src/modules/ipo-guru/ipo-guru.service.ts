@@ -20,7 +20,7 @@ import {
 } from './ipo-guru.types';
 
 /**
- * IPO Guru v1 Service
+ * IPO Guru v2 Service
  *
  * READ-ONLY manual fetch and manual transactional sync to canonical IPOVault database.
  * Rate limits: 10 requests/day, 1 request/minute — manual operations only.
@@ -28,7 +28,7 @@ import {
 @Injectable()
 export class IpoGuruService {
   private readonly logger = new Logger(IpoGuruService.name);
-  private readonly BASE_URL = 'https://www.ipoguru.in/api/v1';
+  private readonly BASE_URL = 'https://www.ipoguru.in/api/v2';
 
   constructor(
     private readonly configService: ConfigService<Env, true>,
@@ -36,7 +36,7 @@ export class IpoGuruService {
   ) {}
 
   /**
-   * Manually fetch IPO data from IPO Guru v1 API.
+   * Manually fetch IPO data from IPO Guru v2 API.
    *
    * The API key is read from IPOGURU_API_KEY environment variable and sent
    * as an X-API-KEY header. It is never included in the returned result.
@@ -56,7 +56,7 @@ export class IpoGuruService {
     }
 
     const url = `${this.BASE_URL}/ipos`;
-    this.logger.log(`IPO Guru v1 manual fetch: GET ${url}`);
+    this.logger.log(`IPO Guru v2 manual fetch: GET ${url}`);
 
     let httpStatus = 0;
     let rawBody: IpoGuruV1Response = {};
@@ -106,7 +106,7 @@ export class IpoGuruService {
     );
 
     this.logger.log(
-      `IPO Guru v1 fetch complete: ${ipos.length} IPOs returned (HTTP ${httpStatus})`,
+      `IPO Guru v2 fetch complete: ${ipos.length} IPOs returned (HTTP ${httpStatus})`,
     );
 
     return {
@@ -119,7 +119,7 @@ export class IpoGuruService {
   }
 
   /**
-   * Synchronizes IPO Guru v1 records into the canonical IPOVault database.
+   * Synchronizes IPO Guru v2 records into the canonical IPOVault database.
    * Transactional per IPO record.
    */
   async syncIpos(): Promise<IpoGuruSyncResult> {
@@ -324,7 +324,8 @@ export class IpoGuruService {
         updatedFields.push('company', 'ipo');
       }
 
-      // Link SourceIdentity for IPOGURU
+      // Link SourceIdentity for IPOGURU (v2 uses slug as identifier)
+      const externalId = (rawItem.slug || (rawItem.id ? String(rawItem.id) : guruName)).trim();
       await tx.ipoSourceIdentity.upsert({
         where: {
           ipoId_sourceId: {
@@ -333,12 +334,13 @@ export class IpoGuruService {
           },
         },
         update: {
+          externalId,
           symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : undefined,
         },
         create: {
           ipoId,
           sourceId,
-          externalId: rawItem.id ? String(rawItem.id) : guruName,
+          externalId,
           symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
         },
       });
@@ -426,7 +428,9 @@ export class IpoGuruService {
       const gmpObj = rawItem.gmp && typeof rawItem.gmp === 'object' ? rawItem.gmp : null;
       const gmpAmount = this.parseDecimal(gmpObj ? gmpObj.price : rawItem.gmp);
       const gmpPercentage = this.parseDecimal(gmpObj ? gmpObj.percentage : rawItem.gmp_pct);
-      const gmpObservedAt = this.parseTimestamp((gmpObj ? gmpObj.updated_at : rawItem.gmp_updated_at) as string | null);
+      const gmpObservedAt = this.parseTimestamp(
+        (gmpObj ? (gmpObj.updated_at || gmpObj.updated_at_label) : (rawItem.gmp_updated_at || rawItem.gmp_updated_at_label)) as string | null,
+      );
 
       if (gmpAmount != null) {
         const existingGmp = await tx.gmpObservation.findFirst({
@@ -452,13 +456,19 @@ export class IpoGuruService {
 
       // --- 6. SUBSCRIPTION OBSERVATIONS ---
       const sub = rawItem.subscription || {};
-      const subObservedAt = this.parseTimestamp((sub.updated_at || rawItem.sub_updated_at) as string | null);
+      const subObservedAt = this.parseTimestamp(
+        (sub.updated_at || sub.updated_at_label || rawItem.sub_updated_at || rawItem.sub_updated_at_label) as string | null,
+      );
+
+      const totalMultiple = rawItem.subscription_total != null
+        ? rawItem.subscription_total
+        : (sub.total != null ? sub.total : rawItem.total_sub);
 
       const subCategories: Array<{ cat: OfferCategoryType; val: unknown }> = [
         { cat: OfferCategoryType.QIB, val: sub.qib != null ? sub.qib : rawItem.qib_sub },
         { cat: OfferCategoryType.NII, val: sub.nii != null ? sub.nii : rawItem.nii_sub },
         { cat: OfferCategoryType.RETAIL, val: sub.retail != null ? sub.retail : rawItem.retail_sub },
-        { cat: OfferCategoryType.OTHER, val: sub.total != null ? sub.total : rawItem.total_sub },
+        { cat: OfferCategoryType.OTHER, val: totalMultiple },
       ];
 
       for (const { cat, val } of subCategories) {
@@ -512,6 +522,31 @@ export class IpoGuruService {
     const rawSymbol = rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null;
     const rawName = (rawItem.name || rawItem.company_name || '').trim();
     const rawNormName = this.normalizeCompanyName(rawName);
+    const rawExternalId = rawItem.slug ? String(rawItem.slug).trim() : rawItem.id ? String(rawItem.id).trim() : null;
+
+    // 0. Match by externalId / slug in SourceIdentities
+    if (rawExternalId) {
+      const idMatches: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>> = [];
+      for (const ipo of existingIpos) {
+        if (
+          ipo.sourceIdentities.some(
+            (sid) => sid.externalId && sid.externalId.toLowerCase() === rawExternalId.toLowerCase(),
+          )
+        ) {
+          idMatches.push(ipo);
+        }
+      }
+
+      if (idMatches.length === 1) {
+        return { matchedIpo: idMatches[0], matchedBy: 'SYMBOL' };
+      } else if (idMatches.length > 1) {
+        return {
+          matchedIpo: null,
+          matchedBy: 'AMBIGUOUS',
+          ambiguousCandidates: idMatches.map((m) => `${m.company.displayName} (ID: ${m.id})`),
+        };
+      }
+    }
 
     // 1. Match by Symbol
     if (rawSymbol) {
@@ -603,10 +638,13 @@ export class IpoGuruService {
   private async ensureIpoGuruSource(): Promise<string> {
     const source = await this.prisma.source.upsert({
       where: { code: 'IPOGURU' },
-      update: {},
+      update: {
+        baseUrl: this.BASE_URL,
+        name: 'IPO Guru v2',
+      },
       create: {
         code: 'IPOGURU',
-        name: 'IPO Guru v1',
+        name: 'IPO Guru v2',
         sourceType: 'SECONDARY',
         baseUrl: this.BASE_URL,
         priority: 50,

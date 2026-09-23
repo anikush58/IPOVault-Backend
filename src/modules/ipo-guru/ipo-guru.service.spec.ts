@@ -232,28 +232,29 @@ describe('IpoGuruService', () => {
     expect(result.responseKeys).not.toContain('secret');
   });
 
-  it('should send the API key as X-API-KEY header, not in query params or Authorization header', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: jest.fn().mockResolvedValueOnce({ data: [] }),
+    it('should send the API key as X-API-KEY header and call the v2 endpoint', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({ data: [] }),
+      });
+
+      await service.fetchIpos();
+
+      const [calledUrl, calledOptions] = mockFetch.mock.calls[0] as [
+        string,
+        RequestInit,
+      ];
+
+      expect(calledUrl).toBe('https://www.ipoguru.in/api/v2/ipos');
+      expect(calledUrl).not.toContain('api_key=');
+      expect(calledUrl).not.toContain('key=');
+      expect(calledUrl).not.toContain('apiKey=');
+
+      const headers = calledOptions?.headers as Record<string, string>;
+      expect(headers?.['X-API-KEY']).toBe('test-api-key-secret');
+      expect(headers?.['Authorization']).toBeUndefined();
     });
-
-    await service.fetchIpos();
-
-    const [calledUrl, calledOptions] = mockFetch.mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
-
-    expect(calledUrl).not.toContain('api_key=');
-    expect(calledUrl).not.toContain('key=');
-    expect(calledUrl).not.toContain('apiKey=');
-
-    const headers = calledOptions?.headers as Record<string, string>;
-    expect(headers?.['X-API-KEY']).toBe('test-api-key-secret');
-    expect(headers?.['Authorization']).toBeUndefined();
-  });
 
   // ── Test 4: Matching Logic (matchIpo) ───────────────────────────────────
 
@@ -271,9 +272,18 @@ describe('IpoGuruService', () => {
         displayName: 'Swiggy Ltd',
       },
       sourceIdentities: [
-        { sourceId: 'src-1', symbol: 'SWIGGY', externalId: 'swiggy' },
+        { sourceId: 'src-1', symbol: 'SWIGGY', externalId: 'swiggy-ipo' },
       ],
     } as any;
+
+    it('should match an IPO by externalId / slug', () => {
+      const match = service.matchIpo(
+        { slug: 'swiggy-ipo', name: 'Different Name' } as any,
+        [existingIpo],
+      );
+      expect(match.matchedBy).toBe('SYMBOL');
+      expect(match.matchedIpo?.id).toBe('ipo-existing-1');
+    });
 
     it('should match an IPO by exact symbol match', () => {
       const match = service.matchIpo(
@@ -352,12 +362,13 @@ describe('IpoGuruService', () => {
   // ── Test 5: syncIpos database synchronization ──────────────────────────
 
   describe('syncIpos', () => {
-    it('should match existing IPO and update fields without duplicating', async () => {
+    it('should parse v2 response (slug, subscription_total, UTC ISO gmp.updated_at, numeric issue_size, missing registrar/face_value) and update existing IPO', async () => {
       const existingIpo = {
         id: 'ipo-existing-1',
         symbol: 'SWIGGY',
         marketSegment: 'MAINBOARD',
         status: 'UPCOMING',
+        faceValue: new Prisma.Decimal('1'),
         priceBandLow: new Prisma.Decimal('371'),
         priceBandHigh: new Prisma.Decimal('390'),
         lotSize: 38,
@@ -377,26 +388,26 @@ describe('IpoGuruService', () => {
         json: jest.fn().mockResolvedValueOnce({
           data: [
             {
-              id: '101',
+              slug: 'swiggy-limited',
               name: 'Swiggy Limited',
               symbol: 'SWIGGY',
               type: 'Mainboard',
               status: 'Closed',
               price_band: '371-390',
-              lot_size: '38',
+              lot_size: 38,
+              issue_size: 11327.43,
               open_date: '2024-11-06',
               close_date: '2024-11-08',
               allotment_date: '2024-11-11',
               listing_date: '2024-11-13',
-              registrar: 'Link Intime India Private Ltd',
-              gmp: { price: '25', percentage: '6.41', updated_at: '13 Nov 2024, 05:00 PM IST' },
-              subscription: {
-                qib: '6.02',
-                nii: '0.41',
-                retail: '1.14',
-                total: '3.59',
-                updated_at: '08 Nov 2024, 07:00 PM IST',
+              // registrar and face_value omitted in v2 list response
+              gmp: {
+                price: 25,
+                percentage: 6.41,
+                updated_at: '2024-11-13T11:30:00.000Z',
+                updated_at_label: '13 Nov 2024, 05:00 PM IST',
               },
+              subscription_total: 3.59,
             },
           ],
         }),
@@ -417,8 +428,15 @@ describe('IpoGuruService', () => {
       expect(tx.ipo.update).toHaveBeenCalled();
       expect(tx.company.create).not.toHaveBeenCalled();
       expect(tx.ipo.create).not.toHaveBeenCalled();
+      expect(tx.ipoSourceIdentity.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ externalId: 'swiggy-limited' }),
+          update: expect.objectContaining({ externalId: 'swiggy-limited' }),
+        }),
+      );
       expect(tx.gmpObservation.create).toHaveBeenCalled();
-      expect(tx.subscriptionObservation.create).toHaveBeenCalledTimes(4); // QIB, NII, RETAIL, OTHER
+      expect(tx.subscriptionObservation.create).toHaveBeenCalledTimes(1); // Only subscription_total -> OTHER
+      expect(tx.ipoAllotmentConfig.upsert).not.toHaveBeenCalled(); // registrar omitted
     });
 
     it('should create new company and IPO when no match is found', async () => {
@@ -430,12 +448,13 @@ describe('IpoGuruService', () => {
         json: jest.fn().mockResolvedValueOnce({
           data: [
             {
-              id: '202',
+              slug: 'brand-new-startup',
               name: 'Brand New Startup Limited',
               type: 'SME',
               status: 'Upcoming',
               price_band: '120-125',
-              lot_size: '1000',
+              lot_size: 1000,
+              issue_size: 50.25,
             },
           ],
         }),
@@ -451,6 +470,11 @@ describe('IpoGuruService', () => {
       const tx = mockPrisma._txMock;
       expect(tx.company.create).toHaveBeenCalled();
       expect(tx.ipo.create).toHaveBeenCalled();
+      expect(tx.ipoSourceIdentity.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ externalId: 'brand-new-startup' }),
+        }),
+      );
     });
 
     it('should SKIP ambiguous matches without updating or creating records', async () => {
@@ -473,7 +497,7 @@ describe('IpoGuruService', () => {
         json: jest.fn().mockResolvedValueOnce({
           data: [
             {
-              id: '303',
+              slug: 'swastika-infra',
               name: 'Swastika Infra',
               type: 'SME',
               price_band: '80-85',
