@@ -2,6 +2,7 @@ import { RegistrarResolver } from './registrar.resolver';
 import { PrismaService } from '../../database/prisma.service';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import { KfinRegistrarAdapter } from './adapters/kfin-registrar.adapter';
+import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
 
 describe('RegistrarResolver tests', () => {
   let resolver: RegistrarResolver;
@@ -9,6 +10,7 @@ describe('RegistrarResolver tests', () => {
   let registry: jest.Mocked<RegistrarAdapterRegistry>;
 
   const mockKfinAdapter = new KfinRegistrarAdapter();
+  const mockMaashitlaAdapter = new MaashitlaRegistrarAdapter();
 
   beforeEach(() => {
     prismaService = {
@@ -64,6 +66,24 @@ describe('RegistrarResolver tests', () => {
 
     const resolvedB = await resolver.resolveAdapter('ipo-B');
     expect(resolvedB?.registrarIpoCode).toBe('99990001111');
+  });
+
+  it('11. should resolve MAASHITLA registrar when mapped in database', async () => {
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue({
+      externalId: 'SPECTRAA TECHNOLOGY SOLUTIONS LIMITED',
+      source: {
+        code: 'MAASHITLA',
+      },
+    });
+
+    (registry.get as jest.Mock).mockReturnValue(mockMaashitlaAdapter);
+
+    const resolved = await resolver.resolveAdapter('ipo-maashitla');
+
+    expect(resolved).toBeDefined();
+    expect(resolved?.adapter).toBe(mockMaashitlaAdapter);
+    expect(resolved?.adapter.code).toBe('MAASHITLA');
+    expect(resolved?.registrarIpoCode).toBe('SPECTRAA TECHNOLOGY SOLUTIONS LIMITED');
   });
 
   it('should return undefined and log warning when no source identity is registered (NO guessing)', async () => {

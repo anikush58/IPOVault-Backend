@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../database/prisma.service';
 import { KfinRegistrarAdapter } from './adapters/kfin-registrar.adapter';
 import { MufgIntimeRegistrarAdapter } from './adapters/mufg-intime-registrar.adapter';
+import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import { AllotmentRepository } from './allotment.repository';
 import { AllotmentService } from './allotment.service';
@@ -34,6 +35,7 @@ describe('AllotmentService & Resolver Integration', () => {
         RegistrarAdapterRegistry,
         KfinRegistrarAdapter,
         MufgIntimeRegistrarAdapter,
+        MaashitlaRegistrarAdapter,
         { provide: PrismaService, useValue: prismaMock },
         { provide: AllotmentRepository, useValue: repositoryMock },
       ],

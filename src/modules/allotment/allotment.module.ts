@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { KfinRegistrarAdapter } from './adapters/kfin-registrar.adapter';
 import { MufgIntimeRegistrarAdapter } from './adapters/mufg-intime-registrar.adapter';
+import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import { AllotmentController } from './allotment.controller';
 import { AllotmentJobService } from './allotment-job.service';
@@ -23,6 +24,7 @@ import { SourceIdentitySyncService } from './discovery/source-identity-sync.serv
     RegistrarAdapterRegistry,
     KfinRegistrarAdapter,
     MufgIntimeRegistrarAdapter,
+    MaashitlaRegistrarAdapter,
     KfinIdentityDiscoveryAdapter,
     SourceIdentitySyncService,
   ],

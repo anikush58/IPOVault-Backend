@@ -44,6 +44,21 @@ export function normalizeRegistrarCode(rawCode?: string | null): string {
     return 'MUFG_INTIME';
   }
 
+  // Explicit deterministic mapping for known Maashitla display names and aliases
+  if (
+    trimmed === 'MAASHITLA' ||
+    trimmed === 'MAASHITLA_SECURITIES' ||
+    trimmed === 'MAASHITLA SECURITIES' ||
+    trimmed === 'MAASHITLA SECURITIES LIMITED' ||
+    trimmed === 'MAASHITLA_SECURITIES_LIMITED' ||
+    trimmed === 'MAASHITLA SECURITIES PVT LTD' ||
+    trimmed === 'MAASHITLA_SECURITIES_PVT_LTD' ||
+    trimmed === 'MAASHITLA SECURITIES PRIVATE LIMITED' ||
+    trimmed === 'MAASHITLA_SECURITIES_PRIVATE_LIMITED'
+  ) {
+    return 'MAASHITLA';
+  }
+
   return trimmed;
 }
 
@@ -86,6 +101,17 @@ export class RegistrarAdapterRegistry {
       this.adapters.set('MUFG INTIME INDIA PRIVATE LIMITED', adapter);
       this.adapters.set('LINK INTIME INDIA PRIVATE LIMITED', adapter);
       this.adapters.set('INTIME', adapter);
+    }
+    if (code === 'MAASHITLA' || code === 'MAASHITLA_SECURITIES') {
+      this.adapters.set('MAASHITLA', adapter);
+      this.adapters.set('MAASHITLA_SECURITIES', adapter);
+      this.adapters.set('MAASHITLA SECURITIES', adapter);
+      this.adapters.set('MAASHITLA SECURITIES LIMITED', adapter);
+      this.adapters.set('MAASHITLA_SECURITIES_LIMITED', adapter);
+      this.adapters.set('MAASHITLA SECURITIES PVT LTD', adapter);
+      this.adapters.set('MAASHITLA_SECURITIES_PVT_LTD', adapter);
+      this.adapters.set('MAASHITLA SECURITIES PRIVATE LIMITED', adapter);
+      this.adapters.set('MAASHITLA_SECURITIES_PRIVATE_LIMITED', adapter);
     }
 
     this.logger.log(`Registered Registrar Adapter: ${adapter.name} (${code})`);
