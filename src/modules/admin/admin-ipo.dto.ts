@@ -420,3 +420,71 @@ export class ImportAdminIpoJsonDto {
   gmp?: ImportGmpDto;
   subscription?: ImportSubscriptionDto[];
 }
+
+export interface FieldDiffToFill {
+  field: string;
+  section: string;
+  newValue: any;
+}
+
+export interface FieldDiffSkipped {
+  field: string;
+  section: string;
+  existingValue: any;
+  skippedValue: any;
+  reason: string;
+}
+
+export interface JsonIpoPreviewItem {
+  index: number;
+  inputName: string;
+  inputSymbol?: string;
+  matchStatus: 'MATCHED' | 'UNMATCHED' | 'AMBIGUOUS';
+  matchReason: string;
+  matchedIpoId?: string;
+  matchedIpoName?: string;
+  matchedSymbol?: string;
+  fieldsToFill: FieldDiffToFill[];
+  fieldsSkipped: FieldDiffSkipped[];
+  error?: string;
+}
+
+export interface JsonImportPreviewResponse {
+  totalRecords: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  ambiguousCount: number;
+  fieldsToFillTotal: number;
+  items: JsonIpoPreviewItem[];
+}
+
+export interface JsonIpoCommitResultItem {
+  index: number;
+  ipoId?: string;
+  ipoName: string;
+  success: boolean;
+  status:
+    | 'UPDATED'
+    | 'SKIPPED_NO_CHANGES'
+    | 'SKIPPED_UNMATCHED'
+    | 'SKIPPED_AMBIGUOUS'
+    | 'FAILED';
+  fieldsFilledCount: number;
+  fieldsFilled: string[];
+  error?: string;
+}
+
+export interface JsonImportCommitResponse {
+  totalRecords: number;
+  updatedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  items: JsonIpoCommitResultItem[];
+}
+
+export class JsonImportCommitDto {
+  items?: ImportAdminIpoJsonDto[];
+  payload?: any;
+  selectedIpoIds?: string[];
+}
+

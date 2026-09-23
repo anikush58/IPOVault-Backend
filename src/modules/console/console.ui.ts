@@ -2047,7 +2047,60 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <div id="ipo-guru-empty" style="text-align:center; padding:48px 16px; color:var(--text-muted);">
             <div style="font-size:32px; margin-bottom:12px;">&#128202;</div>
             <div style="font-weight:600; margin-bottom:6px;">No data fetched yet</div>
-            <div style="font-size:13px;">Click <strong>Fetch IPO Guru Data</strong> to manually pull from IPO Guru v1 API.</div>
+        <!-- ADD-ONLY JSON IMPORT PREVIEW & COMMIT MODAL -->
+        <div id="json-import-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:920px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-hover);">
+              <div>
+                <div style="font-weight:700; font-size:16px; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+                  <span>Add-Only JSON Import Preview</span>
+                  <span style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10B981; font-weight:600;">Add-Only Protection</span>
+                </div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">
+                  Only empty or missing fields will be populated. Existing non-empty values (including <strong>0</strong> and <strong>false</strong>) are strictly preserved and never overwritten.
+                </div>
+              </div>
+              <button onclick="closeJsonImportModal()" style="background:none; border:none; font-size:22px; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
+            </div>
+
+            <!-- Summary Metrics -->
+            <div style="padding:14px 20px; border-bottom:1px solid var(--border-color); background:var(--bg-surface);">
+              <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Total Records</div>
+                  <div class="stat-value" id="json-preview-total" style="font-size:18px;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Matched IPOs</div>
+                  <div class="stat-value" id="json-preview-matched" style="font-size:18px; color:#10B981;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Fields to Fill</div>
+                  <div class="stat-value" id="json-preview-fields-count" style="font-size:18px; color:#3B82F6;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Unmatched</div>
+                  <div class="stat-value" id="json-preview-unmatched" style="font-size:18px; color:#F59E0B;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Ambiguous</div>
+                  <div class="stat-value" id="json-preview-ambiguous" style="font-size:18px; color:#EF4444;">0</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Preview List Body -->
+            <div id="json-preview-list" style="padding:16px 20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:12px; max-height:calc(88vh - 210px);">
+              <!-- Populated dynamically via JS -->
+            </div>
+
+            <!-- Modal Footer Actions -->
+            <div style="padding:14px 20px; border-top:1px solid var(--border-color); background:var(--bg-hover); display:flex; justify-content:space-between; align-items:center;">
+              <button class="btn-secondary" onclick="closeJsonImportModal()">Cancel</button>
+              <button class="btn-primary" id="btn-confirm-json-import" onclick="commitAddOnlyJsonImport()" style="display:flex; align-items:center; gap:8px;">
+                <span id="btn-confirm-json-text">Confirm & Apply Add-Only Import</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -3651,6 +3704,23 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       document.getElementById('json-file-input').click();
     }
 
+    function closeJsonImportModal() {
+      const modal = document.getElementById('json-import-modal-overlay');
+      if (modal) modal.style.display = 'none';
+      window._pendingJsonPayload = null;
+      window._pendingPreviewData = null;
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
     function handleJsonFileSelect(evt) {
       const file = evt.target.files[0];
       if (!file) return;
@@ -3658,7 +3728,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       reader.onload = async (e) => {
         try {
           const jsonPayload = JSON.parse(e.target.result);
-          const response = await fetch(API_BASE + '/manual-ipos/import-json', {
+          window._pendingJsonPayload = jsonPayload;
+
+          const response = await fetch(API_BASE + '/manual-ipos/import-json/preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(jsonPayload)
@@ -3678,15 +3750,138 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             };
           }
 
-          alert('JSON Imported successfully!');
-          fetchManualIpos();
+          const previewData = body.data || body;
+          window._pendingPreviewData = previewData;
+          renderJsonImportPreview(previewData);
+
+          const modal = document.getElementById('json-import-modal-overlay');
+          if (modal) modal.style.display = 'flex';
         } catch (err) {
-          alert('JSON import failed:\\n' + formatApiError(err));
+          alert('Failed to parse or preview JSON file:\\n' + formatApiError(err));
         } finally {
           evt.target.value = '';
         }
       };
       reader.readAsText(file);
+    }
+
+    function renderJsonImportPreview(data) {
+      document.getElementById('json-preview-total').textContent = data.totalRecords || 0;
+      document.getElementById('json-preview-matched').textContent = data.matchedCount || 0;
+      document.getElementById('json-preview-fields-count').textContent = data.fieldsToFillTotal || 0;
+      document.getElementById('json-preview-unmatched').textContent = data.unmatchedCount || 0;
+      document.getElementById('json-preview-ambiguous').textContent = data.ambiguousCount || 0;
+
+      const btnConfirm = document.getElementById('btn-confirm-json-import');
+      const btnText = document.getElementById('btn-confirm-json-text');
+
+      if (!data.fieldsToFillTotal || data.fieldsToFillTotal === 0) {
+        if (btnConfirm) btnConfirm.disabled = true;
+        if (btnText) btnText.textContent = 'No Empty Fields to Populate';
+      } else {
+        if (btnConfirm) btnConfirm.disabled = false;
+        if (btnText) btnText.textContent = 'Confirm & Populate ' + data.fieldsToFillTotal + ' Empty Fields';
+      }
+
+      const listContainer = document.getElementById('json-preview-list');
+      if (!listContainer) return;
+
+      if (!data.items || data.items.length === 0) {
+        listContainer.innerHTML = '<div style="text-align:center; padding:24px; color:var(--text-muted);">No records found.</div>';
+        return;
+      }
+
+      listContainer.innerHTML = data.items.map(function(item) {
+        let statusBadge = '';
+        let borderColor = 'var(--border-color)';
+        if (item.matchStatus === 'MATCHED') {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10B981;">MATCHED</span>';
+          borderColor = 'rgba(16,185,129,0.3)';
+        } else if (item.matchStatus === 'AMBIGUOUS') {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(239,68,68,0.15); color:#EF4444;">AMBIGUOUS</span>';
+          borderColor = 'rgba(239,68,68,0.3)';
+        } else {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(245,158,11,0.15); color:#F59E0B;">UNMATCHED</span>';
+          borderColor = 'rgba(245,158,11,0.3)';
+        }
+
+        let toFillHtml = '';
+        if (item.fieldsToFill && item.fieldsToFill.length > 0) {
+          const chips = item.fieldsToFill.map(function(f) {
+            const valStr = typeof f.newValue === 'object' ? JSON.stringify(f.newValue) : escapeHtml(f.newValue);
+            return '<span style="font-size:11px; padding:3px 8px; border-radius:6px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.25); color:var(--text-main);"><strong>' + escapeHtml(f.field) + '</strong>: <span style="color:#10B981;">' + valStr + '</span></span>';
+          }).join('');
+          toFillHtml = '<div style="margin-top:8px;"><div style="font-size:11px; font-weight:700; color:#10B981; margin-bottom:4px;">FIELDS TO BE POPULATED (' + item.fieldsToFill.length + '):</div><div style="display:flex; flex-wrap:wrap; gap:6px;">' + chips + '</div></div>';
+        } else if (item.matchStatus === 'MATCHED') {
+          toFillHtml = '<div style="margin-top:6px; font-size:12px; color:var(--text-muted); font-style:italic;">No empty fields to populate (all target fields already populated).</div>';
+        }
+
+        let skippedHtml = '';
+        if (item.fieldsSkipped && item.fieldsSkipped.length > 0) {
+          const skipChips = item.fieldsSkipped.map(function(s) {
+            return '<span style="font-size:11px; padding:3px 8px; border-radius:6px; background:var(--bg-hover); border:1px solid var(--border-color); color:var(--text-muted);"><strong>' + escapeHtml(s.field) + '</strong> (preserved: ' + escapeHtml(s.existingValue) + ')</span>';
+          }).join('');
+          skippedHtml = '<details style="margin-top:8px; font-size:12px;"><summary style="cursor:pointer; color:var(--text-muted); font-size:11px; font-weight:600;">Existing fields preserved (' + item.fieldsSkipped.length + ')</summary><div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">' + skipChips + '</div></details>';
+        }
+
+        const symbolPart = item.inputSymbol ? ' <span style="font-size:11px; color:var(--text-muted); margin-left:6px;">(' + escapeHtml(item.inputSymbol) + ')</span>' : '';
+        const targetPart = item.matchedIpoName ? '<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Target: <strong>' + escapeHtml(item.matchedIpoName) + '</strong> ' + (item.matchedSymbol ? '[' + escapeHtml(item.matchedSymbol) + ']' : '') + '</div>' : '';
+
+        return '<div style="background:var(--bg-surface); border:1px solid ' + borderColor + '; border-radius:10px; padding:12px 16px;">'
+          + '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">'
+          + '<div><strong style="font-size:13px; color:var(--text-main);">' + escapeHtml(item.inputName) + '</strong>' + symbolPart + '</div>'
+          + '<div style="display:flex; align-items:center; gap:8px;"><span style="font-size:11px; color:var(--text-muted);">' + escapeHtml(item.matchReason) + '</span>' + statusBadge + '</div>'
+          + '</div>'
+          + targetPart
+          + toFillHtml
+          + skippedHtml
+          + '</div>';
+      }).join('');
+    }
+
+    async function commitAddOnlyJsonImport() {
+      if (!window._pendingJsonPayload) {
+        alert('No pending import payload.');
+        return;
+      }
+
+      const btnConfirm = document.getElementById('btn-confirm-json-import');
+      const btnText = document.getElementById('btn-confirm-json-text');
+      if (btnConfirm) btnConfirm.disabled = true;
+      if (btnText) btnText.textContent = 'Applying Add-Only Updates...';
+
+      try {
+        const response = await fetch(API_BASE + '/manual-ipos/import-json/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payload: window._pendingJsonPayload })
+        });
+
+        const rawText = await response.text();
+        let body;
+        try {
+          body = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          body = rawText;
+        }
+
+        if (!response.ok) {
+          throw body || {
+            statusCode: response.status,
+            message: response.statusText,
+          };
+        }
+
+        const result = body.data || body;
+        alert('Add-Only Import Complete!\\n\\nUpdated: ' + (result.updatedCount || 0) + ' IPOs\\nSkipped (No changes / Unmatched): ' + (result.skippedCount || 0) + '\\nFailed: ' + (result.failedCount || 0));
+        closeJsonImportModal();
+        fetchManualIpos();
+      } catch (err) {
+        alert('Add-only import commit failed:\\n' + formatApiError(err));
+      } finally {
+        if (btnConfirm) btnConfirm.disabled = false;
+        if (btnText) btnText.textContent = 'Confirm & Apply Add-Only Import';
+      }
     }
 
     async function loadQuality() {

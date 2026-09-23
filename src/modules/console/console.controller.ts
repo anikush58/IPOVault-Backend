@@ -358,6 +358,16 @@ export class ConsoleController {
     }
   }
 
+  @Post('api/manual-ipos/import-json/preview')
+  async previewManualIpoJson(@Body() body: any) {
+    return this.adminIpoService.previewAddOnlyJsonImport(body);
+  }
+
+  @Post('api/manual-ipos/import-json/commit')
+  async commitManualIpoJson(@Body() body: any) {
+    return this.adminIpoService.commitAddOnlyJsonImport(body);
+  }
+
   @Post('api/manual-ipos/:id/allotment-config')
   async configureManualIpoAllotment(
     @Param('id', new ParseUUIDPipe()) id: string,

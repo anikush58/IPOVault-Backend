@@ -37,6 +37,7 @@ describe('AdminIpoService & AdminValidationService', () => {
         symbol: 'TESTENT',
       }),
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockResolvedValue({
@@ -1170,6 +1171,225 @@ describe('AdminIpoService & AdminValidationService', () => {
       await expect(adminIpoService.deleteIpo('non-existent-id')).rejects.toThrow(
         'IPO with ID non-existent-id not found.',
       );
+    });
+  });
+
+  describe('Add-Only JSON Import (Preview & Commit)', () => {
+    it('1. populates empty/null fields in preview and commit', async () => {
+      const existingIpo = {
+        id: 'ipo-test-1',
+        companyId: 'comp-test-1',
+        symbol: 'EMPTYCO',
+        priceBandLow: null,
+        priceBandHigh: null,
+        lotSize: null,
+        company: {
+          id: 'comp-test-1',
+          legalName: 'Empty Company Limited',
+          displayName: 'Empty Co',
+          website: null,
+          phone: '',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const inputPayload = {
+        companyName: 'Empty Company Limited',
+        symbol: 'EMPTYCO',
+        website: 'https://emptyco.example.com',
+        priceBandMin: 250,
+        priceBandMax: 275,
+        lotSize: 50,
+        openDate: '2026-09-24',
+      };
+
+      // Preview test
+      const preview = await adminIpoService.previewAddOnlyJsonImport(inputPayload);
+      expect(preview.matchedCount).toBe(1);
+      expect(preview.fieldsToFillTotal).toBe(5); // website, priceBandLow, priceBandHigh, lotSize, openDate
+      expect(preview.items[0].matchStatus).toBe('MATCHED');
+
+      // Commit test
+      const commitResult = await adminIpoService.commitAddOnlyJsonImport(inputPayload);
+      expect(commitResult.updatedCount).toBe(1);
+      expect(mockPrisma.company.update).toHaveBeenCalledWith({
+        where: { id: 'comp-test-1' },
+        data: expect.objectContaining({
+          website: 'https://emptyco.example.com',
+        }),
+      });
+      expect(mockPrisma.ipo.update).toHaveBeenCalledWith({
+        where: { id: 'ipo-test-1' },
+        data: expect.objectContaining({
+          priceBandLow: 250,
+          priceBandHigh: 275,
+          lotSize: 50,
+        }),
+      });
+    });
+
+    it('2. preserves existing fields and does not overwrite existing values', async () => {
+      const existingIpo = {
+        id: 'ipo-test-2',
+        companyId: 'comp-test-2',
+        symbol: 'FILLEDCO',
+        priceBandLow: 100,
+        priceBandHigh: 110,
+        lotSize: 100,
+        issueSize: 500,
+        company: {
+          id: 'comp-test-2',
+          legalName: 'Filled Company Limited',
+          displayName: 'Filled Co',
+          website: 'https://original-website.com',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+
+      const inputPayload = {
+        companyName: 'Filled Company Limited',
+        symbol: 'FILLEDCO',
+        website: 'https://new-inbound-website.com', // Should be skipped
+        priceBandMin: 999, // Should be skipped
+        issueSize: 9999, // Should be skipped
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(inputPayload);
+      expect(preview.matchedCount).toBe(1);
+      expect(preview.fieldsToFillTotal).toBe(0);
+      expect(preview.items[0].fieldsSkipped).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ field: 'website' }),
+          expect.objectContaining({ field: 'priceBandLow' }),
+          expect.objectContaining({ field: 'issueSize' }),
+        ]),
+      );
+
+      const commitResult = await adminIpoService.commitAddOnlyJsonImport(inputPayload);
+      expect(commitResult.updatedCount).toBe(0);
+      expect(commitResult.skippedCount).toBe(1);
+      expect(commitResult.items[0].status).toBe('SKIPPED_NO_CHANGES');
+    });
+
+    it('3. strictly preserves 0 and false as existing non-empty values', async () => {
+      const existingIpo = {
+        id: 'ipo-test-3',
+        companyId: 'comp-test-3',
+        symbol: 'ZEROCO',
+        faceValue: 0, // Explicit zero
+        lotSize: 0,
+        company: {
+          id: 'comp-test-3',
+          legalName: 'Zero Co Limited',
+          displayName: 'Zero Co',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [
+          {
+            id: 'cat-1',
+            category: 'RETAIL',
+            allocationPct: 0,
+            isUpiEligible: false, // Explicit false
+          },
+        ],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+
+      const inputPayload = {
+        companyName: 'Zero Co Limited',
+        symbol: 'ZEROCO',
+        ipo: {
+          faceValue: 10, // Should be skipped because existing is 0
+          lotSize: 50, // Should be skipped because existing is 0
+        },
+        offerCategories: [
+          {
+            category: 'RETAIL',
+            allocationPct: 35, // Should be skipped because existing is 0
+            isUpiEligible: true, // Should be skipped because existing is false
+          },
+        ],
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(inputPayload);
+      expect(preview.matchedCount).toBe(1);
+      expect(preview.fieldsToFillTotal).toBe(0);
+
+      // Verify reasons note explicit 0 / false preservation
+      const zeroReasons = preview.items[0].fieldsSkipped.filter((s) =>
+        s.reason.includes('0') || s.reason.includes('false'),
+      );
+      expect(zeroReasons.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('4. does not modify unmatched or ambiguous IPOs', async () => {
+      const existingIpos = [
+        {
+          id: 'ipo-dup-1',
+          companyId: 'comp-dup-1',
+          company: { id: 'comp-dup-1', legalName: 'Ambiguous Tech Limited', displayName: 'Ambiguous Tech' },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+        {
+          id: 'ipo-dup-2',
+          companyId: 'comp-dup-2',
+          company: { id: 'comp-dup-2', legalName: 'Ambiguous Tech Limited', displayName: 'Ambiguous Tech' },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+      ];
+
+      mockPrisma.ipo.findMany.mockResolvedValue(existingIpos);
+
+      const multiPayload = [
+        { companyName: 'Ambiguous Tech Limited', lotSize: 50 }, // Ambiguous
+        { companyName: 'Completely Unknown Corp', lotSize: 100 }, // Unmatched
+      ];
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(multiPayload);
+      expect(preview.totalRecords).toBe(2);
+      expect(preview.matchedCount).toBe(0);
+      expect(preview.ambiguousCount).toBe(1);
+      expect(preview.unmatchedCount).toBe(1);
+      expect(preview.fieldsToFillTotal).toBe(0);
+
+      const commitResult = await adminIpoService.commitAddOnlyJsonImport(multiPayload);
+      expect(commitResult.updatedCount).toBe(0);
+      expect(commitResult.skippedCount).toBe(2);
+      expect(commitResult.items[0].status).toBe('SKIPPED_AMBIGUOUS');
+      expect(commitResult.items[1].status).toBe('SKIPPED_UNMATCHED');
     });
   });
 });

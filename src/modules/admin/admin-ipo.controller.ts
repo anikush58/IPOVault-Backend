@@ -109,4 +109,20 @@ export class AdminIpoController {
   ) {
     return this.adminIpoService.configureAllotment(id, dto);
   }
+
+  /**
+   * Generate safe preview for additive-only JSON import.
+   */
+  @Post('import-json/preview')
+  async previewJsonImport(@Body() body: any) {
+    return this.adminIpoService.previewAddOnlyJsonImport(body);
+  }
+
+  /**
+   * Commit additive-only JSON import.
+   */
+  @Post('import-json/commit')
+  async commitJsonImport(@Body() body: any) {
+    return this.adminIpoService.commitAddOnlyJsonImport(body);
+  }
 }
