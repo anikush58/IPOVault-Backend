@@ -203,10 +203,11 @@ export function toIpoResponseDto(
     lifecycle.allotmentResultAvailableAt = ipo.allotmentResultAvailableAt.toISOString();
   }
 
-  // Derived minimum investment amount (lotSize * priceBandHigh)
+  // Derived minimum investment amount (lotSize * priceBandHigh * (isSme ? 2 : 1))
   let minimumInvestmentAmount: string | null = null;
   if (ipo.lotSize != null && ipo.priceBandHigh != null) {
-    const minVal = ipo.lotSize * Number(ipo.priceBandHigh);
+    const isSme = ipo.marketSegment === 'SME';
+    const minVal = ipo.lotSize * Number(ipo.priceBandHigh) * (isSme ? 2 : 1);
     if (!isNaN(minVal) && minVal > 0) {
       minimumInvestmentAmount = minVal.toFixed(2);
     }

@@ -59,6 +59,24 @@ export function normalizeRegistrarCode(rawCode?: string | null): string {
     return 'MAASHITLA';
   }
 
+  // Explicit deterministic mapping for known Skyline display names and aliases
+  if (
+    trimmed === 'SKYLINE' ||
+    trimmed === 'SKYLINE_FINANCIAL_SERVICES' ||
+    trimmed === 'SKYLINE FINANCIAL SERVICES' ||
+    trimmed === 'SKYLINE FINANCIAL SERVICES LIMITED' ||
+    trimmed === 'SKYLINE_FINANCIAL_SERVICES_LIMITED' ||
+    trimmed === 'SKYLINE FINANCIAL SERVICES PVT LTD' ||
+    trimmed === 'SKYLINE_FINANCIAL_SERVICES_PVT_LTD' ||
+    trimmed === 'SKYLINE FINANCIAL SERVICES PRIVATE LIMITED' ||
+    trimmed === 'SKYLINE_FINANCIAL_SERVICES_PRIVATE_LIMITED' ||
+    trimmed === 'SKYLINERTA' ||
+    trimmed === 'SKYLINE_RTA' ||
+    trimmed === 'SKYLINE RTA'
+  ) {
+    return 'SKYLINE';
+  }
+
   return trimmed;
 }
 
@@ -112,6 +130,20 @@ export class RegistrarAdapterRegistry {
       this.adapters.set('MAASHITLA_SECURITIES_PVT_LTD', adapter);
       this.adapters.set('MAASHITLA SECURITIES PRIVATE LIMITED', adapter);
       this.adapters.set('MAASHITLA_SECURITIES_PRIVATE_LIMITED', adapter);
+    }
+    if (code === 'SKYLINE' || code === 'SKYLINE_FINANCIAL_SERVICES') {
+      this.adapters.set('SKYLINE', adapter);
+      this.adapters.set('SKYLINE_FINANCIAL_SERVICES', adapter);
+      this.adapters.set('SKYLINE FINANCIAL SERVICES', adapter);
+      this.adapters.set('SKYLINE FINANCIAL SERVICES LIMITED', adapter);
+      this.adapters.set('SKYLINE_FINANCIAL_SERVICES_LIMITED', adapter);
+      this.adapters.set('SKYLINE FINANCIAL SERVICES PVT LTD', adapter);
+      this.adapters.set('SKYLINE_FINANCIAL_SERVICES_PVT_LTD', adapter);
+      this.adapters.set('SKYLINE FINANCIAL SERVICES PRIVATE LIMITED', adapter);
+      this.adapters.set('SKYLINE_FINANCIAL_SERVICES_PRIVATE_LIMITED', adapter);
+      this.adapters.set('SKYLINERTA', adapter);
+      this.adapters.set('SKYLINE_RTA', adapter);
+      this.adapters.set('SKYLINE RTA', adapter);
     }
 
     this.logger.log(`Registered Registrar Adapter: ${adapter.name} (${code})`);

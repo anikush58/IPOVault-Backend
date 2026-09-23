@@ -3,6 +3,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import { KfinRegistrarAdapter } from './adapters/kfin-registrar.adapter';
 import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
+import { SkylineRegistrarAdapter } from './adapters/skyline-registrar.adapter';
 
 describe('RegistrarResolver tests', () => {
   let resolver: RegistrarResolver;
@@ -11,6 +12,7 @@ describe('RegistrarResolver tests', () => {
 
   const mockKfinAdapter = new KfinRegistrarAdapter();
   const mockMaashitlaAdapter = new MaashitlaRegistrarAdapter();
+  const mockSkylineAdapter = new SkylineRegistrarAdapter();
 
   beforeEach(() => {
     prismaService = {
@@ -84,6 +86,24 @@ describe('RegistrarResolver tests', () => {
     expect(resolved?.adapter).toBe(mockMaashitlaAdapter);
     expect(resolved?.adapter.code).toBe('MAASHITLA');
     expect(resolved?.registrarIpoCode).toBe('SPECTRAA TECHNOLOGY SOLUTIONS LIMITED');
+  });
+
+  it('12. should resolve SKYLINE registrar when mapped in database', async () => {
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue({
+      externalId: '3418',
+      source: {
+        code: 'SKYLINE',
+      },
+    });
+
+    (registry.get as jest.Mock).mockReturnValue(mockSkylineAdapter);
+
+    const resolved = await resolver.resolveAdapter('ipo-skyline');
+
+    expect(resolved).toBeDefined();
+    expect(resolved?.adapter).toBe(mockSkylineAdapter);
+    expect(resolved?.adapter.code).toBe('SKYLINE');
+    expect(resolved?.registrarIpoCode).toBe('3418');
   });
 
   it('should return undefined and log warning when no source identity is registered (NO guessing)', async () => {

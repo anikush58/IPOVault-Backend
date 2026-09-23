@@ -1279,8 +1279,6 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <div class="manual-toolbar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <div class="manual-toolbar-actions" style="display:flex; gap:10px; flex-wrap:wrap;">
               <button class="btn-primary" onclick="openCreateModal()"><i data-feather="plus"></i> <span>Add Manual IPO</span></button>
-              <button class="btn-secondary" onclick="triggerJsonImport()">Import JSON</button>
-              <input type="file" id="json-file-input" accept=".json,application/json" onchange="handleJsonFileSelect(event)" style="display:none;" />
             </div>
             <div class="manual-toolbar-filters" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
               <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
@@ -1362,7 +1360,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
         <!-- 3. MANUAL IPO EDIT / CREATE TAB -->
         <div id="tab-manual-edit" class="section-view">
-          <div class="form-header-bar">
+          <div class="form-header-bar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <button type="button" class="btn-back-manual" onclick="switchTab('manual')">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -1370,43 +1368,54 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               </svg>
               <span>Back</span>
             </button>
-            <div class="form-action-group">
-              <button type="button" class="form-action-btn" id="btn-save-action" title="Save IPO" onclick="saveManualIpo()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00A870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-                  <polyline points="17 21 17 13 7 13 7 21"></polyline>
-                  <polyline points="7 3 7 8 15 8"></polyline>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <button type="button" class="btn-secondary" id="btn-import-json-detail" onclick="triggerJsonImportForCurrentIpo()" style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; font-size:13px; font-weight:600; border-radius:8px;" title="Upload JSON to fill empty or missing data for this IPO without overwriting existing data">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
+                <span>Upload JSON (Fill Missing Data)</span>
               </button>
-              <button type="button" class="form-action-btn" id="btn-publish-action" title="Publish to Mobile App" onclick="publishCurrentIpo()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9F4AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
-                  <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path>
-                  <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path>
-                  <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
-                </svg>
-              </button>
-              <button type="button" class="form-action-btn" id="btn-unpublish-action" title="Unpublish (Draft)" onclick="unpublishCurrentIpo()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0050E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                  <line x1="1" y1="1" x2="23" y2="23"></line>
-                </svg>
-              </button>
-              <button type="button" class="form-action-btn" id="btn-archive-action" title="Archive IPO" onclick="archiveCurrentIpo()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FB9816" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="21 8 21 21 3 21 3 8"></polyline>
-                  <rect x="1" y="3" width="22" height="5" rx="1"></rect>
-                  <line x1="10" y1="12" x2="14" y2="12"></line>
-                </svg>
-              </button>
-              <button type="button" class="form-action-btn" id="btn-delete-action" title="Delete IPO" onclick="deleteCurrentIpo()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  <line x1="10" y1="11" x2="10" y2="17"></line>
-                  <line x1="14" y1="11" x2="14" y2="17"></line>
-                </svg>
-              </button>
+              <input type="file" id="json-detail-file-input" accept=".json,application/json" onchange="handleJsonDetailFileSelect(event)" style="display:none;" />
+              <div class="form-action-group">
+                <button type="button" class="form-action-btn" id="btn-save-action" title="Save IPO" onclick="saveManualIpo()">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00A870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                    <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                    <polyline points="7 3 7 8 15 8"></polyline>
+                  </svg>
+                </button>
+                <button type="button" class="form-action-btn" id="btn-publish-action" title="Publish to Mobile App" onclick="publishCurrentIpo()">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9F4AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
+                    <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path>
+                    <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path>
+                    <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+                  </svg>
+                </button>
+                <button type="button" class="form-action-btn" id="btn-unpublish-action" title="Unpublish (Draft)" onclick="unpublishCurrentIpo()">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0050E5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                </button>
+                <button type="button" class="form-action-btn" id="btn-archive-action" title="Archive IPO" onclick="archiveCurrentIpo()">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FB9816" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                    <rect x="1" y="3" width="22" height="5" rx="1"></rect>
+                    <line x1="10" y1="12" x2="14" y2="12"></line>
+                  </svg>
+                </button>
+                <button type="button" class="form-action-btn" id="btn-delete-action" title="Delete IPO" onclick="deleteCurrentIpo()">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -3816,8 +3825,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       return String(error);
     }
 
+    function triggerJsonImportForCurrentIpo() {
+      const input = document.getElementById('json-detail-file-input');
+      if (input) input.click();
+    }
+
     function triggerJsonImport() {
-      document.getElementById('json-file-input').click();
+      const input = document.getElementById('json-detail-file-input') || document.getElementById('json-file-input');
+      if (input) input.click();
     }
 
     function closeJsonImportModal() {
@@ -3825,6 +3840,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (modal) modal.style.display = 'none';
       window._pendingJsonPayload = null;
       window._pendingPreviewData = null;
+      window._pendingDetailIpoId = null;
     }
 
     function escapeHtml(str) {
@@ -3837,13 +3853,37 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         .replace(/'/g, '&#039;');
     }
 
-    function handleJsonFileSelect(evt) {
+    function handleJsonDetailFileSelect(evt) {
       const file = evt.target.files[0];
       if (!file) return;
+      const currentIpoId = document.getElementById('form-ipo-id')?.value;
+
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
-          const jsonPayload = JSON.parse(e.target.result);
+          let jsonPayload = JSON.parse(e.target.result);
+
+          // If payload is wrapped in { data: ... }, unwrap it
+          if (jsonPayload && typeof jsonPayload === 'object' && !Array.isArray(jsonPayload) && jsonPayload.data && typeof jsonPayload.data === 'object') {
+            jsonPayload = jsonPayload.data;
+          }
+
+          // If triggered inside IPO Details with an active IPO ID, bind target IPO ID if not explicitly specified
+          if (currentIpoId) {
+            window._pendingDetailIpoId = currentIpoId;
+            if (Array.isArray(jsonPayload)) {
+              if (jsonPayload.length === 1 && !jsonPayload[0].id && !jsonPayload[0].ipoId && !jsonPayload[0].targetIpoId) {
+                jsonPayload[0].id = currentIpoId;
+              }
+            } else if (typeof jsonPayload === 'object' && jsonPayload !== null) {
+              if (!jsonPayload.id && !jsonPayload.ipoId && !jsonPayload.targetIpoId) {
+                jsonPayload.id = currentIpoId;
+              }
+            }
+          } else {
+            window._pendingDetailIpoId = null;
+          }
+
           window._pendingJsonPayload = jsonPayload;
 
           const response = await fetch(API_BASE + '/manual-ipos/import-json/preview', {
@@ -3873,12 +3913,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           const modal = document.getElementById('json-import-modal-overlay');
           if (modal) modal.style.display = 'flex';
         } catch (err) {
-          alert('Failed to parse or preview JSON file:\\n' + formatApiError(err));
+          alert('Failed to parse or preview JSON file:\n' + formatApiError(err));
         } finally {
           evt.target.value = '';
         }
       };
       reader.readAsText(file);
+    }
+
+    function handleJsonFileSelect(evt) {
+      return handleJsonDetailFileSelect(evt);
     }
 
     function renderJsonImportPreview(data) {
@@ -3966,6 +4010,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (btnConfirm) btnConfirm.disabled = true;
       if (btnText) btnText.textContent = 'Applying Add-Only Updates...';
 
+      const targetDetailIpoId = window._pendingDetailIpoId;
+
       try {
         const response = await fetch(API_BASE + '/manual-ipos/import-json/commit', {
           method: 'POST',
@@ -3989,11 +4035,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
 
         const result = body.data || body;
-        alert('Add-Only Import Complete!\\n\\nUpdated: ' + (result.updatedCount || 0) + ' IPOs\\nSkipped (No changes / Unmatched): ' + (result.skippedCount || 0) + '\\nFailed: ' + (result.failedCount || 0));
+        alert('Add-Only Import Complete!\n\nUpdated: ' + (result.updatedCount || 0) + ' IPOs\nSkipped (No changes / Unmatched): ' + (result.skippedCount || 0) + '\nFailed: ' + (result.failedCount || 0));
         closeJsonImportModal();
+        if (targetDetailIpoId) {
+          await editManualIpo(targetDetailIpoId);
+        }
         fetchManualIpos();
       } catch (err) {
-        alert('Add-only import commit failed:\\n' + formatApiError(err));
+        alert('Add-only import commit failed:\n' + formatApiError(err));
       } finally {
         if (btnConfirm) btnConfirm.disabled = false;
         if (btnText) btnText.textContent = 'Confirm & Apply Add-Only Import';

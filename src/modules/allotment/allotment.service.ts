@@ -5,6 +5,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { KfinRegistrarAdapter } from './adapters/kfin-registrar.adapter';
 import { MufgIntimeRegistrarAdapter } from './adapters/mufg-intime-registrar.adapter';
 import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
+import { SkylineRegistrarAdapter } from './adapters/skyline-registrar.adapter';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import {
   AllotmentStatus,
@@ -27,10 +28,12 @@ export class AllotmentService {
     private readonly kfinAdapter: KfinRegistrarAdapter,
     private readonly mufgIntimeAdapter: MufgIntimeRegistrarAdapter,
     private readonly maashitlaAdapter: MaashitlaRegistrarAdapter,
+    private readonly skylineAdapter: SkylineRegistrarAdapter,
   ) {
     this.registry.register(this.kfinAdapter);
     this.registry.register(this.mufgIntimeAdapter);
     this.registry.register(this.maashitlaAdapter);
+    this.registry.register(this.skylineAdapter);
   }
 
   async checkAllotment(
