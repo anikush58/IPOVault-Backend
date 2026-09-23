@@ -33,6 +33,7 @@ import { SourceIdentitySyncService } from './discovery/source-identity-sync.serv
     AllotmentJobService,
     AllotmentIntelligenceService,
     AllotmentRepository,
+    RegistrarResolver,
     RegistrarAdapterRegistry,
     KfinIdentityDiscoveryAdapter,
     SourceIdentitySyncService,
