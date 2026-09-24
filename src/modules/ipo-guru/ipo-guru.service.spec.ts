@@ -527,6 +527,70 @@ describe('IpoGuruService', () => {
       expect(tx.company.create).not.toHaveBeenCalled();
       expect(tx.ipo.create).not.toHaveBeenCalled();
     });
+
+    it('should sync provided IPO records directly without calling external API or incrementing quota (0 additional external requests)', async () => {
+      const providedIpos = [
+        {
+          slug: 'test-direct-sync',
+          name: 'Direct Sync Corp',
+          symbol: 'DIRECT',
+          type: 'Mainboard',
+        },
+      ];
+
+      const result = await service.syncIpos('MANUAL', undefined, providedIpos as any);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result.totalFetched).toBe(1);
+      expect(result.newlyCreated).toBe(1);
+    });
+
+    it('should fetch from external API and consume quota when provided records are not provided (automatic scheduled sync)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'auto-scheduled-ipo',
+              name: 'Auto Scheduled Corp',
+              type: 'Mainboard',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos('AUTO', '10:00');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(result.totalFetched).toBe(1);
+    });
+
+    it('Manual Fetch -> Sync with fetched records should result in exactly 1 external API request total', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'manual-flow-ipo',
+              name: 'Manual Flow Corp',
+              type: 'Mainboard',
+            },
+          ],
+        }),
+      });
+
+      // Step 1: Manual Fetch (dispatches external request)
+      const fetchResult = await service.fetchIpos('MANUAL');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(fetchResult.ipos.length).toBe(1);
+
+      // Step 2: Manual Sync with provided records (0 additional external requests)
+      const syncResult = await service.syncIpos('MANUAL', undefined, fetchResult.ipos);
+      expect(mockFetch).toHaveBeenCalledTimes(1); // Quota preserved: still exactly 1 external call!
+      expect(syncResult.totalFetched).toBe(1);
+    });
   });
 
   // ── Test 6: Quota, Budget & Persistent Counter Tests ────────────────────

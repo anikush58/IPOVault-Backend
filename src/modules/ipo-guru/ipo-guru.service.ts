@@ -388,9 +388,15 @@ export class IpoGuruService {
   async syncIpos(
     mode: 'AUTO' | 'MANUAL' = 'MANUAL',
     slot?: string,
+    providedIpos?: IpoGuruV1Ipo[],
   ): Promise<IpoGuruSyncResult> {
-    const fetchResult = await this.fetchIpos(mode, slot);
-    const rawIpos = fetchResult.ipos;
+    let rawIpos: IpoGuruV1Ipo[];
+    if (providedIpos && Array.isArray(providedIpos)) {
+      rawIpos = providedIpos;
+    } else {
+      const fetchResult = await this.fetchIpos(mode, slot);
+      rawIpos = fetchResult.ipos;
+    }
     const syncedAt = new Date().toISOString();
 
     const summary: IpoGuruSyncResult = {
