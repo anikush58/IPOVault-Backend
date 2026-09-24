@@ -4696,19 +4696,21 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           document.getElementById('sync-total-fetched').textContent = result.totalFetched || 0;
           document.getElementById('sync-matched-updated').textContent = result.matchedUpdated || 0;
           document.getElementById('sync-newly-created').textContent = result.newlyCreated || 0;
-          document.getElementById('sync-skipped-errors').textContent = (result.skipped || 0) + (result.errors || 0);
+          document.getElementById('sync-skipped-errors').textContent = (result.skipped || 0) + (result.errorCount || result.errors || 0);
           document.getElementById('ipo-guru-sync-time').textContent = 'Completed at ' + new Date().toLocaleTimeString();
 
           // Render details
-          if (detailsEl && Array.isArray(result.details)) {
-            var detailRows = result.details.map(function(d) {
+          var detailsList = Array.isArray(result.items) ? result.items : (Array.isArray(result.details) ? result.details : []);
+          if (detailsEl && detailsList.length > 0) {
+            var detailRows = detailsList.map(function(d) {
               var color = '#10B981';
               if (d.action === 'CREATED') color = '#4F46E5';
               else if (d.action === 'SKIPPED') color = '#F59E0B';
               else if (d.action === 'ERROR') color = '#EF4444';
 
+              var nameStr = d.guruName || d.companyName || d.name || 'Unknown';
               var text = '<div style="display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px dashed var(--border-color);">'
-                + '<span><strong>' + igEsc(d.name) + '</strong>' + (d.symbol ? ' (' + igEsc(d.symbol) + ')' : '') + '</span>'
+                + '<span><strong>' + igEsc(nameStr) + '</strong>' + (d.symbol ? ' (' + igEsc(d.symbol) + ')' : '') + '</span>'
                 + '<span><span style="display:inline-block; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:700; color:#fff; background:' + color + ';">' + d.action + '</span>'
                 + (d.reason ? ' <span style="color:var(--text-muted); font-size:11px;">' + igEsc(d.reason) + '</span>' : '') + '</span>'
                 + '</div>';
@@ -4726,11 +4728,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           badge.style.display = 'inline-block';
         }
 
+        // Keep fetched preview data visible after sync
         if (Array.isArray(result.ipos) && result.ipos.length > 0) {
           ipoGuruLastData = result.ipos;
+        }
+        if (ipoGuruLastData && Array.isArray(ipoGuruLastData) && ipoGuruLastData.length > 0) {
           var rowCountEl = document.getElementById('ipo-guru-row-count');
-          if (rowCountEl) rowCountEl.textContent = result.ipos.length + ' IPOs';
-          renderIpoGuruTable(result.ipos);
+          if (rowCountEl) rowCountEl.textContent = ipoGuruLastData.length + ' IPOs';
+          renderIpoGuruTable(ipoGuruLastData);
           if (tableWrap) tableWrap.style.display = 'block';
           if (emptyEl) emptyEl.style.display = 'none';
         }
