@@ -4451,6 +4451,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     // â”€â”€ IPO GURU v1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let ipoGuruLastData = [];
 
+    function igEsc(v) {
+      if (v == null) return '';
+      return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
     function igFmtVal(v) {
       if (v == null || v === '' || v === 'null') return '<span style="color:var(--text-subtle);">&#8212;</span>';
       return String(v).replace(/</g, '&lt;').replace(/>/g, '&gt;');
