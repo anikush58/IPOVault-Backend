@@ -549,7 +549,15 @@ export class IpoGuruService {
           updateData.ofsSize = ofsSize;
           updatedFields.push('ofsSize');
         }
-        if (listingPrice != null && (!existingIpo.listingPrice || !existingIpo.listingPrice.equals(listingPrice))) {
+        // Listing price sync rule:
+        // - If canonical IPO status is LISTED, allow IPO Guru's listing price to update listingPrice.
+        // - If canonical IPO status is anything other than LISTED, do NOT update listingPrice.
+        // - Never overwrite an existing valid listing price with null/undefined/missing IPO Guru data.
+        if (
+          existingIpo.status === IpoStatus.LISTED &&
+          listingPrice != null &&
+          (!existingIpo.listingPrice || !existingIpo.listingPrice.equals(listingPrice))
+        ) {
           updateData.listingPrice = listingPrice;
           updatedFields.push('listingPrice');
         }
@@ -570,12 +578,13 @@ export class IpoGuruService {
           },
         });
 
+        const initialStatus = status || IpoStatus.UPCOMING;
         const newIpo = await tx.ipo.create({
           data: {
             companyId: company.id,
             marketSegment: marketSegment || MarketSegment.MAINBOARD,
             exchange: exchange || ExchangeListing.BOTH,
-            status: status || IpoStatus.UPCOMING,
+            status: initialStatus,
             publicationStatus: PublicationStatus.DRAFT,
             symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
             isin: rawItem.isin ? rawItem.isin.trim().toUpperCase() : null,
@@ -586,7 +595,7 @@ export class IpoGuruService {
             issueSize: issueSize,
             freshIssueSize: freshIssueSize,
             ofsSize: ofsSize,
-            listingPrice: listingPrice,
+            listingPrice: initialStatus === IpoStatus.LISTED ? listingPrice : null,
           },
         });
         ipoId = newIpo.id;

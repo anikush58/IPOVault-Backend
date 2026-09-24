@@ -509,6 +509,145 @@ describe('IpoGuruService', () => {
       expect(tx.subscriptionObservation.create).toHaveBeenCalled();
     });
 
+    it('LISTED + IPO Guru listing price -> listing price syncs', async () => {
+      const listedIpo = {
+        id: 'ipo-listed-lp-1',
+        symbol: 'SWIGGY',
+        marketSegment: 'MAINBOARD',
+        status: 'LISTED',
+        listingPrice: null,
+        company: {
+          id: 'comp-1',
+          legalName: 'Swiggy Limited',
+          displayName: 'Swiggy Ltd',
+        },
+        sourceIdentities: [],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([listedIpo]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'swiggy-limited',
+              name: 'Swiggy Limited',
+              symbol: 'SWIGGY',
+              listing_price: 420.5,
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.matchedUpdated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ipo-listed-lp-1' },
+          data: expect.objectContaining({
+            listingPrice: new Prisma.Decimal('420.5'),
+          }),
+        }),
+      );
+    });
+
+    it('NOT LISTED + IPO Guru listing price -> listing price does not sync', async () => {
+      const closedIpo = {
+        id: 'ipo-closed-lp-1',
+        symbol: 'SWIGGY',
+        marketSegment: 'MAINBOARD',
+        status: 'CLOSED', // Not LISTED
+        listingPrice: null,
+        company: {
+          id: 'comp-1',
+          legalName: 'Swiggy Limited',
+          displayName: 'Swiggy Ltd',
+        },
+        sourceIdentities: [],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([closedIpo]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'swiggy-limited',
+              name: 'Swiggy Limited',
+              symbol: 'SWIGGY',
+              listing_price: 420.5,
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.matchedUpdated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            listingPrice: expect.anything(),
+          }),
+        }),
+      );
+    });
+
+    it('LISTED + missing/null IPO Guru listing price -> existing listing price remains unchanged', async () => {
+      const existingListingPrice = new Prisma.Decimal('415.0');
+      const listedIpo = {
+        id: 'ipo-listed-lp-existing',
+        symbol: 'SWIGGY',
+        marketSegment: 'MAINBOARD',
+        status: 'LISTED',
+        listingPrice: existingListingPrice,
+        company: {
+          id: 'comp-1',
+          legalName: 'Swiggy Limited',
+          displayName: 'Swiggy Ltd',
+        },
+        sourceIdentities: [],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([listedIpo]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'swiggy-limited',
+              name: 'Swiggy Limited',
+              symbol: 'SWIGGY',
+              listing_price: null, // missing/null from Guru
+              lot_size: 40,
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.matchedUpdated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ipo-listed-lp-existing' },
+          data: expect.not.objectContaining({
+            listingPrice: expect.anything(),
+          }),
+        }),
+      );
+    });
+
     it('should create new company and IPO when no match is found', async () => {
       mockPrisma.ipo.findMany.mockResolvedValueOnce([]);
 
