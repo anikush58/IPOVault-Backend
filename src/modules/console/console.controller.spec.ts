@@ -14,6 +14,7 @@ describe('ConsoleController', () => {
   let controller: ConsoleController;
   let service: Record<string, jest.Mock>;
   let adminIpoService: Record<string, jest.Mock>;
+  let ipoGuruService: Record<string, jest.Mock>;
   let app: INestApplication;
 
   beforeEach(async () => {
@@ -25,6 +26,12 @@ describe('ConsoleController', () => {
       publishIpo: jest.fn().mockResolvedValue({ id: 'ipo-1', publicationStatus: 'PUBLISHED' }),
       unpublishIpo: jest.fn().mockResolvedValue({ id: 'ipo-1', publicationStatus: 'DRAFT' }),
       archiveIpo: jest.fn().mockResolvedValue({ id: 'ipo-1', publicationStatus: 'ARCHIVED' }),
+      deleteIpo: jest.fn().mockResolvedValue({ id: 'ipo-1' }),
+      bulkUpdateStatus: jest.fn().mockResolvedValue({ count: 1, status: 'OPEN' }),
+      bulkPublish: jest.fn().mockResolvedValue({ count: 1, publishedIds: ['ipo-1'] }),
+      bulkUnpublish: jest.fn().mockResolvedValue({ count: 1 }),
+      bulkArchive: jest.fn().mockResolvedValue({ count: 1 }),
+      bulkDelete: jest.fn().mockResolvedValue({ count: 1, deletedIds: ['ipo-1'] }),
       parseDocumentUrl: jest.fn().mockResolvedValue({ extraction: {} }),
       uploadAndParseDocument: jest.fn().mockResolvedValue({ extraction: {} }),
       updateAllotmentConfig: jest.fn().mockResolvedValue({ id: 'ipo-1' }),
@@ -47,7 +54,7 @@ describe('ConsoleController', () => {
       getAllotmentOpsSummary: jest.fn().mockResolvedValue({ totalJobs: 2 }),
     };
 
-    const ipoGuruService = {
+    ipoGuruService = {
       getStatus: jest.fn().mockResolvedValue({
         istDate: '2026-09-23',
         requestsUsedToday: 0,
@@ -191,5 +198,16 @@ describe('ConsoleController', () => {
     const res = await controller.getIpoGuruStatus();
     expect(res.istDate).toBe('2026-09-23');
     expect(res.requestsRemainingToday).toBe(10);
+  });
+
+  it('should delegate ipo-guru fetch to ipoGuruService', async () => {
+    await controller.fetchIpoGuruData();
+    expect(ipoGuruService.fetchIpos).toHaveBeenCalledWith('MANUAL');
+  });
+
+  it('should delegate ipo-guru sync to ipoGuruService with provided ipos if present', async () => {
+    const mockIpos = [{ slug: 'test-ipo', name: 'Test IPO' }] as any;
+    await controller.syncIpoGuruData({ ipos: mockIpos });
+    expect(ipoGuruService.syncIpos).toHaveBeenCalledWith('MANUAL', undefined, mockIpos);
   });
 });

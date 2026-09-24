@@ -13,6 +13,8 @@ import {
 import { AdminGuard } from './admin.guard';
 import {
   AdminIpoQueryDto,
+  BulkAdminIpoActionDto,
+  BulkUpdateLifecycleStatusDto,
   ConfigureAllotmentDto,
   CreateAdminIpoDto,
   UpdateAdminIpoDto,
@@ -23,6 +25,46 @@ import { AdminIpoService } from './admin-ipo.service';
 @UseGuards(AdminGuard)
 export class AdminIpoController {
   constructor(private readonly adminIpoService: AdminIpoService) {}
+
+  /**
+   * Bulk update Lifecycle Status for multiple IPOs.
+   */
+  @Post('bulk/status')
+  async bulkUpdateStatus(@Body() dto: BulkUpdateLifecycleStatusDto) {
+    return this.adminIpoService.bulkUpdateStatus(dto.ids, dto.status);
+  }
+
+  /**
+   * Bulk publish multiple IPOs.
+   */
+  @Post('bulk/publish')
+  async bulkPublish(@Body() dto: BulkAdminIpoActionDto) {
+    return this.adminIpoService.bulkPublish(dto.ids);
+  }
+
+  /**
+   * Bulk unpublish multiple IPOs.
+   */
+  @Post('bulk/unpublish')
+  async bulkUnpublish(@Body() dto: BulkAdminIpoActionDto) {
+    return this.adminIpoService.bulkUnpublish(dto.ids);
+  }
+
+  /**
+   * Bulk archive multiple IPOs.
+   */
+  @Post('bulk/archive')
+  async bulkArchive(@Body() dto: BulkAdminIpoActionDto) {
+    return this.adminIpoService.bulkArchive(dto.ids);
+  }
+
+  /**
+   * Bulk delete multiple IPOs.
+   */
+  @Post('bulk/delete')
+  async bulkDelete(@Body() dto: BulkAdminIpoActionDto) {
+    return this.adminIpoService.bulkDelete(dto.ids);
+  }
 
   /**
    * Create a new draft IPO.

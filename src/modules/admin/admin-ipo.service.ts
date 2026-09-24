@@ -859,6 +859,15 @@ export class AdminIpoService {
       items: paginatedItems.map((ipo) => {
         const openEv = ipo.lifecycleEvents?.find((e: any) => e.eventType === 'OPEN');
         const closeEv = ipo.lifecycleEvents?.find((e: any) => e.eventType === 'CLOSE');
+        const listingEv = ipo.lifecycleEvents?.find((e: any) => e.eventType === 'LISTING');
+        const allotmentEv = ipo.lifecycleEvents?.find((e: any) => e.eventType === 'BASIS_OF_ALLOTMENT');
+        const effectiveAllotmentDate = allotmentEv
+          ? allotmentEv.eventDate.toISOString().slice(0, 10)
+          : (ipo.allotmentConfig?.expectedAllotmentDate
+              ? (ipo.allotmentConfig.expectedAllotmentDate instanceof Date
+                  ? ipo.allotmentConfig.expectedAllotmentDate.toISOString().slice(0, 10)
+                  : String(ipo.allotmentConfig.expectedAllotmentDate).slice(0, 10))
+              : null);
         const latestGmpObs = ipo.gmpObservations?.[0];
         const latestGmp = latestGmpObs
           ? {
@@ -887,6 +896,9 @@ export class AdminIpoService {
           profitPercentage: ipo.profitPercentage ? Number(ipo.profitPercentage) : null,
           openDate: openEv ? openEv.eventDate.toISOString().slice(0, 10) : null,
           closeDate: closeEv ? closeEv.eventDate.toISOString().slice(0, 10) : null,
+          listingDate: listingEv ? listingEv.eventDate.toISOString().slice(0, 10) : null,
+          allotmentDate: effectiveAllotmentDate,
+          allotment_date: effectiveAllotmentDate,
           latestGmp,
           currentGmp: latestGmp,
           gmpAmount: latestGmpObs?.gmpAmount ? Number(latestGmpObs.gmpAmount) : null,
@@ -925,11 +937,25 @@ export class AdminIpoService {
       return extractDate(ipo, 'BASIS_OF_ALLOTMENT') || extractDate(ipo, 'ALLOTMENT');
     };
 
-    const extractGmp = (ipo: any): number | null => {
-      if (ipo.gmpObservations && ipo.gmpObservations.length > 0 && ipo.gmpObservations[0].gmpAmount !== null && ipo.gmpObservations[0].gmpAmount !== undefined) {
-        return Number(ipo.gmpObservations[0].gmpAmount);
+    const extractGmpPercentage = (ipo: any): number | null => {
+      if (ipo.gmpObservations && ipo.gmpObservations.length > 0) {
+        const obs = ipo.gmpObservations[0];
+        if (obs.gmpPercentage !== null && obs.gmpPercentage !== undefined) {
+          const val = Number(obs.gmpPercentage);
+          if (!isNaN(val) && val > 0) return val;
+        }
+        if (obs.gmpAmount !== null && obs.gmpAmount !== undefined && Number(obs.gmpAmount) > 0) {
+          const price = ipo.priceBandHigh ? Number(ipo.priceBandHigh) : (ipo.priceBandLow ? Number(ipo.priceBandLow) : 0);
+          if (price > 0) return (Number(obs.gmpAmount) / price) * 100;
+        }
       }
-      if (ipo.gmpAmount !== undefined && ipo.gmpAmount !== null) return Number(ipo.gmpAmount);
+      if (ipo.gmpPercentage !== undefined && ipo.gmpPercentage !== null && Number(ipo.gmpPercentage) > 0) {
+        return Number(ipo.gmpPercentage);
+      }
+      if (ipo.gmpAmount !== undefined && ipo.gmpAmount !== null && Number(ipo.gmpAmount) > 0) {
+        const price = ipo.priceBandHigh ? Number(ipo.priceBandHigh) : (ipo.priceBandLow ? Number(ipo.priceBandLow) : 0);
+        if (price > 0) return (Number(ipo.gmpAmount) / price) * 100;
+      }
       return null;
     };
 
@@ -964,8 +990,8 @@ export class AdminIpoService {
           else if (dA) return -1;
           else if (dB) return 1;
         } else if (sort === 'gmp') {
-          const gA = extractGmp(a);
-          const gB = extractGmp(b);
+          const gA = extractGmpPercentage(a);
+          const gB = extractGmpPercentage(b);
           if (gA !== null && gB !== null) diff = gA - gB;
           else if (gA !== null) return -1;
           else if (gB !== null) return 1;
@@ -1144,6 +1170,162 @@ export class AdminIpoService {
       id: updated.id,
       publicationStatus: updated.publicationStatus,
       message: 'IPO archived.',
+    };
+  }
+
+  /**
+   * Bulk update Lifecycle Status for multiple IPOs.
+   */
+  async bulkUpdateStatus(ids: string[], status: IpoStatus) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('At least one IPO ID must be provided.');
+    }
+    if (!status || !Object.values(IpoStatus).includes(status)) {
+      throw new BadRequestException(`Invalid lifecycle status: ${status}`);
+    }
+
+    const updated = await this.prisma.ipo.updateMany({
+      where: { id: { in: ids } },
+      data: { status },
+    });
+
+    for (const id of ids) {
+      try {
+        await this.ensureAdminSourceIdentity(id);
+      } catch {}
+    }
+
+    return {
+      count: updated.count,
+      status,
+      message: `Successfully updated lifecycle status to ${status} for ${updated.count} IPO(s).`,
+    };
+  }
+
+  /**
+   * Bulk publish multiple IPOs (validates each IPO first).
+   */
+  async bulkPublish(ids: string[]) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('At least one IPO ID must be provided.');
+    }
+
+    const publishedIds: string[] = [];
+    const failed: Array<{ id: string; reason: string }> = [];
+
+    for (const id of ids) {
+      try {
+        const detail = await this.getIpoDetail(id);
+        if (!detail.validation.isValid) {
+          failed.push({
+            id,
+            reason: detail.validation.errors.join(', ') || 'Validation failed',
+          });
+          continue;
+        }
+
+        const updated = await this.prisma.ipo.update({
+          where: { id },
+          data: { publicationStatus: PublicationStatus.PUBLISHED },
+        });
+        await this.ensureAdminSourceIdentity(id, updated.symbol);
+        publishedIds.push(id);
+      } catch (err: any) {
+        failed.push({
+          id,
+          reason: err.message || 'Failed to publish IPO',
+        });
+      }
+    }
+
+    return {
+      count: publishedIds.length,
+      publishedIds,
+      failedCount: failed.length,
+      failed,
+      message: `Published ${publishedIds.length} IPO(s).${failed.length > 0 ? ` ${failed.length} IPO(s) failed validation.` : ''}`,
+    };
+  }
+
+  /**
+   * Bulk unpublish multiple IPOs (sets publicationStatus to DRAFT).
+   */
+  async bulkUnpublish(ids: string[]) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('At least one IPO ID must be provided.');
+    }
+
+    const updated = await this.prisma.ipo.updateMany({
+      where: { id: { in: ids } },
+      data: { publicationStatus: PublicationStatus.DRAFT },
+    });
+
+    for (const id of ids) {
+      try {
+        await this.ensureAdminSourceIdentity(id);
+      } catch {}
+    }
+
+    return {
+      count: updated.count,
+      message: `Successfully unpublished ${updated.count} IPO(s) (reverted to DRAFT).`,
+    };
+  }
+
+  /**
+   * Bulk archive multiple IPOs (sets publicationStatus to ARCHIVED).
+   */
+  async bulkArchive(ids: string[]) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('At least one IPO ID must be provided.');
+    }
+
+    const updated = await this.prisma.ipo.updateMany({
+      where: { id: { in: ids } },
+      data: { publicationStatus: PublicationStatus.ARCHIVED },
+    });
+
+    for (const id of ids) {
+      try {
+        await this.ensureAdminSourceIdentity(id);
+      } catch {}
+    }
+
+    return {
+      count: updated.count,
+      message: `Successfully archived ${updated.count} IPO(s).`,
+    };
+  }
+
+  /**
+   * Bulk delete multiple IPOs with cascading child cleanup.
+   */
+  async bulkDelete(ids: string[]) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('At least one IPO ID must be provided.');
+    }
+
+    const deletedIds: string[] = [];
+    const failed: Array<{ id: string; reason: string }> = [];
+
+    for (const id of ids) {
+      try {
+        await this.deleteIpo(id);
+        deletedIds.push(id);
+      } catch (err: any) {
+        failed.push({
+          id,
+          reason: err.message || 'Failed to delete IPO',
+        });
+      }
+    }
+
+    return {
+      count: deletedIds.length,
+      deletedIds,
+      failedCount: failed.length,
+      failed,
+      message: `Successfully deleted ${deletedIds.length} IPO(s).${failed.length > 0 ? ` ${failed.length} failed.` : ''}`,
     };
   }
 

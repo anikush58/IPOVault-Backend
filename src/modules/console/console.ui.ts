@@ -1338,10 +1338,78 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             </button>
           </div>
 
+          <!-- Bulk Actions Toolbar (Visible when 1+ rows are selected) -->
+          <div id="manual-bulk-bar" class="bulk-action-bar" style="display:none; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:12px 18px; background:var(--bg-surface); border:1px solid var(--primary); border-radius:10px; margin-top:12px; box-shadow:0 4px 14px rgba(79,70,229,0.12);">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <span id="bulk-selected-count-badge" style="background:var(--primary); color:#fff; font-weight:700; font-size:12px; padding:4px 10px; border-radius:6px;">0 Selected</span>
+              <button type="button" class="btn-secondary" onclick="clearManualIpoSelection()" style="padding:4px 10px; font-size:12px; height:30px; min-height:30px;">Deselect All</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <!-- Lifecycle Status Dropdown -->
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label style="font-size:12px; font-weight:600; color:var(--text-muted);">Lifecycle Status:</label>
+                <select id="bulk-lifecycle-select" onchange="onBulkStatusChange(this.value)" style="padding:6px 12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; font-weight:600; cursor:pointer;">
+                  <option value="" disabled selected>Change Status...</option>
+                  <option value="OPEN">🟢 Live Now</option>
+                  <option value="CLOSING_TODAY">🟠 Closing Today</option>
+                  <option value="UPCOMING">🟡 Upcoming</option>
+                  <option value="CLOSED">⚪ Closed</option>
+                  <option value="ALLOTMENT_COMPLETED">🎯 Allotment Out</option>
+                  <option value="LISTED">🔔 Listed</option>
+                  <option value="DRAFT">📝 Draft</option>
+                </select>
+              </div>
+
+              <!-- Publish Button -->
+              <button type="button" class="btn-primary" onclick="bulkPublishSelectedIpos()" style="background:#8B5CF6; border-color:#8B5CF6; padding:6px 14px; font-size:12px; height:32px; min-height:32px; gap:6px;" title="Publish selected IPOs">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
+                  <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path>
+                  <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path>
+                  <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+                </svg>
+                <span>Publish</span>
+              </button>
+
+              <!-- Unpublish Button -->
+              <button type="button" class="btn-secondary" onclick="bulkUnpublishSelectedIpos()" style="padding:6px 14px; font-size:12px; height:32px; min-height:32px; gap:6px;" title="Unpublish selected IPOs (revert to Draft)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0050E5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+                <span>Unpublish</span>
+              </button>
+
+              <!-- Archive Button -->
+              <button type="button" class="btn-secondary" onclick="bulkArchiveSelectedIpos()" style="padding:6px 14px; font-size:12px; height:32px; min-height:32px; gap:6px;" title="Archive selected IPOs">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FB9816" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                  <rect x="1" y="3" width="22" height="5" rx="1"></rect>
+                  <line x1="10" y1="12" x2="14" y2="12"></line>
+                </svg>
+                <span>Archive</span>
+              </button>
+
+              <!-- Delete Button -->
+              <button type="button" class="btn-danger" onclick="bulkDeleteSelectedIpos()" style="padding:6px 14px; font-size:12px; height:32px; min-height:32px; gap:6px;" title="Permanently delete selected IPOs">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                  <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+                <span>Delete</span>
+              </button>
+            </div>
+          </div>
+
           <div class="grid-table-box" style="margin-top:8px;">
             <table>
               <thead>
                 <tr>
+                  <th style="width:40px; text-align:center;">
+                    <input type="checkbox" id="bulk-select-all" title="Select All" onchange="toggleSelectAllManualIpos(this.checked)" style="cursor:pointer; width:16px; height:16px;" />
+                  </th>
                   <th>Symbol / Company Name</th>
                   <th>Segment</th>
                   <th>Lifecycle Status</th>
@@ -1352,7 +1420,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 </tr>
               </thead>
               <tbody id="manual-ipos-table-body">
-                <tr><td colspan="7" style="text-align:center; padding: 24px;">Loading Manual IPOs...</td></tr>
+                <tr><td colspan="8" style="text-align:center; padding: 24px;">Loading Manual IPOs...</td></tr>
               </tbody>
             </table>
           </div>
@@ -2575,6 +2643,198 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       \`;
     }
 
+    // ==========================================
+    // BULK OPERATIONS JAVASCRIPT HANDLERS
+    // ==========================================
+
+    function getSelectedManualIpoIds() {
+      const checkboxes = document.querySelectorAll('.manual-ipo-checkbox:checked');
+      return Array.from(checkboxes).map(cb => cb.value);
+    }
+
+    function toggleSelectAllManualIpos(checked) {
+      const checkboxes = document.querySelectorAll('.manual-ipo-checkbox');
+      checkboxes.forEach(cb => { cb.checked = checked; });
+      updateBulkSelectionBar();
+    }
+
+    function clearManualIpoSelection() {
+      const selectAll = document.getElementById('bulk-select-all');
+      if (selectAll) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+      }
+      const checkboxes = document.querySelectorAll('.manual-ipo-checkbox');
+      checkboxes.forEach(cb => { cb.checked = false; });
+      updateBulkSelectionBar();
+    }
+
+    function updateBulkSelectionBar() {
+      const selected = getSelectedManualIpoIds();
+      const bar = document.getElementById('manual-bulk-bar');
+      const countBadge = document.getElementById('bulk-selected-count-badge');
+      const selectAll = document.getElementById('bulk-select-all');
+      const allCheckboxes = document.querySelectorAll('.manual-ipo-checkbox');
+
+      if (selectAll && allCheckboxes.length > 0) {
+        selectAll.checked = selected.length === allCheckboxes.length;
+        selectAll.indeterminate = selected.length > 0 && selected.length < allCheckboxes.length;
+      }
+
+      if (bar) {
+        if (selected.length > 0) {
+          bar.style.display = 'flex';
+          if (countBadge) countBadge.textContent = selected.length + ' Selected';
+        } else {
+          bar.style.display = 'none';
+        }
+      }
+    }
+
+    async function onBulkStatusChange(status) {
+      const select = document.getElementById('bulk-lifecycle-select');
+      if (!status) return;
+      const ids = getSelectedManualIpoIds();
+      if (ids.length === 0) {
+        alert('Please select at least one IPO.');
+        if (select) select.value = '';
+        return;
+      }
+
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/bulk/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids, status }),
+        });
+        const json = await res.json();
+        if (res.ok) {
+          showToast(json.message || \`Updated status for \${ids.length} IPO(s)\`, 'success');
+          clearManualIpoSelection();
+          fetchManualIpos();
+          fetchRecentDashboardIpos();
+        } else {
+          alert('Bulk status update failed: ' + (json.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Bulk status update error: ' + err.message);
+      } finally {
+        if (select) select.value = '';
+      }
+    }
+
+    async function bulkPublishSelectedIpos() {
+      const ids = getSelectedManualIpoIds();
+      if (ids.length === 0) {
+        alert('Please select at least one IPO.');
+        return;
+      }
+      if (!confirm(\`Publish \${ids.length} selected IPO(s)?\`)) return;
+
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/bulk/publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+        const json = await res.json();
+        if (res.ok) {
+          showToast(json.message || \`Published \${ids.length} IPO(s)\`, 'success');
+          clearManualIpoSelection();
+          fetchManualIpos();
+          fetchRecentDashboardIpos();
+        } else {
+          alert('Bulk publish failed: ' + (json.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Bulk publish error: ' + err.message);
+      }
+    }
+
+    async function bulkUnpublishSelectedIpos() {
+      const ids = getSelectedManualIpoIds();
+      if (ids.length === 0) {
+        alert('Please select at least one IPO.');
+        return;
+      }
+      if (!confirm(\`Unpublish \${ids.length} selected IPO(s) (revert to Draft)?\`)) return;
+
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/bulk/unpublish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+        const json = await res.json();
+        if (res.ok) {
+          showToast(json.message || \`Unpublished \${ids.length} IPO(s)\`, 'success');
+          clearManualIpoSelection();
+          fetchManualIpos();
+          fetchRecentDashboardIpos();
+        } else {
+          alert('Bulk unpublish failed: ' + (json.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Bulk unpublish error: ' + err.message);
+      }
+    }
+
+    async function bulkArchiveSelectedIpos() {
+      const ids = getSelectedManualIpoIds();
+      if (ids.length === 0) {
+        alert('Please select at least one IPO.');
+        return;
+      }
+      if (!confirm(\`Archive \${ids.length} selected IPO(s)?\`)) return;
+
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/bulk/archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+        const json = await res.json();
+        if (res.ok) {
+          showToast(json.message || \`Archived \${ids.length} IPO(s)\`, 'success');
+          clearManualIpoSelection();
+          fetchManualIpos();
+          fetchRecentDashboardIpos();
+        } else {
+          alert('Bulk archive failed: ' + (json.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Bulk archive error: ' + err.message);
+      }
+    }
+
+    async function bulkDeleteSelectedIpos() {
+      const ids = getSelectedManualIpoIds();
+      if (ids.length === 0) {
+        alert('Please select at least one IPO.');
+        return;
+      }
+      if (!confirm(\`⚠️ PERMANENT DELETE\\n\\nAre you sure you want to permanently delete \${ids.length} selected IPO(s)? This action CANNOT be undone.\`)) return;
+
+      try {
+        const res = await fetch(API_BASE + '/manual-ipos/bulk/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+        const json = await res.json();
+        if (res.ok) {
+          showToast(json.message || \`Deleted \${ids.length} IPO(s)\`, 'success');
+          clearManualIpoSelection();
+          fetchManualIpos();
+          fetchRecentDashboardIpos();
+        } else {
+          alert('Bulk delete failed: ' + (json.message || res.statusText));
+        }
+      } catch (err) {
+        alert('Bulk delete error: ' + err.message);
+      }
+    }
+
     function showToast(message, type = 'success') {
       let container = document.getElementById('console-toast-container');
       if (!container) {
@@ -2867,13 +3127,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const tbody = document.getElementById('manual-ipos-table-body');
         
         if (items.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 24px; color:var(--text-muted);">No Manual IPOs found matching filter.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 24px; color:var(--text-muted);">No Manual IPOs found matching filter.</td></tr>';
+          updateBulkSelectionBar();
           return;
         }
 
         tbody.innerHTML = items.map(item => {
           return \`
             <tr class="clickable-row" onclick="editManualIpo('\${item.id}')" title="Click to view/edit details">
+              <td onclick="event.stopPropagation()" style="text-align:center;">
+                <input type="checkbox" class="manual-ipo-checkbox" value="\${item.id}" onchange="updateBulkSelectionBar()" style="cursor:pointer; width:16px; height:16px;" />
+              </td>
               <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
               <td>\${item.marketSegment || 'MAINBOARD'}</td>
               <td onclick="event.stopPropagation()">\${renderStatusSelect(item.id, item.status)}</td>
@@ -2886,6 +3150,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             </tr>
           \`;
         }).join('');
+        updateBulkSelectionBar();
       } catch (err) {
         console.error('Fetch manual IPOs error:', err);
       }
@@ -4399,7 +4664,15 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (errEl) errEl.style.display = 'none';
 
       try {
-        var res = await fetch(API_BASE + '/ipo-guru/sync', { method: 'POST' });
+        var payload = (ipoGuruLastData && Array.isArray(ipoGuruLastData) && ipoGuruLastData.length > 0)
+          ? JSON.stringify({ ipos: ipoGuruLastData })
+          : undefined;
+
+        var res = await fetch(API_BASE + '/ipo-guru/sync', {
+          method: 'POST',
+          headers: payload ? { 'Content-Type': 'application/json' } : {},
+          body: payload,
+        });
         var json = await res.json();
         var result = json.data || json;
 

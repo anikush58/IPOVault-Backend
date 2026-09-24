@@ -41,12 +41,15 @@ import {
 import { AdminIpoService } from '../admin/admin-ipo.service';
 import {
   AdminIpoQueryDto,
+  BulkAdminIpoActionDto,
+  BulkUpdateLifecycleStatusDto,
   ConfigureAllotmentDto,
   CreateAdminIpoDto,
   ImportAdminIpoJsonDto,
   UpdateAdminIpoDto,
 } from '../admin/admin-ipo.dto';
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
+import { IpoGuruV1Ipo } from '../ipo-guru/ipo-guru.types';
 
 @Controller('console')
 @UseGuards(ConsoleEnabledGuard)
@@ -320,6 +323,31 @@ export class ConsoleController {
     return this.adminIpoService.updateIpo(id, dto);
   }
 
+  @Post('api/manual-ipos/bulk/status')
+  async bulkUpdateManualIpoStatus(@Body() dto: BulkUpdateLifecycleStatusDto) {
+    return this.adminIpoService.bulkUpdateStatus(dto.ids, dto.status);
+  }
+
+  @Post('api/manual-ipos/bulk/publish')
+  async bulkPublishManualIpos(@Body() dto: BulkAdminIpoActionDto) {
+    return this.adminIpoService.bulkPublish(dto.ids);
+  }
+
+  @Post('api/manual-ipos/bulk/unpublish')
+  async bulkUnpublishManualIpos(@Body() dto: BulkAdminIpoActionDto) {
+    return this.adminIpoService.bulkUnpublish(dto.ids);
+  }
+
+  @Post('api/manual-ipos/bulk/archive')
+  async bulkArchiveManualIpos(@Body() dto: BulkAdminIpoActionDto) {
+    return this.adminIpoService.bulkArchive(dto.ids);
+  }
+
+  @Post('api/manual-ipos/bulk/delete')
+  async bulkDeleteManualIpos(@Body() dto: BulkAdminIpoActionDto) {
+    return this.adminIpoService.bulkDelete(dto.ids);
+  }
+
   @Post('api/manual-ipos/:id/publish')
   async publishManualIpo(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.adminIpoService.publishIpo(id);
@@ -433,9 +461,9 @@ export class ConsoleController {
    * Budget enforced: shares 10 requests/day, 1 request/minute quota with scheduler.
    */
   @Post('api/ipo-guru/sync')
-  async syncIpoGuruData() {
+  async syncIpoGuruData(@Body() body?: { ipos?: IpoGuruV1Ipo[] }) {
     try {
-      return await this.ipoGuruService.syncIpos('MANUAL');
+      return await this.ipoGuruService.syncIpos('MANUAL', undefined, body?.ipos);
     } catch (err: unknown) {
       if (err instanceof BadRequestException) {
         throw err;

@@ -490,3 +490,13 @@ export class JsonImportCommitDto {
   selectedIpoIds?: string[];
 }
 
+export class BulkAdminIpoActionDto {
+  ids!: string[];
+}
+
+export class BulkUpdateLifecycleStatusDto {
+  ids!: string[];
+  status!: IpoStatus;
+}
+
+
