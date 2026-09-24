@@ -141,6 +141,7 @@ export class BrokerAccountController {
   @Get(':id/connect/upstox')
   async startUpstoxConnect(
     @Param('id') id: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -164,7 +165,10 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.UPSTOX);
     const state = this.oauthStateService.generateState(authUserId, id.trim());
 
-    const authorizationUrl = await adapter.getAuthorizationUrl({ state });
+    const authorizationUrl = await adapter.getAuthorizationUrl({
+      state,
+      redirectUri,
+    });
     return { authorizationUrl };
   }
 
@@ -180,6 +184,7 @@ export class BrokerAccountController {
     @Param('id') id: string,
     @Query('code') code?: string,
     @Query('state') state?: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -211,6 +216,7 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.UPSTOX);
     const tokens = await adapter.exchangeAuthorizationCode({
       code: code.trim(),
+      redirectUri,
     });
 
     // Verify profile using Upstox adapter
@@ -234,6 +240,7 @@ export class BrokerAccountController {
   @Get(':id/connect/dhan')
   async startDhanConnect(
     @Param('id') id: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -257,7 +264,10 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.DHAN);
     const state = this.oauthStateService.generateState(authUserId, id.trim());
 
-    const authorizationUrl = await adapter.getAuthorizationUrl({ state });
+    const authorizationUrl = await adapter.getAuthorizationUrl({
+      state,
+      redirectUri,
+    });
     return { authorizationUrl };
   }
 
@@ -274,6 +284,7 @@ export class BrokerAccountController {
     @Query('code') code?: string,
     @Query('tokenId') tokenId?: string,
     @Query('state') state?: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -306,6 +317,7 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.DHAN);
     const tokens = await adapter.exchangeAuthorizationCode({
       code: tokenCode,
+      redirectUri,
     });
 
     // Verify profile using Dhan adapter
@@ -329,6 +341,7 @@ export class BrokerAccountController {
   @Get(':id/connect/fyers')
   async startFyersConnect(
     @Param('id') id: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -352,7 +365,10 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.FYERS);
     const state = this.oauthStateService.generateState(authUserId, id.trim());
 
-    const authorizationUrl = await adapter.getAuthorizationUrl({ state });
+    const authorizationUrl = await adapter.getAuthorizationUrl({
+      state,
+      redirectUri,
+    });
     return { authorizationUrl };
   }
 
@@ -369,6 +385,7 @@ export class BrokerAccountController {
     @Query('code') code?: string,
     @Query('auth_code') authCode?: string,
     @Query('state') state?: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -401,6 +418,7 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.FYERS);
     const tokens = await adapter.exchangeAuthorizationCode({
       code: tokenCode,
+      redirectUri,
     });
 
     // Verify profile using FYERS adapter
@@ -424,6 +442,7 @@ export class BrokerAccountController {
   @Get(':id/connect/zerodha')
   async startZerodhaConnect(
     @Param('id') id: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -447,7 +466,10 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.ZERODHA);
     const state = this.oauthStateService.generateState(authUserId, id.trim());
 
-    const authorizationUrl = await adapter.getAuthorizationUrl({ state });
+    const authorizationUrl = await adapter.getAuthorizationUrl({
+      state,
+      redirectUri,
+    });
     return { authorizationUrl };
   }
 
@@ -464,6 +486,7 @@ export class BrokerAccountController {
     @Query('request_token') requestToken?: string,
     @Query('code') code?: string,
     @Query('state') state?: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -496,6 +519,7 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.ZERODHA);
     const tokens = await adapter.exchangeAuthorizationCode({
       code: tokenCode,
+      redirectUri,
     });
 
     // Verify profile using Zerodha adapter
@@ -519,6 +543,7 @@ export class BrokerAccountController {
   @Get(':id/connect/groww')
   async startGrowwConnect(
     @Param('id') id: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -542,7 +567,10 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.GROWW);
     const state = this.oauthStateService.generateState(authUserId, id.trim());
 
-    const authorizationUrl = await adapter.getAuthorizationUrl({ state });
+    const authorizationUrl = await adapter.getAuthorizationUrl({
+      state,
+      redirectUri,
+    });
     return { authorizationUrl };
   }
 
@@ -558,6 +586,7 @@ export class BrokerAccountController {
     @Param('id') id: string,
     @Query('code') code?: string,
     @Query('state') state?: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -590,6 +619,7 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.GROWW);
     const tokens = await adapter.exchangeAuthorizationCode({
       code: tokenCode,
+      redirectUri,
     });
 
     // Verify profile using Groww adapter
@@ -613,6 +643,7 @@ export class BrokerAccountController {
   @Get(':id/connect/millions')
   async startMillionsConnect(
     @Param('id') id: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -636,7 +667,10 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.MILLIONS);
     const state = this.oauthStateService.generateState(authUserId, id.trim());
 
-    const authorizationUrl = await adapter.getAuthorizationUrl({ state });
+    const authorizationUrl = await adapter.getAuthorizationUrl({
+      state,
+      redirectUri,
+    });
     return { authorizationUrl };
   }
 
@@ -653,6 +687,7 @@ export class BrokerAccountController {
     @Query('code') code?: string,
     @Query('tokenId') tokenId?: string,
     @Query('state') state?: string,
+    @Query('redirectUri') redirectUri?: string,
     @Headers('x-user-id') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
@@ -685,6 +720,7 @@ export class BrokerAccountController {
     const adapter = this.brokerRegistry.getAdapter(BrokerType.MILLIONS);
     const tokens = await adapter.exchangeAuthorizationCode({
       code: tokenCode,
+      redirectUri,
     });
 
     // Verify profile using Millions adapter

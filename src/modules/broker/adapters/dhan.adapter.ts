@@ -126,8 +126,9 @@ export class DhanBrokerAdapter implements BrokerAdapter {
       const loginUrl = new URL(`${this.authBaseUrl}/consent-login`);
       loginUrl.searchParams.set('partner_id', partnerId);
       loginUrl.searchParams.set('state', params.state);
-      if (this.redirectUri) {
-        loginUrl.searchParams.set('redirect_uri', this.redirectUri);
+      const redirectUri = params.redirectUri || this.redirectUri;
+      if (redirectUri) {
+        loginUrl.searchParams.set('redirect_uri', redirectUri);
       }
       return loginUrl.toString();
     } catch (err: unknown) {
