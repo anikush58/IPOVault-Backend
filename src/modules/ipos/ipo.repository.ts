@@ -314,9 +314,17 @@ export class IpoRepository {
       return extractDate(ipo, 'BASIS_OF_ALLOTMENT') || extractDate(ipo, 'ALLOTMENT');
     };
 
-    const extractGmp = (ipo: IpoWithRelations): number | null => {
-      if (ipo.gmpObservations && ipo.gmpObservations.length > 0 && ipo.gmpObservations[0].gmpAmount !== null && ipo.gmpObservations[0].gmpAmount !== undefined) {
-        return Number(ipo.gmpObservations[0].gmpAmount);
+    const extractGmpPercentage = (ipo: IpoWithRelations): number | null => {
+      if (ipo.gmpObservations && ipo.gmpObservations.length > 0) {
+        const obs = ipo.gmpObservations[0];
+        if (obs.gmpPercentage !== null && obs.gmpPercentage !== undefined) {
+          const val = Number(obs.gmpPercentage);
+          if (!isNaN(val) && val > 0) return val;
+        }
+        if (obs.gmpAmount !== null && obs.gmpAmount !== undefined && Number(obs.gmpAmount) > 0) {
+          const price = ipo.priceBandHigh ? Number(ipo.priceBandHigh) : (ipo.priceBandLow ? Number(ipo.priceBandLow) : 0);
+          if (price > 0) return (Number(obs.gmpAmount) / price) * 100;
+        }
       }
       return null;
     };
@@ -352,8 +360,8 @@ export class IpoRepository {
           else if (dA) return -1;
           else if (dB) return 1;
         } else if (sort === 'gmp') {
-          const gA = extractGmp(a);
-          const gB = extractGmp(b);
+          const gA = extractGmpPercentage(a);
+          const gB = extractGmpPercentage(b);
           if (gA !== null && gB !== null) diff = gA - gB;
           else if (gA !== null) return -1;
           else if (gB !== null) return 1;

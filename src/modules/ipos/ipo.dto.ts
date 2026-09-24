@@ -310,6 +310,7 @@ export type CompareIpoItemDto = {
   openDate: string | null;
   closeDate: string | null;
   listingDate: string | null;
+  allotmentDate?: string | null;
 };
 
 export type IpoCompareResponseDto = {
@@ -452,6 +453,7 @@ export type IpoLifecycleDto = {
   openDate: string | null;
   closeDate: string | null;
   basisOfAllotmentDate: string | null;
+  allotmentDate?: string | null;
   refundInitiationDate: string | null;
   dematCreditDate: string | null;
   listingDate: string | null;
@@ -517,6 +519,13 @@ export type IpoResponseDto = {
   profitAmount?: number | null;
   profitPercentage?: number | null;
   minimumInvestmentAmount?: string | null;
+  openDate?: string | null;
+  closeDate?: string | null;
+  listingDate?: string | null;
+  allotmentDate?: string | null;
+  allotment_date?: string | null;
+  refundDate?: string | null;
+  dematCreditDate?: string | null;
   lifecycle: IpoLifecycleDto;
   offerCategories?: IpoOfferCategoryDto[];
   participants?: IpoParticipantDto[];

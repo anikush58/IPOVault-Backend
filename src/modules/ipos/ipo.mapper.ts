@@ -115,6 +115,11 @@ export function toCompareIpoItemDto(ipo: IpoWithRelations): CompareIpoItemDto {
     openDate: lifecycle.openDate,
     closeDate: lifecycle.closeDate,
     listingDate: lifecycle.listingDate,
+    allotmentDate:
+      lifecycle.basisOfAllotmentDate ||
+      (ipo.allotmentConfig?.expectedAllotmentDate
+        ? toDateOnly(ipo.allotmentConfig.expectedAllotmentDate)
+        : null),
   };
 }
 
@@ -198,6 +203,19 @@ export function toIpoResponseDto(
   for (const event of ipo.lifecycleEvents ?? []) {
     lifecycle[LIFECYCLE_FIELD[event.eventType]] = toDateOnly(event.eventDate);
   }
+
+  // Fallback: If basisOfAllotmentDate is missing from lifecycleEvents, check allotmentConfig.expectedAllotmentDate
+  if (!lifecycle.basisOfAllotmentDate && ipo.allotmentConfig?.expectedAllotmentDate) {
+    lifecycle.basisOfAllotmentDate = toDateOnly(ipo.allotmentConfig.expectedAllotmentDate);
+  }
+
+  const effectiveAllotmentDate =
+    lifecycle.basisOfAllotmentDate ||
+    (ipo.allotmentConfig?.expectedAllotmentDate
+      ? toDateOnly(ipo.allotmentConfig.expectedAllotmentDate)
+      : null);
+
+  lifecycle.allotmentDate = effectiveAllotmentDate;
 
   if (ipo.allotmentResultAvailableAt) {
     lifecycle.allotmentResultAvailableAt = ipo.allotmentResultAvailableAt.toISOString();
@@ -303,6 +321,13 @@ export function toIpoResponseDto(
     profitAmount: decimalToNumber(ipo.profitAmount),
     profitPercentage: decimalToNumber(ipo.profitPercentage),
     minimumInvestmentAmount,
+    openDate: lifecycle.openDate,
+    closeDate: lifecycle.closeDate,
+    listingDate: lifecycle.listingDate,
+    allotmentDate: effectiveAllotmentDate,
+    allotment_date: effectiveAllotmentDate,
+    refundDate: lifecycle.refundInitiationDate,
+    dematCreditDate: lifecycle.dematCreditDate,
     lifecycle,
     offerCategories: (ipo.offerCategories ?? []).map((c) => ({
       id: c.id,
@@ -384,13 +409,23 @@ export function toIpoResponseDto(
           allotmentSourceUrl: ipo.allotmentConfig.allotmentSourceUrl,
           expectedDate: ipo.allotmentConfig.expectedAllotmentDate
             ? toDateOnly(ipo.allotmentConfig.expectedAllotmentDate)
-            : null,
+            : effectiveAllotmentDate,
           expectedAllotmentDate: ipo.allotmentConfig.expectedAllotmentDate
             ? toDateOnly(ipo.allotmentConfig.expectedAllotmentDate)
-            : null,
+            : effectiveAllotmentDate,
           enabled: ipo.allotmentConfig.enabled,
         }
-      : null,
+      : (effectiveAllotmentDate
+          ? {
+              registrar: '',
+              registrarIpoCode: null,
+              sourceUrl: null,
+              allotmentSourceUrl: null,
+              expectedDate: effectiveAllotmentDate,
+              expectedAllotmentDate: effectiveAllotmentDate,
+              enabled: true,
+            }
+          : null),
     currentGmp,
     currentSubscription,
     ...(dataReadiness ? { dataReadiness } : {}),
