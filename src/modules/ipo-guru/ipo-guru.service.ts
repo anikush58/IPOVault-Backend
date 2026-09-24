@@ -516,10 +516,7 @@ export class IpoGuruService {
           updateData.marketSegment = marketSegment;
           updatedFields.push('marketSegment');
         }
-        if (status && status !== existingIpo.status) {
-          updateData.status = status;
-          updatedFields.push('status');
-        }
+        // NOTE: Canonical IPO lifecycle status is authoritative and MUST NEVER be overwritten by IPO Guru.
         if (exchange && exchange !== existingIpo.exchange) {
           updateData.exchange = exchange;
           updatedFields.push('exchange');

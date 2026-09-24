@@ -443,6 +443,72 @@ describe('IpoGuruService', () => {
       expect(tx.ipoAllotmentConfig.upsert).not.toHaveBeenCalled(); // registrar omitted
     });
 
+    it('should NEVER overwrite canonical IpoStatus (e.g. LISTED) when IPO Guru reports CLOSED, but still sync other enrichment fields', async () => {
+      const listedIpo = {
+        id: 'ipo-listed-1',
+        symbol: 'SWIGGY',
+        marketSegment: 'MAINBOARD',
+        status: 'LISTED',
+        faceValue: new Prisma.Decimal('1'),
+        priceBandLow: new Prisma.Decimal('371'),
+        priceBandHigh: new Prisma.Decimal('390'),
+        lotSize: 38,
+        company: {
+          id: 'comp-1',
+          legalName: 'Swiggy Limited',
+          displayName: 'Swiggy Ltd',
+        },
+        sourceIdentities: [],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([listedIpo]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'swiggy-limited',
+              name: 'Swiggy Limited',
+              symbol: 'SWIGGY',
+              type: 'Mainboard',
+              status: 'Closed',
+              price_band: '371-390',
+              lot_size: 40,
+              issue_size: 11327.43,
+              open_date: '2024-11-06',
+              close_date: '2024-11-08',
+              gmp: {
+                price: 30,
+                percentage: 7.69,
+                updated_at: '2024-11-13T11:30:00.000Z',
+              },
+              subscription_total: 4.5,
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.matchedUpdated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ipo-listed-1' },
+          data: expect.not.objectContaining({ status: expect.anything() }),
+        }),
+      );
+      expect(tx.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ lotSize: 40 }),
+        }),
+      );
+      expect(tx.gmpObservation.create).toHaveBeenCalled();
+      expect(tx.subscriptionObservation.create).toHaveBeenCalled();
+    });
+
     it('should create new company and IPO when no match is found', async () => {
       mockPrisma.ipo.findMany.mockResolvedValueOnce([]);
 
