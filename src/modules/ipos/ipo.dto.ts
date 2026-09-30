@@ -15,6 +15,7 @@ export const ipoStatusSchema = z.enum([
   'OPEN',
   'CLOSING_TODAY',
   'CLOSED',
+  'ALLOTMENT_AWAITED',
   'ALLOTMENT_PENDING',
   'ALLOTMENT_COMPLETED',
   'ALLOTMENT_OUT',
@@ -62,13 +63,16 @@ export const ipoStatusQuerySchema = z.preprocess(
         .split(',')
         .map((s) => {
           const trimmed = s.trim();
-          return trimmed === 'ALLOTMENT_OUT' ? 'ALLOTMENT_COMPLETED' : trimmed;
+          if (trimmed === 'ALLOTMENT_OUT') return 'ALLOTMENT_COMPLETED';
+          if (trimmed === 'ALLOTMENT_AWAITED') return 'ALLOTMENT_PENDING';
+          return trimmed;
         })
         .filter(Boolean);
     }
     if (typeof val === 'string') {
       const trimmed = val.trim();
       if (trimmed === 'ALLOTMENT_OUT') return 'ALLOTMENT_COMPLETED';
+      if (trimmed === 'ALLOTMENT_AWAITED') return 'ALLOTMENT_PENDING';
       return emptyToUndefined(trimmed);
     }
     return emptyToUndefined(val);

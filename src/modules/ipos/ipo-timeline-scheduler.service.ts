@@ -180,12 +180,14 @@ export class IpoTimelineSchedulerService
   ): Promise<{
     openedCount: number;
     closedCount: number;
+    allotmentAwaitedCount: number;
     allotmentConfirmedCount: number;
     listedCount: number;
   }> {
     const summary = {
       openedCount: 0,
       closedCount: 0,
+      allotmentAwaitedCount: 0,
       allotmentConfirmedCount: 0,
       listedCount: 0,
     };
@@ -271,6 +273,32 @@ export class IpoTimelineSchedulerService
             summary.closedCount += updated.count;
             this.logger.log(
               `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) ${ipo.status} -> CLOSED`,
+            );
+          }
+        }
+      }
+
+      // =========================================================================
+      // 2b. CLOSED -> ALLOTMENT_PENDING (Allotment Awaited at 12:00 AM / 00:00:00 IST of day following closeDate)
+      // =========================================================================
+      if (ipo.status === IpoStatus.CLOSED && closeDateStr) {
+        const [y, m, d] = closeDateStr.split('-').map(Number);
+        const nextDayUtc = new Date(Date.UTC(y, m - 1, d + 1));
+        const nextDayStr = nextDayUtc.toISOString().slice(0, 10);
+        const awaitedThreshold = createISTDateTime(nextDayStr, 0, 0, 0);
+
+        if (now >= awaitedThreshold) {
+          const updated = await this.prisma.ipo.updateMany({
+            where: {
+              id: ipo.id,
+              status: IpoStatus.CLOSED,
+            },
+            data: { status: IpoStatus.ALLOTMENT_PENDING },
+          });
+          if (updated.count > 0) {
+            summary.allotmentAwaitedCount += updated.count;
+            this.logger.log(
+              `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) CLOSED -> ALLOTMENT_PENDING (Allotment Awaited)`,
             );
           }
         }

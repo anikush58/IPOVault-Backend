@@ -153,6 +153,62 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
     });
   });
 
+  describe('Transition 2b: CLOSED -> ALLOTMENT_PENDING (Allotment Awaited)', () => {
+    it('6b. should NOT transition CLOSED -> ALLOTMENT_PENDING before 00:00:00 IST of next day after closeDate', async () => {
+      // closeDate: 2026-09-28
+      const closeDate = new Date('2026-09-28T00:00:00.000Z');
+      // 23:59:59 IST on 2026-09-28 is 18:29:59 UTC
+      const nowBeforeMidnight = new Date('2026-09-28T18:29:59.000Z');
+
+      prismaMock.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-2b',
+          status: IpoStatus.CLOSED,
+          company: { displayName: 'Beta Ltd' },
+          lifecycleEvents: [
+            { eventType: LifecycleEventType.CLOSE, eventDate: closeDate },
+          ],
+        },
+      ]);
+
+      const result = await service.processTimelineTransitions(nowBeforeMidnight);
+      expect(result.allotmentAwaitedCount).toBe(0);
+      expect(prismaMock.ipo.updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { status: IpoStatus.ALLOTMENT_PENDING },
+        }),
+      );
+    });
+
+    it('6c. should transition CLOSED -> ALLOTMENT_PENDING at 12:00 AM (00:00:00 IST) of next day after closeDate', async () => {
+      // closeDate: 2026-09-28
+      const closeDate = new Date('2026-09-28T00:00:00.000Z');
+      // 00:00:00 IST on 2026-09-29 is 2026-09-28 18:30:00 UTC
+      const nowAtMidnight = new Date('2026-09-28T18:30:00.000Z');
+
+      prismaMock.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-2b',
+          status: IpoStatus.CLOSED,
+          company: { displayName: 'Beta Ltd' },
+          lifecycleEvents: [
+            { eventType: LifecycleEventType.CLOSE, eventDate: closeDate },
+          ],
+        },
+      ]);
+
+      const result = await service.processTimelineTransitions(nowAtMidnight);
+      expect(result.allotmentAwaitedCount).toBe(1);
+      expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'ipo-2b',
+          status: IpoStatus.CLOSED,
+        },
+        data: { status: IpoStatus.ALLOTMENT_PENDING },
+      });
+    });
+  });
+
   describe('Transition 3: CLOSED -> ALLOTMENT_COMPLETED (Only on actual confirmation)', () => {
     it('7. should NOT transition when registrar code resolution returns NOT_YET_AVAILABLE', async () => {
       const allotmentDate = new Date('2026-09-26T00:00:00.000Z');
