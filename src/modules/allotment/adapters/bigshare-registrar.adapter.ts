@@ -13,6 +13,7 @@ export interface BigshareCompanyOption {
   code: string;
   name: string;
   serverUrl?: string;
+  captchaDetected?: boolean;
 }
 
 const DEFAULT_BIGSHARE_SERVERS = [
@@ -25,7 +26,7 @@ const DEFAULT_BIGSHARE_SERVERS = [
 export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
   readonly code = 'BIGSHARE';
   readonly name = 'Bigshare Services';
-  override readonly defaultConcurrency = 3;
+  override readonly defaultConcurrency = 1;
   readonly supportedIdentifiers = new Set<AllotmentIdentifierType>([
     AllotmentIdentifierType.PAN,
     AllotmentIdentifierType.APPLICATION_NUMBER,
@@ -37,6 +38,7 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
   // Cached company list with 10-minute TTL
   private cachedCompanies: BigshareCompanyOption[] | null = null;
   private cacheExpiry: number = 0;
+  private serverCaptchaMap = new Map<string, boolean>();
 
   async checkAllotment(
     request: CheckAllotmentRequest,
@@ -142,7 +144,7 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
   }
 
   /**
-   * Fetches and parses active company lists across Bigshare server pool.
+   * Fetches and parses active company lists and detects CAPTCHA state across Bigshare server pool.
    */
   async fetchCompanyList(): Promise<BigshareCompanyOption[]> {
     const now = Date.now();
@@ -163,6 +165,8 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
           `${server}/ipo_status.html`,
           {
             method: 'GET',
+            timeoutMs: 6000,
+            maxRetries: 1,
             headers: {
               'User-Agent':
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -174,8 +178,16 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
 
         if (response.ok) {
           const html = await response.text();
+          const hasCaptcha =
+            /<img[^>]+(?:captcha|CaptchaImage)[^>]*>/i.test(html) ||
+            /<input[^>]+(?:name|id)=["'](?:captcha|txtCaptcha)["']/i.test(html) ||
+            /CAPTCHA_DETECTED/i.test(html);
+
+          this.serverCaptchaMap.set(server, hasCaptcha);
+
           const options = this.parseCompanyOptions(html, server);
           for (const opt of options) {
+            opt.captchaDetected = hasCaptcha;
             if (!allOptionsMap.has(opt.code)) {
               allOptionsMap.set(opt.code, opt);
             }
@@ -240,33 +252,13 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
 
     const val = request.identifierValue.trim();
 
-    // Check if CAPTCHA is present on Bigshare page
-    try {
-      const pageResponse = await this.fetchWithRetry(pageUrl, {
-        method: 'GET',
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-      });
-
-      if (pageResponse.ok) {
-        const pageHtml = await pageResponse.text();
-        const hasCaptcha =
-          /<img[^>]+(?:captcha|CaptchaImage)[^>]*>/i.test(pageHtml) ||
-          /<input[^>]+(?:name|id)=["'](?:captcha|txtCaptcha)["']/i.test(pageHtml) ||
-          /CAPTCHA_DETECTED/i.test(pageHtml);
-
-        if (hasCaptcha) {
-          return this.createErrorResult(
-            request,
-            AllotmentStatus.CAPTCHA_REQUIRED,
-            'Bigshare CAPTCHA is active; user manual verification required',
-          );
-        }
-      }
-    } catch (pageErr) {
-      this.logger.warn(`Could not verify Bigshare page for CAPTCHA: ${pageErr}`);
+    // Check cached CAPTCHA state for target server
+    if (this.serverCaptchaMap.get(serverUrl) === true) {
+      return this.createErrorResult(
+        request,
+        AllotmentStatus.CAPTCHA_REQUIRED,
+        'Bigshare CAPTCHA is active; user manual verification required',
+      );
     }
 
     // Determine selection type and field mappings
@@ -286,8 +278,14 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
       lang: 'en',
     };
 
+    // Politeness delay between sequential items
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
     const postResponse = await this.fetchWithRetry(fetchUrl, {
       method: 'POST',
+      timeoutMs: 8000,
+      maxRetries: 1,
+      retryDelayMs: 400,
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -336,10 +334,20 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
           };
         }
 
+        const dpidStr = String(comp.DPID || '').toLowerCase();
+        const msgStr = String(comp.Message || '').toLowerCase();
+
         if (
           comp.Status === 'NOTFOUND' ||
-          comp.DPID === 'No data found' ||
-          comp.Message === 'No data found'
+          dpidStr.includes('no data found') ||
+          dpidStr.includes('no record') ||
+          dpidStr.includes('valid pan') ||
+          dpidStr.includes('valid application') ||
+          dpidStr.includes('valid beneficiary') ||
+          dpidStr.includes('valid clid') ||
+          dpidStr.includes('valid dpid') ||
+          msgStr.includes('no data found') ||
+          msgStr.includes('no record')
         ) {
           return {
             status: AllotmentStatus.APPLICATION_NOT_FOUND,
@@ -406,7 +414,8 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
     if (
       clean.includes('no record') ||
       clean.includes('not found') ||
-      clean.includes('no data found')
+      clean.includes('no data found') ||
+      clean.includes('valid pan')
     ) {
       return {
         status: AllotmentStatus.APPLICATION_NOT_FOUND,

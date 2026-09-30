@@ -985,4 +985,42 @@ describe('BigshareRegistrarAdapter Contract & Response Parsing Tests', () => {
       serverUrl: 'https://ipo1.bigshareonline.com',
     });
   });
+
+  it('7. should parse DPID validation messages as APPLICATION_NOT_FOUND', () => {
+    const jsonStr = JSON.stringify({
+      d: {
+        __type: 'Data+Company',
+        APPLICATION_NO: '',
+        DPID: 'Please Enter Valid Pan No',
+        Name: '',
+        APPLIED: '',
+        ALLOTED: '',
+        Status: 'OK',
+        Message: '',
+      },
+    });
+
+    const res = adapter.parseAllotmentResult(jsonStr, mockRequest, new Date());
+    expect(res.status).toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
+  });
+
+  it('8. should parse RATELIMIT and WARMING statuses correctly', () => {
+    const rateLimitJson = JSON.stringify({
+      d: {
+        Status: 'RATELIMIT',
+        Message: 'Too many attempts from this connection',
+      },
+    });
+    const resRate = adapter.parseAllotmentResult(rateLimitJson, mockRequest, new Date());
+    expect(resRate.status).toBe(AllotmentStatus.RATE_LIMITED);
+
+    const warmingJson = JSON.stringify({
+      d: {
+        Status: 'WARMING',
+        Message: 'The service is busy right now',
+      },
+    });
+    const resWarm = adapter.parseAllotmentResult(warmingJson, mockRequest, new Date());
+    expect(resWarm.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+  });
 });
