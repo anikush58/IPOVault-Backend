@@ -178,6 +178,100 @@ export class BrokerAccountController {
   }
 
   /**
+   * Fixed HTTPS Upstox OAuth callback handler.
+   * Meets Upstox's strict HTTPS Redirect URL requirement:
+   * GET /api/v1/broker-accounts/connect/upstox/callback
+   */
+  @Get('connect/upstox/callback')
+  async completeUpstoxConnectCallback(
+    @Query('code') code?: string,
+    @Query('state') state?: string,
+    @Query('status') status?: string,
+    @Query('error') error?: string,
+    @Query('error_description') errorDescription?: string,
+    @Headers('accept') acceptHeader?: string,
+    @Res() res?: Response,
+  ): Promise<any> {
+    const isJson = acceptHeader?.includes('application/json');
+
+    // Handle OAuth rejection or error
+    if (error || status === 'cancelled') {
+      const errorMsg =
+        errorDescription ||
+        error ||
+        'Upstox authorization was cancelled or rejected';
+      if (isJson) {
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'Upstox');
+    }
+
+    const tokenCode = code?.trim();
+    if (!tokenCode) {
+      const errorMsg = 'Authorization code is required';
+      if (isJson) {
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'Upstox');
+    }
+
+    try {
+      // Validate and consume single-use state to securely resolve userId and brokerAccountId
+      const stateRecord = this.oauthStateService.validateAndConsumeState(state);
+      const authUserId = stateRecord.userId;
+      const accountId = stateRecord.brokerAccountId;
+
+      const account = await this.brokerAccountService.getAccount(
+        authUserId,
+        accountId,
+      );
+
+      if (account.broker !== BrokerType.UPSTOX) {
+        throw new BadRequestException(
+          `Account is configured for broker ${account.broker}, not UPSTOX`,
+        );
+      }
+
+      const adapter = this.brokerRegistry.getAdapter(BrokerType.UPSTOX);
+      const tokens = await adapter.exchangeAuthorizationCode({
+        code: tokenCode,
+      });
+
+      // Verify profile using Upstox adapter
+      await adapter.getProfile(tokens, accountId);
+
+      // Persist tokens securely and mark status CONNECTED
+      const connection = await this.brokerConnectionService.saveTokens(
+        authUserId,
+        accountId,
+        tokens,
+      );
+
+      const responseDto = mapConnectionToSafeResponse(connection);
+
+      if (isJson) {
+        return res ? res.json({ data: responseDto }) : responseDto;
+      }
+
+      return this.renderOAuthHtmlResponse(
+        res!,
+        true,
+        'Your Upstox account has been securely linked.',
+        accountId,
+        'Upstox',
+      );
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error ? err.message : 'Broker authentication failed';
+      if (isJson) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'Upstox');
+    }
+  }
+
+  /**
    * Complete Upstox OAuth flow: validates and consumes single-use state,
    * exchanges code for tokens, retrieves profile, securely encrypts and stores tokens,
    * and marks connection CONNECTED.
@@ -1125,10 +1219,11 @@ export class BrokerAccountController {
     isSuccess: boolean,
     message: string,
     accountId?: string,
+    brokerName = 'Zerodha',
   ): void {
     if (!res) return;
-    const title = isSuccess ? 'Zerodha Connected' : 'Connection Failed';
-    const heading = isSuccess ? 'Zerodha Connected!' : 'Connection Failed';
+    const title = isSuccess ? `${brokerName} Connected` : 'Connection Failed';
+    const heading = isSuccess ? `${brokerName} Connected!` : 'Connection Failed';
     const color = isSuccess ? '#10B981' : '#EF4444';
     const statusParam = isSuccess ? 'success' : 'error';
     const extraParams = isSuccess

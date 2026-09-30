@@ -62,7 +62,12 @@ export const envSchema = z.object({
   BROKER_TOKEN_ENCRYPTION_SECRET: z.string().optional(),
   UPSTOX_API_KEY: z.string().optional(),
   UPSTOX_API_SECRET: z.string().optional(),
-  UPSTOX_REDIRECT_URI: z.string().optional(),
+  UPSTOX_REDIRECT_URI: z
+    .string()
+    .optional()
+    .default(
+      'https://api.getipovault.in/api/v1/broker-accounts/connect/upstox/callback',
+    ),
   UPSTOX_BASE_URL: z.string().optional().default('https://api.upstox.com/v2'),
   DHAN_API_KEY: z.string().optional(),
   DHAN_API_SECRET: z.string().optional(),

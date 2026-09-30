@@ -65,9 +65,11 @@ export class UpstoxBrokerAdapter implements BrokerAdapter {
     this.apiSecret = this.configService?.get('UPSTOX_API_SECRET', {
       infer: true,
     });
-    this.redirectUri = this.configService?.get('UPSTOX_REDIRECT_URI', {
-      infer: true,
-    });
+    this.redirectUri =
+      this.configService?.get('UPSTOX_REDIRECT_URI', {
+        infer: true,
+      }) ||
+      'https://api.getipovault.in/api/v1/broker-accounts/connect/upstox/callback';
   }
 
   /**
@@ -82,13 +84,16 @@ export class UpstoxBrokerAdapter implements BrokerAdapter {
   }
 
   /**
-   * Generates Upstox OAuth 2.0 authorization dialog URL.
+   * Generates Upstox OAuth 2.0 authorization dialog URL with fixed HTTPS redirect URL.
    */
   async getAuthorizationUrl(
     params: GetAuthorizationUrlParams,
   ): Promise<string> {
     this.validateConfiguration();
-    const redirectUri = params.redirectUri || this.redirectUri;
+    const redirectUri =
+      params.redirectUri && params.redirectUri.startsWith('https://')
+        ? params.redirectUri
+        : this.redirectUri;
     const clientId = this.apiKey!;
     if (!redirectUri) {
       throw new BadRequestException('Upstox redirectUri is required');
@@ -116,7 +121,10 @@ export class UpstoxBrokerAdapter implements BrokerAdapter {
   ): Promise<BrokerAuthTokens> {
     const clientId = this.apiKey;
     const clientSecret = this.apiSecret;
-    const redirectUri = params.redirectUri || this.redirectUri;
+    const redirectUri =
+      params.redirectUri && params.redirectUri.startsWith('https://')
+        ? params.redirectUri
+        : this.redirectUri;
 
     if (!clientId || !clientSecret) {
       throw new BadRequestException(

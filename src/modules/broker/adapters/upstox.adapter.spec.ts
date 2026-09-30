@@ -80,6 +80,27 @@ describe('UpstoxBrokerAdapter', () => {
       expect(url.searchParams.get('scope')).toBe('read orders');
     });
 
+    it('defaults to fixed production HTTPS redirect URL when custom scheme is passed', async () => {
+      const defaultAdapter = new UpstoxBrokerAdapter({
+        get: jest.fn((key: string) => {
+          if (key === 'UPSTOX_API_KEY') return 'test-upstox-api-key';
+          return undefined;
+        }),
+      } as any);
+
+      const urlString = await defaultAdapter.getAuthorizationUrl({
+        state: 'csrf-state-456',
+        redirectUri: 'ipovault://broker-callback',
+      });
+
+      const url = new URL(urlString);
+      expect(url.searchParams.get('client_id')).toBe('test-upstox-api-key');
+      expect(url.searchParams.get('state')).toBe('csrf-state-456');
+      expect(url.searchParams.get('redirect_uri')).toBe(
+        'https://api.getipovault.in/api/v1/broker-accounts/connect/upstox/callback',
+      );
+    });
+
     it('throws BadRequestException if API key is not configured', async () => {
       const emptyAdapter = new UpstoxBrokerAdapter({
         get: jest.fn().mockReturnValue(undefined),

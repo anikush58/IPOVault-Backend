@@ -830,6 +830,123 @@ describe('BrokerAccountController', () => {
     });
   });
 
+  describe('GET /api/v1/broker-accounts/connect/upstox/callback (fixed HTTPS Upstox OAuth callback)', () => {
+    it('validates single-use state, resolves user+account, exchanges code, retrieves profile, saves tokens, and renders success HTML redirecting to ipovault://', async () => {
+      mockOAuthStateService.validateAndConsumeState.mockReturnValue({
+        userId: 'user-123',
+        brokerAccountId: 'acc-uuid-1',
+        expiresAt: Date.now() + 60000,
+      });
+      mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
+      const connectedConn = {
+        ...sampleConnectionPrisma,
+        status: BrokerConnectionStatus.CONNECTED,
+        connectedAt: mockDate,
+      };
+      mockConnectionService.saveTokens.mockResolvedValue(connectedConn);
+
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeUpstoxConnectCallback(
+        'valid-upstox-code',
+        'mock-crypto-state-token',
+        'success',
+        undefined,
+        undefined,
+        'text/html',
+        mockRes,
+      );
+
+      expect(mockOAuthStateService.validateAndConsumeState).toHaveBeenCalledWith(
+        'mock-crypto-state-token',
+      );
+      expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
+      expect(mockUpstoxAdapter.exchangeAuthorizationCode).toHaveBeenCalledWith({
+        code: 'valid-upstox-code',
+      });
+      expect(mockUpstoxAdapter.getProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ accessToken: 'mock-access-token' }),
+        'acc-uuid-1',
+      );
+      expect(mockConnectionService.saveTokens).toHaveBeenCalledWith(
+        'user-123',
+        'acc-uuid-1',
+        expect.objectContaining({ accessToken: 'mock-access-token' }),
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html; charset=utf-8');
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('Upstox Connected!'));
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('ipovault://broker-callback?status=success&accountId=acc-uuid-1'));
+    });
+
+    it('returns JSON response if Accept header is application/json', async () => {
+      mockOAuthStateService.validateAndConsumeState.mockReturnValue({
+        userId: 'user-123',
+        brokerAccountId: 'acc-uuid-1',
+        expiresAt: Date.now() + 60000,
+      });
+      mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
+      const connectedConn = {
+        ...sampleConnectionPrisma,
+        status: BrokerConnectionStatus.CONNECTED,
+        connectedAt: mockDate,
+      };
+      mockConnectionService.saveTokens.mockResolvedValue(connectedConn);
+
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeUpstoxConnectCallback(
+        'valid-upstox-code',
+        'mock-crypto-state-token',
+        'success',
+        undefined,
+        undefined,
+        'application/json',
+        mockRes,
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          status: BrokerConnectionStatus.CONNECTED,
+        }),
+      });
+    });
+
+    it('renders error HTML when Upstox redirects with error/cancelled', async () => {
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeUpstoxConnectCallback(
+        undefined,
+        'state',
+        'cancelled',
+        'access_denied',
+        'User cancelled authorization',
+        'text/html',
+        mockRes,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('Connection Failed'));
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('ipovault://broker-callback?status=error'));
+    });
+  });
+
   describe('GET /api/v1/broker-accounts/:id/connect/dhan (start Dhan OAuth/consent)', () => {
     it('verifies ownership, marks connection PENDING, generates cryptographically secure state, and returns authorization URL', async () => {
       mockAccountService.getAccount.mockResolvedValue(sampleAccountPrisma); // DHAN
