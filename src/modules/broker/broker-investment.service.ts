@@ -54,6 +54,65 @@ export interface DerivedInvestmentSummary {
   } | null;
 }
 
+export interface PortfolioHoldingAttribution {
+  brokerAccountId: string;
+  broker: BrokerType;
+  quantity: number;
+  averagePrice: number | null;
+  lastPrice: number | null;
+  currentValue: number | null;
+  unrealizedPnl: number | null;
+  asOf: Date | null;
+}
+
+export interface PortfolioSellTradeAttribution {
+  brokerAccountId: string;
+  broker: BrokerType;
+  brokerTradeId: string;
+  quantity: number;
+  price: number;
+  tradedAt: Date;
+}
+
+export interface UserPortfolioIpoSummary {
+  ipoId: string;
+  isin: string;
+  symbol: string | null;
+  companyName: string | null;
+  logoUrl: string | null;
+  exchange: ExchangeListing;
+  status: DerivedInvestmentStatus;
+  allottedQuantity: number;
+  allotmentPrice: number;
+  allotmentDate: Date | null;
+  totalSoldQuantity: number;
+  weightedSellPrice: number | null;
+  totalSellValue: number;
+  realizedPnl: number;
+  remainingHoldingQuantity: number;
+  currentHoldingPrice: number;
+  priceSource: 'BROKER_HOLDING' | 'IPO_ALLOTMENT_FALLBACK';
+  totalHoldingValue: number;
+  unrealizedPnl: number;
+  totalPnl: number;
+  brokerHoldings: PortfolioHoldingAttribution[];
+  sellTrades: PortfolioSellTradeAttribution[];
+}
+
+export interface UserPortfolioSummaryResponse {
+  summary: {
+    totalInvested: number;
+    totalCurrentHoldingValue: number;
+    totalRealizedSellValue: number;
+    totalRealizedPnl: number;
+    totalUnrealizedPnl: number;
+    totalNetPnl: number;
+    activeHoldingsCount: number;
+    soldHoldingsCount: number;
+  };
+  investments: UserPortfolioIpoSummary[];
+}
+
 export function isTokenExpiredError(err: unknown): boolean {
   if (!err) return false;
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
@@ -734,6 +793,460 @@ export class BrokerInvestmentService {
       successCount,
       failureCount,
       results,
+    };
+  }
+
+  /**
+   * Retrieves aggregated user portfolio investments and metrics across all connected brokers.
+   * Matches holdings and trades primarily by ISIN.
+   * Aggregates quantities and prices across brokers without double-counting holding value.
+   * Uses broker trade record for historical executed sell price and quantity (NOT market LTP).
+   * Falls back to stored IPO allotment price if no broker price is available.
+   * Preserves broker attribution for each holding and trade.
+   */
+  async getUserPortfolioSummary(
+    userId: string,
+  ): Promise<UserPortfolioSummaryResponse> {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      throw new BadRequestException('User ID is required');
+    }
+
+    const trimmedUserId = userId.trim();
+
+    // 1. Fetch all active broker accounts belonging to the user
+    const accounts = await this.prisma.brokerAccount.findMany({
+      where: {
+        userId: trimmedUserId,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        broker: true,
+        accountName: true,
+        clientId: true,
+      },
+    });
+
+    const emptyResponse: UserPortfolioSummaryResponse = {
+      summary: {
+        totalInvested: 0,
+        totalCurrentHoldingValue: 0,
+        totalRealizedSellValue: 0,
+        totalRealizedPnl: 0,
+        totalUnrealizedPnl: 0,
+        totalNetPnl: 0,
+        activeHoldingsCount: 0,
+        soldHoldingsCount: 0,
+      },
+      investments: [],
+    };
+
+    if (accounts.length === 0) {
+      return emptyResponse;
+    }
+
+    const accountIds = accounts.map((a) => a.id);
+
+    // 2. Query all IpoInvestment records for user's broker accounts
+    const ipoInvestments = await this.prisma.ipoInvestment.findMany({
+      where: { brokerAccountId: { in: accountIds } },
+      include: {
+        ipo: {
+          include: {
+            company: {
+              select: {
+                displayName: true,
+                logoUrl: true,
+              },
+            },
+          },
+        },
+        brokerAccount: {
+          select: {
+            id: true,
+            broker: true,
+          },
+        },
+      },
+    });
+
+    // 3. Query all BrokerHoldings for user's broker accounts
+    const brokerHoldings = await this.prisma.brokerHolding.findMany({
+      where: { brokerAccountId: { in: accountIds } },
+      include: {
+        instrument: {
+          include: {
+            ipo: {
+              include: {
+                company: {
+                  select: {
+                    displayName: true,
+                    logoUrl: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        brokerAccount: {
+          select: {
+            id: true,
+            broker: true,
+          },
+        },
+      },
+    });
+
+    // 4. Query all BrokerTrades for user's broker accounts
+    const brokerTrades = await this.prisma.brokerTrade.findMany({
+      where: {
+        brokerAccountId: { in: accountIds },
+      },
+      include: {
+        instrument: {
+          include: {
+            ipo: {
+              include: {
+                company: {
+                  select: {
+                    displayName: true,
+                    logoUrl: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        brokerAccount: {
+          select: {
+            id: true,
+            broker: true,
+          },
+        },
+      },
+      orderBy: { tradedAt: 'asc' },
+    });
+
+    // 5. Group by primary key: ISIN (or fallback ipoId)
+    const groups = new Map<
+      string,
+      {
+        isin: string;
+        ipoId: string;
+        symbol: string | null;
+        companyName: string | null;
+        logoUrl: string | null;
+        exchange: ExchangeListing;
+        investments: typeof ipoInvestments;
+        holdings: typeof brokerHoldings;
+        trades: typeof brokerTrades;
+        fallbackPrice: number;
+      }
+    >();
+
+    // Collect from IpoInvestments
+    for (const inv of ipoInvestments) {
+      const isin =
+        inv.ipo.isin?.trim().toUpperCase() || inv.ipo.symbol || inv.ipoId;
+      let group = groups.get(isin);
+      if (!group) {
+        group = {
+          isin: inv.ipo.isin ? inv.ipo.isin.trim().toUpperCase() : isin,
+          ipoId: inv.ipoId,
+          symbol:
+            inv.ipo.symbol || inv.ipo.nseSymbol || inv.ipo.bseSymbol || null,
+          companyName: inv.ipo.company?.displayName || inv.ipo.symbol || null,
+          logoUrl: inv.ipo.company?.logoUrl || null,
+          exchange: inv.ipo.exchange,
+          investments: [],
+          holdings: [],
+          trades: [],
+          fallbackPrice: inv.ipo.priceBandHigh
+            ? Number(inv.ipo.priceBandHigh)
+            : Number(inv.allotmentPrice),
+        };
+        groups.set(isin, group);
+      }
+      group.investments.push(inv);
+    }
+
+    // Collect from BrokerHoldings
+    for (const h of brokerHoldings) {
+      const isin =
+        h.instrument.isin?.trim().toUpperCase() ||
+        h.instrument.symbol ||
+        h.instrument.id;
+      let group = groups.get(isin);
+      if (!group) {
+        const ipo = h.instrument.ipo;
+        group = {
+          isin: h.instrument.isin
+            ? h.instrument.isin.trim().toUpperCase()
+            : isin,
+          ipoId: ipo?.id || h.instrument.ipoId || h.instrumentId,
+          symbol: h.instrument.symbol || ipo?.symbol || null,
+          companyName: ipo?.company?.displayName || h.instrument.symbol || null,
+          logoUrl: ipo?.company?.logoUrl || null,
+          exchange: h.instrument.exchange,
+          investments: [],
+          holdings: [],
+          trades: [],
+          fallbackPrice: ipo?.priceBandHigh ? Number(ipo.priceBandHigh) : 0,
+        };
+        groups.set(isin, group);
+      }
+      group.holdings.push(h);
+    }
+
+    // Collect from BrokerTrades
+    for (const t of brokerTrades) {
+      const isin =
+        t.instrument.isin?.trim().toUpperCase() ||
+        t.instrument.symbol ||
+        t.instrument.id;
+      let group = groups.get(isin);
+      if (!group) {
+        const ipo = t.instrument.ipo;
+        group = {
+          isin: t.instrument.isin
+            ? t.instrument.isin.trim().toUpperCase()
+            : isin,
+          ipoId: ipo?.id || t.instrument.ipoId || t.instrumentId,
+          symbol: t.instrument.symbol || ipo?.symbol || null,
+          companyName: ipo?.company?.displayName || t.instrument.symbol || null,
+          logoUrl: ipo?.company?.logoUrl || null,
+          exchange: t.instrument.exchange,
+          investments: [],
+          holdings: [],
+          trades: [],
+          fallbackPrice: ipo?.priceBandHigh ? Number(ipo.priceBandHigh) : 0,
+        };
+        groups.set(isin, group);
+      }
+      group.trades.push(t);
+    }
+
+    const portfolioSummaries: UserPortfolioIpoSummary[] = [];
+
+    // 6. Aggregate each group
+    for (const group of groups.values()) {
+      // 6a. Allotment calculations
+      let totalAllottedQuantity = 0;
+      let totalAllotmentCost = 0;
+      let latestAllotmentDate: Date | null = null;
+
+      for (const inv of group.investments) {
+        const qty = Number(inv.allottedQuantity);
+        const price = Number(inv.allotmentPrice);
+        totalAllottedQuantity += qty;
+        totalAllotmentCost += qty * price;
+        if (inv.allotmentDate) {
+          const invDate = new Date(inv.allotmentDate);
+          if (!latestAllotmentDate || invDate > latestAllotmentDate) {
+            latestAllotmentDate = invDate;
+          }
+        }
+      }
+
+      let allotmentPrice =
+        totalAllottedQuantity > 0
+          ? totalAllotmentCost / totalAllottedQuantity
+          : group.fallbackPrice;
+
+      // 6b. Broker Holdings aggregation & attribution
+      const holdingAttributions: PortfolioHoldingAttribution[] = [];
+      let totalHoldingQuantity = 0;
+      let availableBrokerLtp: number | null = null;
+      let latestHoldingAsOf: number = 0;
+
+      for (const h of group.holdings) {
+        const qty = Number(h.quantity);
+        const avgPrice = h.averagePrice != null ? Number(h.averagePrice) : null;
+        const lastPrice = h.lastPrice != null ? Number(h.lastPrice) : null;
+        const asOf = h.asOf ? new Date(h.asOf) : null;
+        const asOfTime = asOf ? asOf.getTime() : 0;
+
+        if (lastPrice != null && lastPrice > 0) {
+          if (availableBrokerLtp == null || asOfTime >= latestHoldingAsOf) {
+            availableBrokerLtp = lastPrice;
+            latestHoldingAsOf = asOfTime;
+          }
+        }
+
+        const currVal =
+          h.currentValue != null
+            ? Number(h.currentValue)
+            : lastPrice != null
+            ? qty * lastPrice
+            : null;
+        const unrealPnl =
+          h.unrealizedPnl != null
+            ? Number(h.unrealizedPnl)
+            : lastPrice != null && avgPrice != null
+            ? (lastPrice - avgPrice) * qty
+            : null;
+
+        totalHoldingQuantity += qty;
+
+        holdingAttributions.push({
+          brokerAccountId: h.brokerAccountId,
+          broker: h.brokerAccount.broker,
+          quantity: qty,
+          averagePrice: avgPrice,
+          lastPrice,
+          currentValue: currVal,
+          unrealizedPnl: unrealPnl,
+          asOf,
+        });
+      }
+
+      // If allotment price was 0 or not found in IpoInvestment, use holding averagePrice if available
+      if (allotmentPrice === 0 && holdingAttributions.length > 0) {
+        const avgHoldingPrice = holdingAttributions.find(
+          (ha) => ha.averagePrice != null && ha.averagePrice > 0,
+        )?.averagePrice;
+        if (avgHoldingPrice) {
+          allotmentPrice = avgHoldingPrice;
+        }
+      }
+
+      // 6c. Broker Trades (SELL side only) aggregation & attribution
+      const sellTradeAttributions: PortfolioSellTradeAttribution[] = [];
+      let totalSoldQuantity = 0;
+      let totalSellValue = 0;
+
+      for (const t of group.trades) {
+        if (t.side === BrokerTradeSide.SELL) {
+          const qty = Number(t.quantity);
+          const price = Number(t.price);
+          totalSoldQuantity += qty;
+          totalSellValue += qty * price;
+
+          sellTradeAttributions.push({
+            brokerAccountId: t.brokerAccountId,
+            broker: t.brokerAccount.broker,
+            brokerTradeId: t.brokerTradeId,
+            quantity: qty,
+            price,
+            tradedAt: new Date(t.tradedAt),
+          });
+        }
+      }
+
+      const weightedSellPrice =
+        totalSoldQuantity > 0 ? totalSellValue / totalSoldQuantity : null;
+
+      // If totalAllottedQuantity wasn't recorded, estimate from sold + remaining
+      if (totalAllottedQuantity === 0) {
+        totalAllottedQuantity = totalSoldQuantity + totalHoldingQuantity;
+      }
+
+      // 6d. Remaining quantity & status
+      const remainingHoldingQuantity =
+        group.holdings.length > 0
+          ? totalHoldingQuantity
+          : Math.max(0, totalAllottedQuantity - totalSoldQuantity);
+
+      let status: DerivedInvestmentStatus = 'HOLDING';
+      if (
+        remainingHoldingQuantity === 0 ||
+        (totalSoldQuantity >= totalAllottedQuantity &&
+          totalHoldingQuantity === 0)
+      ) {
+        status = 'FULLY_SOLD';
+      } else if (totalSoldQuantity > 0 && remainingHoldingQuantity > 0) {
+        status = 'PARTIALLY_SOLD';
+      }
+
+      // 6e. Holding Price determination (Broker LTP vs fallback to IPO allotment/band price)
+      let currentHoldingPrice: number;
+      let priceSource: 'BROKER_HOLDING' | 'IPO_ALLOTMENT_FALLBACK';
+
+      if (availableBrokerLtp != null && availableBrokerLtp > 0) {
+        currentHoldingPrice = availableBrokerLtp;
+        priceSource = 'BROKER_HOLDING';
+      } else {
+        currentHoldingPrice = allotmentPrice;
+        priceSource = 'IPO_ALLOTMENT_FALLBACK';
+      }
+
+      // 6f. P&L & Values (No double counting!)
+      const totalHoldingValue = remainingHoldingQuantity * currentHoldingPrice;
+      const realizedPnl =
+        totalSoldQuantity > 0
+          ? totalSellValue - totalSoldQuantity * allotmentPrice
+          : 0;
+      const unrealizedPnl =
+        remainingHoldingQuantity * (currentHoldingPrice - allotmentPrice);
+      const totalPnl = realizedPnl + unrealizedPnl;
+
+      portfolioSummaries.push({
+        ipoId: group.ipoId,
+        isin: group.isin,
+        symbol: group.symbol,
+        companyName: group.companyName,
+        logoUrl: group.logoUrl,
+        exchange: group.exchange,
+        status,
+        allottedQuantity: totalAllottedQuantity,
+        allotmentPrice,
+        allotmentDate: latestAllotmentDate,
+        totalSoldQuantity,
+        weightedSellPrice,
+        totalSellValue,
+        realizedPnl,
+        remainingHoldingQuantity,
+        currentHoldingPrice,
+        priceSource,
+        totalHoldingValue,
+        unrealizedPnl,
+        totalPnl,
+        brokerHoldings: holdingAttributions,
+        sellTrades: sellTradeAttributions,
+      });
+    }
+
+    // 7. Portfolio-level aggregated metrics
+    let totalInvested = 0;
+    let totalCurrentHoldingValue = 0;
+    let totalRealizedSellValue = 0;
+    let totalRealizedPnl = 0;
+    let totalUnrealizedPnl = 0;
+    let activeHoldingsCount = 0;
+    let soldHoldingsCount = 0;
+
+    for (const item of portfolioSummaries) {
+      totalInvested += item.allottedQuantity * item.allotmentPrice;
+      totalCurrentHoldingValue += item.totalHoldingValue;
+      totalRealizedSellValue += item.totalSellValue;
+      totalRealizedPnl += item.realizedPnl;
+      totalUnrealizedPnl += item.unrealizedPnl;
+
+      if (item.remainingHoldingQuantity > 0) {
+        activeHoldingsCount++;
+      }
+      if (
+        item.status === 'FULLY_SOLD' ||
+        (item.status === 'PARTIALLY_SOLD' && item.totalSoldQuantity > 0)
+      ) {
+        soldHoldingsCount++;
+      }
+    }
+
+    const totalNetPnl = totalRealizedPnl + totalUnrealizedPnl;
+
+    return {
+      summary: {
+        totalInvested,
+        totalCurrentHoldingValue,
+        totalRealizedSellValue,
+        totalRealizedPnl,
+        totalUnrealizedPnl,
+        totalNetPnl,
+        activeHoldingsCount,
+        soldHoldingsCount,
+      },
+      investments: portfolioSummaries,
     };
   }
 }

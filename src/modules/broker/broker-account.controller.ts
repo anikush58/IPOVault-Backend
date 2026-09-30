@@ -16,7 +16,10 @@ import type { Response } from 'express';
 import { BrokerType, ExchangeListing } from '@prisma/client';
 import { BrokerAccountService } from './broker-account.service';
 import { BrokerConnectionService } from './broker-connection.service';
-import { BrokerInvestmentService } from './broker-investment.service';
+import {
+  BrokerInvestmentService,
+  UserPortfolioSummaryResponse,
+} from './broker-investment.service';
 import { BrokerOAuthStateService } from './security/broker-oauth-state.service';
 import { BrokerRegistry } from './broker.registry';
 import {
@@ -934,6 +937,18 @@ export class BrokerAccountController {
 
     const adapter = this.brokerRegistry.getAdapter(account.broker);
     return adapter.getQuote(tokens, isin.trim(), exchange);
+  }
+
+  /**
+   * Retrieves aggregated user portfolio investments and metrics across all connected brokers.
+   * GET /api/v1/broker-accounts/portfolio
+   */
+  @Get('portfolio')
+  async getUserPortfolio(
+    @Headers('x-user-id') userId?: string,
+  ): Promise<UserPortfolioSummaryResponse> {
+    const authUserId = this.getAuthenticatedUserId(userId);
+    return this.brokerInvestmentService.getUserPortfolioSummary(authUserId);
   }
 
   /**

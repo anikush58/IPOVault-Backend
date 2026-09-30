@@ -72,8 +72,12 @@ describe('BrokerInvestmentService', () => {
         findFirst: jest.fn(),
         upsert: jest.fn(),
       },
+      brokerAccount: {
+        findMany: jest.fn(),
+      },
       brokerHolding: {
         findUnique: jest.fn(),
+        findMany: jest.fn(),
         upsert: jest.fn(),
         update: jest.fn(),
       },
@@ -946,6 +950,376 @@ describe('BrokerInvestmentService', () => {
       });
 
       syncSpy.mockRestore();
+    });
+  });
+
+  describe('getUserPortfolioSummary', () => {
+    it('1. uses connected broker holding price as source for current holding price', async () => {
+      mockPrisma.brokerAccount.findMany.mockResolvedValue([
+        { id: 'acc-1', broker: BrokerType.UPSTOX, accountName: 'Upstox', clientId: 'UP1' },
+      ]);
+
+      mockPrisma.ipoInvestment.findMany.mockResolvedValue([
+        {
+          id: 'inv-1',
+          brokerAccountId: 'acc-1',
+          ipoId: 'ipo-1',
+          allottedQuantity: new Prisma.Decimal(50),
+          allotmentPrice: new Prisma.Decimal(500),
+          allotmentDate: mockDate,
+          ipo: {
+            id: 'ipo-1',
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            priceBandHigh: new Prisma.Decimal(500),
+            company: { displayName: 'Reliance Industries', logoUrl: null },
+          },
+          brokerAccount: { id: 'acc-1', broker: BrokerType.UPSTOX },
+        },
+      ]);
+
+      mockPrisma.brokerHolding.findMany.mockResolvedValue([
+        {
+          id: 'h-1',
+          brokerAccountId: 'acc-1',
+          instrumentId: 'inst-1',
+          quantity: new Prisma.Decimal(50),
+          averagePrice: new Prisma.Decimal(500),
+          lastPrice: new Prisma.Decimal(620), // Broker LTP = 620
+          currentValue: new Prisma.Decimal(31000),
+          unrealizedPnl: new Prisma.Decimal(6000),
+          asOf: mockDate,
+          instrument: {
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            ipo: {
+              id: 'ipo-1',
+              symbol: 'RELIANCE',
+              company: { displayName: 'Reliance Industries', logoUrl: null },
+            },
+          },
+          brokerAccount: { id: 'acc-1', broker: BrokerType.UPSTOX },
+        },
+      ]);
+
+      mockPrisma.brokerTrade.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserPortfolioSummary('user-123');
+
+      expect(result.investments).toHaveLength(1);
+      const inv = result.investments[0];
+      expect(inv.isin).toBe('INE002A01018');
+      expect(inv.currentHoldingPrice).toBe(620);
+      expect(inv.priceSource).toBe('BROKER_HOLDING');
+      expect(inv.remainingHoldingQuantity).toBe(50);
+      expect(inv.totalHoldingValue).toBe(31000);
+      expect(inv.unrealizedPnl).toBe(6000);
+      expect(inv.status).toBe('HOLDING');
+      expect(inv.brokerHoldings).toHaveLength(1);
+      expect(inv.brokerHoldings[0].broker).toBe(BrokerType.UPSTOX);
+      expect(inv.brokerHoldings[0].lastPrice).toBe(620);
+    });
+
+    it('2. aggregates quantities and avoids double-counting value for the same ISIN across two brokers', async () => {
+      mockPrisma.brokerAccount.findMany.mockResolvedValue([
+        { id: 'acc-upstox', broker: BrokerType.UPSTOX, accountName: 'Upstox', clientId: 'UP1' },
+        { id: 'acc-zerodha', broker: BrokerType.ZERODHA, accountName: 'Zerodha', clientId: 'ZH1' },
+      ]);
+
+      mockPrisma.ipoInvestment.findMany.mockResolvedValue([
+        {
+          id: 'inv-1',
+          brokerAccountId: 'acc-upstox',
+          ipoId: 'ipo-1',
+          allottedQuantity: new Prisma.Decimal(50),
+          allotmentPrice: new Prisma.Decimal(500),
+          allotmentDate: mockDate,
+          ipo: {
+            id: 'ipo-1',
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            company: { displayName: 'Reliance Industries', logoUrl: null },
+          },
+          brokerAccount: { id: 'acc-upstox', broker: BrokerType.UPSTOX },
+        },
+        {
+          id: 'inv-2',
+          brokerAccountId: 'acc-zerodha',
+          ipoId: 'ipo-1',
+          allottedQuantity: new Prisma.Decimal(50),
+          allotmentPrice: new Prisma.Decimal(500),
+          allotmentDate: mockDate,
+          ipo: {
+            id: 'ipo-1',
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            company: { displayName: 'Reliance Industries', logoUrl: null },
+          },
+          brokerAccount: { id: 'acc-zerodha', broker: BrokerType.ZERODHA },
+        },
+      ]);
+
+      mockPrisma.brokerHolding.findMany.mockResolvedValue([
+        {
+          id: 'h-1',
+          brokerAccountId: 'acc-upstox',
+          instrumentId: 'inst-1',
+          quantity: new Prisma.Decimal(50),
+          averagePrice: new Prisma.Decimal(500),
+          lastPrice: new Prisma.Decimal(700),
+          currentValue: new Prisma.Decimal(35000),
+          unrealizedPnl: new Prisma.Decimal(10000),
+          asOf: new Date('2026-09-22T10:00:00Z'),
+          instrument: {
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            ipo: { id: 'ipo-1', symbol: 'RELIANCE', company: { displayName: 'Reliance Industries', logoUrl: null } },
+          },
+          brokerAccount: { id: 'acc-upstox', broker: BrokerType.UPSTOX },
+        },
+        {
+          id: 'h-2',
+          brokerAccountId: 'acc-zerodha',
+          instrumentId: 'inst-2',
+          quantity: new Prisma.Decimal(50),
+          averagePrice: new Prisma.Decimal(500),
+          lastPrice: new Prisma.Decimal(700),
+          currentValue: new Prisma.Decimal(35000),
+          unrealizedPnl: new Prisma.Decimal(10000),
+          asOf: new Date('2026-09-22T10:05:00Z'),
+          instrument: {
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            ipo: { id: 'ipo-1', symbol: 'RELIANCE', company: { displayName: 'Reliance Industries', logoUrl: null } },
+          },
+          brokerAccount: { id: 'acc-zerodha', broker: BrokerType.ZERODHA },
+        },
+      ]);
+
+      mockPrisma.brokerTrade.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserPortfolioSummary('user-123');
+
+      expect(result.investments).toHaveLength(1);
+      const inv = result.investments[0];
+      expect(inv.isin).toBe('INE002A01018');
+      expect(inv.allottedQuantity).toBe(100);
+      expect(inv.remainingHoldingQuantity).toBe(100); // 50 + 50 aggregated across brokers
+      expect(inv.currentHoldingPrice).toBe(700);
+      expect(inv.totalHoldingValue).toBe(70000); // 100 * 700 without double-counting
+      expect(inv.unrealizedPnl).toBe(20000); // (700 - 500) * 100
+      expect(inv.brokerHoldings).toHaveLength(2);
+      expect(inv.brokerHoldings.map((b) => b.broker)).toEqual([BrokerType.UPSTOX, BrokerType.ZERODHA]);
+    });
+
+    it('3. uses executed sell trade data from broker trade record for historical sell price and quantity', async () => {
+      mockPrisma.brokerAccount.findMany.mockResolvedValue([
+        { id: 'acc-1', broker: BrokerType.UPSTOX, accountName: 'Upstox', clientId: 'UP1' },
+      ]);
+
+      mockPrisma.ipoInvestment.findMany.mockResolvedValue([
+        {
+          id: 'inv-1',
+          brokerAccountId: 'acc-1',
+          ipoId: 'ipo-1',
+          allottedQuantity: new Prisma.Decimal(50),
+          allotmentPrice: new Prisma.Decimal(500),
+          allotmentDate: mockDate,
+          ipo: {
+            id: 'ipo-1',
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            company: { displayName: 'Reliance Industries', logoUrl: null },
+          },
+          brokerAccount: { id: 'acc-1', broker: BrokerType.UPSTOX },
+        },
+      ]);
+
+      mockPrisma.brokerHolding.findMany.mockResolvedValue([
+        {
+          id: 'h-1',
+          brokerAccountId: 'acc-1',
+          instrumentId: 'inst-1',
+          quantity: new Prisma.Decimal(0),
+          averagePrice: new Prisma.Decimal(500),
+          lastPrice: new Prisma.Decimal(920), // Current market LTP is 920, but sold at 850
+          currentValue: new Prisma.Decimal(0),
+          unrealizedPnl: new Prisma.Decimal(0),
+          asOf: mockDate,
+          instrument: {
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            ipo: { id: 'ipo-1', symbol: 'RELIANCE', company: { displayName: 'Reliance Industries', logoUrl: null } },
+          },
+          brokerAccount: { id: 'acc-1', broker: BrokerType.UPSTOX },
+        },
+      ]);
+
+      // Executed trade at 850
+      mockPrisma.brokerTrade.findMany.mockResolvedValue([
+        {
+          id: 't-1',
+          brokerAccountId: 'acc-1',
+          brokerTradeId: 'trade-abc-1',
+          side: BrokerTradeSide.SELL,
+          quantity: new Prisma.Decimal(50),
+          price: new Prisma.Decimal(850), // Historical executed price
+          tradedAt: new Date('2026-09-22T09:30:00Z'),
+          instrument: {
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            ipo: { id: 'ipo-1', symbol: 'RELIANCE', company: { displayName: 'Reliance Industries', logoUrl: null } },
+          },
+          brokerAccount: { id: 'acc-1', broker: BrokerType.UPSTOX },
+        },
+      ]);
+
+      const result = await service.getUserPortfolioSummary('user-123');
+
+      expect(result.investments).toHaveLength(1);
+      const inv = result.investments[0];
+      expect(inv.status).toBe('FULLY_SOLD');
+      expect(inv.remainingHoldingQuantity).toBe(0);
+      expect(inv.totalSoldQuantity).toBe(50);
+      expect(inv.weightedSellPrice).toBe(850); // Executed sell price, NOT market LTP 920
+      expect(inv.totalSellValue).toBe(42500); // 50 * 850
+      expect(inv.realizedPnl).toBe(17500); // 50 * (850 - 500)
+      expect(inv.sellTrades).toHaveLength(1);
+      expect(inv.sellTrades[0].brokerTradeId).toBe('trade-abc-1');
+      expect(inv.sellTrades[0].price).toBe(850);
+      expect(inv.sellTrades[0].broker).toBe(BrokerType.UPSTOX);
+    });
+
+    it('4. preserves existing IPOVault allotment price as fallback when no broker price is available', async () => {
+      mockPrisma.brokerAccount.findMany.mockResolvedValue([
+        { id: 'acc-1', broker: BrokerType.UPSTOX, accountName: 'Upstox', clientId: 'UP1' },
+      ]);
+
+      mockPrisma.ipoInvestment.findMany.mockResolvedValue([
+        {
+          id: 'inv-1',
+          brokerAccountId: 'acc-1',
+          ipoId: 'ipo-1',
+          allottedQuantity: new Prisma.Decimal(50),
+          allotmentPrice: new Prisma.Decimal(500),
+          allotmentDate: mockDate,
+          ipo: {
+            id: 'ipo-1',
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            priceBandHigh: new Prisma.Decimal(500),
+            company: { displayName: 'Reliance Industries', logoUrl: null },
+          },
+          brokerAccount: { id: 'acc-1', broker: BrokerType.UPSTOX },
+        },
+      ]);
+
+      mockPrisma.brokerHolding.findMany.mockResolvedValue([
+        {
+          id: 'h-1',
+          brokerAccountId: 'acc-1',
+          instrumentId: 'inst-1',
+          quantity: new Prisma.Decimal(50),
+          averagePrice: new Prisma.Decimal(500),
+          lastPrice: null, // No broker price available
+          currentValue: null,
+          unrealizedPnl: null,
+          asOf: mockDate,
+          instrument: {
+            isin: 'INE002A01018',
+            symbol: 'RELIANCE',
+            exchange: ExchangeListing.NSE,
+            ipo: { id: 'ipo-1', symbol: 'RELIANCE', company: { displayName: 'Reliance Industries', logoUrl: null } },
+          },
+          brokerAccount: { id: 'acc-1', broker: BrokerType.UPSTOX },
+        },
+      ]);
+
+      mockPrisma.brokerTrade.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserPortfolioSummary('user-123');
+
+      expect(result.investments).toHaveLength(1);
+      const inv = result.investments[0];
+      expect(inv.currentHoldingPrice).toBe(500); // Falls back to 500 allotment price
+      expect(inv.priceSource).toBe('IPO_ALLOTMENT_FALLBACK');
+      expect(inv.totalHoldingValue).toBe(25000); // 50 * 500
+      expect(inv.unrealizedPnl).toBe(0);
+    });
+
+    it('5. prevents duplicate holdings and trades during repeated broker syncs', async () => {
+      mockPrisma.ipo.findFirst.mockResolvedValue({ id: 'ipo-uuid-1' });
+      mockPrisma.brokerInstrument.upsert.mockResolvedValue({ id: 'inst-uuid-1' });
+      mockPrisma.brokerHolding.upsert.mockResolvedValue({ id: 'holding-uuid-1' });
+      mockPrisma.brokerTrade.upsert.mockResolvedValue({ id: 'trade-uuid-1' });
+
+      const holdings = [
+        {
+          brokerAccountId: 'acc-uuid-1',
+          isin: 'INE002A01018',
+          exchange: ExchangeListing.NSE,
+          symbol: 'RELIANCE',
+          quantity: 50,
+          averagePrice: 500,
+          lastPrice: 620,
+          currentValue: 31000,
+          unrealizedPnl: 6000,
+          asOf: mockDate,
+        },
+      ];
+
+      const trades = [
+        {
+          brokerAccountId: 'acc-uuid-1',
+          brokerTradeId: 'trade-abc-1',
+          isin: 'INE002A01018',
+          exchange: ExchangeListing.NSE,
+          symbol: 'RELIANCE',
+          side: BrokerTradeSide.SELL,
+          quantity: 25,
+          price: 850,
+          tradedAt: mockDate,
+        },
+      ];
+
+      // Sync 1
+      await service.persistHoldingsAndTrades('user-123', 'acc-uuid-1', holdings, trades);
+
+      // Sync 2 (repeated sync with identical payload)
+      await service.persistHoldingsAndTrades('user-123', 'acc-uuid-1', holdings, trades);
+
+      // Verify that upsert was used with compound unique keys, preventing record duplication
+      expect(mockPrisma.brokerHolding.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            brokerAccountId_instrumentId: {
+              brokerAccountId: 'acc-uuid-1',
+              instrumentId: 'inst-uuid-1',
+            },
+          },
+        }),
+      );
+
+      expect(mockPrisma.brokerTrade.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            brokerAccountId_brokerTradeId: {
+              brokerAccountId: 'acc-uuid-1',
+              brokerTradeId: 'trade-abc-1',
+            },
+          },
+        }),
+      );
     });
   });
 });

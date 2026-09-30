@@ -171,6 +171,19 @@ describe('BrokerAccountController', () => {
         syncedInvestmentsCount: 1,
         investments: [],
       }),
+      getUserPortfolioSummary: jest.fn().mockResolvedValue({
+        summary: {
+          totalInvested: 25000,
+          totalCurrentHoldingValue: 31000,
+          totalRealizedSellValue: 0,
+          totalRealizedPnl: 0,
+          totalUnrealizedPnl: 6000,
+          totalNetPnl: 6000,
+          activeHoldingsCount: 1,
+          soldHoldingsCount: 0,
+        },
+        investments: [],
+      }),
     };
 
     mockOAuthStateService = {
@@ -1604,6 +1617,23 @@ describe('BrokerAccountController', () => {
       await expect(
         controller.syncAccountNow('   ', 'user-123'),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('GET /api/v1/broker-accounts/portfolio', () => {
+    it('delegates to BrokerInvestmentService.getUserPortfolioSummary', async () => {
+      const result = await controller.getUserPortfolio('user-123');
+
+      expect(mockInvestmentService.getUserPortfolioSummary).toHaveBeenCalledWith('user-123');
+      expect(result).toHaveProperty('summary');
+      expect(result.summary.totalCurrentHoldingValue).toBe(31000);
+      expect(result).toHaveProperty('investments');
+    });
+
+    it('throws UnauthorizedException if x-user-id header is missing', async () => {
+      await expect(controller.getUserPortfolio('')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 });
