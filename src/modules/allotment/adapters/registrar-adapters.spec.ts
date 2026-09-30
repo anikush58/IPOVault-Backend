@@ -2,6 +2,7 @@ import { AllotmentIdentifierType, AllotmentStatus } from '../allotment.types';
 import { KfinRegistrarAdapter } from './kfin-registrar.adapter';
 import { MufgIntimeRegistrarAdapter } from './mufg-intime-registrar.adapter';
 import { PurvaRegistrarAdapter } from './purva-registrar.adapter';
+import { BigshareRegistrarAdapter } from './bigshare-registrar.adapter';
 import { RegistrarAdapterRegistry, normalizeRegistrarCode } from './registrar-adapter.registry';
 
 describe('KfinRegistrarAdapter Production Contract Tests', () => {
@@ -860,5 +861,128 @@ describe('PurvaRegistrarAdapter Contract & Registry Tests', () => {
     const res = adapter.parseAllotmentResultHtml(html, new Date());
     expect(res.status).toBe(AllotmentStatus.NOT_ALLOTTED);
     expect(res.sharesAllotted).toBe(0);
+  });
+});
+
+describe('BigshareRegistrarAdapter Contract & Response Parsing Tests', () => {
+  let adapter: BigshareRegistrarAdapter;
+  let registry: RegistrarAdapterRegistry;
+
+  const mockRequest = {
+    ipoId: '522695d7-90ec-410b-8777-74b66f9abc17',
+    registrarIpoCode: '9051',
+    identifierType: AllotmentIdentifierType.PAN,
+    identifierValue: 'ABCDE1234F',
+  };
+
+  beforeEach(() => {
+    adapter = new BigshareRegistrarAdapter();
+    registry = new RegistrarAdapterRegistry();
+    registry.register(adapter);
+  });
+
+  it('1. should declare correct metadata and identifier support', () => {
+    expect(adapter.code).toBe('BIGSHARE');
+    expect(adapter.name).toBe('Bigshare Services');
+    expect(adapter.supportsIdentifier(AllotmentIdentifierType.PAN)).toBe(true);
+    expect(
+      adapter.supportsIdentifier(AllotmentIdentifierType.APPLICATION_NUMBER),
+    ).toBe(true);
+    expect(
+      adapter.supportsIdentifier(AllotmentIdentifierType.DP_CLIENT_ID),
+    ).toBe(true);
+  });
+
+  it('2. should correctly normalize Bigshare aliases', () => {
+    expect(normalizeRegistrarCode('BIGSHARE')).toBe('BIGSHARE');
+    expect(normalizeRegistrarCode('bigshare services private limited')).toBe('BIGSHARE');
+    expect(normalizeRegistrarCode('Bigshare Services Pvt Ltd')).toBe('BIGSHARE');
+    expect(normalizeRegistrarCode('BIG_SHARE')).toBe('BIGSHARE');
+  });
+
+  it('3. should parse JSON response for ALLOTTED status', () => {
+    const jsonStr = JSON.stringify({
+      d: {
+        __type: 'Data+Company',
+        APPLICATION_NO: 'APP98765',
+        DPID: '1201090012345678',
+        Name: 'VIKRAM MEHTA',
+        APPLIED: '1000',
+        ALLOTED: '500',
+        Status: 'OK',
+        Message: '',
+      },
+    });
+
+    const res = adapter.parseAllotmentResult(jsonStr, mockRequest, new Date());
+    expect(res.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(res.applicantName).toBe('VIKRAM MEHTA');
+    expect(res.sharesApplied).toBe(1000);
+    expect(res.sharesAllotted).toBe(500);
+  });
+
+  it('4. should parse JSON response for NOT_ALLOTTED status', () => {
+    const jsonStr = JSON.stringify({
+      d: {
+        __type: 'Data+Company',
+        APPLICATION_NO: 'APP98765',
+        DPID: '1201090012345678',
+        Name: 'VIKRAM MEHTA',
+        APPLIED: '1000',
+        ALLOTED: '0',
+        Status: 'OK',
+        Message: '',
+      },
+    });
+
+    const res = adapter.parseAllotmentResult(jsonStr, mockRequest, new Date());
+    expect(res.status).toBe(AllotmentStatus.NOT_ALLOTTED);
+    expect(res.sharesAllotted).toBe(0);
+    expect(res.sharesApplied).toBe(1000);
+    expect(res.applicantName).toBe('VIKRAM MEHTA');
+  });
+
+  it('5. should parse JSON response for APPLICATION_NOT_FOUND (NOTFOUND status)', () => {
+    const jsonStr = JSON.stringify({
+      d: {
+        __type: 'Data+Company',
+        APPLICATION_NO: '',
+        DPID: 'No data found',
+        Name: '',
+        APPLIED: '',
+        ALLOTED: '',
+        Status: 'NOTFOUND',
+        Message: 'No data found',
+        MatchCount: 0,
+        Records: [],
+      },
+    });
+
+    const res = adapter.parseAllotmentResult(jsonStr, mockRequest, new Date());
+    expect(res.status).toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
+    expect(res.sharesAllotted).toBe(0);
+  });
+
+  it('6. should parse options from HTML select element', () => {
+    const html = `
+      <select id="ddlCompany">
+        <option>--Select Company--</option>
+        <option value="9050">A-ONE STEELS INDIA LIMITED</option>
+        <option value="9051">ADROIT INDUSTRIES INDIA LTD</option>
+      </select>
+    `;
+
+    const options = adapter.parseCompanyOptions(html, 'https://ipo1.bigshareonline.com');
+    expect(options).toHaveLength(2);
+    expect(options[0]).toEqual({
+      code: '9050',
+      name: 'A-ONE STEELS INDIA LIMITED',
+      serverUrl: 'https://ipo1.bigshareonline.com',
+    });
+    expect(options[1]).toEqual({
+      code: '9051',
+      name: 'ADROIT INDUSTRIES INDIA LTD',
+      serverUrl: 'https://ipo1.bigshareonline.com',
+    });
   });
 });
