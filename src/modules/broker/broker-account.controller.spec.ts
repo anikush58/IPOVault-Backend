@@ -682,7 +682,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
       mockConnectionService.markPending.mockResolvedValue(sampleConnectionPrisma);
 
-      const result = await controller.startUpstoxConnect('acc-uuid-1', 'user-123');
+      const result = await controller.startUpstoxConnect('acc-uuid-1', undefined, 'user-123');
 
       expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
       expect(mockConnectionService.markPending).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
@@ -700,7 +700,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleAccountPrisma); // broker: DHAN
 
       await expect(
-        controller.startUpstoxConnect('acc-uuid-1', 'user-123'),
+        controller.startUpstoxConnect('acc-uuid-1', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockConnectionService.markPending).not.toHaveBeenCalled();
@@ -710,7 +710,7 @@ describe('BrokerAccountController', () => {
 
     it('throws BadRequestException if account id param is empty', async () => {
       await expect(
-        controller.startUpstoxConnect('', 'user-123'),
+        controller.startUpstoxConnect('', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -729,6 +729,7 @@ describe('BrokerAccountController', () => {
         'acc-uuid-1',
         'valid-oauth-code',
         'mock-crypto-state-token',
+        undefined,
         'user-123',
       );
 
@@ -773,11 +774,11 @@ describe('BrokerAccountController', () => {
 
     it('rejects if authorization code is missing', async () => {
       await expect(
-        controller.completeUpstoxConnect('acc-uuid-1', '', 'state', 'user-123'),
+        controller.completeUpstoxConnect('acc-uuid-1', '', 'state', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        controller.completeUpstoxConnect('acc-uuid-1', undefined, 'state', 'user-123'),
+        controller.completeUpstoxConnect('acc-uuid-1', undefined, 'state', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockOAuthStateService.validateAndConsumeState).not.toHaveBeenCalled();
@@ -794,6 +795,7 @@ describe('BrokerAccountController', () => {
           'acc-uuid-1',
           'valid-code',
           'reused-state-token',
+          undefined,
           'user-123',
         ),
       ).rejects.toThrow(BadRequestException);
@@ -807,7 +809,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleAccountPrisma); // DHAN
 
       await expect(
-        controller.completeUpstoxConnect('acc-uuid-1', 'valid-code', 'mock-crypto-state-token', 'user-123'),
+        controller.completeUpstoxConnect('acc-uuid-1', 'valid-code', 'mock-crypto-state-token', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockUpstoxAdapter.exchangeAuthorizationCode).not.toHaveBeenCalled();
@@ -820,7 +822,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleAccountPrisma); // DHAN
       mockConnectionService.markPending.mockResolvedValue(sampleConnectionPrisma);
 
-      const result = await controller.startDhanConnect('acc-uuid-1', 'user-123');
+      const result = await controller.startDhanConnect('acc-uuid-1', undefined, 'user-123');
 
       expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
       expect(mockConnectionService.markPending).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
@@ -838,7 +840,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
 
       await expect(
-        controller.startDhanConnect('acc-uuid-1', 'user-123'),
+        controller.startDhanConnect('acc-uuid-1', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockConnectionService.markPending).not.toHaveBeenCalled();
@@ -861,6 +863,7 @@ describe('BrokerAccountController', () => {
         undefined,
         'dhan-token-id-123',
         'mock-crypto-state-token',
+        undefined,
         'user-123',
       );
 
@@ -889,7 +892,7 @@ describe('BrokerAccountController', () => {
 
     it('rejects if authorization code / tokenId is missing', async () => {
       await expect(
-        controller.completeDhanConnect('acc-uuid-1', '', '', 'state', 'user-123'),
+        controller.completeDhanConnect('acc-uuid-1', '', '', 'state', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -899,7 +902,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleFyersAccountPrisma); // FYERS
       mockConnectionService.markPending.mockResolvedValue(sampleConnectionPrisma);
 
-      const result = await controller.startFyersConnect('acc-uuid-1', 'user-123');
+      const result = await controller.startFyersConnect('acc-uuid-1', undefined, 'user-123');
 
       expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
       expect(mockConnectionService.markPending).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
@@ -917,7 +920,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
 
       await expect(
-        controller.startFyersConnect('acc-uuid-1', 'user-123'),
+        controller.startFyersConnect('acc-uuid-1', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockConnectionService.markPending).not.toHaveBeenCalled();
@@ -940,6 +943,7 @@ describe('BrokerAccountController', () => {
         'fyers-auth-code-123',
         undefined,
         'mock-crypto-state-token',
+        undefined,
         'user-123',
       );
 
@@ -968,7 +972,7 @@ describe('BrokerAccountController', () => {
 
     it('rejects if authorization code is missing', async () => {
       await expect(
-        controller.completeFyersConnect('acc-uuid-1', '', '', 'state', 'user-123'),
+        controller.completeFyersConnect('acc-uuid-1', '', '', 'state', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -978,7 +982,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleZerodhaAccountPrisma);
       mockConnectionService.markPending.mockResolvedValue(sampleConnectionPrisma);
 
-      const result = await controller.startZerodhaConnect('acc-uuid-1', 'user-123');
+      const result = await controller.startZerodhaConnect('acc-uuid-1', undefined, 'user-123');
 
       expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
       expect(mockConnectionService.markPending).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
@@ -996,7 +1000,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
 
       await expect(
-        controller.startZerodhaConnect('acc-uuid-1', 'user-123'),
+        controller.startZerodhaConnect('acc-uuid-1', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockConnectionService.markPending).not.toHaveBeenCalled();
@@ -1019,6 +1023,7 @@ describe('BrokerAccountController', () => {
         'kite-request-token-123',
         undefined,
         'mock-crypto-state-token',
+        undefined,
         'user-123',
       );
 
@@ -1047,7 +1052,7 @@ describe('BrokerAccountController', () => {
 
     it('rejects if request_token/code is missing', async () => {
       await expect(
-        controller.completeZerodhaConnect('acc-uuid-1', '', '', 'state', 'user-123'),
+        controller.completeZerodhaConnect('acc-uuid-1', '', '', 'state', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -1057,7 +1062,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleGrowwAccountPrisma);
       mockConnectionService.markPending.mockResolvedValue(sampleConnectionPrisma);
 
-      const result = await controller.startGrowwConnect('acc-uuid-1', 'user-123');
+      const result = await controller.startGrowwConnect('acc-uuid-1', undefined, 'user-123');
 
       expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
       expect(mockConnectionService.markPending).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
@@ -1075,7 +1080,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
 
       await expect(
-        controller.startGrowwConnect('acc-uuid-1', 'user-123'),
+        controller.startGrowwConnect('acc-uuid-1', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockConnectionService.markPending).not.toHaveBeenCalled();
@@ -1097,6 +1102,7 @@ describe('BrokerAccountController', () => {
         'acc-uuid-1',
         'groww-code-123',
         'mock-crypto-state-token',
+        undefined,
         'user-123',
       );
 
@@ -1125,7 +1131,7 @@ describe('BrokerAccountController', () => {
 
     it('rejects if code is missing', async () => {
       await expect(
-        controller.completeGrowwConnect('acc-uuid-1', '', 'state', 'user-123'),
+        controller.completeGrowwConnect('acc-uuid-1', '', 'state', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -1135,7 +1141,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleMillionsAccountPrisma);
       mockConnectionService.markPending.mockResolvedValue(sampleConnectionPrisma);
 
-      const result = await controller.startMillionsConnect('acc-uuid-1', 'user-123');
+      const result = await controller.startMillionsConnect('acc-uuid-1', undefined, 'user-123');
 
       expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
       expect(mockConnectionService.markPending).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
@@ -1153,7 +1159,7 @@ describe('BrokerAccountController', () => {
       mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
 
       await expect(
-        controller.startMillionsConnect('acc-uuid-1', 'user-123'),
+        controller.startMillionsConnect('acc-uuid-1', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockConnectionService.markPending).not.toHaveBeenCalled();
@@ -1176,6 +1182,7 @@ describe('BrokerAccountController', () => {
         'millions-code-123',
         undefined,
         'mock-crypto-state-token',
+        undefined,
         'user-123',
       );
 
@@ -1204,7 +1211,7 @@ describe('BrokerAccountController', () => {
 
     it('rejects if code/tokenId is missing', async () => {
       await expect(
-        controller.completeMillionsConnect('acc-uuid-1', '', '', 'state', 'user-123'),
+        controller.completeMillionsConnect('acc-uuid-1', '', '', 'state', undefined, 'user-123'),
       ).rejects.toThrow(BadRequestException);
     });
   });

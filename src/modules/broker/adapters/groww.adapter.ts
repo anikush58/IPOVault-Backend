@@ -81,17 +81,23 @@ export class GrowwBrokerAdapter implements BrokerAdapter {
   }
 
   /**
+   * Validates that Groww API credentials are configured.
+   */
+  validateConfiguration(): void {
+    if (!this.apiKey) {
+      throw new BadRequestException('Groww API Key is not configured');
+    }
+  }
+
+  /**
    * Generates Groww OAuth authorization URL.
    */
   async getAuthorizationUrl(
     params: GetAuthorizationUrlParams,
   ): Promise<string> {
-    const apiKey = this.apiKey;
+    this.validateConfiguration();
+    const apiKey = this.apiKey!;
     const redirectUri = params.redirectUri || this.redirectUri;
-
-    if (!apiKey) {
-      throw new BadRequestException('Groww API Key is not configured');
-    }
     if (!redirectUri) {
       throw new BadRequestException('Groww redirectUri is required');
     }

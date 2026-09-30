@@ -29,6 +29,12 @@ export interface BrokerAdapter {
   readonly capabilities: BrokerCapabilities;
 
   /**
+   * Validates that required server-side credentials and configuration are present.
+   * Throws BadRequestException if not configured.
+   */
+  validateConfiguration?(): void;
+
+  /**
    * Generates the OAuth authorization URL for user authentication and consent.
    */
   getAuthorizationUrl(params: GetAuthorizationUrlParams): Promise<string>;

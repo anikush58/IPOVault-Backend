@@ -74,20 +74,26 @@ export class DhanBrokerAdapter implements BrokerAdapter {
   }
 
   /**
+   * Validates that Dhan API credentials are configured.
+   */
+  validateConfiguration(): void {
+    if (!this.apiKey) {
+      throw new BadRequestException(
+        'Dhan partner ID / API key is not configured',
+      );
+    }
+  }
+
+  /**
    * Generates Dhan partner consent / login URL.
    * Calls generate-consent when credentials are configured, or constructs login URL.
    */
   async getAuthorizationUrl(
     params: GetAuthorizationUrlParams,
   ): Promise<string> {
-    const partnerId = this.apiKey;
+    this.validateConfiguration();
+    const partnerId = this.apiKey!;
     const partnerSecret = this.apiSecret;
-
-    if (!partnerId) {
-      throw new BadRequestException(
-        'Dhan partner ID / API key is not configured',
-      );
-    }
 
     try {
       if (partnerSecret) {

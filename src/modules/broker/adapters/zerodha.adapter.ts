@@ -86,17 +86,23 @@ export class ZerodhaBrokerAdapter implements BrokerAdapter {
   }
 
   /**
+   * Validates that Zerodha API credentials are configured.
+   */
+  validateConfiguration(): void {
+    if (!this.apiKey) {
+      throw new BadRequestException('Zerodha API Key is not configured');
+    }
+  }
+
+  /**
    * Generates Zerodha Kite Connect login authorization URL.
    */
   async getAuthorizationUrl(
     params: GetAuthorizationUrlParams,
   ): Promise<string> {
-    const apiKey = this.apiKey;
+    this.validateConfiguration();
+    const apiKey = this.apiKey!;
     const redirectUri = params.redirectUri || this.redirectUri;
-
-    if (!apiKey) {
-      throw new BadRequestException('Zerodha API Key is not configured');
-    }
 
     const url = new URL(this.loginUrl);
     url.searchParams.set('v', '3');

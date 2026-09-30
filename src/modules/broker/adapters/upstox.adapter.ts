@@ -71,19 +71,25 @@ export class UpstoxBrokerAdapter implements BrokerAdapter {
   }
 
   /**
+   * Validates that Upstox API credentials are configured.
+   */
+  validateConfiguration(): void {
+    if (!this.apiKey) {
+      throw new BadRequestException(
+        'Upstox API key / client_id is not configured',
+      );
+    }
+  }
+
+  /**
    * Generates Upstox OAuth 2.0 authorization dialog URL.
    */
   async getAuthorizationUrl(
     params: GetAuthorizationUrlParams,
   ): Promise<string> {
+    this.validateConfiguration();
     const redirectUri = params.redirectUri || this.redirectUri;
-    const clientId = this.apiKey;
-
-    if (!clientId) {
-      throw new BadRequestException(
-        'Upstox API key / client_id is not configured',
-      );
-    }
+    const clientId = this.apiKey!;
     if (!redirectUri) {
       throw new BadRequestException('Upstox redirectUri is required');
     }

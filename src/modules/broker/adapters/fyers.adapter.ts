@@ -74,17 +74,23 @@ export class FyersBrokerAdapter implements BrokerAdapter {
   }
 
   /**
+   * Validates that FYERS API credentials are configured.
+   */
+  validateConfiguration(): void {
+    if (!this.appId) {
+      throw new BadRequestException('FYERS App ID / client_id is not configured');
+    }
+  }
+
+  /**
    * Generates FYERS OAuth 2.0 authorization URL.
    */
   async getAuthorizationUrl(
     params: GetAuthorizationUrlParams,
   ): Promise<string> {
-    const clientId = this.appId;
+    this.validateConfiguration();
+    const clientId = this.appId!;
     const redirectUri = params.redirectUri || this.redirectUri;
-
-    if (!clientId) {
-      throw new BadRequestException('FYERS App ID / client_id is not configured');
-    }
     if (!redirectUri) {
       throw new BadRequestException('FYERS redirectUri is required');
     }

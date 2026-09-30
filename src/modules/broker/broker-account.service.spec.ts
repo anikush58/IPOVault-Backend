@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { BrokerConnectionStatus, BrokerType } from '@prisma/client';
 import { BrokerAccountService } from './broker-account.service';
 import { PrismaService } from '../../database/prisma.service';
@@ -78,6 +78,7 @@ describe('BrokerAccountService', () => {
             broker: BrokerType.UPSTOX,
           },
         },
+        include: expect.anything(),
       });
       expect(mockPrisma.brokerAccount.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -96,18 +97,70 @@ describe('BrokerAccountService', () => {
       );
     });
 
-    it('rejects duplicate broker account creation with ConflictException', async () => {
+    it('re-uses existing broker account idempotently when already created', async () => {
       mockPrisma.brokerAccount.findUnique.mockResolvedValue(sampleAccount);
 
+      const result = await service.createAccount({
+        userId: 'user-123',
+        profileId: 'profile-abc',
+        broker: BrokerType.UPSTOX,
+      });
+
+      expect(result).toEqual(sampleAccount);
+      expect(mockPrisma.brokerAccount.create).not.toHaveBeenCalled();
+    });
+
+    it('updates existing broker account details when metadata changes on repeat connect', async () => {
+      mockPrisma.brokerAccount.findUnique.mockResolvedValue(sampleAccount);
+      const updatedAccount = { ...sampleAccount, accountName: 'Updated Name' };
+      mockPrisma.brokerAccount.update.mockResolvedValue(updatedAccount);
+
+      const result = await service.createAccount({
+        userId: 'user-123',
+        profileId: 'profile-abc',
+        broker: BrokerType.UPSTOX,
+        accountName: 'Updated Name',
+      });
+
+      expect(result).toEqual(updatedAccount);
+      expect(mockPrisma.brokerAccount.update).toHaveBeenCalledWith({
+        where: { id: sampleAccount.id },
+        data: {
+          accountName: 'Updated Name',
+          clientId: sampleAccount.clientId,
+          isActive: true,
+        },
+        include: expect.anything(),
+      });
+      expect(mockPrisma.brokerAccount.create).not.toHaveBeenCalled();
+    });
+
+    it('validates broker credentials before creating account and does not create dangling records when unconfigured', async () => {
+      const mockAdapter = {
+        validateConfiguration: jest.fn().mockImplementation(() => {
+          throw new BadRequestException('Upstox API key / client_id is not configured');
+        }),
+      };
+      const mockRegistry = {
+        getAdapter: jest.fn().mockReturnValue(mockAdapter),
+      };
+      const serviceWithRegistry = new BrokerAccountService(
+        mockPrisma as unknown as PrismaService,
+        mockRegistry as any,
+      );
+
+      mockPrisma.brokerAccount.findUnique.mockResolvedValue(null);
+
       await expect(
-        service.createAccount({
+        serviceWithRegistry.createAccount({
           userId: 'user-123',
           profileId: 'profile-abc',
           broker: BrokerType.UPSTOX,
         }),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toThrow('Upstox API key / client_id is not configured');
 
       expect(mockPrisma.brokerAccount.create).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('validates required fields', async () => {

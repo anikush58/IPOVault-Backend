@@ -1,11 +1,12 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { BrokerConnectionStatus, BrokerType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { BrokerRegistry } from './broker.registry';
 
 export interface CreateBrokerAccountInput {
   userId: string;
@@ -28,7 +29,10 @@ const CONNECTION_SELECT = {
 
 @Injectable()
 export class BrokerAccountService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly brokerRegistry?: BrokerRegistry,
+  ) {}
 
   /**
    * Reusable ownership check ensuring account exists and belongs to the specified userId.
@@ -61,7 +65,8 @@ export class BrokerAccountService {
   }
 
   /**
-   * Creates a new BrokerAccount and initializes its BrokerConnection as PENDING atomically.
+   * Creates a new BrokerAccount (validating server credentials first) or reuses an existing
+   * account for the (userId, profileId, broker) tuple idempotently.
    */
   async createAccount(input: CreateBrokerAccountInput) {
     const { userId, profileId, broker, accountName, clientId } = input;
@@ -90,12 +95,46 @@ export class BrokerAccountService {
           broker,
         },
       },
+      include: {
+        connection: {
+          select: CONNECTION_SELECT,
+        },
+      },
     });
 
     if (existing) {
-      throw new ConflictException(
-        `Broker account for ${broker} already exists on profile ${trimmedProfileId}`,
-      );
+      // If metadata like accountName or clientId changed, update it; otherwise return existing
+      const newAccountName = accountName?.trim() || null;
+      const newClientId = clientId?.trim() || null;
+
+      const hasNameChange = accountName !== undefined && newAccountName !== existing.accountName;
+      const hasClientChange = clientId !== undefined && newClientId !== existing.clientId;
+
+      if (hasNameChange || hasClientChange) {
+        return this.prisma.brokerAccount.update({
+          where: { id: existing.id },
+          data: {
+            accountName: hasNameChange ? newAccountName : existing.accountName,
+            clientId: hasClientChange ? newClientId : existing.clientId,
+            isActive: true,
+          },
+          include: {
+            connection: {
+              select: CONNECTION_SELECT,
+            },
+          },
+        });
+      }
+
+      return existing;
+    }
+
+    // Validate broker adapter exists and credentials are configured before inserting into DB
+    if (this.brokerRegistry) {
+      const adapter = this.brokerRegistry.getAdapter(broker);
+      if (typeof adapter.validateConfiguration === 'function') {
+        adapter.validateConfiguration();
+      }
     }
 
     // Atomic transaction: create account and pending connection
