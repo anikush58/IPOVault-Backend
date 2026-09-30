@@ -9,8 +9,10 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { BrokerType, ExchangeListing } from '@prisma/client';
 import { BrokerAccountService } from './broker-account.service';
 import { BrokerConnectionService } from './broker-connection.service';
@@ -432,6 +434,100 @@ export class BrokerAccountController {
     );
 
     return mapConnectionToSafeResponse(connection);
+  }
+
+  /**
+   * Fixed HTTPS Zerodha Kite OAuth callback handler.
+   * Meets Zerodha's strict HTTPS Redirect URL requirement:
+   * GET /api/v1/broker-accounts/connect/zerodha/callback
+   */
+  @Get('connect/zerodha/callback')
+  async completeZerodhaConnectCallback(
+    @Query('request_token') requestToken?: string,
+    @Query('code') code?: string,
+    @Query('state') state?: string,
+    @Query('status') status?: string,
+    @Query('error') error?: string,
+    @Query('error_description') errorDescription?: string,
+    @Headers('accept') acceptHeader?: string,
+    @Res() res?: Response,
+  ): Promise<any> {
+    const isJson = acceptHeader?.includes('application/json');
+
+    // Handle OAuth rejection or error
+    if (error || status === 'cancelled') {
+      const errorMsg =
+        errorDescription ||
+        error ||
+        'Zerodha authorization was cancelled or rejected';
+      if (isJson) {
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg);
+    }
+
+    const tokenCode = requestToken?.trim() || code?.trim();
+    if (!tokenCode) {
+      const errorMsg = 'Request token / authorization code is required';
+      if (isJson) {
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg);
+    }
+
+    try {
+      // Validate and consume single-use state to securely resolve userId and brokerAccountId
+      const stateRecord = this.oauthStateService.validateAndConsumeState(state);
+      const authUserId = stateRecord.userId;
+      const accountId = stateRecord.brokerAccountId;
+
+      const account = await this.brokerAccountService.getAccount(
+        authUserId,
+        accountId,
+      );
+
+      if (account.broker !== BrokerType.ZERODHA) {
+        throw new BadRequestException(
+          `Account is configured for broker ${account.broker}, not ZERODHA`,
+        );
+      }
+
+      const adapter = this.brokerRegistry.getAdapter(BrokerType.ZERODHA);
+      const tokens = await adapter.exchangeAuthorizationCode({
+        code: tokenCode,
+      });
+
+      // Verify profile using Zerodha adapter
+      await adapter.getProfile(tokens, accountId);
+
+      // Persist tokens securely and mark status CONNECTED
+      const connection = await this.brokerConnectionService.saveTokens(
+        authUserId,
+        accountId,
+        tokens,
+      );
+
+      const responseDto = mapConnectionToSafeResponse(connection);
+
+      if (isJson) {
+        return res ? res.json({ data: responseDto }) : responseDto;
+      }
+
+      return this.renderOAuthHtmlResponse(
+        res!,
+        true,
+        'Your Zerodha account has been securely linked.',
+        accountId,
+      );
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error ? err.message : 'Broker authentication failed';
+      if (isJson) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg);
+    }
   }
 
   /**
@@ -1007,6 +1103,60 @@ export class BrokerAccountController {
       authUserId,
       id.trim(),
     );
+  }
+
+  private renderOAuthHtmlResponse(
+    res: Response,
+    isSuccess: boolean,
+    message: string,
+    accountId?: string,
+  ): void {
+    if (!res) return;
+    const title = isSuccess ? 'Zerodha Connected' : 'Connection Failed';
+    const heading = isSuccess ? 'Zerodha Connected!' : 'Connection Failed';
+    const color = isSuccess ? '#10B981' : '#EF4444';
+    const statusParam = isSuccess ? 'success' : 'error';
+    const extraParams = isSuccess
+      ? accountId
+        ? `&accountId=${encodeURIComponent(accountId)}`
+        : ''
+      : `&error=${encodeURIComponent(message)}`;
+    const deepLink = `ipovault://broker-callback?status=${statusParam}${extraParams}`;
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #090A0C; color: #FAFAFC; text-align: center; padding: 1.25rem; }
+    .card { background: #18191E; padding: 2.5rem; border-radius: 1.25rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5); max-width: 420px; width: 100%; border: 1px solid #27272A; }
+    .icon { font-size: 3rem; margin-bottom: 1rem; }
+    h1 { color: ${color}; font-size: 1.5rem; margin: 0 0 0.75rem 0; font-weight: 700; }
+    p { color: #A1A1AA; font-size: 0.95rem; margin: 0 0 1.75rem 0; line-height: 1.5; }
+    a.btn { display: inline-block; background: #3B82F6; color: #FFFFFF; padding: 0.85rem 1.75rem; border-radius: 0.75rem; text-decoration: none; font-weight: 600; font-size: 0.95rem; }
+    a.btn:hover { background-color: #2563EB; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${isSuccess ? '✅' : '❌'}</div>
+    <h1>${heading}</h1>
+    <p>${message}</p>
+    <a href="${deepLink}" class="btn">Return to IPOVault</a>
+  </div>
+  <script>
+    setTimeout(function() {
+      window.location.href = '${deepLink}';
+    }, 400);
+  </script>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(isSuccess ? 200 : 400).send(html);
   }
 }
 

@@ -68,4 +68,13 @@ describe('BrokerOAuthStateService', () => {
       service.validateAndConsumeState(state, 'user-123', 'acc-uuid-1');
     }).toThrow(BadRequestException);
   });
+
+  it('5. resolves bound record when validating state without explicit expected user/account', () => {
+    const state = service.generateState('user-123', 'acc-uuid-1');
+
+    const record = service.validateAndConsumeState(state);
+    expect(record).toBeDefined();
+    expect(record.userId).toBe('user-123');
+    expect(record.brokerAccountId).toBe('acc-uuid-1');
+  });
 });

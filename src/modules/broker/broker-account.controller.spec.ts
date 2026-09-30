@@ -1057,6 +1057,126 @@ describe('BrokerAccountController', () => {
     });
   });
 
+  describe('GET /api/v1/broker-accounts/connect/zerodha/callback (fixed HTTPS callback)', () => {
+    it('validates state record, exchanges token, saves connection, and renders HTML redirect response', async () => {
+      mockOAuthStateService.validateAndConsumeState.mockReturnValue({
+        userId: 'user-123',
+        brokerAccountId: 'acc-uuid-1',
+        expiresAt: Date.now() + 60000,
+      });
+      mockAccountService.getAccount.mockResolvedValue(sampleZerodhaAccountPrisma);
+      const connectedConn = {
+        ...sampleConnectionPrisma,
+        status: BrokerConnectionStatus.CONNECTED,
+        connectedAt: mockDate,
+      };
+      mockConnectionService.saveTokens.mockResolvedValue(connectedConn);
+
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeZerodhaConnectCallback(
+        'kite-request-token-123',
+        undefined,
+        'mock-crypto-state-token',
+        'success',
+        undefined,
+        undefined,
+        'text/html',
+        mockRes,
+      );
+
+      expect(mockOAuthStateService.validateAndConsumeState).toHaveBeenCalledWith(
+        'mock-crypto-state-token',
+      );
+      expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
+      expect(mockZerodhaAdapter.exchangeAuthorizationCode).toHaveBeenCalledWith({
+        code: 'kite-request-token-123',
+      });
+      expect(mockZerodhaAdapter.getProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ accessToken: 'mock-kite-access-token' }),
+        'acc-uuid-1',
+      );
+      expect(mockConnectionService.saveTokens).toHaveBeenCalledWith(
+        'user-123',
+        'acc-uuid-1',
+        expect.objectContaining({ accessToken: 'mock-kite-access-token' }),
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html; charset=utf-8');
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('Zerodha Connected!'));
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('ipovault://broker-callback?status=success&accountId=acc-uuid-1'));
+    });
+
+    it('returns JSON response if Accept header is application/json', async () => {
+      mockOAuthStateService.validateAndConsumeState.mockReturnValue({
+        userId: 'user-123',
+        brokerAccountId: 'acc-uuid-1',
+        expiresAt: Date.now() + 60000,
+      });
+      mockAccountService.getAccount.mockResolvedValue(sampleZerodhaAccountPrisma);
+      const connectedConn = {
+        ...sampleConnectionPrisma,
+        status: BrokerConnectionStatus.CONNECTED,
+        connectedAt: mockDate,
+      };
+      mockConnectionService.saveTokens.mockResolvedValue(connectedConn);
+
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeZerodhaConnectCallback(
+        'kite-request-token-123',
+        undefined,
+        'mock-crypto-state-token',
+        'success',
+        undefined,
+        undefined,
+        'application/json',
+        mockRes,
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          status: BrokerConnectionStatus.CONNECTED,
+        }),
+      });
+    });
+
+    it('renders error HTML when Zerodha redirects with error/cancelled', async () => {
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeZerodhaConnectCallback(
+        undefined,
+        undefined,
+        'state',
+        'cancelled',
+        'access_denied',
+        'User denied access',
+        'text/html',
+        mockRes,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('Connection Failed'));
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('ipovault://broker-callback?status=error&error=User%20denied%20access'));
+    });
+  });
+
   describe('GET /api/v1/broker-accounts/:id/connect/groww (start Groww OAuth)', () => {
     it('verifies ownership, marks connection PENDING, generates cryptographically secure state, and returns authorization URL', async () => {
       mockAccountService.getAccount.mockResolvedValue(sampleGrowwAccountPrisma);

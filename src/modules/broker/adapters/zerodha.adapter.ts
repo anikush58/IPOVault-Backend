@@ -68,9 +68,11 @@ export class ZerodhaBrokerAdapter implements BrokerAdapter {
     this.apiSecret = this.configService?.get('ZERODHA_API_SECRET', {
       infer: true,
     });
-    this.redirectUri = this.configService?.get('ZERODHA_REDIRECT_URI', {
-      infer: true,
-    });
+    this.redirectUri =
+      this.configService?.get('ZERODHA_REDIRECT_URI', {
+        infer: true,
+      }) ||
+      'https://api.getipovault.in/api/v1/broker-accounts/connect/zerodha/callback';
   }
 
   private getAuthHeaders(accessToken: string): Record<string, string> {
@@ -95,14 +97,17 @@ export class ZerodhaBrokerAdapter implements BrokerAdapter {
   }
 
   /**
-   * Generates Zerodha Kite Connect login authorization URL.
+   * Generates Zerodha Kite Connect login authorization URL with fixed HTTPS redirect URL.
    */
   async getAuthorizationUrl(
     params: GetAuthorizationUrlParams,
   ): Promise<string> {
     this.validateConfiguration();
     const apiKey = this.apiKey!;
-    const redirectUri = params.redirectUri || this.redirectUri;
+    const redirectUri =
+      params.redirectUri && params.redirectUri.startsWith('https://')
+        ? params.redirectUri
+        : this.redirectUri;
 
     const url = new URL(this.loginUrl);
     url.searchParams.set('v', '3');

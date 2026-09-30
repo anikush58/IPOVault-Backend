@@ -72,6 +72,27 @@ describe('ZerodhaBrokerAdapter', () => {
       );
     });
 
+    it('defaults to fixed production HTTPS redirect URL when custom scheme is passed', async () => {
+      const defaultAdapter = new ZerodhaBrokerAdapter({
+        get: jest.fn((key: string) => {
+          if (key === 'ZERODHA_API_KEY') return 'test-kite-api-key';
+          return undefined;
+        }),
+      } as any);
+
+      const urlString = await defaultAdapter.getAuthorizationUrl({
+        state: 'csrf-state-456',
+        redirectUri: 'ipovault://broker-callback',
+      });
+
+      const url = new URL(urlString);
+      expect(url.searchParams.get('api_key')).toBe('test-kite-api-key');
+      expect(url.searchParams.get('state')).toBe('csrf-state-456');
+      expect(url.searchParams.get('redirect_params')).toBe(
+        'state=csrf-state-456',
+      );
+    });
+
     it('throws BadRequestException if API key is not configured', async () => {
       const emptyAdapter = new ZerodhaBrokerAdapter({
         get: jest.fn().mockReturnValue(undefined),

@@ -53,14 +53,16 @@ export class BrokerOAuthStateService {
 
   /**
    * Validates and consumes the state token (single-use).
-   * Verifies that the state exists, has not expired, and matches both userId and brokerAccountId.
+   * Verifies that the state exists and has not expired.
+   * If expectedUserId and/or expectedBrokerAccountId are provided, validates that they match.
    * In-flight state is invalidated immediately upon retrieval.
+   * Returns the bound OAuthStateRecord.
    */
   validateAndConsumeState(
     stateToken: string | undefined | null,
-    expectedUserId: string,
-    expectedBrokerAccountId: string,
-  ): void {
+    expectedUserId?: string,
+    expectedBrokerAccountId?: string,
+  ): OAuthStateRecord {
     if (!stateToken || typeof stateToken !== 'string' || !stateToken.trim()) {
       throw new BadRequestException('OAuth state parameter is required');
     }
@@ -82,13 +84,24 @@ export class BrokerOAuthStateService {
     }
 
     if (
-      record.userId !== expectedUserId.trim() ||
+      expectedUserId &&
+      record.userId !== expectedUserId.trim()
+    ) {
+      throw new BadRequestException(
+        'OAuth state mismatch for user or broker account',
+      );
+    }
+
+    if (
+      expectedBrokerAccountId &&
       record.brokerAccountId !== expectedBrokerAccountId.trim()
     ) {
       throw new BadRequestException(
         'OAuth state mismatch for user or broker account',
       );
     }
+
+    return record;
   }
 
   /**
