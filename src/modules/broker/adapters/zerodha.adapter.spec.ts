@@ -41,13 +41,13 @@ describe('ZerodhaBrokerAdapter', () => {
   });
 
   describe('Basic properties & capabilities', () => {
-    it('declares ZERODHA brokerType and proper capabilities', () => {
+    it('declares ZERODHA brokerType and proper capabilities for free Personal plan', () => {
       expect(adapter.brokerType).toBe(BrokerType.ZERODHA);
       expect(adapter.capabilities).toEqual({
         authorization: true,
         holdings: true,
         trades: true,
-        quotes: true,
+        quotes: false,
         tokenRefresh: false,
         revocation: true,
       });
@@ -247,34 +247,15 @@ describe('ZerodhaBrokerAdapter', () => {
   });
 
   describe('getQuote', () => {
-    it('fetches market quote from Kite and normalizes quote data', async () => {
-      const mockQuoteResponse = {
-        status: 'success',
-        data: {
-          'NSE:INE002A01018': {
-            instrument_token: 408065,
-            last_price: 720.0,
-          },
-        },
-      };
-
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => mockQuoteResponse,
-      } as any);
-
-      const quote = await adapter.getQuote(
-        { accessToken: 'mock-token' },
-        'INE002A01018',
-        ExchangeListing.NSE,
-      );
-
-      expect(quote).toEqual(
-        expect.objectContaining({
-          isin: 'INE002A01018',
-          exchange: ExchangeListing.NSE,
-          lastPrice: 720.0,
-        }),
+    it('throws BadRequestException indicating quote lookups are not supported on free Personal plan', async () => {
+      await expect(
+        adapter.getQuote(
+          { accessToken: 'mock-token' },
+          'INE002A01018',
+          ExchangeListing.NSE,
+        ),
+      ).rejects.toThrow(
+        'Zerodha Kite Connect Personal plan does not support real-time quote lookups',
       );
     });
   });

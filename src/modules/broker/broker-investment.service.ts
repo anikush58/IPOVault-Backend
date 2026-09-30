@@ -554,7 +554,11 @@ export class BrokerInvestmentService {
         );
 
         // If still holding and adapter supports quotes, fetch current market quote to update holding
-        if (summary.remainingQuantity > 0 && summary.holding) {
+        if (
+          summary.remainingQuantity > 0 &&
+          summary.holding &&
+          adapter.capabilities?.quotes
+        ) {
           try {
             const quote = await adapter.getQuote(
               tokens,

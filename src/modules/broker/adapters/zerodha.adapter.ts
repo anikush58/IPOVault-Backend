@@ -44,7 +44,7 @@ export class ZerodhaBrokerAdapter implements BrokerAdapter {
     authorization: true,
     holdings: true,
     trades: true,
-    quotes: true,
+    quotes: false,
     tokenRefresh: false,
     revocation: true,
   };
@@ -462,61 +462,17 @@ export class ZerodhaBrokerAdapter implements BrokerAdapter {
   }
 
   /**
-   * Fetches real-time market quote from Zerodha Kite Connect.
-   * GET /quote/ltp?i=NSE:SYMBOL or GET /quote?i=NSE:SYMBOL
+   * Market quote lookup is not supported on the free Zerodha Personal plan.
+   * Preserves existing portfolio holding LTP and prevents paid API errors.
    */
   async getQuote(
-    tokens: BrokerAuthTokens,
-    isin: string,
-    exchange: ExchangeListing,
+    _tokens: BrokerAuthTokens,
+    _isin: string,
+    _exchange: ExchangeListing,
   ): Promise<NormalizedQuote> {
-    if (!tokens.accessToken) {
-      throw new BadRequestException('Access token is required');
-    }
-    if (!isin || !isin.trim()) {
-      throw new BadRequestException('ISIN is required for quote');
-    }
-
-    const exchPrefix = exchange === ExchangeListing.BSE ? 'BSE' : 'NSE';
-    const symbolKey = `${exchPrefix}:${isin.trim()}`;
-    const url = `${this.baseUrl}/quote/ltp?i=${encodeURIComponent(symbolKey)}`;
-
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: this.getAuthHeaders(tokens.accessToken),
-      });
-
-      const json = (await response.json()) as Record<string, any>;
-
-      if (!response.ok || json.status === 'error') {
-        const errorMsg =
-          json.message || `Quote request failed with status ${response.status}`;
-        throw new BadRequestException(`Zerodha quote fetch failed: ${errorMsg}`);
-      }
-
-      const quoteData = json.data || json;
-      const item = quoteData[symbolKey] || quoteData[Object.keys(quoteData)[0]] || {};
-
-      const lastPrice = Number(
-        item.last_price ?? item.ltp ?? item.lastPrice ?? 0,
-      );
-
-      const asOf = new Date();
-
-      return {
-        isin: isin.trim(),
-        exchange,
-        symbol: symbolKey,
-        lastPrice,
-        asOf,
-      };
-    } catch (err: unknown) {
-      if (err instanceof BadRequestException) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Zerodha getQuote error: ${msg}`);
-      throw new BadRequestException('Failed to fetch Zerodha market quote');
-    }
+    throw new BadRequestException(
+      'Zerodha Kite Connect Personal plan does not support real-time quote lookups',
+    );
   }
 
   /**

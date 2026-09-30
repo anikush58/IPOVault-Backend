@@ -104,6 +104,14 @@ describe('BrokerInvestmentService', () => {
 
     mockAdapter = {
       brokerType: BrokerType.UPSTOX,
+      capabilities: {
+        authorization: true,
+        holdings: true,
+        trades: true,
+        quotes: true,
+        tokenRefresh: true,
+        revocation: true,
+      },
       getHoldings: jest.fn(),
       getTrades: jest.fn(),
       getQuote: jest.fn(),
@@ -706,6 +714,62 @@ describe('BrokerInvestmentService', () => {
           }),
         }),
       );
+    });
+
+    it('skips live quote fetching when broker adapter does not support quotes (e.g. Zerodha free Personal plan)', async () => {
+      mockAccountService.getAccount.mockResolvedValue({
+        ...sampleAccount,
+        broker: BrokerType.ZERODHA,
+      });
+      mockAdapter.capabilities.quotes = false;
+      mockAdapter.getHoldings.mockResolvedValue([
+        {
+          brokerAccountId: 'acc-uuid-1',
+          isin: 'INE002A01018',
+          exchange: ExchangeListing.NSE,
+          symbol: 'RELIANCE',
+          quantity: 50,
+          averagePrice: 500,
+          lastPrice: 690,
+          currentValue: 34500,
+          unrealizedPnl: 9500,
+          asOf: mockDate,
+        },
+      ]);
+      mockAdapter.getTrades.mockResolvedValue([]);
+
+      mockPrisma.ipo.findFirst.mockResolvedValue(sampleIpo);
+      mockPrisma.brokerInstrument.upsert.mockResolvedValue(sampleInstrument);
+      mockPrisma.brokerHolding.upsert.mockResolvedValue({ id: 'h-1' });
+      mockPrisma.ipoInvestment.findMany.mockResolvedValue([sampleInvestmentPrisma]);
+      mockPrisma.ipoInvestment.findUnique.mockResolvedValue(sampleInvestmentPrisma);
+      mockPrisma.brokerInstrument.findFirst.mockResolvedValue(sampleInstrument);
+      mockPrisma.brokerHolding.findUnique.mockResolvedValue({
+        id: 'h-1',
+        brokerAccountId: 'acc-uuid-1',
+        instrumentId: 'inst-uuid-1',
+        quantity: new Prisma.Decimal(50),
+        averagePrice: new Prisma.Decimal(500),
+        lastPrice: new Prisma.Decimal(690),
+        currentValue: new Prisma.Decimal(34500),
+        unrealizedPnl: new Prisma.Decimal(9500),
+        asOf: mockDate,
+      });
+      mockPrisma.brokerTrade.findMany.mockResolvedValue([]);
+      mockPrisma.brokerConnection.update.mockResolvedValue({ id: 'conn-1' });
+
+      const result = await service.syncAccountPostListingInvestments(
+        'user-123',
+        'acc-uuid-1',
+      );
+
+      expect(mockAdapter.getQuote).not.toHaveBeenCalled();
+      expect(mockPrisma.brokerHolding.update).not.toHaveBeenCalled();
+      expect(result.investments[0].status).toBe('HOLDING');
+      expect(result.investments[0].remainingQuantity).toBe(50);
+      expect(result.investments[0].holding?.lastPrice).toBe(690);
+      expect(result.investments[0].holding?.currentValue).toBe(34500);
+      expect(result.investments[0].holding?.unrealizedPnl).toBe(9500);
     });
 
     it('transitions connection to EXPIRED when token is expired or invalid', async () => {
