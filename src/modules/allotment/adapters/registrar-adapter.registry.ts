@@ -97,6 +97,23 @@ export function normalizeRegistrarCode(rawCode?: string | null): string {
     return 'PURVA';
   }
 
+  // Explicit deterministic mapping for known Bigshare display names and aliases
+  if (
+    trimmed === 'BIGSHARE' ||
+    trimmed === 'BIG_SHARE' ||
+    trimmed === 'BIG SHARE' ||
+    trimmed === 'BIGSHARE_SERVICES' ||
+    trimmed === 'BIGSHARE SERVICES' ||
+    trimmed === 'BIGSHARE SERVICES PVT LTD' ||
+    trimmed === 'BIGSHARE_SERVICES_PVT_LTD' ||
+    trimmed === 'BIGSHARE SERVICES PRIVATE LIMITED' ||
+    trimmed === 'BIGSHARE_SERVICES_PRIVATE_LIMITED' ||
+    trimmed === 'BIGSHAREONLINE' ||
+    trimmed === 'BIGSHARE ONLINE'
+  ) {
+    return 'BIGSHARE';
+  }
+
   return trimmed;
 }
 
@@ -180,6 +197,18 @@ export class RegistrarAdapterRegistry {
       this.adapters.set('PURVASHAREREGISTRY', adapter);
       this.adapters.set('PURVA_SHARE', adapter);
       this.adapters.set('PURVASHARE', adapter);
+    }
+    if (code === 'BIGSHARE' || code === 'BIGSHARE_SERVICES') {
+      this.adapters.set('BIGSHARE', adapter);
+      this.adapters.set('BIGSHARE_SERVICES', adapter);
+      this.adapters.set('BIGSHARE SERVICES', adapter);
+      this.adapters.set('BIGSHARE SERVICES PVT LTD', adapter);
+      this.adapters.set('BIGSHARE_SERVICES_PVT_LTD', adapter);
+      this.adapters.set('BIGSHARE SERVICES PRIVATE LIMITED', adapter);
+      this.adapters.set('BIGSHARE_SERVICES_PRIVATE_LIMITED', adapter);
+      this.adapters.set('BIG_SHARE', adapter);
+      this.adapters.set('BIG SHARE', adapter);
+      this.adapters.set('BIGSHAREONLINE', adapter);
     }
 
     this.logger.log(`Registered Registrar Adapter: ${adapter.name} (${code})`);

@@ -125,6 +125,25 @@ export class RegistrarResolver {
       }
     }
 
+    // 3. Check ipoParticipant table for registrar participant attached to the IPO
+    if (targetIpoId && typeof this.prisma.ipoParticipant?.findFirst === 'function') {
+      const participant = await this.prisma.ipoParticipant.findFirst({
+        where: {
+          ipoId: targetIpoId,
+          role: 'REGISTRAR' as any,
+        },
+      });
+      if (participant && (participant.name || (participant as any).entityName)) {
+        const rawName = participant.name || (participant as any).entityName;
+        const adapter = this.registry.get(rawName);
+        if (adapter) {
+          return {
+            adapter,
+          };
+        }
+      }
+    }
+
     // Return undefined when no registrar source identity is mapped
     this.logger.warn(
       `No registered registrar source identity found for IPO ${ipoId}`,

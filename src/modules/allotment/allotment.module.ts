@@ -4,6 +4,7 @@ import { MufgIntimeRegistrarAdapter } from './adapters/mufg-intime-registrar.ada
 import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
 import { SkylineRegistrarAdapter } from './adapters/skyline-registrar.adapter';
 import { PurvaRegistrarAdapter } from './adapters/purva-registrar.adapter';
+import { BigshareRegistrarAdapter } from './adapters/bigshare-registrar.adapter';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import { AllotmentController } from './allotment.controller';
 import { AllotmentJobService } from './allotment-job.service';
@@ -29,6 +30,7 @@ import { SourceIdentitySyncService } from './discovery/source-identity-sync.serv
     MaashitlaRegistrarAdapter,
     SkylineRegistrarAdapter,
     PurvaRegistrarAdapter,
+    BigshareRegistrarAdapter,
     KfinIdentityDiscoveryAdapter,
     SourceIdentitySyncService,
   ],
