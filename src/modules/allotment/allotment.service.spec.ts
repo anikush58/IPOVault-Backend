@@ -5,6 +5,7 @@ import { MufgIntimeRegistrarAdapter } from './adapters/mufg-intime-registrar.ada
 import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
 import { SkylineRegistrarAdapter } from './adapters/skyline-registrar.adapter';
 import { PurvaRegistrarAdapter } from './adapters/purva-registrar.adapter';
+import { BigshareRegistrarAdapter } from './adapters/bigshare-registrar.adapter';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import { AllotmentRepository } from './allotment.repository';
 import { AllotmentService } from './allotment.service';
@@ -15,15 +16,19 @@ describe('AllotmentService & Resolver Integration', () => {
   let service: AllotmentService;
   let resolver: RegistrarResolver;
   let prismaMock: {
-    ipo: { findUnique: jest.Mock };
+    ipo: { findUnique: jest.Mock; findFirst: jest.Mock };
+    ipoAllotmentConfig: { findUnique: jest.Mock };
     ipoSourceIdentity: { findFirst: jest.Mock };
+    ipoParticipant: { findFirst: jest.Mock };
   };
   let repositoryMock: { logCheckAttempt: jest.Mock };
 
   beforeEach(async () => {
     prismaMock = {
-      ipo: { findUnique: jest.fn() },
+      ipo: { findUnique: jest.fn(), findFirst: jest.fn() },
+      ipoAllotmentConfig: { findUnique: jest.fn() },
       ipoSourceIdentity: { findFirst: jest.fn() },
+      ipoParticipant: { findFirst: jest.fn() },
     };
 
     repositoryMock = {
@@ -40,6 +45,7 @@ describe('AllotmentService & Resolver Integration', () => {
         MaashitlaRegistrarAdapter,
         SkylineRegistrarAdapter,
         PurvaRegistrarAdapter,
+        BigshareRegistrarAdapter,
         { provide: PrismaService, useValue: prismaMock },
         { provide: AllotmentRepository, useValue: repositoryMock },
       ],
@@ -108,5 +114,35 @@ describe('AllotmentService & Resolver Integration', () => {
       expect.objectContaining({ status: AllotmentStatus.ALLOTTED }),
       expect.any(Number),
     );
+  });
+
+  it('16. should register BigshareRegistrarAdapter and resolve both exact Bigshare IPO IDs', async () => {
+    // Exact IPO 1: 522695d7-90ec-410b-8777-74b66f9abc17 (Adroit Industries)
+    prismaMock.ipoAllotmentConfig.findUnique.mockResolvedValueOnce({
+      id: '2b77af97-f051-4dec-88e3-6d80a97d98cb',
+      ipoId: '522695d7-90ec-410b-8777-74b66f9abc17',
+      registrar: 'bigshare services private limited',
+      registrarIpoCode: null,
+      enabled: true,
+    });
+
+    const resolved1 = await resolver.resolveAdapter('522695d7-90ec-410b-8777-74b66f9abc17');
+    expect(resolved1).toBeDefined();
+    expect(resolved1?.adapter.code).toBe('BIGSHARE');
+    expect(resolved1?.adapter.name).toBe('Bigshare Services');
+
+    // Exact IPO 2: 7698d2f8-8e60-4ddf-a8c9-1895c16bd2b4 (A-One Steels)
+    prismaMock.ipoAllotmentConfig.findUnique.mockResolvedValueOnce({
+      id: '36c6db9a-6508-4e68-939a-4e5ba8e0c5ea',
+      ipoId: '7698d2f8-8e60-4ddf-a8c9-1895c16bd2b4',
+      registrar: 'bigshare services private limited',
+      registrarIpoCode: null,
+      enabled: true,
+    });
+
+    const resolved2 = await resolver.resolveAdapter('7698d2f8-8e60-4ddf-a8c9-1895c16bd2b4');
+    expect(resolved2).toBeDefined();
+    expect(resolved2?.adapter.code).toBe('BIGSHARE');
+    expect(resolved2?.adapter.name).toBe('Bigshare Services');
   });
 });

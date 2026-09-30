@@ -7,6 +7,7 @@ import { MufgIntimeRegistrarAdapter } from './adapters/mufg-intime-registrar.ada
 import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
 import { SkylineRegistrarAdapter } from './adapters/skyline-registrar.adapter';
 import { PurvaRegistrarAdapter } from './adapters/purva-registrar.adapter';
+import { BigshareRegistrarAdapter } from './adapters/bigshare-registrar.adapter';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import {
   AllotmentStatus,
@@ -31,12 +32,14 @@ export class AllotmentService {
     private readonly maashitlaAdapter: MaashitlaRegistrarAdapter,
     private readonly skylineAdapter: SkylineRegistrarAdapter,
     private readonly purvaAdapter: PurvaRegistrarAdapter,
+    private readonly bigshareAdapter: BigshareRegistrarAdapter,
   ) {
     this.registry.register(this.kfinAdapter);
     this.registry.register(this.mufgIntimeAdapter);
     this.registry.register(this.maashitlaAdapter);
     this.registry.register(this.skylineAdapter);
     this.registry.register(this.purvaAdapter);
+    this.registry.register(this.bigshareAdapter);
   }
 
   async checkAllotment(
