@@ -142,20 +142,22 @@ export class NotificationRepository {
     }
 
     try {
-      const existing = await this.prisma.notification.findUnique({
-        where: {
-          userId_deduplicationKey: {
-            userId: input.userId,
-            deduplicationKey: input.deduplicationKey,
+      if (typeof this.prisma.notification?.findUnique === 'function') {
+        const existing = await this.prisma.notification.findUnique({
+          where: {
+            userId_deduplicationKey: {
+              userId: input.userId,
+              deduplicationKey: input.deduplicationKey,
+            },
           },
-        },
-      });
+        });
 
-      if (existing) {
-        this.logger.debug(
-          `Notification duplicate suppressed for key: ${input.deduplicationKey}`,
-        );
-        return null;
+        if (existing) {
+          this.logger.debug(
+            `Notification duplicate suppressed for key: ${input.deduplicationKey}`,
+          );
+          return null;
+        }
       }
 
       const created = await this.prisma.notification.upsert({

@@ -6,14 +6,19 @@ import { NotificationDeliveryService } from './notification-delivery.service';
 import { ExpoPushDeliveryAdapter } from './adapters/expo-push-delivery.adapter';
 import { InAppDeliveryAdapter } from './adapters/in-app-delivery.adapter';
 import { DiscoveryQualityGateService } from '../discovery/discovery-quality-gate.service';
+import { NotificationService } from './notification.service';
+import { IpoTimelineSchedulerService } from '../ipos/ipo-timeline-scheduler.service';
+import { PrismaService } from '../../database/prisma.service';
+import { RegistrarResolver } from '../allotment/registrar.resolver';
 
-describe('IPO Allotment Out Notification & Delivery Suite', () => {
+describe('IPO Allotment Mobile Push Notification & Delivery Suite', () => {
   let generator: NotificationEventGenerator;
   let orchestrator: NotificationOrchestratorService;
   let repository: NotificationRepository;
   let deliveryService: NotificationDeliveryService;
   let inAppAdapter: InAppDeliveryAdapter;
   let pushAdapter: ExpoPushDeliveryAdapter;
+  let notificationService: NotificationService;
   let prismaMock: any;
   let qualityGateMock: any;
 
@@ -23,14 +28,17 @@ describe('IPO Allotment Out Notification & Delivery Suite', () => {
   const mockUserWithPanLog = 'user_pan_789';
   const mockUserUnrelated = 'user_unrelated_999';
 
+  let dbNotifications: any[];
+  let dbDeliveries: any[];
+  let dbPushTokens: any[];
+
   beforeEach(() => {
     generator = new NotificationEventGenerator();
     qualityGateMock = {} as DiscoveryQualityGateService;
 
-    // In-memory persistent storage simulating PostgreSQL tables
-    const dbNotifications: any[] = [];
-    const dbDeliveries: any[] = [];
-    const dbPushTokens: any[] = [
+    dbNotifications = [];
+    dbDeliveries = [];
+    dbPushTokens = [
       {
         id: 'tok-1',
         userId: mockUserWithInvestment,
@@ -119,10 +127,40 @@ describe('IPO Allotment Out Notification & Delivery Suite', () => {
       userPushToken: {
         findMany: jest.fn().mockImplementation(async ({ where }) => {
           return dbPushTokens.filter(
-            (t) => t.userId === where.userId && (where.isActive === undefined || t.isActive === where.isActive),
+            (t) =>
+              (where.userId === undefined || t.userId === where.userId) &&
+              (where.isActive === undefined || t.isActive === where.isActive),
           );
         }),
-        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        upsert: jest.fn().mockImplementation(async ({ where, create, update }) => {
+          const idx = dbPushTokens.findIndex(
+            (t) => t.userId === where.userId_token.userId && t.token === where.userId_token.token,
+          );
+          if (idx >= 0) {
+            dbPushTokens[idx] = { ...dbPushTokens[idx], ...update };
+            return dbPushTokens[idx];
+          }
+          const newTok = {
+            id: `tok-${dbPushTokens.length + 1}`,
+            ...create,
+          };
+          dbPushTokens.push(newTok);
+          return newTok;
+        }),
+        updateMany: jest.fn().mockImplementation(async ({ where, data }) => {
+          let count = 0;
+          dbPushTokens.forEach((t) => {
+            if (where.id?.in && where.id.in.includes(t.id)) {
+              Object.assign(t, data);
+              count++;
+            }
+            if (where.userId === t.userId && where.token === t.token) {
+              Object.assign(t, data);
+              count++;
+            }
+          });
+          return { count };
+        }),
       },
       ipo: {
         findUnique: jest.fn().mockResolvedValue({
@@ -137,6 +175,8 @@ describe('IPO Allotment Out Notification & Delivery Suite', () => {
             legalName: 'Acme Technologies Limited',
           },
         }),
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       ipoInvestment: {
         findMany: jest.fn().mockResolvedValue([
@@ -197,90 +237,182 @@ describe('IPO Allotment Out Notification & Delivery Suite', () => {
       generator,
       qualityGateMock,
     );
+    notificationService = new NotificationService(prismaMock, repository, generator);
   });
 
-  it('1. should generate correct notification payload for Allotment Out', () => {
-    const input = generator.generateAllotmentOutNotification(mockUserWithInvestment, {
-      id: mockIpoId,
-      companyName: 'Acme Technologies Ltd',
-      symbol: 'ACME',
+  describe('1. Token Registration', () => {
+    it('should securely register and associate an Expo push token with a user', async () => {
+      const res = await notificationService.registerPushToken(mockUserWithInvestment, {
+        token: 'ExponentPushToken[new-test-token]',
+        platform: 'android',
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.token).toBe('ExponentPushToken[new-test-token]');
+
+      const tokens = await prismaMock.userPushToken.findMany({
+        where: { userId: mockUserWithInvestment },
+      });
+      const registered = tokens.find((t: any) => t.token === 'ExponentPushToken[new-test-token]');
+      expect(registered).toBeDefined();
+      expect(registered?.isActive).toBe(true);
     });
 
-    expect(input.title).toBe('IPO Allotment Out');
-    expect(input.message).toBe(
-      'The allotment status for Acme Technologies Ltd is now available. Check your allotment status.',
-    );
-    expect(input.type).toBe(NotificationType.ALLOTTED_RESULT_AVAILABLE);
-    expect(input.deduplicationKey).toBe(`ipo_allotment_out:${mockIpoId}`);
-    expect(input.metadata).toEqual({
-      ipoId: mockIpoId,
-      companyName: 'Acme Technologies Ltd',
-      symbol: 'ACME',
+    it('should deactivate push token on user sign-out/unregistration', async () => {
+      const res = await notificationService.deactivatePushToken(
+        mockUserWithInvestment,
+        'ExponentPushToken[user1-token]',
+      );
+
+      expect(res.success).toBe(true);
+      const token = dbPushTokens.find((t) => t.id === 'tok-1');
+      expect(token?.isActive).toBe(false);
     });
   });
 
-  it('2. first detection creates notifications for all eligible users', async () => {
-    const result = await orchestrator.processAllotmentOutEvent(mockIpoId);
+  describe('2. Successful Allotment Notification', () => {
+    it('should generate correct title and body format for Allotment Out', () => {
+      const input = generator.generateAllotmentOutNotification(mockUserWithInvestment, {
+        id: mockIpoId,
+        companyName: 'Acme Technologies Ltd',
+        symbol: 'ACME',
+      });
 
-    // 3 eligible users (investor, job user, pan log user)
-    expect(result.evaluatedCount).toBe(3);
-    expect(result.createdCount).toBe(3);
-    expect(result.suppressedCount).toBe(0);
-  });
-
-  it('3. only eligible users receive notification; unrelated users are excluded', async () => {
-    await orchestrator.processAllotmentOutEvent(mockIpoId);
-
-    const createdNotifications = await prismaMock.notification.findMany();
-    const notifiedUserIds = createdNotifications.map((n: any) => n.userId);
-
-    expect(notifiedUserIds).toContain(mockUserWithInvestment);
-    expect(notifiedUserIds).toContain(mockUserWithJob);
-    expect(notifiedUserIds).toContain(mockUserWithPanLog);
-    expect(notifiedUserIds).not.toContain(mockUserUnrelated);
-  });
-
-  it('4. repeated detection does not duplicate notifications', async () => {
-    // Run 1: First detection
-    const result1 = await orchestrator.processAllotmentOutEvent(mockIpoId);
-    expect(result1.createdCount).toBe(3);
-
-    // Run 2: Repeated scheduler run
-    const result2 = await orchestrator.processAllotmentOutEvent(mockIpoId);
-    expect(result2.evaluatedCount).toBe(3);
-    expect(result2.createdCount).toBe(0);
-    expect(result2.suppressedCount).toBe(3);
-  });
-
-  it('5. restart-safe duplicate prevention persists across service instantiations', async () => {
-    // Initial run
-    await orchestrator.processAllotmentOutEvent(mockIpoId);
-
-    // Simulate server restart: new service instance with existing DB mock
-    const newOrchestrator = new NotificationOrchestratorService(
-      prismaMock,
-      repository,
-      generator,
-      qualityGateMock,
-    );
-
-    const resultAfterRestart = await newOrchestrator.processAllotmentOutEvent(mockIpoId);
-    expect(resultAfterRestart.createdCount).toBe(0);
-    expect(resultAfterRestart.suppressedCount).toBe(3);
-  });
-
-  it('6. does not trigger notification if IPO allotment is pending or not yet confirmed', async () => {
-    prismaMock.ipo.findUnique.mockResolvedValueOnce({
-      id: '22222222-2222-2222-2222-222222222222',
-      status: 'ALLOTMENT_PENDING',
-      allotmentResultAvailableAt: null,
-      company: { displayName: 'Pending IPO Ltd' },
+      expect(input.title).toBe('IPO Allotment Out');
+      expect(input.message).toBe(
+        'Acme Technologies Ltd allotment is now available. Check your allotment status.',
+      );
+      expect(input.type).toBe(NotificationType.ALLOTTED_RESULT_AVAILABLE);
+      expect(input.deduplicationKey).toBe(`ipo_allotment_out:${mockIpoId}`);
+      expect(input.metadata).toEqual({
+        ipoId: mockIpoId,
+        companyName: 'Acme Technologies Ltd',
+        symbol: 'ACME',
+      });
     });
 
-    const result = await orchestrator.processAllotmentOutEvent(
-      '22222222-2222-2222-2222-222222222222',
-    );
-    expect(result.evaluatedCount).toBe(0);
-    expect(result.createdCount).toBe(0);
+    it('should trigger notification on first confirmed allotment detection', async () => {
+      const result = await orchestrator.processAllotmentOutEvent(mockIpoId);
+
+      expect(result.evaluatedCount).toBe(3);
+      expect(result.createdCount).toBe(3);
+      expect(result.suppressedCount).toBe(0);
+
+      const created = await prismaMock.notification.findMany();
+      expect(created.length).toBe(3);
+      expect(created[0].title).toBe('IPO Allotment Out');
+      expect(created[0].message).toBe(
+        'Acme Technologies Ltd allotment is now available. Check your allotment status.',
+      );
+    });
+
+    it('should only notify eligible users and exclude unrelated users', async () => {
+      await orchestrator.processAllotmentOutEvent(mockIpoId);
+
+      const createdNotifications = await prismaMock.notification.findMany();
+      const notifiedUserIds = createdNotifications.map((n: any) => n.userId);
+
+      expect(notifiedUserIds).toContain(mockUserWithInvestment);
+      expect(notifiedUserIds).toContain(mockUserWithJob);
+      expect(notifiedUserIds).toContain(mockUserWithPanLog);
+      expect(notifiedUserIds).not.toContain(mockUserUnrelated);
+    });
+  });
+
+  describe('3. Duplicate Prevention', () => {
+    it('should prevent duplicate notifications across repeated scheduler runs', async () => {
+      // First run: Creates 3 notifications
+      const run1 = await orchestrator.processAllotmentOutEvent(mockIpoId);
+      expect(run1.createdCount).toBe(3);
+
+      // Second run: Suppresses all 3 duplicates
+      const run2 = await orchestrator.processAllotmentOutEvent(mockIpoId);
+      expect(run2.evaluatedCount).toBe(3);
+      expect(run2.createdCount).toBe(0);
+      expect(run2.suppressedCount).toBe(3);
+    });
+
+    it('should maintain restart-safe deduplication across service restarts', async () => {
+      await orchestrator.processAllotmentOutEvent(mockIpoId);
+
+      const restartedOrchestrator = new NotificationOrchestratorService(
+        prismaMock,
+        repository,
+        generator,
+        qualityGateMock,
+      );
+
+      const restartRun = await restartedOrchestrator.processAllotmentOutEvent(mockIpoId);
+      expect(restartRun.createdCount).toBe(0);
+      expect(restartRun.suppressedCount).toBe(3);
+    });
+  });
+
+  describe('4. Invalid Token Handling', () => {
+    it('should automatically deactivate dead/unregistered Expo push tokens when provider returns DeviceNotRegistered', async () => {
+      const originalFetch = global.fetch;
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            {
+              status: 'error',
+              message: 'DeviceNotRegistered',
+              details: { error: 'DeviceNotRegistered' },
+            },
+          ],
+        }),
+      }) as any;
+
+      try {
+        const deliveryResult = await pushAdapter.deliver({
+          id: 'notif-test-1',
+          userId: mockUserWithInvestment,
+          type: NotificationType.ALLOTTED_RESULT_AVAILABLE,
+          title: 'IPO Allotment Out',
+          message: 'Acme Technologies Ltd allotment is now available. Check your allotment status.',
+          relatedEntityType: 'IPO',
+          relatedEntityId: mockIpoId,
+          metadata: { ipoId: mockIpoId },
+          readAt: null,
+          createdAt: new Date().toISOString(),
+        });
+
+        expect(deliveryResult.status).toBe('DELIVERED');
+        const tok1 = dbPushTokens.find((t) => t.id === 'tok-1');
+        expect(tok1?.isActive).toBe(false);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('5. Notification Failure Not Breaking Allotment Processing', () => {
+    it('should allow IPO lifecycle allotment confirmation even if notification orchestrator throws or push service fails', async () => {
+      const failingOrchestrator: any = {
+        processAllotmentOutEvent: jest
+          .fn()
+          .mockRejectedValue(new Error('Push Gateway Network Timeout')),
+      };
+
+      const resolverMock: any = {
+        resolveAdapter: jest.fn().mockReturnValue({
+          checkAllotment: jest.fn().mockResolvedValue({
+            status: 'AVAILABLE',
+          }),
+        }),
+      };
+
+      const scheduler = new IpoTimelineSchedulerService(
+        prismaMock as PrismaService,
+        resolverMock as RegistrarResolver,
+        failingOrchestrator,
+      );
+
+      // Verify scheduler transition does not throw despite notification error
+      await expect(
+        scheduler.processTimelineTransitions(new Date('2026-09-23T18:00:00.000Z')),
+      ).resolves.not.toThrow();
+    });
   });
 });

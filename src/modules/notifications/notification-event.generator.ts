@@ -275,7 +275,7 @@ export class NotificationEventGenerator {
       userId,
       type: NotificationType.ALLOTTED_RESULT_AVAILABLE,
       title: 'IPO Allotment Out',
-      message: `The allotment status for ${ipo.companyName} is now available. Check your allotment status.`,
+      message: `${ipo.companyName} allotment is now available. Check your allotment status.`,
       relatedEntityType: 'IPO',
       relatedEntityId: ipo.id,
       metadata: {
