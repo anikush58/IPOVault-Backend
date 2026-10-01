@@ -780,7 +780,7 @@ export class AdminIpoService {
         const s = typeof query.status === 'string' ? query.status.trim() : query.status;
         if (s === 'CLOSED') {
           where.status = IpoStatus.CLOSED;
-        } else if (s === 'ALLOTMENT_PENDING' || s === 'ALLOTMENT_AWAITED') {
+        } else if (s === 'ALLOTMENT_PENDING' || s === 'ALLOTMENT_AWAITED' || s === 'ALLOTMENT_AWAITING') {
           where.status = IpoStatus.ALLOTMENT_PENDING;
         } else if (s === 'LISTED') {
           where.status = { in: [IpoStatus.LISTED, IpoStatus.LISTING_PENDING] };

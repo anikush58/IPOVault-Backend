@@ -1292,7 +1292,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <option value="OPEN" selected>Open</option>
                 <option value="UPCOMING">Upcoming</option>
                 <option value="CLOSED">Closed</option>
-                <option value="ALLOTMENT_PENDING">Allotment Pending</option>
+                <option value="ALLOTMENT_PENDING">Allotment Awaiting</option>
                 <option value="ALLOTMENT_COMPLETED">Allotment Out</option>
                 <option value="LISTED">Listed</option>
                 <option value="ALL">All Statuses</option>
@@ -1329,7 +1329,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               <span>Closed</span><span class="pill-badge" id="count-pill-CLOSED">0</span>
             </button>
             <button type="button" class="filter-pill" id="pill-filter-ALLOTMENT_PENDING" onclick="setStatusFilter('ALLOTMENT_PENDING')">
-              <span>Allotment Pending</span><span class="pill-badge" id="count-pill-ALLOTMENT_PENDING">0</span>
+              <span>Allotment Awaiting</span><span class="pill-badge" id="count-pill-ALLOTMENT_PENDING">0</span>
             </button>
             <button type="button" class="filter-pill" id="pill-filter-ALLOTMENT_COMPLETED" onclick="setStatusFilter('ALLOTMENT_COMPLETED')">
               <span>Allotment Out</span><span class="pill-badge" id="count-pill-ALLOTMENT_COMPLETED">0</span>
@@ -1361,7 +1361,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <option value="CLOSING_TODAY">🟠 Closing Today</option>
                   <option value="UPCOMING">🟡 Upcoming</option>
                   <option value="CLOSED">⚪ Closed</option>
-                  <option value="ALLOTMENT_PENDING">⏳ Allotment Pending</option>
+                  <option value="ALLOTMENT_PENDING">⏳ Allotment Awaiting</option>
                   <option value="ALLOTMENT_COMPLETED">🎯 Allotment Out</option>
                   <option value="LISTED">🔔 Listed</option>
                   <option value="DRAFT">📝 Draft</option>
@@ -1545,7 +1545,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                     <option value="OPEN">OPEN</option>
                     <option value="CLOSING_TODAY">CLOSING TODAY</option>
                     <option value="CLOSED">CLOSED</option>
-                    <option value="ALLOTMENT_PENDING">ALLOTMENT PENDING (Awaited)</option>
+                    <option value="ALLOTMENT_PENDING">ALLOTMENT AWAITING</option>
                     <option value="ALLOTMENT_COMPLETED">Allotment Out</option>
                     <option value="LISTING_PENDING">LISTING PENDING</option>
                     <option value="LISTED">LISTED</option>
@@ -2902,7 +2902,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       const norm = (currentStatus || 'DRAFT').toUpperCase();
       let statusPillClass = norm.toLowerCase();
       if (norm === 'ALLOTMENT_COMPLETED' || norm === 'ALLOTMENT_OUT') statusPillClass = 'allotment-completed';
-      else if (norm === 'ALLOTMENT_PENDING' || norm === 'CLOSED') statusPillClass = 'closed';
+      else if (norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTMENT_AWAITED' || norm === 'ALLOTMENT_AWAITING') statusPillClass = 'allotment-pending';
+      else if (norm === 'CLOSED') statusPillClass = 'closed';
       else if (norm === 'LISTING_PENDING' || norm === 'LISTED') statusPillClass = 'listed';
       else if (norm === 'CLOSING_TODAY') statusPillClass = 'closing-today';
       else if (norm === 'UPCOMING') statusPillClass = 'upcoming';
@@ -2917,7 +2918,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <option value="OPEN" \${norm === 'OPEN' ? 'selected' : ''}>Live Now</option>
           <option value="CLOSING_TODAY" \${norm === 'CLOSING_TODAY' ? 'selected' : ''}>Closing Today</option>
           <option value="UPCOMING" \${norm === 'UPCOMING' ? 'selected' : ''}>Upcoming</option>
-          <option value="CLOSED" \${(norm === 'CLOSED' || norm === 'ALLOTMENT_PENDING') ? 'selected' : ''}>Closed</option>
+          <option value="CLOSED" \${norm === 'CLOSED' ? 'selected' : ''}>Closed</option>
+          <option value="ALLOTMENT_PENDING" \${(norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTMENT_AWAITED' || norm === 'ALLOTMENT_AWAITING') ? 'selected' : ''}>Allotment Awaiting</option>
           <option value="ALLOTMENT_COMPLETED" \${(norm === 'ALLOTMENT_COMPLETED' || norm === 'ALLOTMENT_OUT') ? 'selected' : ''}>Allotment Out</option>
           <option value="LISTED" \${(norm === 'LISTED' || norm === 'LISTING_PENDING') ? 'selected' : ''}>Listed</option>
           <option value="DRAFT" \${norm === 'DRAFT' ? 'selected' : ''}>Draft</option>
@@ -2949,12 +2951,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         let statusPillClass = norm.toLowerCase();
         if (norm === 'ALLOTMENT_COMPLETED' || norm === 'ALLOTMENT_OUT') {
           statusPillClass = 'allotment-completed';
+        } else if (norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTMENT_AWAITED' || norm === 'ALLOTMENT_AWAITING') {
+          statusPillClass = 'allotment-pending';
         } else if (norm === 'CLOSING_TODAY') {
           statusPillClass = 'closing-today';
         }
         selectEl.className = 'status-pill-select ' + statusPillClass;
 
-        const label = norm === 'ALLOTMENT_COMPLETED' ? 'Allotment Out' : norm === 'CLOSING_TODAY' ? 'Closing Today' : norm === 'OPEN' ? 'Live Now' : norm;
+        const label = norm === 'ALLOTMENT_COMPLETED' ? 'Allotment Out' : (norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTMENT_AWAITED' || norm === 'ALLOTMENT_AWAITING') ? 'Allotment Awaiting' : norm === 'CLOSING_TODAY' ? 'Closing Today' : norm === 'OPEN' ? 'Live Now' : norm;
         showToast('Status updated to ' + label, 'success');
 
         if (typeof fetchKpis === 'function') fetchKpis();
@@ -2965,6 +2969,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const prevNorm = prevStatus.toUpperCase();
         let prevClass = prevNorm.toLowerCase();
         if (prevNorm === 'ALLOTMENT_COMPLETED' || prevNorm === 'ALLOTMENT_OUT') prevClass = 'allotment-completed';
+        else if (prevNorm === 'ALLOTMENT_PENDING' || prevNorm === 'ALLOTMENT_AWAITED' || prevNorm === 'ALLOTMENT_AWAITING') prevClass = 'allotment-pending';
         else if (prevNorm === 'CLOSING_TODAY') prevClass = 'closing-today';
         selectEl.className = 'status-pill-select ' + prevClass;
       } finally {
