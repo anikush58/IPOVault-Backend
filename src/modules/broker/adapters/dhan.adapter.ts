@@ -68,9 +68,9 @@ export class DhanBrokerAdapter implements BrokerAdapter {
     this.apiSecret = this.configService?.get('DHAN_API_SECRET', {
       infer: true,
     });
-    this.redirectUri = this.configService?.get('DHAN_REDIRECT_URI', {
-      infer: true,
-    });
+    this.redirectUri =
+      this.configService?.get('DHAN_REDIRECT_URI', { infer: true }) ||
+      'https://api.getipovault.in/api/v1/broker-accounts/connect/dhan/callback';
   }
 
   /**
@@ -94,6 +94,10 @@ export class DhanBrokerAdapter implements BrokerAdapter {
     this.validateConfiguration();
     const partnerId = this.apiKey!;
     const partnerSecret = this.apiSecret;
+    const redirectUri =
+      params.redirectUri ||
+      this.redirectUri ||
+      'https://api.getipovault.in/api/v1/broker-accounts/connect/dhan/callback';
 
     try {
       if (partnerSecret) {
@@ -108,6 +112,7 @@ export class DhanBrokerAdapter implements BrokerAdapter {
           },
           body: JSON.stringify({
             state: params.state,
+            redirect_uri: redirectUri,
           }),
         });
 
@@ -132,7 +137,6 @@ export class DhanBrokerAdapter implements BrokerAdapter {
       const loginUrl = new URL(`${this.authBaseUrl}/consent-login`);
       loginUrl.searchParams.set('partner_id', partnerId);
       loginUrl.searchParams.set('state', params.state);
-      const redirectUri = params.redirectUri || this.redirectUri;
       if (redirectUri) {
         loginUrl.searchParams.set('redirect_uri', redirectUri);
       }
@@ -170,6 +174,7 @@ export class DhanBrokerAdapter implements BrokerAdapter {
 
     try {
       const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
         Accept: 'application/json',
         partner_id: partnerId,
       };
@@ -180,6 +185,9 @@ export class DhanBrokerAdapter implements BrokerAdapter {
       const response = await fetch(consumeUrl, {
         method: 'POST',
         headers,
+        body: JSON.stringify({
+          tokenId: params.code.trim(),
+        }),
       });
 
       const responseData = (await response.json()) as Record<string, any>;
@@ -198,7 +206,9 @@ export class DhanBrokerAdapter implements BrokerAdapter {
         responseData.accessToken ||
         responseData.access_token ||
         responseData.token ||
-        responseData.data?.accessToken;
+        responseData.data?.accessToken ||
+        responseData.data?.access_token ||
+        responseData.data?.token;
 
       if (!token) {
         throw new BadRequestException(
@@ -239,6 +249,32 @@ export class DhanBrokerAdapter implements BrokerAdapter {
   ): Promise<BrokerProfile> {
     if (!tokens.accessToken) {
       throw new BadRequestException('Access token is required');
+    }
+
+    try {
+      const url = `${this.baseUrl}/profile`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'access-token': tokens.accessToken,
+          Accept: 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const json = (await response.json()) as Record<string, any>;
+        const data = json.data || json;
+        return {
+          brokerAccountId,
+          clientId:
+            data.dhanClientId || data.clientId || data.client_id || null,
+          displayName:
+            data.clientName || data.name || data.displayName || null,
+          email: data.email || data.emailId || null,
+        };
+      }
+    } catch {
+      // Profile fetch is optional fallback
     }
 
     return {

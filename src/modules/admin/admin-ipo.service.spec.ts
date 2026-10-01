@@ -1450,26 +1450,64 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(res.items[1].id).toBe('ipo-old-closed');
     });
 
-    it('3. returns status and publication breakdown counts', async () => {
+    it('3. queries CLOSED status', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await adminIpoService.listIpos({ status: 'CLOSED' });
+      expect(mockPrisma.ipo.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'CLOSED',
+          }),
+        }),
+      );
+    });
+
+    it('4. queries ALLOTMENT_PENDING status', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await adminIpoService.listIpos({ status: 'ALLOTMENT_PENDING' });
+      expect(mockPrisma.ipo.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'ALLOTMENT_PENDING',
+          }),
+        }),
+      );
+    });
+
+    it('5. queries comma-separated status values properly', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await adminIpoService.listIpos({ status: 'CLOSED,ALLOTMENT_PENDING' });
+      expect(mockPrisma.ipo.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: { in: ['CLOSED', 'ALLOTMENT_PENDING'] },
+          }),
+        }),
+      );
+    });
+
+    it('6. returns status and publication breakdown counts including ALLOTMENT_PENDING', async () => {
       const ipos = [
         { id: '1', status: 'OPEN', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
         { id: '2', status: 'UPCOMING', publicationStatus: 'DRAFT', lifecycleEvents: [] },
         { id: '3', status: 'CLOSED', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
-        { id: '4', status: 'ALLOTMENT_COMPLETED', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
-        { id: '5', status: 'LISTED', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
+        { id: '4', status: 'ALLOTMENT_PENDING', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
+        { id: '5', status: 'ALLOTMENT_COMPLETED', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
+        { id: '6', status: 'LISTED', publicationStatus: 'PUBLISHED', lifecycleEvents: [] },
       ];
 
       mockPrisma.ipo.findMany.mockResolvedValueOnce(ipos).mockResolvedValueOnce(ipos);
 
       const res = await adminIpoService.listIpos({});
       expect(res.counts).toBeDefined();
-      expect(res.counts.statuses.ALL).toBe(5);
+      expect(res.counts.statuses.ALL).toBe(6);
       expect(res.counts.statuses.OPEN).toBe(1);
       expect(res.counts.statuses.UPCOMING).toBe(1);
       expect(res.counts.statuses.CLOSED).toBe(1);
+      expect(res.counts.statuses.ALLOTMENT_PENDING).toBe(1);
       expect(res.counts.statuses.ALLOTMENT_COMPLETED).toBe(1);
       expect(res.counts.statuses.LISTED).toBe(1);
-      expect(res.counts.publication.PUBLISHED).toBe(4);
+      expect(res.counts.publication.PUBLISHED).toBe(5);
       expect(res.counts.publication.DRAFT).toBe(1);
     });
   });

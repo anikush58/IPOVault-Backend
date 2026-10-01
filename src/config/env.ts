@@ -71,12 +71,22 @@ export const envSchema = z.object({
   UPSTOX_BASE_URL: z.string().optional().default('https://api.upstox.com/v2'),
   DHAN_API_KEY: z.string().optional(),
   DHAN_API_SECRET: z.string().optional(),
-  DHAN_REDIRECT_URI: z.string().optional(),
+  DHAN_REDIRECT_URI: z
+    .string()
+    .optional()
+    .default(
+      'https://api.getipovault.in/api/v1/broker-accounts/connect/dhan/callback',
+    ),
   DHAN_BASE_URL: z.string().optional().default('https://api.dhan.co/v2'),
   DHAN_AUTH_BASE_URL: z.string().optional().default('https://auth.dhan.co'),
   FYERS_APP_ID: z.string().optional(),
   FYERS_SECRET_KEY: z.string().optional(),
-  FYERS_REDIRECT_URI: z.string().optional(),
+  FYERS_REDIRECT_URI: z
+    .string()
+    .optional()
+    .default(
+      'https://api.getipovault.in/api/v1/broker-accounts/connect/fyers/callback',
+    ),
   FYERS_BASE_URL: z
     .string()
     .optional()

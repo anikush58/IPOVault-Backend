@@ -64,9 +64,11 @@ export class FyersBrokerAdapter implements BrokerAdapter {
     this.secretKey = this.configService?.get('FYERS_SECRET_KEY', {
       infer: true,
     });
-    this.redirectUri = this.configService?.get('FYERS_REDIRECT_URI', {
-      infer: true,
-    });
+    this.redirectUri =
+      this.configService?.get('FYERS_REDIRECT_URI', {
+        infer: true,
+      }) ||
+      'https://api.getipovault.in/api/v1/broker-accounts/connect/fyers/callback';
   }
 
   private getAuthHeader(accessToken: string): string {
@@ -90,7 +92,10 @@ export class FyersBrokerAdapter implements BrokerAdapter {
   ): Promise<string> {
     this.validateConfiguration();
     const clientId = this.appId!;
-    const redirectUri = params.redirectUri || this.redirectUri;
+    const redirectUri =
+      params.redirectUri && params.redirectUri.startsWith('https://')
+        ? params.redirectUri
+        : this.redirectUri;
     if (!redirectUri) {
       throw new BadRequestException('FYERS redirectUri is required');
     }

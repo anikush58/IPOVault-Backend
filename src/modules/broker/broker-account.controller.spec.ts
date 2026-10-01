@@ -1027,6 +1027,132 @@ describe('BrokerAccountController', () => {
     });
   });
 
+  describe('GET /api/v1/broker-accounts/connect/dhan/callback (fixed HTTPS Dhan OAuth callback)', () => {
+    it('validates single-use state, resolves user+account, exchanges code, retrieves profile, saves tokens, and renders success HTML redirecting to ipovault://', async () => {
+      mockOAuthStateService.validateAndConsumeState.mockReturnValue({
+        userId: 'user-123',
+        brokerAccountId: 'acc-uuid-1',
+        expiresAt: Date.now() + 60000,
+      });
+      mockAccountService.getAccount.mockResolvedValue(sampleAccountPrisma); // DHAN
+      const connectedConn = {
+        ...sampleConnectionPrisma,
+        status: BrokerConnectionStatus.CONNECTED,
+        connectedAt: mockDate,
+      };
+      mockConnectionService.saveTokens.mockResolvedValue(connectedConn);
+
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeDhanConnectCallback(
+        'valid-dhan-tokenId',
+        undefined,
+        undefined,
+        'mock-crypto-state-token',
+        'success',
+        undefined,
+        undefined,
+        undefined,
+        'text/html',
+        mockRes,
+      );
+
+      expect(mockOAuthStateService.validateAndConsumeState).toHaveBeenCalledWith(
+        'mock-crypto-state-token',
+      );
+      expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
+      expect(mockDhanAdapter.exchangeAuthorizationCode).toHaveBeenCalledWith({
+        code: 'valid-dhan-tokenId',
+      });
+      expect(mockDhanAdapter.getProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ accessToken: 'mock-dhan-access-token' }),
+        'acc-uuid-1',
+      );
+      expect(mockConnectionService.saveTokens).toHaveBeenCalledWith(
+        'user-123',
+        'acc-uuid-1',
+        expect.objectContaining({ accessToken: 'mock-dhan-access-token' }),
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html; charset=utf-8');
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('Dhan Connected!'));
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('ipovault://broker-callback?status=success&accountId=acc-uuid-1'));
+    });
+
+    it('returns JSON response if Accept header is application/json', async () => {
+      mockOAuthStateService.validateAndConsumeState.mockReturnValue({
+        userId: 'user-123',
+        brokerAccountId: 'acc-uuid-1',
+        expiresAt: Date.now() + 60000,
+      });
+      mockAccountService.getAccount.mockResolvedValue(sampleAccountPrisma);
+      const connectedConn = {
+        ...sampleConnectionPrisma,
+        status: BrokerConnectionStatus.CONNECTED,
+        connectedAt: mockDate,
+      };
+      mockConnectionService.saveTokens.mockResolvedValue(connectedConn);
+
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeDhanConnectCallback(
+        'valid-dhan-tokenId',
+        undefined,
+        undefined,
+        'mock-crypto-state-token',
+        'success',
+        undefined,
+        undefined,
+        undefined,
+        'application/json',
+        mockRes,
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          status: BrokerConnectionStatus.CONNECTED,
+        }),
+      });
+    });
+
+    it('renders error HTML when Dhan redirects with error/cancelled/failed', async () => {
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeDhanConnectCallback(
+        undefined,
+        undefined,
+        undefined,
+        'state',
+        'failure',
+        'access_denied',
+        'User rejected consent',
+        undefined,
+        'text/html',
+        mockRes,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('Connection Failed'));
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('ipovault://broker-callback?status=error'));
+    });
+  });
+
   describe('GET /api/v1/broker-accounts/:id/connect/fyers (start FYERS OAuth)', () => {
     it('verifies ownership, marks connection PENDING, generates cryptographically secure state, and returns authorization URL', async () => {
       mockAccountService.getAccount.mockResolvedValue(sampleFyersAccountPrisma); // FYERS
@@ -1055,6 +1181,132 @@ describe('BrokerAccountController', () => {
 
       expect(mockConnectionService.markPending).not.toHaveBeenCalled();
       expect(mockFyersAdapter.getAuthorizationUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/v1/broker-accounts/connect/fyers/callback (fixed HTTPS FYERS OAuth callback)', () => {
+    it('validates single-use state, exchanges code, retrieves profile, stores encrypted tokens, and renders success HTML redirecting to ipovault://', async () => {
+      mockOAuthStateService.validateAndConsumeState.mockReturnValue({
+        userId: 'user-123',
+        brokerAccountId: 'acc-uuid-1',
+        expiresAt: Date.now() + 60000,
+      });
+      mockAccountService.getAccount.mockResolvedValue(sampleFyersAccountPrisma);
+      const connectedConn = {
+        ...sampleConnectionPrisma,
+        status: BrokerConnectionStatus.CONNECTED,
+        connectedAt: mockDate,
+      };
+      mockConnectionService.saveTokens.mockResolvedValue(connectedConn);
+
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeFyersConnectCallback(
+        'valid-fyers-auth-code',
+        undefined,
+        'mock-crypto-state-token',
+        'ok',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'text/html',
+        mockRes,
+      );
+
+      expect(mockOAuthStateService.validateAndConsumeState).toHaveBeenCalledWith(
+        'mock-crypto-state-token',
+      );
+      expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
+      expect(mockFyersAdapter.exchangeAuthorizationCode).toHaveBeenCalledWith({
+        code: 'valid-fyers-auth-code',
+      });
+      expect(mockFyersAdapter.getProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ accessToken: 'mock-fyers-access-token' }),
+        'acc-uuid-1',
+      );
+      expect(mockConnectionService.saveTokens).toHaveBeenCalledWith(
+        'user-123',
+        'acc-uuid-1',
+        expect.objectContaining({ accessToken: 'mock-fyers-access-token' }),
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html; charset=utf-8');
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('FYERS Connected!'));
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('ipovault://broker-callback?status=success&accountId=acc-uuid-1'));
+    });
+
+    it('returns JSON response if Accept header is application/json', async () => {
+      mockOAuthStateService.validateAndConsumeState.mockReturnValue({
+        userId: 'user-123',
+        brokerAccountId: 'acc-uuid-1',
+        expiresAt: Date.now() + 60000,
+      });
+      mockAccountService.getAccount.mockResolvedValue(sampleFyersAccountPrisma);
+      const connectedConn = {
+        ...sampleConnectionPrisma,
+        status: BrokerConnectionStatus.CONNECTED,
+        connectedAt: mockDate,
+      };
+      mockConnectionService.saveTokens.mockResolvedValue(connectedConn);
+
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeFyersConnectCallback(
+        undefined,
+        'valid-fyers-code',
+        'mock-crypto-state-token',
+        'ok',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'application/json',
+        mockRes,
+      );
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          status: BrokerConnectionStatus.CONNECTED,
+        }),
+      });
+    });
+
+    it('renders error HTML when FYERS redirects with error/cancelled', async () => {
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeFyersConnectCallback(
+        undefined,
+        undefined,
+        'state',
+        'error',
+        'cancelled',
+        'access_denied',
+        'User cancelled authorization',
+        undefined,
+        'text/html',
+        mockRes,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('Connection Failed'));
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('ipovault://broker-callback?status=error'));
     });
   });
 

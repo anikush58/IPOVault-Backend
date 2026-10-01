@@ -332,6 +332,104 @@ export class BrokerAccountController {
   }
 
   /**
+   * Fixed HTTPS Dhan OAuth callback handler.
+   * Meets Dhan's strict HTTPS Redirect URL requirement:
+   * GET /api/v1/broker-accounts/connect/dhan/callback
+   */
+  @Get('connect/dhan/callback')
+  async completeDhanConnectCallback(
+    @Query('tokenId') tokenId?: string,
+    @Query('code') code?: string,
+    @Query('token') token?: string,
+    @Query('state') state?: string,
+    @Query('status') status?: string,
+    @Query('error') error?: string,
+    @Query('error_description') errorDescription?: string,
+    @Query('message') message?: string,
+    @Headers('accept') acceptHeader?: string,
+    @Res() res?: Response,
+  ): Promise<any> {
+    const isJson = acceptHeader?.includes('application/json');
+
+    // Handle OAuth rejection or error
+    if (error || status === 'cancelled' || status === 'failure' || status === 'FAILED') {
+      const errorMsg =
+        errorDescription ||
+        message ||
+        error ||
+        'Dhan authorization was cancelled or rejected';
+      if (isJson) {
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'Dhan');
+    }
+
+    const tokenCode = tokenId?.trim() || code?.trim() || token?.trim();
+    if (!tokenCode) {
+      const errorMsg = 'Authorization code / tokenId is required';
+      if (isJson) {
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'Dhan');
+    }
+
+    try {
+      // Validate and consume single-use state to securely resolve userId and brokerAccountId
+      const stateRecord = this.oauthStateService.validateAndConsumeState(state);
+      const authUserId = stateRecord.userId;
+      const accountId = stateRecord.brokerAccountId;
+
+      const account = await this.brokerAccountService.getAccount(
+        authUserId,
+        accountId,
+      );
+
+      if (account.broker !== BrokerType.DHAN) {
+        throw new BadRequestException(
+          `Account is configured for broker ${account.broker}, not DHAN`,
+        );
+      }
+
+      const adapter = this.brokerRegistry.getAdapter(BrokerType.DHAN);
+      const tokens = await adapter.exchangeAuthorizationCode({
+        code: tokenCode,
+      });
+
+      // Verify profile using Dhan adapter
+      await adapter.getProfile(tokens, accountId);
+
+      // Persist tokens securely and mark status CONNECTED
+      const connection = await this.brokerConnectionService.saveTokens(
+        authUserId,
+        accountId,
+        tokens,
+      );
+
+      const responseDto = mapConnectionToSafeResponse(connection);
+
+      if (isJson) {
+        return res ? res.json({ data: responseDto }) : responseDto;
+      }
+
+      return this.renderOAuthHtmlResponse(
+        res!,
+        true,
+        'Your Dhan account has been securely linked.',
+        accountId,
+        'Dhan',
+      );
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error ? err.message : 'Broker authentication failed';
+      if (isJson) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'Dhan');
+    }
+  }
+
+  /**
    * Start Dhan OAuth/consent flow: validates account ownership, sets connection to PENDING,
    * generates cryptographically secure state bound to user & account, and returns authorization URL.
    * GET /api/v1/broker-accounts/:id/connect/dhan
@@ -430,6 +528,104 @@ export class BrokerAccountController {
     );
 
     return mapConnectionToSafeResponse(connection);
+  }
+
+  /**
+   * Fixed HTTPS FYERS OAuth callback handler.
+   * Meets FYERS's strict HTTPS Redirect URL requirement:
+   * GET /api/v1/broker-accounts/connect/fyers/callback
+   */
+  @Get('connect/fyers/callback')
+  async completeFyersConnectCallback(
+    @Query('auth_code') authCode?: string,
+    @Query('code') code?: string,
+    @Query('state') state?: string,
+    @Query('s') s?: string,
+    @Query('status') status?: string,
+    @Query('error') error?: string,
+    @Query('error_description') errorDescription?: string,
+    @Query('message') message?: string,
+    @Headers('accept') acceptHeader?: string,
+    @Res() res?: Response,
+  ): Promise<any> {
+    const isJson = acceptHeader?.includes('application/json');
+
+    // Handle OAuth rejection or error
+    if (error || s === 'error' || status === 'cancelled') {
+      const errorMsg =
+        errorDescription ||
+        message ||
+        error ||
+        'FYERS authorization was cancelled or rejected';
+      if (isJson) {
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'FYERS');
+    }
+
+    const tokenCode = authCode?.trim() || code?.trim();
+    if (!tokenCode) {
+      const errorMsg = 'Authorization code is required';
+      if (isJson) {
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'FYERS');
+    }
+
+    try {
+      // Validate and consume single-use state to securely resolve userId and brokerAccountId
+      const stateRecord = this.oauthStateService.validateAndConsumeState(state);
+      const authUserId = stateRecord.userId;
+      const accountId = stateRecord.brokerAccountId;
+
+      const account = await this.brokerAccountService.getAccount(
+        authUserId,
+        accountId,
+      );
+
+      if (account.broker !== BrokerType.FYERS) {
+        throw new BadRequestException(
+          `Account is configured for broker ${account.broker}, not FYERS`,
+        );
+      }
+
+      const adapter = this.brokerRegistry.getAdapter(BrokerType.FYERS);
+      const tokens = await adapter.exchangeAuthorizationCode({
+        code: tokenCode,
+      });
+
+      // Verify profile using FYERS adapter
+      await adapter.getProfile(tokens, accountId);
+
+      // Persist tokens securely and mark status CONNECTED
+      const connection = await this.brokerConnectionService.saveTokens(
+        authUserId,
+        accountId,
+        tokens,
+      );
+
+      const responseDto = mapConnectionToSafeResponse(connection);
+
+      if (isJson) {
+        return res ? res.json({ data: responseDto }) : responseDto;
+      }
+
+      return this.renderOAuthHtmlResponse(
+        res!,
+        true,
+        'Your FYERS account has been securely linked.',
+        accountId,
+        'FYERS',
+      );
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error ? err.message : 'Broker authentication failed';
+      if (isJson) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException(errorMsg);
+      }
+      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'FYERS');
+    }
   }
 
   /**

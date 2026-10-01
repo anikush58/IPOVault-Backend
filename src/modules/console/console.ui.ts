@@ -382,8 +382,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     .status-pill.open { background-color: var(--status-open-bg); color: var(--status-open-fg); }
     .status-pill.closing_today, .status-pill.closing-today { background-color: #FEF3C7; color: #D97706; }
     .status-pill.upcoming { background-color: var(--status-upcoming-bg); color: var(--status-upcoming-fg); }
-    .status-pill.closed, .status-pill.allotment-completed, .status-pill.allotment_completed { background-color: var(--status-closed-bg); color: var(--status-closed-fg); }
-    .status-pill.published, .status-pill.listed { background-color: var(--status-published-bg); color: var(--status-published-fg); }
+    .status-pill.closed, .status-pill.allotment-completed, .status-pill.allotment_completed, .status-pill.allotment-pending, .status-pill.allotment_pending { background-color: var(--status-closed-bg); color: var(--status-closed-fg); }
+    .status-pill.published, .status-pill.listed, .status-pill.listing-pending, .status-pill.listing_pending { background-color: var(--status-published-bg); color: var(--status-published-fg); }
 
     /* In-Row Interactive Status Select */
     .status-pill-select {
@@ -434,12 +434,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       color: var(--status-upcoming-fg);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23D97706' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     }
-    .status-pill-select.closed, .status-pill-select.allotment-completed, .status-pill-select.allotment_completed {
+    .status-pill-select.closed, .status-pill-select.allotment-completed, .status-pill-select.allotment_completed, .status-pill-select.allotment-pending, .status-pill-select.allotment_pending {
       background-color: var(--status-closed-bg);
       color: var(--status-closed-fg);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     }
-    .status-pill-select.published, .status-pill-select.listed {
+    .status-pill-select.published, .status-pill-select.listed, .status-pill-select.listing-pending, .status-pill-select.listing_pending {
       background-color: var(--status-published-bg);
       color: var(--status-published-fg);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234F46E5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
@@ -1292,6 +1292,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <option value="OPEN" selected>Open</option>
                 <option value="UPCOMING">Upcoming</option>
                 <option value="CLOSED">Closed</option>
+                <option value="ALLOTMENT_PENDING">Allotment Pending</option>
                 <option value="ALLOTMENT_COMPLETED">Allotment Out</option>
                 <option value="LISTED">Listed</option>
                 <option value="ALL">All Statuses</option>
@@ -1327,6 +1328,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             <button type="button" class="filter-pill" id="pill-filter-CLOSED" onclick="setStatusFilter('CLOSED')">
               <span>Closed</span><span class="pill-badge" id="count-pill-CLOSED">0</span>
             </button>
+            <button type="button" class="filter-pill" id="pill-filter-ALLOTMENT_PENDING" onclick="setStatusFilter('ALLOTMENT_PENDING')">
+              <span>Allotment Pending</span><span class="pill-badge" id="count-pill-ALLOTMENT_PENDING">0</span>
+            </button>
             <button type="button" class="filter-pill" id="pill-filter-ALLOTMENT_COMPLETED" onclick="setStatusFilter('ALLOTMENT_COMPLETED')">
               <span>Allotment Out</span><span class="pill-badge" id="count-pill-ALLOTMENT_COMPLETED">0</span>
             </button>
@@ -1354,6 +1358,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <option value="CLOSING_TODAY">🟠 Closing Today</option>
                   <option value="UPCOMING">🟡 Upcoming</option>
                   <option value="CLOSED">⚪ Closed</option>
+                  <option value="ALLOTMENT_PENDING">⏳ Allotment Pending</option>
                   <option value="ALLOTMENT_COMPLETED">🎯 Allotment Out</option>
                   <option value="LISTED">🔔 Listed</option>
                   <option value="DRAFT">📝 Draft</option>
@@ -1537,7 +1542,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                     <option value="OPEN">OPEN</option>
                     <option value="CLOSING_TODAY">CLOSING TODAY</option>
                     <option value="CLOSED">CLOSED</option>
+                    <option value="ALLOTMENT_PENDING">ALLOTMENT PENDING (Awaited)</option>
                     <option value="ALLOTMENT_COMPLETED">Allotment Out</option>
+                    <option value="LISTING_PENDING">LISTING PENDING</option>
                     <option value="LISTED">LISTED</option>
                     <option value="CANCELLED">CANCELLED</option>
                   </select>
@@ -2892,7 +2899,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       const norm = (currentStatus || 'DRAFT').toUpperCase();
       let statusPillClass = norm.toLowerCase();
       if (norm === 'ALLOTMENT_COMPLETED' || norm === 'ALLOTMENT_OUT') statusPillClass = 'allotment-completed';
+      else if (norm === 'ALLOTMENT_PENDING' || norm === 'CLOSED') statusPillClass = 'closed';
+      else if (norm === 'LISTING_PENDING' || norm === 'LISTED') statusPillClass = 'listed';
       else if (norm === 'CLOSING_TODAY') statusPillClass = 'closing-today';
+      else if (norm === 'UPCOMING') statusPillClass = 'upcoming';
+      else if (norm === 'OPEN') statusPillClass = 'open';
 
       return \`
         <select class="status-pill-select \${statusPillClass}" 
@@ -2903,9 +2914,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <option value="OPEN" \${norm === 'OPEN' ? 'selected' : ''}>Live Now</option>
           <option value="CLOSING_TODAY" \${norm === 'CLOSING_TODAY' ? 'selected' : ''}>Closing Today</option>
           <option value="UPCOMING" \${norm === 'UPCOMING' ? 'selected' : ''}>Upcoming</option>
-          <option value="CLOSED" \${norm === 'CLOSED' ? 'selected' : ''}>Closed</option>
+          <option value="CLOSED" \${(norm === 'CLOSED' || norm === 'ALLOTMENT_PENDING') ? 'selected' : ''}>Closed</option>
           <option value="ALLOTMENT_COMPLETED" \${(norm === 'ALLOTMENT_COMPLETED' || norm === 'ALLOTMENT_OUT') ? 'selected' : ''}>Allotment Out</option>
-          <option value="LISTED" \${norm === 'LISTED' ? 'selected' : ''}>Listed</option>
+          <option value="LISTED" \${(norm === 'LISTED' || norm === 'LISTING_PENDING') ? 'selected' : ''}>Listed</option>
           <option value="DRAFT" \${norm === 'DRAFT' ? 'selected' : ''}>Draft</option>
         </select>
       \`;
@@ -3039,6 +3050,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       setBadge('count-pill-OPEN', st.OPEN || 0);
       setBadge('count-pill-UPCOMING', st.UPCOMING || 0);
       setBadge('count-pill-CLOSED', st.CLOSED || 0);
+      setBadge('count-pill-ALLOTMENT_PENDING', st.ALLOTMENT_PENDING || 0);
       setBadge('count-pill-ALLOTMENT_COMPLETED', st.ALLOTMENT_COMPLETED || 0);
       setBadge('count-pill-LISTED', st.LISTED || 0);
       setBadge('count-pill-ALL', st.ALL || 0);
@@ -3070,7 +3082,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     function setStatusFilter(filterKey) {
       currentStatusFilter = filterKey;
-      ['OPEN', 'UPCOMING', 'CLOSED', 'ALLOTMENT_COMPLETED', 'LISTED', 'ALL'].forEach(k => {
+      ['OPEN', 'UPCOMING', 'CLOSED', 'ALLOTMENT_PENDING', 'ALLOTMENT_COMPLETED', 'LISTED', 'ALL'].forEach(k => {
         const btn = document.getElementById('pill-filter-' + k);
         if (btn) {
           if (k === filterKey) btn.classList.add('active');
@@ -3097,12 +3109,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           statusParam = 'DRAFT,OPEN,CLOSING_TODAY';
         } else if (filterKey === 'CLOSED') {
           statusParam = 'CLOSED';
+        } else if (filterKey === 'ALLOTMENT_PENDING' || filterKey === 'ALLOTMENT_AWAITED') {
+          statusParam = 'ALLOTMENT_PENDING';
         } else if (filterKey === 'ALLOTMENT_COMPLETED' || filterKey === 'ALLOTMENT_OUT') {
           statusParam = 'ALLOTMENT_COMPLETED';
         } else if (filterKey === 'UPCOMING') {
           statusParam = 'UPCOMING';
         } else if (filterKey === 'LISTED') {
-          statusParam = 'LISTED';
+          statusParam = 'LISTED,LISTING_PENDING';
         } else if (filterKey && filterKey !== 'ALL') {
           statusParam = filterKey;
         }

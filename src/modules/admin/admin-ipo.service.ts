@@ -778,7 +778,19 @@ export class AdminIpoService {
         where.status = { in: statuses };
       } else {
         const s = typeof query.status === 'string' ? query.status.trim() : query.status;
-        where.status = s === 'ALLOTMENT_OUT' ? IpoStatus.ALLOTMENT_COMPLETED : (s as IpoStatus);
+        if (s === 'CLOSED') {
+          where.status = IpoStatus.CLOSED;
+        } else if (s === 'ALLOTMENT_PENDING' || s === 'ALLOTMENT_AWAITED') {
+          where.status = IpoStatus.ALLOTMENT_PENDING;
+        } else if (s === 'LISTED') {
+          where.status = { in: [IpoStatus.LISTED, IpoStatus.LISTING_PENDING] };
+        } else if (s === 'OPEN') {
+          where.status = { in: [IpoStatus.OPEN, IpoStatus.CLOSING_TODAY, IpoStatus.DRAFT] };
+        } else if (s === 'ALLOTMENT_OUT' || s === 'ALLOTMENT_COMPLETED') {
+          where.status = IpoStatus.ALLOTMENT_COMPLETED;
+        } else {
+          where.status = s as IpoStatus;
+        }
       }
     }
     if (query.publicationStatus) where.publicationStatus = query.publicationStatus;
@@ -821,6 +833,7 @@ export class AdminIpoService {
       OPEN: 0,
       UPCOMING: 0,
       CLOSED: 0,
+      ALLOTMENT_PENDING: 0,
       ALLOTMENT_COMPLETED: 0,
       LISTED: 0,
       DRAFT: 0,
@@ -840,8 +853,11 @@ export class AdminIpoService {
       if (ipo.status === 'UPCOMING') {
         statusCounts.UPCOMING = (statusCounts.UPCOMING || 0) + 1;
       }
-      if (ipo.status === 'CLOSED' || ipo.status === 'ALLOTMENT_PENDING') {
+      if (ipo.status === 'CLOSED') {
         statusCounts.CLOSED = (statusCounts.CLOSED || 0) + 1;
+      }
+      if (ipo.status === 'ALLOTMENT_PENDING') {
+        statusCounts.ALLOTMENT_PENDING = (statusCounts.ALLOTMENT_PENDING || 0) + 1;
       }
       if (ipo.status === 'ALLOTMENT_COMPLETED') {
         statusCounts.ALLOTMENT_COMPLETED = (statusCounts.ALLOTMENT_COMPLETED || 0) + 1;
