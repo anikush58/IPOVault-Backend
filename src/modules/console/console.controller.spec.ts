@@ -9,12 +9,14 @@ import { ConsoleEnabledGuard } from './console.guard';
 import { ResponseEnvelopeInterceptor } from '../../common/interceptors/response-envelope.interceptor';
 import { AdminIpoService } from '../admin/admin-ipo.service';
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
+import { IpoTimelineSchedulerService } from '../ipos/ipo-timeline-scheduler.service';
 
 describe('ConsoleController', () => {
   let controller: ConsoleController;
   let service: Record<string, jest.Mock>;
   let adminIpoService: Record<string, jest.Mock>;
   let ipoGuruService: Record<string, jest.Mock>;
+  let timelineSchedulerService: Record<string, jest.Mock>;
   let app: INestApplication;
 
   beforeEach(async () => {
@@ -75,12 +77,17 @@ describe('ConsoleController', () => {
       syncIpos: jest.fn().mockResolvedValue({ totalFetched: 0, matchedUpdated: 0, newlyCreated: 0, skipped: 0, errorCount: 0, items: [] }),
     };
 
+    timelineSchedulerService = {
+      checkAllotmentForAwaitedIpos: jest.fn().mockResolvedValue({ totalChecked: 2, totalUpdated: 1, results: [] }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ConsoleController],
       providers: [
         { provide: ConsoleService, useValue: service },
         { provide: AdminIpoService, useValue: adminIpoService },
         { provide: IpoGuruService, useValue: ipoGuruService },
+        { provide: IpoTimelineSchedulerService, useValue: timelineSchedulerService },
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue(true) },
@@ -209,5 +216,11 @@ describe('ConsoleController', () => {
     const mockIpos = [{ slug: 'test-ipo', name: 'Test IPO' }] as any;
     await controller.syncIpoGuruData({ ipos: mockIpos });
     expect(ipoGuruService.syncIpos).toHaveBeenCalledWith('MANUAL', undefined, mockIpos);
+  });
+
+  it('should delegate check-awaited to ipoTimelineSchedulerService', async () => {
+    const res = await controller.checkAllotmentAwaited();
+    expect(timelineSchedulerService.checkAllotmentForAwaitedIpos).toHaveBeenCalled();
+    expect(res).toEqual({ totalChecked: 2, totalUpdated: 1, results: [] });
   });
 });

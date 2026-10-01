@@ -5,7 +5,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
-import { IpoStatus, LifecycleEventType, Prisma } from '@prisma/client';
+import { IpoStatus, LifecycleEventType, Prisma, PublicationStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RegistrarResolver } from '../allotment/registrar.resolver';
 import { NotificationOrchestratorService } from '../notifications/notification-orchestrator.service';
@@ -203,6 +203,7 @@ export class IpoTimelineSchedulerService
 
     const ipos = await this.prisma.ipo.findMany({
       where: {
+        publicationStatus: PublicationStatus.PUBLISHED,
         status: {
           notIn: [
             IpoStatus.WITHDRAWN,
@@ -595,6 +596,96 @@ export class IpoTimelineSchedulerService
       );
       return false;
     }
+  }
+
+  /**
+   * Manually checks all IPOs in ALLOTMENT_PENDING / CLOSED status with registrar lookup
+   * and automatically transitions confirmed IPOs to ALLOTMENT_COMPLETED (Allotment Out).
+   */
+  public async checkAllotmentForAwaitedIpos(
+    now: Date = new Date(),
+  ): Promise<{
+    totalChecked: number;
+    totalUpdated: number;
+    results: Array<{
+      id: string;
+      displayName: string;
+      allotmentOut: boolean;
+    }>;
+  }> {
+    const awaitedIpos = await this.prisma.ipo.findMany({
+      where: {
+        status: {
+          in: [IpoStatus.ALLOTMENT_PENDING, IpoStatus.CLOSED],
+        },
+      },
+      include: {
+        company: true,
+        lifecycleEvents: true,
+        allotmentConfig: true,
+      },
+    });
+
+    const results: Array<{
+      id: string;
+      displayName: string;
+      allotmentOut: boolean;
+    }> = [];
+    let totalUpdated = 0;
+
+    for (const ipo of awaitedIpos) {
+      const isConfirmed = await this.confirmActualAllotmentAvailability(ipo);
+      if (isConfirmed) {
+        const updatePayload: Prisma.IpoUpdateManyMutationInput = {
+          status: IpoStatus.ALLOTMENT_COMPLETED,
+        };
+        if (!ipo.allotmentResultAvailableAt) {
+          updatePayload.allotmentResultAvailableAt = now;
+        }
+
+        const updated = await this.prisma.ipo.updateMany({
+          where: {
+            id: ipo.id,
+            status: { in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING] },
+          },
+          data: updatePayload,
+        });
+
+        if (updated.count > 0) {
+          totalUpdated += updated.count;
+          this.lastAllotmentPollingAt.delete(ipo.id);
+          this.logger.log(
+            `[Manual Allotment Check] Confirmed allotment results live for IPO '${ipo.company.displayName}' (${ipo.id}). Transitioned to ALLOTMENT_COMPLETED (ALLOTMENT_OUT)`,
+          );
+          if (this.notificationOrchestrator) {
+            this.notificationOrchestrator
+              .processAllotmentOutEvent(ipo.id)
+              .catch((notifErr: unknown) => {
+                this.logger.error(
+                  `Failed to orchestrate allotment out notification for IPO ${ipo.id} (isolated): ${(notifErr as Error)?.message || notifErr}`,
+                );
+              });
+          }
+        }
+        results.push({
+          id: ipo.id,
+          displayName: ipo.company.displayName,
+          allotmentOut: true,
+        });
+      } else {
+        results.push({
+          id: ipo.id,
+          displayName: ipo.company.displayName,
+          allotmentOut: false,
+        });
+      }
+    }
+
+    return {
+      totalChecked: awaitedIpos.length,
+      totalUpdated,
+      results,
+    };
   }
 }
 

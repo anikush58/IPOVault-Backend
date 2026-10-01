@@ -1340,6 +1340,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             <button type="button" class="filter-pill" id="pill-filter-ALL" onclick="setStatusFilter('ALL')">
               <span>All Statuses</span><span class="pill-badge" id="count-pill-ALL">0</span>
             </button>
+            <button type="button" id="btn-check-allotment-awaited" class="btn-primary" onclick="triggerCheckAllotmentAwaited()" style="display:none; margin-left:auto; padding:6px 14px; font-size:12px; height:32px; min-height:32px; background:#4F46E5; border-color:#4F46E5; align-items:center; gap:6px; border-radius:20px; font-weight:600;" title="Check registrar allotment availability for all Allotment Awaited IPOs">
+              <i data-feather="refresh-cw"></i><span>Check Allotment Status</span>
+            </button>
           </div>
 
           <!-- Bulk Actions Toolbar (Visible when 1+ rows are selected) -->
@@ -3089,9 +3092,56 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           else btn.classList.remove('active');
         }
       });
+      const checkBtn = document.getElementById('btn-check-allotment-awaited');
+      if (checkBtn) {
+        checkBtn.style.display = (filterKey === 'ALLOTMENT_PENDING' || filterKey === 'ALLOTMENT_AWAITED') ? 'inline-flex' : 'none';
+      }
       const selectEl = document.getElementById('man-filter-status');
       if (selectEl) selectEl.value = filterKey;
       fetchManualIpos();
+    }
+
+    async function triggerCheckAllotmentAwaited() {
+      const btn = document.getElementById('btn-check-allotment-awaited');
+      if (!btn || btn.disabled) return;
+
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span style="display:inline-block; width:12px; height:12px; border:2px solid #fff; border-right-color:transparent; border-radius:50%; animation:spin 0.6s linear infinite; margin-right:6px;"></span><span>Checking Registrars...</span>';
+
+      try {
+        const res = await fetch(API_BASE + '/allotment/check-awaited', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || 'HTTP ' + res.status);
+        }
+
+        const data = await res.json();
+        const total = data.totalChecked || 0;
+        const updated = data.totalUpdated || 0;
+
+        if (updated > 0) {
+          showToast('Checked ' + total + ' IPO(s): ' + updated + ' transitioned to Allotment Out!', 'success');
+        } else {
+          showToast('Checked ' + total + ' IPO(s): No new allotment results found yet.', 'info');
+        }
+
+        await fetchManualIpos();
+        if (typeof fetchKpis === 'function') fetchKpis();
+      } catch (err) {
+        console.error('Allotment check error:', err);
+        showToast('Allotment check failed: ' + (err.message || err), 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+          if (window.feather) feather.replace();
+        }
+      }
     }
 
     function onStatusSelectChange(val) {
@@ -3106,7 +3156,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
         let statusParam = '';
         if (filterKey === 'OPEN') {
-          statusParam = 'DRAFT,OPEN,CLOSING_TODAY';
+          statusParam = 'OPEN,CLOSING_TODAY';
         } else if (filterKey === 'CLOSED') {
           statusParam = 'CLOSED';
         } else if (filterKey === 'ALLOTMENT_PENDING' || filterKey === 'ALLOTMENT_AWAITED') {

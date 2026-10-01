@@ -785,7 +785,7 @@ export class AdminIpoService {
         } else if (s === 'LISTED') {
           where.status = { in: [IpoStatus.LISTED, IpoStatus.LISTING_PENDING] };
         } else if (s === 'OPEN') {
-          where.status = { in: [IpoStatus.OPEN, IpoStatus.CLOSING_TODAY, IpoStatus.DRAFT] };
+          where.status = { in: [IpoStatus.OPEN, IpoStatus.CLOSING_TODAY] };
         } else if (s === 'ALLOTMENT_OUT' || s === 'ALLOTMENT_COMPLETED') {
           where.status = IpoStatus.ALLOTMENT_COMPLETED;
         } else {
@@ -847,8 +847,11 @@ export class AdminIpoService {
     };
 
     for (const ipo of allAdminIpos) {
-      if (ipo.status === 'OPEN' || ipo.status === 'CLOSING_TODAY' || ipo.status === 'DRAFT') {
+      if (ipo.status === 'OPEN' || ipo.status === 'CLOSING_TODAY') {
         statusCounts.OPEN = (statusCounts.OPEN || 0) + 1;
+      }
+      if (ipo.status === 'DRAFT') {
+        statusCounts.DRAFT = (statusCounts.DRAFT || 0) + 1;
       }
       if (ipo.status === 'UPCOMING') {
         statusCounts.UPCOMING = (statusCounts.UPCOMING || 0) + 1;

@@ -50,6 +50,7 @@ import {
 } from '../admin/admin-ipo.dto';
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { IpoGuruV1Ipo } from '../ipo-guru/ipo-guru.types';
+import { IpoTimelineSchedulerService } from '../ipos/ipo-timeline-scheduler.service';
 
 @Controller('console')
 @UseGuards(ConsoleEnabledGuard)
@@ -60,6 +61,7 @@ export class ConsoleController {
     private readonly consoleService: ConsoleService,
     private readonly adminIpoService: AdminIpoService,
     private readonly ipoGuruService: IpoGuruService,
+    private readonly ipoTimelineSchedulerService: IpoTimelineSchedulerService,
     private readonly configService: ConfigService<Env, true>,
   ) {}
 
@@ -472,6 +474,24 @@ export class ConsoleController {
       this.logger.error(`IPO Guru sync error: ${msg}`);
       throw new BadRequestException({
         message: 'IPO Guru sync failed',
+        details: msg,
+      });
+    }
+  }
+
+  /**
+   * Manually checks all IPOs in ALLOTMENT_PENDING status with official registrar lookup
+   * and automatically transitions confirmed IPOs to ALLOTMENT_COMPLETED (Allotment Out).
+   */
+  @Post('api/allotment/check-awaited')
+  async checkAllotmentAwaited() {
+    try {
+      return await this.ipoTimelineSchedulerService.checkAllotmentForAwaitedIpos();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Manual allotment check error: ${msg}`);
+      throw new BadRequestException({
+        message: 'Manual allotment check failed',
         details: msg,
       });
     }

@@ -418,5 +418,49 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       prismaMock.ipo.findMany.mockRejectedValue(new Error('Database connection lost'));
       await expect(service.tick()).resolves.not.toThrow();
     });
+
+    it('16. should query ONLY PUBLISHED IPOs and exclude DRAFT publicationStatus from timeline transitions', async () => {
+      prismaMock.ipo.findMany.mockResolvedValue([]);
+      await service.processTimelineTransitions(new Date());
+      expect(prismaMock.ipo.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            publicationStatus: 'PUBLISHED',
+          }),
+        }),
+      );
+    });
+
+    it('17. should check allotment for awaited IPOs and update confirmed records to ALLOTMENT_COMPLETED', async () => {
+      const sampleAwaitedIpo = {
+        id: 'ipo-awaited-1',
+        status: IpoStatus.ALLOTMENT_PENDING,
+        company: { displayName: 'Awaited Co', legalName: 'Awaited Company Ltd' },
+        lifecycleEvents: [],
+        allotmentConfig: { registrar: 'KFin Technologies Limited' },
+      };
+
+      prismaMock.ipo.findMany.mockResolvedValue([sampleAwaitedIpo]);
+      resolverMock.resolveAdapter.mockResolvedValue({
+        adapter: {
+          resolveRegistrarIpoCode: jest.fn().mockResolvedValue('KFIN-ACTUAL-CODE-123'),
+        },
+        registrarIpoCode: 'KFIN-ACTUAL-CODE-123',
+      });
+
+      const res = await service.checkAllotmentForAwaitedIpos();
+      expect(res.totalChecked).toBe(1);
+      expect(res.totalUpdated).toBe(1);
+      expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'ipo-awaited-1',
+          status: { in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING] },
+        },
+        data: expect.objectContaining({
+          status: IpoStatus.ALLOTMENT_COMPLETED,
+        }),
+      });
+      expect(notificationOrchestratorMock.processAllotmentOutEvent).toHaveBeenCalledWith('ipo-awaited-1');
+    });
   });
 });
