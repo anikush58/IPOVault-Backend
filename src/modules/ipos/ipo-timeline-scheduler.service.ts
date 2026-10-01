@@ -9,6 +9,7 @@ import { IpoStatus, LifecycleEventType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RegistrarResolver } from '../allotment/registrar.resolver';
 import { NotificationOrchestratorService } from '../notifications/notification-orchestrator.service';
+import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import {
   AllotmentIdentifierType,
   CheckAllotmentRequest,
@@ -94,11 +95,17 @@ export class IpoTimelineSchedulerService
   private timer: NodeJS.Timeout | null = null;
   private isProcessing = false;
 
+  // In-memory throttling maps for 5-min allotment polling and listing price checks
+  private readonly lastAllotmentPollingAt = new Map<string, number>();
+  private readonly lastListingPriceCheckAt = new Map<string, number>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly resolver: RegistrarResolver,
     @Optional()
     private readonly notificationOrchestrator?: NotificationOrchestratorService,
+    @Optional()
+    private readonly ipoGuruService?: IpoGuruService,
   ) {}
 
   public getConfig(): TimelineSchedulerConfig {
@@ -183,6 +190,7 @@ export class IpoTimelineSchedulerService
     allotmentAwaitedCount: number;
     allotmentConfirmedCount: number;
     listedCount: number;
+    listingPriceCount: number;
   }> {
     const summary = {
       openedCount: 0,
@@ -190,6 +198,7 @@ export class IpoTimelineSchedulerService
       allotmentAwaitedCount: 0,
       allotmentConfirmedCount: 0,
       listedCount: 0,
+      listingPriceCount: 0,
     };
 
     const ipos = await this.prisma.ipo.findMany({
@@ -198,7 +207,6 @@ export class IpoTimelineSchedulerService
           notIn: [
             IpoStatus.WITHDRAWN,
             IpoStatus.CANCELLED,
-            IpoStatus.LISTED,
             IpoStatus.DRAFT,
           ],
         },
@@ -219,6 +227,8 @@ export class IpoTimelineSchedulerService
         continue;
       }
 
+      let currentStatus = ipo.status;
+
       const eventsMap = new Map<LifecycleEventType, string>();
       for (const ev of ipo.lifecycleEvents ?? []) {
         eventsMap.set(ev.eventType, ev.eventDate.toISOString().slice(0, 10));
@@ -234,30 +244,31 @@ export class IpoTimelineSchedulerService
       const listingDateStr = eventsMap.get(LifecycleEventType.LISTING);
 
       // =========================================================================
-      // 1. UPCOMING -> OPEN (at openDate 09:00:00 IST)
+      // 1. UPCOMING -> OPEN / LIVE_NOW (at opening date 12:00 AM / 00:00:00 IST)
       // =========================================================================
-      if (ipo.status === IpoStatus.UPCOMING && openDateStr) {
-        const openThreshold = createISTDateTime(openDateStr, 9, 0, 0);
+      if (currentStatus === IpoStatus.UPCOMING && openDateStr) {
+        const openThreshold = createISTDateTime(openDateStr, 0, 0, 0);
         if (now >= openThreshold) {
           const updated = await this.prisma.ipo.updateMany({
             where: { id: ipo.id, status: IpoStatus.UPCOMING },
             data: { status: IpoStatus.OPEN },
           });
           if (updated.count > 0) {
+            currentStatus = IpoStatus.OPEN;
             summary.openedCount += updated.count;
             this.logger.log(
-              `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) UPCOMING -> OPEN`,
+              `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) UPCOMING -> OPEN (LIVE_NOW)`,
             );
           }
         }
       }
 
       // =========================================================================
-      // 2. OPEN / CLOSING_TODAY -> CLOSED (at closeDate 17:00:00 IST)
+      // 2. OPEN / CLOSING_TODAY -> CLOSED (at closing date 5:00 PM / 17:00:00 IST)
       // =========================================================================
       if (
-        (ipo.status === IpoStatus.OPEN ||
-          ipo.status === IpoStatus.CLOSING_TODAY) &&
+        (currentStatus === IpoStatus.OPEN ||
+          currentStatus === IpoStatus.CLOSING_TODAY) &&
         closeDateStr
       ) {
         const closeThreshold = createISTDateTime(closeDateStr, 17, 0, 0);
@@ -270,24 +281,30 @@ export class IpoTimelineSchedulerService
             data: { status: IpoStatus.CLOSED },
           });
           if (updated.count > 0) {
+            currentStatus = IpoStatus.CLOSED;
             summary.closedCount += updated.count;
             this.logger.log(
-              `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) ${ipo.status} -> CLOSED`,
+              `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) -> CLOSED`,
             );
           }
         }
       }
 
       // =========================================================================
-      // 2b. CLOSED -> ALLOTMENT_PENDING (Allotment Awaited at 12:00 AM / 00:00:00 IST of day following closeDate)
+      // 3. CLOSED -> ALLOTMENT_PENDING / ALLOTMENT_AWAITED (at allotment date 12:00 AM / 00:00:00 IST)
       // =========================================================================
-      if (ipo.status === IpoStatus.CLOSED && closeDateStr) {
-        const [y, m, d] = closeDateStr.split('-').map(Number);
-        const nextDayUtc = new Date(Date.UTC(y, m - 1, d + 1));
-        const nextDayStr = nextDayUtc.toISOString().slice(0, 10);
-        const awaitedThreshold = createISTDateTime(nextDayStr, 0, 0, 0);
+      if (currentStatus === IpoStatus.CLOSED) {
+        let awaitedThreshold: Date | null = null;
+        if (allotmentDateStr) {
+          awaitedThreshold = createISTDateTime(allotmentDateStr, 0, 0, 0);
+        } else if (closeDateStr) {
+          const [y, m, d] = closeDateStr.split('-').map(Number);
+          const nextDayUtc = new Date(Date.UTC(y, m - 1, d + 1));
+          const nextDayStr = nextDayUtc.toISOString().slice(0, 10);
+          awaitedThreshold = createISTDateTime(nextDayStr, 0, 0, 0);
+        }
 
-        if (now >= awaitedThreshold) {
+        if (awaitedThreshold && now >= awaitedThreshold) {
           const updated = await this.prisma.ipo.updateMany({
             where: {
               id: ipo.id,
@@ -296,6 +313,7 @@ export class IpoTimelineSchedulerService
             data: { status: IpoStatus.ALLOTMENT_PENDING },
           });
           if (updated.count > 0) {
+            currentStatus = IpoStatus.ALLOTMENT_PENDING;
             summary.allotmentAwaitedCount += updated.count;
             this.logger.log(
               `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) CLOSED -> ALLOTMENT_PENDING (Allotment Awaited)`,
@@ -305,52 +323,66 @@ export class IpoTimelineSchedulerService
       }
 
       // =========================================================================
-      // 3. CLOSED / ALLOTMENT_PENDING -> ALLOTMENT_COMPLETED (only on actual result confirmation)
+      // 4. Allotment Polling (around 9:00 PM / 21:00:00 IST on allotment date, every 5 mins)
+      // -> ALLOTMENT_COMPLETED / ALLOTMENT_OUT when found
       // =========================================================================
       if (
-        (ipo.status === IpoStatus.CLOSED ||
-          ipo.status === IpoStatus.ALLOTMENT_PENDING) &&
-        (allotmentDateStr || closeDateStr)
+        currentStatus === IpoStatus.CLOSED ||
+        currentStatus === IpoStatus.ALLOTMENT_PENDING
       ) {
-        // Date anchor threshold: either allotment date or closing date has arrived in IST
-        const checkAnchorDate = allotmentDateStr || closeDateStr!;
-        const anchorThreshold = createISTDateTime(checkAnchorDate, 0, 0, 0);
+        const pollingDate = allotmentDateStr || closeDateStr;
+        if (pollingDate) {
+          const pollingStartThreshold = createISTDateTime(pollingDate, 21, 0, 0);
 
-        if (now >= anchorThreshold) {
-          const isConfirmed =
-            await this.confirmActualAllotmentAvailability(ipo);
+          if (now >= pollingStartThreshold) {
+            // Check 5-minute per-IPO polling throttle (300,000 ms)
+            const lastPoll = this.lastAllotmentPollingAt.get(ipo.id) ?? 0;
+            const elapsed = now.getTime() - lastPoll;
 
-          if (isConfirmed) {
-            const updatePayload: Prisma.IpoUpdateManyMutationInput = {
-              status: IpoStatus.ALLOTMENT_COMPLETED,
-            };
+            if (elapsed >= 300_000 || lastPoll === 0) {
+              this.lastAllotmentPollingAt.set(ipo.id, now.getTime());
 
-            // Preserve first detection timestamp; never overwrite if already present
-            if (!ipo.allotmentResultAvailableAt) {
-              updatePayload.allotmentResultAvailableAt = now;
-            }
+              const isConfirmed =
+                await this.confirmActualAllotmentAvailability(ipo);
 
-            const updated = await this.prisma.ipo.updateMany({
-              where: {
-                id: ipo.id,
-                status: { in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING] },
-              },
-              data: updatePayload,
-            });
+              if (isConfirmed) {
+                const updatePayload: Prisma.IpoUpdateManyMutationInput = {
+                  status: IpoStatus.ALLOTMENT_COMPLETED,
+                };
 
-            if (updated.count > 0) {
-              summary.allotmentConfirmedCount += updated.count;
-              this.logger.log(
-                `[Timeline] Confirmed allotment results live for IPO '${ipo.company.displayName}' (${ipo.id}). Transitioned to ALLOTMENT_COMPLETED`,
-              );
-              if (this.notificationOrchestrator) {
-                this.notificationOrchestrator
-                  .processAllotmentOutEvent(ipo.id)
-                  .catch((notifErr: unknown) => {
-                    this.logger.error(
-                      `Failed to orchestrate allotment out notification for IPO ${ipo.id} (isolated): ${(notifErr as Error)?.message || notifErr}`,
-                    );
-                  });
+                // Preserve first detection timestamp; never overwrite if already present
+                if (!ipo.allotmentResultAvailableAt) {
+                  updatePayload.allotmentResultAvailableAt = now;
+                }
+
+                const updated = await this.prisma.ipo.updateMany({
+                  where: {
+                    id: ipo.id,
+                    status: {
+                      in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING],
+                    },
+                  },
+                  data: updatePayload,
+                });
+
+                if (updated.count > 0) {
+                  currentStatus = IpoStatus.ALLOTMENT_COMPLETED;
+                  summary.allotmentConfirmedCount += updated.count;
+                  this.lastAllotmentPollingAt.delete(ipo.id); // Stop polling immediately
+
+                  this.logger.log(
+                    `[Timeline] Confirmed allotment results live for IPO '${ipo.company.displayName}' (${ipo.id}). Transitioned to ALLOTMENT_COMPLETED (ALLOTMENT_OUT)`,
+                  );
+                  if (this.notificationOrchestrator) {
+                    this.notificationOrchestrator
+                      .processAllotmentOutEvent(ipo.id)
+                      .catch((notifErr: unknown) => {
+                        this.logger.error(
+                          `Failed to orchestrate allotment out notification for IPO ${ipo.id} (isolated): ${(notifErr as Error)?.message || notifErr}`,
+                        );
+                      });
+                  }
+                }
               }
             }
           }
@@ -358,11 +390,11 @@ export class IpoTimelineSchedulerService
       }
 
       // =========================================================================
-      // 4. ALLOTMENT_COMPLETED / LISTING_PENDING -> LISTED (at listingDate 10:00:00 IST)
+      // 5. ALLOTMENT_COMPLETED / LISTING_PENDING -> LISTED (at listing date 10:00:00 IST)
       // =========================================================================
       if (
-        (ipo.status === IpoStatus.ALLOTMENT_COMPLETED ||
-          ipo.status === IpoStatus.LISTING_PENDING) &&
+        (currentStatus === IpoStatus.ALLOTMENT_COMPLETED ||
+          currentStatus === IpoStatus.LISTING_PENDING) &&
         listingDateStr
       ) {
         const listingThreshold = createISTDateTime(listingDateStr, 10, 0, 0);
@@ -380,6 +412,7 @@ export class IpoTimelineSchedulerService
             data: { status: IpoStatus.LISTED },
           });
           if (updated.count > 0) {
+            currentStatus = IpoStatus.LISTED;
             summary.listedCount += updated.count;
             this.logger.log(
               `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) -> LISTED`,
@@ -387,9 +420,122 @@ export class IpoTimelineSchedulerService
           }
         }
       }
+
+      // =========================================================================
+      // 6. Listing Price Detection & Persistence (when LISTED and listingPrice is null)
+      // =========================================================================
+      if (currentStatus === IpoStatus.LISTED && ipo.listingPrice == null) {
+        const persisted = await this.checkAndPersistListingPrice(ipo, now);
+        if (persisted) {
+          summary.listingPriceCount++;
+        }
+      }
     }
 
     return summary;
+  }
+
+  /**
+   * Checks and persists listing price and calculates listing gain / profit metrics.
+   * Never overwrites an existing valid listing price.
+   */
+  public async checkAndPersistListingPrice(
+    ipo: Prisma.IpoGetPayload<{
+      include: {
+        company: true;
+        lifecycleEvents: true;
+        allotmentConfig: true;
+      };
+    }>,
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    try {
+      // Throttle listing price checks to at most once per 60 seconds per IPO
+      const lastCheck = this.lastListingPriceCheckAt.get(ipo.id) ?? 0;
+      if (now.getTime() - lastCheck < 60_000 && lastCheck > 0) {
+        return false;
+      }
+      this.lastListingPriceCheckAt.set(ipo.id, now.getTime());
+
+      // If IPO Guru service is available, query/sync IPO data
+      let detectedListingPrice: number | null = null;
+
+      if (this.ipoGuruService) {
+        try {
+          const fetchResult = await this.ipoGuruService.fetchIpos('AUTO');
+          const guruIpos = fetchResult?.ipos || [];
+          const matched = guruIpos.find((g) => {
+            const gName = (g.name || g.company_name || '').toLowerCase().trim();
+            const compName = (ipo.company.displayName || '').toLowerCase().trim();
+            const legalName = (ipo.company.legalName || '').toLowerCase().trim();
+            return (
+              (gName.length > 0 && (gName === compName || gName === legalName)) ||
+              (ipo.symbol && g.symbol && g.symbol.toUpperCase() === ipo.symbol.toUpperCase())
+            );
+          });
+
+          if (matched && matched.listing_price) {
+            const parsed = parseFloat(String(matched.listing_price).replace(/[^0-9.]/g, ''));
+            if (!isNaN(parsed) && parsed > 0) {
+              detectedListingPrice = parsed;
+            }
+          }
+        } catch (guruErr: unknown) {
+          this.logger.debug(
+            `Listing price lookup from IPO Guru for ${ipo.id} (contained): ${(guruErr as Error)?.message || guruErr}`,
+          );
+        }
+      }
+
+      if (detectedListingPrice !== null && detectedListingPrice > 0) {
+        const issuePrice = ipo.priceBandHigh
+          ? Number(ipo.priceBandHigh)
+          : ipo.priceBandLow
+          ? Number(ipo.priceBandLow)
+          : null;
+
+        let listingGainPct: Prisma.Decimal | null = null;
+        let profitAmount: Prisma.Decimal | null = null;
+        let profitPercentage: Prisma.Decimal | null = null;
+
+        if (issuePrice && issuePrice > 0) {
+          const gain = Number(
+            (((detectedListingPrice - issuePrice) / issuePrice) * 100).toFixed(2),
+          );
+          listingGainPct = new Prisma.Decimal(gain);
+          profitPercentage = listingGainPct;
+
+          const lot = ipo.lotSize || 1;
+          const profit = Number(
+            ((detectedListingPrice - issuePrice) * lot).toFixed(2),
+          );
+          profitAmount = new Prisma.Decimal(profit);
+        }
+
+        await this.prisma.ipo.update({
+          where: { id: ipo.id },
+          data: {
+            listingPrice: new Prisma.Decimal(detectedListingPrice),
+            listingGainPct,
+            profitAmount,
+            profitPercentage,
+          },
+        });
+
+        this.lastListingPriceCheckAt.delete(ipo.id);
+        this.logger.log(
+          `[Timeline] Persisted listing price ₹${detectedListingPrice} for IPO '${ipo.company.displayName}' (${ipo.id})`,
+        );
+        return true;
+      }
+
+      return false;
+    } catch (err: unknown) {
+      this.logger.debug(
+        `Listing price detection failed for IPO ${ipo.id}: ${(err as Error)?.message || err}`,
+      );
+      return false;
+    }
   }
 
   /**
@@ -451,3 +597,4 @@ export class IpoTimelineSchedulerService
     }
   }
 }
+
