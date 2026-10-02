@@ -531,6 +531,69 @@ describe('KfinRegistrarAdapter Production Contract Tests', () => {
     await adapter.checkAllotment(requestRentomojo);
     expect(fetchSpy.mock.calls.length).toBe(initialCallCount + 1);
   });
+
+  it('18. should send browser headers and handle broad JS script path when registrarIpoCode is empty', async () => {
+    const customHtml = `<!doctype html><html><head><script defer="defer" src="./static/js/2.48bc9281.chunk.js"></script></head><body><div id="root"></div></body></html>`;
+    const customBundle = `var data = JSON.parse('[{"clientId":"37168935020","name":"SRIT INDIA LIMITED"}]');`;
+
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+        expect(init?.headers).toEqual(
+          expect.objectContaining({
+            'User-Agent': expect.stringContaining('Mozilla/5.0'),
+            Accept: '*/*',
+            Origin: 'https://ipostatus.kfintech.com',
+            Referer: 'https://ipostatus.kfintech.com/',
+          }),
+        );
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => customHtml,
+        } as unknown as Response);
+      }
+      if (urlStr.includes('chunk.js')) {
+        expect(init?.headers).toEqual(
+          expect.objectContaining({
+            'User-Agent': expect.stringContaining('Mozilla/5.0'),
+            Accept: '*/*',
+            Origin: 'https://ipostatus.kfintech.com',
+            Referer: 'https://ipostatus.kfintech.com/',
+          }),
+        );
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => customBundle,
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [{ All_Shares: 1200, App_Shares: 1200, Name: 'SRIT APPLICANT' }],
+      } as unknown as Response);
+    });
+
+    const requestSritNoCode = {
+      ipoId: '16ad8e62-1881-4c3b-b1f3-1ea2af818b6a',
+      registrarIpoCode: '', // empty code
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyLegalName: 'SRIT India Limited',
+      companyName: 'SRIT India',
+    };
+
+    const result = await adapter.checkAllotment(requestSritNoCode);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(result.sharesAllotted).toBe(1200);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('0uz601ms56.execute-api'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ client_id: '37168935020' }),
+      }),
+    );
+  });
 });
 
 describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {

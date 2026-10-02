@@ -321,14 +321,18 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     const portalUrl =
       process.env.KFINTECH_PORTAL_URL || 'https://ipostatus.kfintech.com/';
 
+    const browserHeaders: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      Accept: '*/*',
+      Origin: 'https://ipostatus.kfintech.com',
+      Referer: 'https://ipostatus.kfintech.com/',
+    };
+
     // Step 1: Fetch root portal HTML to find the active main JS bundle
     const htmlResponse = await this.fetchWithRetry(portalUrl, {
       method: 'GET',
-      headers: {
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        Origin: 'https://ipostatus.kfintech.com',
-        Referer: 'https://ipostatus.kfintech.com/',
-      },
+      headers: browserHeaders,
     });
 
     if (!htmlResponse.ok) {
@@ -336,15 +340,12 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     }
 
     const html = await htmlResponse.text();
-    const jsMatch = html.match(
-      /src=["'](\.?\/static\/js\/main\.[a-f0-9]+\.js)["']/i,
-    );
+    const scriptMatch = html.match(/src=["']?(\.?\/static\/js\/[^"'\s>]+)/i);
 
     let bundleUrl: string;
-    if (jsMatch) {
-      const relPath = jsMatch[1].replace(/^\.\//, '/');
-      const base = portalUrl.endsWith('/') ? portalUrl.slice(0, -1) : portalUrl;
-      bundleUrl = `${base}${relPath.startsWith('/') ? '' : '/'}${relPath}`;
+    if (scriptMatch && scriptMatch[1]) {
+      const cleanPath = scriptMatch[1].replace(/^\./, '');
+      bundleUrl = new URL(cleanPath, portalUrl).toString();
     } else {
       const base = portalUrl.endsWith('/') ? portalUrl.slice(0, -1) : portalUrl;
       bundleUrl = `${base}/static/js/main.js`;
@@ -353,11 +354,7 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     // Step 2: Fetch active JS bundle
     const bundleResponse = await this.fetchWithRetry(bundleUrl, {
       method: 'GET',
-      headers: {
-        Accept: '*/*',
-        Origin: 'https://ipostatus.kfintech.com',
-        Referer: 'https://ipostatus.kfintech.com/',
-      },
+      headers: browserHeaders,
     });
 
     if (!bundleResponse.ok) {
