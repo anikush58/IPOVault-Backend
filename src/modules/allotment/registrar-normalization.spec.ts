@@ -29,6 +29,15 @@ describe('Registrar Normalization & Registry Resolution Tests', () => {
     expect(adapter?.code).toBe('KFINTECH');
   });
 
+  it('1b. "kfin technologies limited" and "kfin technologies ltd." resolve KFINTECH adapter', () => {
+    expect(registry.get('kfin technologies limited')?.code).toBe('KFINTECH');
+    expect(registry.get('kfin technologies ltd.')?.code).toBe('KFINTECH');
+    expect(registry.get('kfin technologies ltd')?.code).toBe('KFINTECH');
+    expect(registry.get('KFin Technologies Ltd.')?.code).toBe('KFINTECH');
+    expect(registry.get('KFIN_TECHNOLOGIES_LTD')?.code).toBe('KFINTECH');
+    expect(registry.get('KFIN_TECHNOLOGIES_LTD.')?.code).toBe('KFINTECH');
+  });
+
   it('2. "KFin Technologies" resolves KFINTECH adapter', () => {
     const adapter = registry.get('KFin Technologies');
     expect(adapter).toBeDefined();
@@ -51,6 +60,7 @@ describe('Registrar Normalization & Registry Resolution Tests', () => {
     expect(registry.get('KFIN_TECHNOLOGIES')?.code).toBe('KFINTECH');
     expect(registry.get('kfin_technologies')?.code).toBe('KFINTECH');
     expect(registry.get('KFIN_TECHNOLOGIES_LIMITED')?.code).toBe('KFINTECH');
+    expect(registry.get('KFIN_TECHNOLOGIES_LTD')?.code).toBe('KFINTECH');
     expect(registry.get('KFIN_TECHNOLOGIES_PVT_LTD')?.code).toBe('KFINTECH');
     expect(registry.get('KFIN_TECHNOLOGIES_PRIVATE_LIMITED')?.code).toBe('KFINTECH');
   });

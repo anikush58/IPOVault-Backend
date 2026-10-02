@@ -17,6 +17,10 @@ export function normalizeRegistrarCode(rawCode?: string | null): string {
     trimmed === 'KFIN_TECHNOLOGIES' ||
     trimmed === 'KFIN TECHNOLOGIES LIMITED' ||
     trimmed === 'KFIN_TECHNOLOGIES_LIMITED' ||
+    trimmed === 'KFIN TECHNOLOGIES LTD' ||
+    trimmed === 'KFIN TECHNOLOGIES LTD.' ||
+    trimmed === 'KFIN_TECHNOLOGIES_LTD' ||
+    trimmed === 'KFIN_TECHNOLOGIES_LTD.' ||
     trimmed === 'KFIN TECHNOLOGIES PVT LTD' ||
     trimmed === 'KFIN_TECHNOLOGIES_PVT_LTD' ||
     trimmed === 'KFIN TECHNOLOGIES PRIVATE LIMITED' ||
@@ -138,6 +142,10 @@ export class RegistrarAdapterRegistry {
       this.adapters.set('KFIN_TECHNOLOGIES', adapter);
       this.adapters.set('KFIN TECHNOLOGIES LIMITED', adapter);
       this.adapters.set('KFIN_TECHNOLOGIES_LIMITED', adapter);
+      this.adapters.set('KFIN TECHNOLOGIES LTD', adapter);
+      this.adapters.set('KFIN TECHNOLOGIES LTD.', adapter);
+      this.adapters.set('KFIN_TECHNOLOGIES_LTD', adapter);
+      this.adapters.set('KFIN_TECHNOLOGIES_LTD.', adapter);
       this.adapters.set('KFIN TECHNOLOGIES PVT LTD', adapter);
       this.adapters.set('KFIN_TECHNOLOGIES_PVT_LTD', adapter);
       this.adapters.set('KFIN TECHNOLOGIES PRIVATE LIMITED', adapter);
