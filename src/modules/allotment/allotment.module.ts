@@ -14,7 +14,9 @@ import { AllotmentService } from './allotment.service';
 import { RegistrarResolver } from './registrar.resolver';
 
 import { KfinIdentityDiscoveryAdapter } from './discovery/kfin-identity-discovery.adapter';
+import { MufgIdentityDiscoveryAdapter } from './discovery/mufg-identity-discovery.adapter';
 import { SourceIdentitySyncService } from './discovery/source-identity-sync.service';
+import { RegistrarIdentitySyncSchedulerService } from './discovery/registrar-identity-sync-scheduler.service';
 
 @Module({
   controllers: [AllotmentController],
@@ -32,7 +34,9 @@ import { SourceIdentitySyncService } from './discovery/source-identity-sync.serv
     PurvaRegistrarAdapter,
     BigshareRegistrarAdapter,
     KfinIdentityDiscoveryAdapter,
+    MufgIdentityDiscoveryAdapter,
     SourceIdentitySyncService,
+    RegistrarIdentitySyncSchedulerService,
   ],
   exports: [
     AllotmentService,
@@ -42,7 +46,9 @@ import { SourceIdentitySyncService } from './discovery/source-identity-sync.serv
     RegistrarResolver,
     RegistrarAdapterRegistry,
     KfinIdentityDiscoveryAdapter,
+    MufgIdentityDiscoveryAdapter,
     SourceIdentitySyncService,
+    RegistrarIdentitySyncSchedulerService,
   ],
 })
 export class AllotmentModule {}
