@@ -58,13 +58,20 @@ describe('Registrar Source Identity Discovery & Sync', () => {
       expect(issues[0]?.externalName).toBe('ASHUTOSH FIBRE LIMITED');
     });
 
-    it('prefers live KFin discovery when network fetch succeeds', async () => {
+    it('rejects HTML error payload without parsing', () => {
+      const htmlPayload = `<!doctype html><html><head><title>404</title></head><body>Error from cloudfront</body></html>`;
+      expect(() => kfinAdapter.parseKfinRegistryBundle(htmlPayload)).toThrow(
+        'Received HTML payload instead of JavaScript bundle',
+      );
+    });
+
+    it('prefers live CloudFront discovery when primary bundle fetch succeeds', async () => {
       const liveHtml = `<!doctype html><html><head><script src="/static/js/main.12345.js"></script></head><body></body></html>`;
       const liveJs = `var data = JSON.parse('[{"clientId":"99998888777","name":"LIVE NEW COMPANY LIMITED"}]');`;
 
       jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
         const u = String(url);
-        if (u.endsWith('.js')) {
+        if (u.includes('.js') && !u.includes('cb=')) {
           return Promise.resolve({
             ok: true,
             status: 200,
@@ -84,8 +91,68 @@ describe('Registrar Source Identity Discovery & Sync', () => {
       expect(issues[0]?.externalName).toBe('LIVE NEW COMPANY LIMITED');
     });
 
-    it('returns verified static fallback registry when live KFin discovery fails', async () => {
-      jest.spyOn(global, 'fetch').mockRejectedValue(new Error('CloudFront HTML error'));
+    it('falls back to KFin origin bundle when CloudFront bundle returns HTML error', async () => {
+      const liveHtml = `<!doctype html><html><head><script src="/static/js/main.30273529.js"></script></head><body></body></html>`;
+      const cloudfrontHtmlError = `<!doctype html><html><head><title>404 Not Found</title></head><body>Error from cloudfront</body></html>`;
+      const originJs = `var data = JSON.parse('[{"clientId":"93220762680","name":"ORIENT CABLES (INDIA) LIMITED-IPO"},{"clientId":"37168935020","name":"SRIT INDIA LIMITED"},{"clientId":"27219762590","name":"BENCH MARK INFOTECH SERVICES LIMITED"}]');`;
+
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes('asset-manifest.json')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              files: { 'main.js': './static/js/main.30273529.js' },
+            }),
+          } as unknown as Response);
+        }
+        if (u.includes('cb=')) {
+          // Origin fallback request
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => originJs,
+          } as unknown as Response);
+        }
+        if (u.includes('main.30273529.js')) {
+          // Broken CloudFront response returning HTML
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => cloudfrontHtmlError,
+          } as unknown as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => liveHtml,
+        } as unknown as Response);
+      });
+
+      const issues = await kfinAdapter.discoverIssues();
+      expect(issues.length).toBe(3);
+
+      const orient = issues.find((i) =>
+        i.externalName.includes('ORIENT CABLES'),
+      );
+      expect(orient).toBeDefined();
+      expect(orient?.externalId).toBe('93220762680');
+      expect(orient?.externalName).toBe('ORIENT CABLES (INDIA) LIMITED-IPO');
+
+      const srit = issues.find((i) => i.externalName.includes('SRIT INDIA'));
+      expect(srit).toBeDefined();
+      expect(srit?.externalId).toBe('37168935020');
+
+      const benchmark = issues.find((i) =>
+        i.externalName.includes('BENCH MARK INFOTECH'),
+      );
+      expect(benchmark).toBeDefined();
+      expect(benchmark?.externalId).toBe('27219762590');
+    });
+
+    it('returns verified static fallback registry when both live CloudFront and origin discovery fail', async () => {
+      jest.spyOn(global, 'fetch').mockRejectedValue(new Error('CloudFront and Origin Network Error'));
 
       const issues = await kfinAdapter.discoverIssues();
       expect(issues.length).toBe(9);
