@@ -1,5 +1,6 @@
 import {
   BrokerSyncSchedulerService,
+  getActiveSyncWindow,
   getIstDateString,
   isPostListingSyncWindow,
   isTradingDay,
@@ -44,9 +45,9 @@ describe('BrokerSyncSchedulerService', () => {
 
   describe('Trading Day & Time Window Helpers', () => {
     it('isTradingDay correctly identifies Monday-Friday vs Saturday-Sunday in IST', () => {
-      // 2026-09-21 is Monday
+      // 2026-09-21 is Monday (not holiday)
       const monday = new Date('2026-09-21T10:30:00Z');
-      // 2026-09-25 is Friday
+      // 2026-09-25 is Friday (not holiday)
       const friday = new Date('2026-09-25T10:30:00Z');
       // 2026-09-26 is Saturday
       const saturday = new Date('2026-09-26T10:30:00Z');
@@ -59,75 +60,137 @@ describe('BrokerSyncSchedulerService', () => {
       expect(isTradingDay(sunday)).toBe(false);
     });
 
-    it('isPostListingSyncWindow detects ~3:41 PM IST (10:11 UTC)', () => {
-      // 10:11 UTC + 5:30 IST = 15:41 IST (3:41 PM) -> true
-      const at341PmIst = new Date('2026-09-22T10:11:00Z');
-      // 10:25 UTC + 5:30 IST = 15:55 IST -> true (within 15:41-16:11 window)
-      const at355PmIst = new Date('2026-09-22T10:25:00Z');
-      // 06:30 UTC + 5:30 IST = 12:00 IST -> false
-      const at12PmIst = new Date('2026-09-22T06:30:00Z');
+    it('isTradingDay returns false on Indian market holidays even if on a weekday', () => {
+      // 2026-10-02 is Friday (Mahatma Gandhi Jayanti) -> Holiday
+      const gandhiJayanti = new Date('2026-10-02T10:15:00Z');
+      // 2026-08-15 is Saturday (Independence Day) -> Holiday & Weekend
+      const independenceDay = new Date('2026-08-15T10:15:00Z');
+      // 2026-01-26 is Monday (Republic Day) -> Holiday
+      const republicDay = new Date('2026-01-26T10:15:00Z');
 
-      expect(isPostListingSyncWindow(at341PmIst)).toBe(true);
-      expect(isPostListingSyncWindow(at355PmIst)).toBe(true);
-      expect(isPostListingSyncWindow(at12PmIst)).toBe(false);
+      expect(isTradingDay(gandhiJayanti)).toBe(false);
+      expect(isTradingDay(independenceDay)).toBe(false);
+      expect(isTradingDay(republicDay)).toBe(false);
+    });
+
+    it('detects all 5 scheduled IST sync windows correctly', () => {
+      // 09:30 AM IST (04:00 UTC)
+      const win0930 = new Date('2026-09-22T04:00:00Z');
+      expect(getActiveSyncWindow(win0930)?.id).toBe('09:30');
+      expect(isPostListingSyncWindow(win0930)).toBe(true);
+
+      // 11:00 AM IST (05:30 UTC)
+      const win1100 = new Date('2026-09-22T05:30:00Z');
+      expect(getActiveSyncWindow(win1100)?.id).toBe('11:00');
+      expect(isPostListingSyncWindow(win1100)).toBe(true);
+
+      // 01:00 PM IST (07:30 UTC)
+      const win1300 = new Date('2026-09-22T07:30:00Z');
+      expect(getActiveSyncWindow(win1300)?.id).toBe('13:00');
+      expect(isPostListingSyncWindow(win1300)).toBe(true);
+
+      // 02:30 PM IST (09:00 UTC)
+      const win1430 = new Date('2026-09-22T09:00:00Z');
+      expect(getActiveSyncWindow(win1430)?.id).toBe('14:30');
+      expect(isPostListingSyncWindow(win1430)).toBe(true);
+
+      // 03:45 PM IST (10:15 UTC)
+      const win1545 = new Date('2026-09-22T10:15:00Z');
+      expect(getActiveSyncWindow(win1545)?.id).toBe('15:45');
+      expect(isPostListingSyncWindow(win1545)).toBe(true);
+
+      // 12:00 PM IST (06:30 UTC) -> outside all windows
+      const offWindow = new Date('2026-09-22T06:30:00Z');
+      expect(getActiveSyncWindow(offWindow)).toBeNull();
+      expect(isPostListingSyncWindow(offWindow)).toBe(false);
     });
 
     it('getIstDateString returns YYYY-MM-DD in IST timezone', () => {
-      // 2026-09-22 10:11 UTC is 2026-09-22 15:41 IST
-      const date = new Date('2026-09-22T10:11:00Z');
+      const date = new Date('2026-09-22T10:15:00Z');
       expect(getIstDateString(date)).toBe('2026-09-22');
     });
   });
 
   describe('Scheduled Tick Execution', () => {
-    it('executes sync cycle when called on a trading day within 3:41 PM IST window', async () => {
-      const tuesday341Pm = new Date('2026-09-22T10:11:00Z'); // 3:41 PM IST Tuesday
-
-      const ran = await service.handleScheduledTick(tuesday341Pm);
-
+    it('executes sync cycle for 09:30 AM IST window on trading day', async () => {
+      const time0930 = new Date('2026-09-22T04:05:00Z'); // 09:35 AM IST
+      const ran = await service.handleScheduledTick(time0930);
       expect(ran).toBe(true);
       expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).toHaveBeenCalledTimes(1);
+    });
 
-      const health = service.getHealthStatus();
-      expect(health.lastRunDate).toBe('2026-09-22');
-      expect(health.lastRunResult).toEqual(
-        expect.objectContaining({
-          processedCount: 2,
-          successCount: 2,
-          failureCount: 0,
-        }),
-      );
+    it('executes sync cycle for 11:00 AM IST window on trading day', async () => {
+      const time1100 = new Date('2026-09-22T05:35:00Z'); // 11:05 AM IST
+      const ran = await service.handleScheduledTick(time1100);
+      expect(ran).toBe(true);
+      expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).toHaveBeenCalledTimes(1);
+    });
+
+    it('executes sync cycle for 01:00 PM IST window on trading day', async () => {
+      const time1300 = new Date('2026-09-22T07:35:00Z'); // 01:05 PM IST
+      const ran = await service.handleScheduledTick(time1300);
+      expect(ran).toBe(true);
+      expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).toHaveBeenCalledTimes(1);
+    });
+
+    it('executes sync cycle for 02:30 PM IST window on trading day', async () => {
+      const time1430 = new Date('2026-09-22T09:05:00Z'); // 02:35 PM IST
+      const ran = await service.handleScheduledTick(time1430);
+      expect(ran).toBe(true);
+      expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).toHaveBeenCalledTimes(1);
+    });
+
+    it('executes sync cycle for 03:45 PM IST window on trading day', async () => {
+      const time1545 = new Date('2026-09-22T10:20:00Z'); // 03:50 PM IST
+      const ran = await service.handleScheduledTick(time1545);
+      expect(ran).toBe(true);
+      expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips execution on market holidays even within a valid time window', async () => {
+      const holidayTime = new Date('2026-10-02T10:15:00Z'); // 3:45 PM IST Gandhi Jayanti
+      const ran = await service.handleScheduledTick(holidayTime);
+      expect(ran).toBe(false);
+      expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).not.toHaveBeenCalled();
     });
 
     it('skips execution on weekends', async () => {
-      const sunday341Pm = new Date('2026-09-27T10:11:00Z');
-
-      const ran = await service.handleScheduledTick(sunday341Pm);
-
+      const sundayTime = new Date('2026-09-27T05:30:00Z'); // Sunday 11:00 AM IST
+      const ran = await service.handleScheduledTick(sundayTime);
       expect(ran).toBe(false);
       expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).not.toHaveBeenCalled();
     });
 
-    it('skips execution outside the 3:41 PM IST window', async () => {
-      const tuesdayMorning = new Date('2026-09-22T04:30:00Z'); // 10:00 AM IST
+    it('skips duplicate runs for the same window on the same trading day', async () => {
+      const time1100First = new Date('2026-09-22T05:31:00Z');
+      const time1100Second = new Date('2026-09-22T05:32:00Z');
 
-      const ran = await service.handleScheduledTick(tuesdayMorning);
-
-      expect(ran).toBe(false);
-      expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).not.toHaveBeenCalled();
-    });
-
-    it('runs only once per day (skips duplicate ticks on the same date)', async () => {
-      const tuesday341PmFirst = new Date('2026-09-22T10:11:00Z');
-      const tuesday341PmSecond = new Date('2026-09-22T10:12:00Z');
-
-      const ranFirst = await service.handleScheduledTick(tuesday341PmFirst);
+      const ranFirst = await service.handleScheduledTick(time1100First);
       expect(ranFirst).toBe(true);
       expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).toHaveBeenCalledTimes(1);
 
-      const ranSecond = await service.handleScheduledTick(tuesday341PmSecond);
+      const ranSecond = await service.handleScheduledTick(time1100Second);
       expect(ranSecond).toBe(false);
       expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows all 5 different windows to run sequentially on the same trading day', async () => {
+      const t0930 = new Date('2026-09-22T04:00:00Z');
+      const t1100 = new Date('2026-09-22T05:30:00Z');
+      const t1300 = new Date('2026-09-22T07:30:00Z');
+      const t1430 = new Date('2026-09-22T09:00:00Z');
+      const t1545 = new Date('2026-09-22T10:15:00Z');
+
+      expect(await service.handleScheduledTick(t0930)).toBe(true);
+      expect(await service.handleScheduledTick(t1100)).toBe(true);
+      expect(await service.handleScheduledTick(t1300)).toBe(true);
+      expect(await service.handleScheduledTick(t1430)).toBe(true);
+      expect(await service.handleScheduledTick(t1545)).toBe(true);
+
+      expect(mockInvestmentService.syncAllConnectedUpstoxAccounts).toHaveBeenCalledTimes(5);
+
+      const health = service.getHealthStatus(t1545);
+      expect(health.executedWindowsToday).toEqual(['09:30', '11:00', '13:00', '14:30', '15:45']);
     });
   });
 
