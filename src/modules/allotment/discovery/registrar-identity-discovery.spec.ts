@@ -58,6 +58,50 @@ describe('Registrar Source Identity Discovery & Sync', () => {
       expect(issues[0]?.externalName).toBe('ASHUTOSH FIBRE LIMITED');
     });
 
+    it('prefers live KFin discovery when network fetch succeeds', async () => {
+      const liveHtml = `<!doctype html><html><head><script src="/static/js/main.12345.js"></script></head><body></body></html>`;
+      const liveJs = `var data = JSON.parse('[{"clientId":"99998888777","name":"LIVE NEW COMPANY LIMITED"}]');`;
+
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.endsWith('.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => liveJs,
+          } as unknown as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => liveHtml,
+        } as unknown as Response);
+      });
+
+      const issues = await kfinAdapter.discoverIssues();
+      expect(issues.length).toBe(1);
+      expect(issues[0]?.externalId).toBe('99998888777');
+      expect(issues[0]?.externalName).toBe('LIVE NEW COMPANY LIMITED');
+    });
+
+    it('returns verified static fallback registry when live KFin discovery fails', async () => {
+      jest.spyOn(global, 'fetch').mockRejectedValue(new Error('CloudFront HTML error'));
+
+      const issues = await kfinAdapter.discoverIssues();
+      expect(issues.length).toBe(9);
+
+      const srit = issues.find((i) => i.externalName === 'SRIT INDIA LIMITED');
+      expect(srit).toBeDefined();
+      expect(srit?.externalId).toBe('37168935020');
+      expect(srit?.registrarCode).toBe('KFINTECH');
+
+      // Ensure synthetic mock IDs are not present
+      const syntheticIds = ['11111111111', '12345678901', '99999999999', '22222222222'];
+      for (const item of issues) {
+        expect(syntheticIds).not.toContain(item.externalId);
+      }
+    });
+
     it('parseMufgRegistryHtml: extracts valid options, trims whitespace, sets registrarCode, discoveredAt, and rawPayload', () => {
       expect(mufgAdapter.registrarCode).toBe('MUFG_INTIME');
       const html = `
