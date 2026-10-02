@@ -155,12 +155,41 @@ describe('Registrar Source Identity Discovery & Sync', () => {
       jest.spyOn(global, 'fetch').mockRejectedValue(new Error('CloudFront and Origin Network Error'));
 
       const issues = await kfinAdapter.discoverIssues();
-      expect(issues.length).toBe(9);
+      expect(issues.length).toBe(93);
 
       const srit = issues.find((i) => i.externalName === 'SRIT INDIA LIMITED');
       expect(srit).toBeDefined();
       expect(srit?.externalId).toBe('37168935020');
       expect(srit?.registrarCode).toBe('KFINTECH');
+
+      const orient = issues.find((i) => i.externalName.includes('ORIENT CABLES'));
+      expect(orient).toBeDefined();
+      expect(orient?.externalId).toBe('93220762680');
+      expect(orient?.registrarCode).toBe('KFINTECH');
+
+      const dhoot = issues.find((i) => i.externalName === 'DHOOT TRANSMISSION LIMITED');
+      expect(dhoot).toBeDefined();
+      expect(dhoot?.externalId).toBe('94818267561');
+
+      const prasol = issues.find((i) => i.externalName === 'PRASOL CHEMICALS LIMITED');
+      expect(prasol).toBeDefined();
+      expect(prasol?.externalId).toBe('75003530500');
+
+      const sbi = issues.find((i) => i.externalName.includes('SBI FUNDS'));
+      expect(sbi).toBeDefined();
+      expect(sbi?.externalId).toBe('89468061991');
+
+      const benchmark = issues.find((i) => i.externalName.includes('BENCH MARK INFOTECH'));
+      expect(benchmark).toBeDefined();
+      expect(benchmark?.externalId).toBe('27219762590');
+
+      const elevate = issues.find((i) => i.externalName.includes('ELEVATE CAMPUSES'));
+      expect(elevate).toBeDefined();
+      expect(elevate?.externalId).toBe('30273060190');
+
+      const varmora = issues.find((i) => i.externalName.includes('VARMORA GRANITO'));
+      expect(varmora).toBeDefined();
+      expect(varmora?.externalId).toBe('79990817560');
 
       // Ensure synthetic mock IDs are not present
       const syntheticIds = ['11111111111', '12345678901', '99999999999', '22222222222'];
