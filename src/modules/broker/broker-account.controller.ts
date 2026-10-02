@@ -92,6 +92,17 @@ export class BrokerAccountController {
     return userId.trim();
   }
 
+  private triggerBackgroundInitialSync(userId: string, accountId: string): void {
+    this.brokerInvestmentService
+      .syncAccountPostListingInvestments(userId, accountId)
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[BrokerAccountController] Background initial sync failed for account ${accountId}: ${msg}`,
+        );
+      });
+  }
+
   /**
    * List all broker accounts belonging to authenticated user.
    * GET /api/v1/broker-accounts
@@ -247,6 +258,8 @@ export class BrokerAccountController {
         tokens,
       );
 
+      this.triggerBackgroundInitialSync(authUserId, accountId);
+
       const responseDto = mapConnectionToSafeResponse(connection);
 
       if (isJson) {
@@ -328,6 +341,8 @@ export class BrokerAccountController {
       tokens,
     );
 
+    this.triggerBackgroundInitialSync(authUserId, id.trim());
+
     return mapConnectionToSafeResponse(connection);
   }
 
@@ -404,6 +419,8 @@ export class BrokerAccountController {
         accountId,
         tokens,
       );
+
+      this.triggerBackgroundInitialSync(authUserId, accountId);
 
       const responseDto = mapConnectionToSafeResponse(connection);
 
@@ -527,6 +544,8 @@ export class BrokerAccountController {
       tokens,
     );
 
+    this.triggerBackgroundInitialSync(authUserId, id.trim());
+
     return mapConnectionToSafeResponse(connection);
   }
 
@@ -603,6 +622,8 @@ export class BrokerAccountController {
         accountId,
         tokens,
       );
+
+      this.triggerBackgroundInitialSync(authUserId, accountId);
 
       const responseDto = mapConnectionToSafeResponse(connection);
 
@@ -726,6 +747,8 @@ export class BrokerAccountController {
       tokens,
     );
 
+    this.triggerBackgroundInitialSync(authUserId, id.trim());
+
     return mapConnectionToSafeResponse(connection);
   }
 
@@ -799,6 +822,8 @@ export class BrokerAccountController {
         accountId,
         tokens,
       );
+
+      this.triggerBackgroundInitialSync(authUserId, accountId);
 
       const responseDto = mapConnectionToSafeResponse(connection);
 
@@ -921,6 +946,8 @@ export class BrokerAccountController {
       tokens,
     );
 
+    this.triggerBackgroundInitialSync(authUserId, id.trim());
+
     return mapConnectionToSafeResponse(connection);
   }
 
@@ -1020,6 +1047,8 @@ export class BrokerAccountController {
       id.trim(),
       tokens,
     );
+
+    this.triggerBackgroundInitialSync(authUserId, id.trim());
 
     return mapConnectionToSafeResponse(connection);
   }
@@ -1121,6 +1150,8 @@ export class BrokerAccountController {
       id.trim(),
       tokens,
     );
+
+    this.triggerBackgroundInitialSync(authUserId, id.trim());
 
     return mapConnectionToSafeResponse(connection);
   }

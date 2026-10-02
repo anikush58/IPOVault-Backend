@@ -251,6 +251,15 @@ describe('ZerodhaBrokerAdapter', () => {
         'acc-uuid-1',
       );
 
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.kite.trade/trades',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            Authorization: 'token test-kite-api-key:mock-token',
+          }),
+        }),
+      );
       expect(trades).toHaveLength(1);
       expect(trades[0]).toEqual(
         expect.objectContaining({

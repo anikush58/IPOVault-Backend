@@ -358,7 +358,7 @@ export class ZerodhaBrokerAdapter implements BrokerAdapter {
 
   /**
    * Fetches executed trades from Zerodha Kite Connect.
-   * GET /orders/trades
+   * GET /trades
    */
   async getTrades(
     tokens: BrokerAuthTokens,
@@ -369,7 +369,7 @@ export class ZerodhaBrokerAdapter implements BrokerAdapter {
       throw new BadRequestException('Access token is required');
     }
 
-    const url = `${this.baseUrl}/orders/trades`;
+    const url = `${this.baseUrl}/trades`;
 
     try {
       const response = await fetch(url, {
