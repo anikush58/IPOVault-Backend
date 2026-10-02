@@ -81,8 +81,37 @@ export class RegistrarResolver {
                 rawCode,
               )
             : false;
-          const registrarIpoCode =
+          let registrarIpoCode =
             rawCode && !isCodeUuid ? rawCode : undefined;
+
+          if (
+            !registrarIpoCode &&
+            adapter.code === 'KFINTECH' &&
+            typeof this.prisma.ipoSourceIdentity?.findFirst === 'function'
+          ) {
+            const kfinIdentity = await this.prisma.ipoSourceIdentity.findFirst({
+              where: {
+                ipoId: targetIpoId,
+                source: {
+                  code: 'KFINTECH',
+                  sourceType: 'REGISTRAR',
+                },
+              },
+              include: {
+                source: true,
+              },
+            });
+            if (kfinIdentity?.externalId) {
+              const extCode = kfinIdentity.externalId.trim();
+              const isExtUuid =
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                  extCode,
+                );
+              if (extCode && !isExtUuid) {
+                registrarIpoCode = extCode;
+              }
+            }
+          }
 
           return {
             adapter,

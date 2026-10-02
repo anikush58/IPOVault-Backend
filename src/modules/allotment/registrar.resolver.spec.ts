@@ -16,6 +16,9 @@ describe('RegistrarResolver tests', () => {
 
   beforeEach(() => {
     prismaService = {
+      ipoAllotmentConfig: {
+        findUnique: jest.fn(),
+      },
       ipoSourceIdentity: {
         findFirst: jest.fn(),
       },
@@ -26,6 +29,88 @@ describe('RegistrarResolver tests', () => {
     } as unknown as jest.Mocked<RegistrarAdapterRegistry>;
 
     resolver = new RegistrarResolver(prismaService, registry);
+  });
+
+  it('1. should use explicit registrarIpoCode from IpoAllotmentConfig when present', async () => {
+    (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValue({
+      enabled: true,
+      registrar: 'KFINTECH',
+      registrarIpoCode: '40580036070',
+    });
+    (registry.get as jest.Mock).mockReturnValue(mockKfinAdapter);
+
+    const resolved = await resolver.resolveAdapter('16ad8e62-1881-4c3b-b1f3-1ea2af818b6a');
+
+    expect(resolved).toBeDefined();
+    expect(resolved?.adapter).toBe(mockKfinAdapter);
+    expect(resolved?.registrarIpoCode).toBe('40580036070');
+    expect(prismaService.ipoSourceIdentity.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('2. should fallback to KFINTECH IpoSourceIdentity externalId when IpoAllotmentConfig registrarIpoCode is empty', async () => {
+    (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValue({
+      enabled: true,
+      registrar: 'kfin technologies ltd.',
+      registrarIpoCode: null,
+    });
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue({
+      externalId: '37168935020',
+      source: {
+        code: 'KFINTECH',
+        sourceType: 'REGISTRAR',
+      },
+    });
+    (registry.get as jest.Mock).mockReturnValue(mockKfinAdapter);
+
+    const resolved = await resolver.resolveAdapter('16ad8e62-1881-4c3b-b1f3-1ea2af818b6a');
+
+    expect(resolved).toBeDefined();
+    expect(resolved?.adapter).toBe(mockKfinAdapter);
+    expect(resolved?.registrarIpoCode).toBe('37168935020');
+    expect(prismaService.ipoSourceIdentity.findFirst).toHaveBeenCalledWith({
+      where: {
+        ipoId: '16ad8e62-1881-4c3b-b1f3-1ea2af818b6a',
+        source: {
+          code: 'KFINTECH',
+          sourceType: 'REGISTRAR',
+        },
+      },
+      include: {
+        source: true,
+      },
+    });
+  });
+
+  it('3. should return undefined registrarIpoCode when IpoAllotmentConfig has empty code and no source identity exists', async () => {
+    (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValue({
+      enabled: true,
+      registrar: 'KFINTECH',
+      registrarIpoCode: '',
+    });
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue(null);
+    (registry.get as jest.Mock).mockReturnValue(mockKfinAdapter);
+
+    const resolved = await resolver.resolveAdapter('16ad8e62-1881-4c3b-b1f3-1ea2af818b6a');
+
+    expect(resolved).toBeDefined();
+    expect(resolved?.adapter).toBe(mockKfinAdapter);
+    expect(resolved?.registrarIpoCode).toBeUndefined();
+  });
+
+  it('4. should not query KFin source identity when IpoAllotmentConfig registrar is non-KFin', async () => {
+    (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValue({
+      enabled: true,
+      registrar: 'MAASHITLA',
+      registrarIpoCode: null,
+    });
+    (registry.get as jest.Mock).mockReturnValue(mockMaashitlaAdapter);
+
+    const resolved = await resolver.resolveAdapter('16ad8e62-1881-4c3b-b1f3-1ea2af818b6a');
+
+    expect(resolved).toBeDefined();
+    expect(resolved?.adapter).toBe(mockMaashitlaAdapter);
+    expect(resolved?.registrarIpoCode).toBeUndefined();
+    expect(prismaService.ipoSourceIdentity.findFirst).not.toHaveBeenCalled();
   });
 
   it('9. should resolve correct IPO -> client_id mapping from database', async () => {
