@@ -2204,6 +2204,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <div id="ipo-guru-empty" style="text-align:center; padding:48px 16px; color:var(--text-muted);">
             <div style="font-size:32px; margin-bottom:12px;">&#128202;</div>
             <div style="font-weight:600; margin-bottom:6px;">No data fetched yet</div>
+          </div>
+        </div>
+
         <!-- ADD-ONLY JSON IMPORT PREVIEW & COMMIT MODAL -->
         <div id="json-import-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
           <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:920px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
@@ -2260,7 +2263,6 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             </div>
           </div>
         </div>
-
       </div>
     </main>
   </div>
