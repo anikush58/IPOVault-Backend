@@ -19,8 +19,13 @@ describe('RegistrarResolver tests', () => {
       ipoAllotmentConfig: {
         findUnique: jest.fn(),
       },
+      ipo: {
+        findFirst: jest.fn(),
+        findUnique: jest.fn(),
+      },
       ipoSourceIdentity: {
         findFirst: jest.fn(),
+        findMany: jest.fn(),
       },
     } as unknown as jest.Mocked<PrismaService>;
 
@@ -81,13 +86,68 @@ describe('RegistrarResolver tests', () => {
     });
   });
 
-  it('3. should return undefined registrarIpoCode when IpoAllotmentConfig has empty code and no source identity exists', async () => {
+  it('3. should return undefined registrarIpoCode when IpoAllotmentConfig has empty code and no source identity exists anywhere', async () => {
     (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValue({
       enabled: true,
       registrar: 'KFINTECH',
       registrarIpoCode: '',
     });
     (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue(null);
+    (prismaService.ipo.findUnique as jest.Mock).mockResolvedValue({
+      id: '16ad8e62-1881-4c3b-b1f3-1ea2af818b6a',
+      companyId: 'comp-1',
+      company: { displayName: 'SRIT India', legalName: 'SRIT India' },
+    });
+    (prismaService.ipoSourceIdentity.findMany as jest.Mock).mockResolvedValue([]);
+    (registry.get as jest.Mock).mockReturnValue(mockKfinAdapter);
+
+    const resolved = await resolver.resolveAdapter('16ad8e62-1881-4c3b-b1f3-1ea2af818b6a');
+
+    expect(resolved).toBeDefined();
+    expect(resolved?.adapter).toBe(mockKfinAdapter);
+    expect(resolved?.registrarIpoCode).toBeUndefined();
+  });
+
+  it('3a. should fallback to same-company sibling KFINTECH identity when direct identity is absent', async () => {
+    (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValue({
+      enabled: true,
+      registrar: 'KFINTECH',
+      registrarIpoCode: null,
+    });
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue(null);
+    (prismaService.ipo.findUnique as jest.Mock).mockResolvedValue({
+      id: '16ad8e62-1881-4c3b-b1f3-1ea2af818b6a',
+      companyId: 'comp-1',
+      company: { displayName: 'SRIT India', legalName: 'SRIT India' },
+    });
+    (prismaService.ipoSourceIdentity.findMany as jest.Mock).mockResolvedValue([
+      { externalId: '37168935020' },
+    ]);
+    (registry.get as jest.Mock).mockReturnValue(mockKfinAdapter);
+
+    const resolved = await resolver.resolveAdapter('16ad8e62-1881-4c3b-b1f3-1ea2af818b6a');
+
+    expect(resolved).toBeDefined();
+    expect(resolved?.adapter).toBe(mockKfinAdapter);
+    expect(resolved?.registrarIpoCode).toBe('37168935020');
+  });
+
+  it('3b. should remain unresolved when multiple conflicting same-company KFINTECH identities exist', async () => {
+    (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValue({
+      enabled: true,
+      registrar: 'KFINTECH',
+      registrarIpoCode: null,
+    });
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue(null);
+    (prismaService.ipo.findUnique as jest.Mock).mockResolvedValue({
+      id: '16ad8e62-1881-4c3b-b1f3-1ea2af818b6a',
+      companyId: 'comp-1',
+      company: { displayName: 'SRIT India', legalName: 'SRIT India' },
+    });
+    (prismaService.ipoSourceIdentity.findMany as jest.Mock).mockResolvedValue([
+      { externalId: '37168935020' },
+      { externalId: '99999999999' },
+    ]);
     (registry.get as jest.Mock).mockReturnValue(mockKfinAdapter);
 
     const resolved = await resolver.resolveAdapter('16ad8e62-1881-4c3b-b1f3-1ea2af818b6a');

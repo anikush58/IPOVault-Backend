@@ -545,5 +545,74 @@ describe('Registrar Source Identity Discovery & Sync', () => {
       expect(mockPrisma.ipoSourceIdentity.create).not.toHaveBeenCalled();
       expect(mockPrisma.ipoSourceIdentity.update).not.toHaveBeenCalled();
     });
+
+    it('prefers active configured IPO over unconfigured duplicate when matching KFin issue', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-unconfigured',
+          symbol: 'SRIT',
+          company: { displayName: 'SRIT India Limited', legalName: 'SRIT India Limited' },
+          allotmentConfig: null,
+          sourceIdentities: [],
+        },
+        {
+          id: 'ipo-configured',
+          symbol: null,
+          company: { displayName: 'SRIT India', legalName: 'SRIT India' },
+          allotmentConfig: { enabled: true, registrar: 'kfin technologies ltd.' },
+          sourceIdentities: [],
+        },
+      ]);
+
+      const mockAdapter = {
+        registrarCode: 'KFINTECH',
+        name: 'Mock KFin',
+        discoverIssues: jest.fn().mockResolvedValue([
+          { externalId: '37168935020', externalName: 'SRIT INDIA LIMITED', registrarCode: 'KFINTECH' },
+        ]),
+      };
+
+      const summary = await syncService.syncRegistrarIdentities(mockAdapter);
+
+      expect(summary.discoveredCount).toBe(1);
+      expect(mockPrisma.ipoSourceIdentity.create).toHaveBeenCalledWith({
+        data: {
+          ipoId: 'ipo-configured',
+          sourceId: 'kfin-source-id',
+          externalId: '37168935020',
+        },
+      });
+    });
+
+    it('tolerates common registrar typos like MANAGMENT for SBI Funds Management', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-sbi',
+          symbol: null,
+          company: { displayName: 'SBI Funds Management Limited', legalName: 'SBI Funds Management Limited' },
+          allotmentConfig: { enabled: true, registrar: 'kfin technologies limited' },
+          sourceIdentities: [],
+        },
+      ]);
+
+      const mockAdapter = {
+        registrarCode: 'KFINTECH',
+        name: 'Mock KFin',
+        discoverIssues: jest.fn().mockResolvedValue([
+          { externalId: '89468061991', externalName: 'SBI FUNDS MANAGMENT LIMITED IPO', registrarCode: 'KFINTECH' },
+        ]),
+      };
+
+      const summary = await syncService.syncRegistrarIdentities(mockAdapter);
+
+      expect(summary.discoveredCount).toBe(1);
+      expect(mockPrisma.ipoSourceIdentity.create).toHaveBeenCalledWith({
+        data: {
+          ipoId: 'ipo-sbi',
+          sourceId: 'kfin-source-id',
+          externalId: '89468061991',
+        },
+      });
+    });
   });
 });

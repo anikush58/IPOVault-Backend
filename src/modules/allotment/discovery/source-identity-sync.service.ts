@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { normalizeRegistrarCode } from '../adapters/registrar-adapter.registry';
 import {
   DiscoveredRegistrarIssue,
   IRegistrarIdentityDiscoveryAdapter,
@@ -22,6 +23,7 @@ export class SourceIdentitySyncService {
     return name
       .toLowerCase()
       .replace(/\b(limited|ltd|sme|ipo|ncds?|ncd|invit|reit|trust)\b/gi, '')
+      .replace(/\bmanagment\b/gi, 'management')
       .replace(/[^a-z0-9]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -59,6 +61,7 @@ export class SourceIdentitySyncService {
       where: filterIpoId ? { id: filterIpoId } : {},
       include: {
         company: true,
+        allotmentConfig: true,
         sourceIdentities: {
           where: { sourceId: source.id },
         },
@@ -84,7 +87,11 @@ export class SourceIdentitySyncService {
         continue;
       }
 
-      const matchResult = this.findMatchingCanonicalIpo(issue, canonicalIpos);
+      const matchResult = this.findMatchingCanonicalIpo(
+        issue,
+        canonicalIpos,
+        adapter.registrarCode,
+      );
 
       if (
         matchResult.status === SourceIdentitySyncStatus.UNRESOLVED ||
@@ -127,14 +134,45 @@ export class SourceIdentitySyncService {
             newExternalId: issue.externalId,
           });
         } else {
-          unresolvedCount++;
-          syncRecords.push({
-            status: SourceIdentitySyncStatus.UNRESOLVED,
-            registrarCode: adapter.registrarCode,
-            externalId: issue.externalId,
-            externalName: issue.externalName,
-            reason: `Conflict: externalId '${issue.externalId}' is already mapped to a different canonical IPO (${existingMappingByExternalId.ipoId})`,
-          });
+          // If the existing mapping is on an unconfigured duplicate and the new match is an active configured IPO,
+          // re-link the identity to the configured canonical IPO.
+          const existingIpo = canonicalIpos.find(
+            (c) => c.id === existingMappingByExternalId.ipoId,
+          );
+          const isSameCompany =
+            existingIpo &&
+            this.normalizeCompanyName(existingIpo.company.displayName) ===
+              this.normalizeCompanyName(ipo.company.displayName);
+
+          if (isSameCompany) {
+            await this.prisma.ipoSourceIdentity.update({
+              where: { id: existingMappingByExternalId.id },
+              data: { ipoId: ipo.id },
+            });
+            changedCount++;
+            this.logger.log(
+              `Relinked externalId '${issue.externalId}' from unconfigured sibling (${existingMappingByExternalId.ipoId}) to configured IPO (${ipo.id})`,
+            );
+            syncRecords.push({
+              status: SourceIdentitySyncStatus.EXTERNAL_ID_CHANGED,
+              registrarCode: adapter.registrarCode,
+              externalId: issue.externalId,
+              externalName: issue.externalName,
+              ipoId: ipo.id,
+              companyName: ipo.company.displayName,
+              previousExternalId: issue.externalId,
+              newExternalId: issue.externalId,
+            });
+          } else {
+            unresolvedCount++;
+            syncRecords.push({
+              status: SourceIdentitySyncStatus.UNRESOLVED,
+              registrarCode: adapter.registrarCode,
+              externalId: issue.externalId,
+              externalName: issue.externalName,
+              reason: `Conflict: externalId '${issue.externalId}' is already mapped to a different canonical IPO (${existingMappingByExternalId.ipoId})`,
+            });
+          }
         }
         continue;
       }
@@ -203,15 +241,18 @@ export class SourceIdentitySyncService {
 
   /**
    * Deterministically matches a discovered issue against the list of canonical IPOs.
+   * Prefers active configured IPOs for the registrar when multiple candidates exist for the same company.
    */
-  private findMatchingCanonicalIpo(
+  public findMatchingCanonicalIpo(
     issue: DiscoveredRegistrarIssue,
     canonicalIpos: Array<{
       id: string;
       symbol: string | null;
       company: { displayName: string; legalName: string };
+      allotmentConfig?: { enabled: boolean; registrar?: string | null } | null;
       sourceIdentities: Array<{ id: string; externalId: string | null; sourceId?: string }>;
     }>,
+    registrarCode?: string,
   ): {
     status: SourceIdentitySyncStatus;
     ipo?: (typeof canonicalIpos)[0];
@@ -222,38 +263,63 @@ export class SourceIdentitySyncService {
     const matches: Array<{
       ipo: (typeof canonicalIpos)[0];
       confidence: number;
+      hasMatchingConfig: boolean;
       reason: string;
     }> = [];
 
     for (const ipo of canonicalIpos) {
+      let isMatch = false;
+      let baseConfidence = 0;
+      let reason = '';
+
       // Rule 1: Exact symbol match (if issue name contains symbol or symbol matches)
       if (
         ipo.symbol &&
         issue.externalName.toUpperCase().includes(ipo.symbol.toUpperCase())
       ) {
-        matches.push({
-          ipo,
-          confidence: 0.95,
-          reason: `Symbol match on '${ipo.symbol}'`,
-        });
-        continue;
+        isMatch = true;
+        baseConfidence = 0.95;
+        reason = `Symbol match on '${ipo.symbol}'`;
+      } else {
+        // Rule 2: Normalized name match on displayName or legalName
+        const normDisplay = this.normalizeCompanyName(ipo.company.displayName);
+        const normLegal = this.normalizeCompanyName(ipo.company.legalName);
+
+        if (
+          normDisplay === issueNormalizedName ||
+          normLegal === issueNormalizedName
+        ) {
+          isMatch = true;
+          baseConfidence = 0.92;
+          reason = `Exact name match ('${ipo.company.displayName}')`;
+        } else if (
+          (normDisplay.length >= 4 &&
+            issueNormalizedName.includes(normDisplay)) ||
+          (normLegal.length >= 4 && issueNormalizedName.includes(normLegal))
+        ) {
+          isMatch = true;
+          baseConfidence = 0.90;
+          reason = `Name match ('${ipo.company.displayName}')`;
+        }
       }
 
-      // Rule 2: Normalized name match on displayName or legalName
-      const normDisplay = this.normalizeCompanyName(ipo.company.displayName);
-      const normLegal = this.normalizeCompanyName(ipo.company.legalName);
+      if (isMatch) {
+        const hasMatchingConfig =
+          ipo.allotmentConfig?.enabled &&
+          normalizeRegistrarCode(ipo.allotmentConfig.registrar) ===
+            registrarCode;
 
-      if (
-        normDisplay === issueNormalizedName ||
-        normLegal === issueNormalizedName ||
-        (normDisplay.length >= 4 &&
-          issueNormalizedName.includes(normDisplay)) ||
-        (normLegal.length >= 4 && issueNormalizedName.includes(normLegal))
-      ) {
+        const confidence = hasMatchingConfig
+          ? baseConfidence + 0.05
+          : baseConfidence;
+
         matches.push({
           ipo,
-          confidence: 0.9,
-          reason: `Name match ('${ipo.company.displayName}')`,
+          confidence,
+          hasMatchingConfig: Boolean(hasMatchingConfig),
+          reason: hasMatchingConfig
+            ? `${reason} (preferred: active allotment config)`
+            : reason,
         });
       }
     }
@@ -268,12 +334,36 @@ export class SourceIdentitySyncService {
     // Sort by confidence descending
     matches.sort((a, b) => b.confidence - a.confidence);
 
-    // Check for ambiguity: if top two matches have equal high confidence, reject match
+    // Check for ambiguity across distinct companies
     if (
       matches.length > 1 &&
-      matches[0]!.confidence === matches[1]!.confidence &&
+      Math.abs(matches[0]!.confidence - matches[1]!.confidence) < 0.001 &&
       matches[0]!.ipo.id !== matches[1]!.ipo.id
     ) {
+      const normComp0 = this.normalizeCompanyName(
+        matches[0]!.ipo.company.displayName,
+      );
+      const normComp1 = this.normalizeCompanyName(
+        matches[1]!.ipo.company.displayName,
+      );
+
+      if (normComp0 === normComp1) {
+        if (matches[0]!.hasMatchingConfig && !matches[1]!.hasMatchingConfig) {
+          return {
+            status: SourceIdentitySyncStatus.DISCOVERED,
+            ipo: matches[0]!.ipo,
+            reason: matches[0]!.reason,
+          };
+        }
+        if (!matches[0]!.hasMatchingConfig && matches[1]!.hasMatchingConfig) {
+          return {
+            status: SourceIdentitySyncStatus.DISCOVERED,
+            ipo: matches[1]!.ipo,
+            reason: matches[1]!.reason,
+          };
+        }
+      }
+
       return {
         status: SourceIdentitySyncStatus.UNRESOLVED,
         reason: `Ambiguous match between IPOs '${matches[0]!.ipo.company.displayName}' and '${matches[1]!.ipo.company.displayName}'`,

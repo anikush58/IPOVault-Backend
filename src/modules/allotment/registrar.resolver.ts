@@ -111,6 +111,104 @@ export class RegistrarResolver {
                 registrarIpoCode = extCode;
               }
             }
+
+            // Fallback: If no direct identity on configured IPO, check sibling IPOs for the same company
+            if (
+              !registrarIpoCode &&
+              typeof this.prisma.ipo?.findUnique === 'function' &&
+              typeof this.prisma.ipoSourceIdentity?.findMany === 'function'
+            ) {
+              const currentIpo = await this.prisma.ipo.findUnique({
+                where: { id: targetIpoId },
+                include: { company: true },
+              });
+
+              if (currentIpo) {
+                const sameCompanyConditions: Prisma.IpoWhereInput[] = [];
+                if (currentIpo.companyId) {
+                  sameCompanyConditions.push({
+                    companyId: currentIpo.companyId,
+                  });
+                }
+                if (currentIpo.company?.displayName) {
+                  sameCompanyConditions.push({
+                    company: {
+                      displayName: {
+                        equals: currentIpo.company.displayName,
+                        mode: 'insensitive',
+                      },
+                    },
+                  });
+                  sameCompanyConditions.push({
+                    company: {
+                      legalName: {
+                        equals: currentIpo.company.displayName,
+                        mode: 'insensitive',
+                      },
+                    },
+                  });
+                }
+                if (currentIpo.company?.legalName) {
+                  sameCompanyConditions.push({
+                    company: {
+                      displayName: {
+                        equals: currentIpo.company.legalName,
+                        mode: 'insensitive',
+                      },
+                    },
+                  });
+                  sameCompanyConditions.push({
+                    company: {
+                      legalName: {
+                        equals: currentIpo.company.legalName,
+                        mode: 'insensitive',
+                      },
+                    },
+                  });
+                }
+
+                const siblingIdentities =
+                  await this.prisma.ipoSourceIdentity.findMany({
+                    where: {
+                      ipo: {
+                        OR: sameCompanyConditions,
+                      },
+                      source: {
+                        code: 'KFINTECH',
+                        sourceType: 'REGISTRAR',
+                      },
+                    },
+                    select: {
+                      externalId: true,
+                    },
+                  });
+
+                const validExtIds = Array.from(
+                  new Set(
+                    (siblingIdentities || [])
+                      .map((s) => s.externalId?.trim())
+                      .filter(
+                        (c): c is string =>
+                          Boolean(c) &&
+                          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                            c!,
+                          ),
+                      ),
+                  ),
+                );
+
+                if (validExtIds.length === 1) {
+                  registrarIpoCode = validExtIds[0];
+                  this.logger.log(
+                    `Resolved KFINTECH client ID '${registrarIpoCode}' for IPO ${targetIpoId} from same-company sibling identity`,
+                  );
+                } else if (validExtIds.length > 1) {
+                  this.logger.warn(
+                    `Multiple conflicting KFINTECH identities found for company of IPO ${targetIpoId}: [${validExtIds.join(', ')}]`,
+                  );
+                }
+              }
+            }
           }
 
           return {
