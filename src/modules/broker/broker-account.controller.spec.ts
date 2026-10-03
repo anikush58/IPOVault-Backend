@@ -700,13 +700,31 @@ describe('BrokerAccountController', () => {
       expect(mockAccountService.getAccount).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
       expect(mockConnectionService.markPending).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
       expect(mockRegistry.getAdapter).toHaveBeenCalledWith(BrokerType.UPSTOX);
-      expect(mockOAuthStateService.generateState).toHaveBeenCalledWith('user-123', 'acc-uuid-1');
+      expect(mockOAuthStateService.generateState).toHaveBeenCalledWith(
+        'user-123',
+        'acc-uuid-1',
+        undefined,
+      );
       expect(mockUpstoxAdapter.getAuthorizationUrl).toHaveBeenCalledWith({
         state: 'mock-crypto-state-token',
       });
       expect(result).toEqual({
         authorizationUrl: 'https://api.upstox.com/v2/login/authorization/dialog?response_type=code',
       });
+    });
+
+    it('passes client redirectUri to generateState when provided by mobile client (e.g. Expo Go)', async () => {
+      mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
+      mockConnectionService.markPending.mockResolvedValue(sampleConnectionPrisma);
+
+      const expoGoUri = 'exp://192.168.1.100:8081/--/broker-callback';
+      await controller.startUpstoxConnect('acc-uuid-1', expoGoUri, 'user-123');
+
+      expect(mockOAuthStateService.generateState).toHaveBeenCalledWith(
+        'user-123',
+        'acc-uuid-1',
+        expoGoUri,
+      );
     });
 
     it('rejects if the account is for a different broker (e.g. DHAN)', async () => {
@@ -883,6 +901,45 @@ describe('BrokerAccountController', () => {
       expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html; charset=utf-8');
       expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('Upstox Connected!'));
       expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('ipovault://broker-callback?status=success&accountId=acc-uuid-1'));
+    });
+
+    it('renders success HTML redirecting to Expo Go exp:// scheme when clientRedirectUri is stored in state', async () => {
+      const expoGoUri = 'exp://192.168.1.100:8081/--/broker-callback';
+      mockOAuthStateService.validateAndConsumeState.mockReturnValue({
+        userId: 'user-123',
+        brokerAccountId: 'acc-uuid-1',
+        expiresAt: Date.now() + 60000,
+        clientRedirectUri: expoGoUri,
+      });
+      mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
+      const connectedConn = {
+        ...sampleConnectionPrisma,
+        status: BrokerConnectionStatus.CONNECTED,
+        connectedAt: mockDate,
+      };
+      mockConnectionService.saveTokens.mockResolvedValue(connectedConn);
+
+      const mockRes: any = {
+        setHeader: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        json: jest.fn(),
+      };
+
+      await controller.completeUpstoxConnectCallback(
+        'valid-upstox-code',
+        'mock-crypto-state-token',
+        'success',
+        undefined,
+        undefined,
+        'text/html',
+        mockRes,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.send).toHaveBeenCalledWith(
+        expect.stringContaining(`${expoGoUri}?status=success&accountId=acc-uuid-1`),
+      );
     });
 
     it('returns JSON response if Accept header is application/json', async () => {

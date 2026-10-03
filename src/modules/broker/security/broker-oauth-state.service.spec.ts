@@ -1,5 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
-import { BrokerOAuthStateService } from './broker-oauth-state.service';
+import {
+  BrokerOAuthStateService,
+  isValidClientRedirectUri,
+} from './broker-oauth-state.service';
 
 describe('BrokerOAuthStateService', () => {
   let service: BrokerOAuthStateService;
@@ -77,4 +80,55 @@ describe('BrokerOAuthStateService', () => {
     expect(record.userId).toBe('user-123');
     expect(record.brokerAccountId).toBe('acc-uuid-1');
   });
+
+  it('6. clientRedirectUri: persists valid Expo Go exp:// scheme URI', () => {
+    const expoGoUri = 'exp://192.168.1.100:8081/--/broker-callback';
+    const state = service.generateState('user-123', 'acc-uuid-1', expoGoUri);
+
+    const record = service.validateAndConsumeState(state);
+    expect(record.clientRedirectUri).toBe(expoGoUri);
+  });
+
+  it('7. clientRedirectUri: persists valid standalone ipovault:// scheme URI', () => {
+    const standaloneUri = 'ipovault://broker-callback';
+    const state = service.generateState('user-123', 'acc-uuid-1', standaloneUri);
+
+    const record = service.validateAndConsumeState(state);
+    expect(record.clientRedirectUri).toBe(standaloneUri);
+  });
+
+  it('8. clientRedirectUri: ignores untrusted / unsafe schemes (https, javascript, CRLF)', () => {
+    const unsafeUrls = [
+      'https://evil.com/callback',
+      'http://malicious.org',
+      'javascript:alert(1)',
+      'data:text/html,evil',
+      'exp://valid.com\r\nSet-Cookie: evil',
+    ];
+
+    for (const url of unsafeUrls) {
+      const state = service.generateState('user-123', 'acc-uuid-1', url);
+      const record = service.validateAndConsumeState(state);
+      expect(record.clientRedirectUri).toBeUndefined();
+    }
+  });
+
+  describe('isValidClientRedirectUri', () => {
+    it('returns true for allowed schemes', () => {
+      expect(isValidClientRedirectUri('ipovault://broker-callback')).toBe(true);
+      expect(isValidClientRedirectUri('exp://192.168.1.5:8081/--/broker-callback')).toBe(true);
+      expect(isValidClientRedirectUri('exps://u.expo.dev/--/broker-callback')).toBe(true);
+    });
+
+    it('returns false for unsafe or null/empty inputs', () => {
+      expect(isValidClientRedirectUri(undefined)).toBe(false);
+      expect(isValidClientRedirectUri(null)).toBe(false);
+      expect(isValidClientRedirectUri('')).toBe(false);
+      expect(isValidClientRedirectUri('https://google.com')).toBe(false);
+      expect(isValidClientRedirectUri('http://localhost:3000')).toBe(false);
+      expect(isValidClientRedirectUri('javascript:void(0)')).toBe(false);
+      expect(isValidClientRedirectUri('ipovault://broker-callback\r\nX-Injected: true')).toBe(false);
+    });
+  });
 });
+

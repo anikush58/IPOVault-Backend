@@ -6,6 +6,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   Post,
   Query,
@@ -20,7 +21,10 @@ import {
   BrokerInvestmentService,
   UserPortfolioSummaryResponse,
 } from './broker-investment.service';
-import { BrokerOAuthStateService } from './security/broker-oauth-state.service';
+import {
+  BrokerOAuthStateService,
+  isValidClientRedirectUri,
+} from './security/broker-oauth-state.service';
 import { BrokerRegistry } from './broker.registry';
 import {
   NormalizedHolding,
@@ -73,8 +77,19 @@ function mapConnectionToSafeResponse(
   };
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 @Controller('broker-accounts')
 export class BrokerAccountController {
+  private readonly logger = new Logger(BrokerAccountController.name);
+
   constructor(
     private readonly brokerAccountService: BrokerAccountService,
     private readonly brokerConnectionService: BrokerConnectionService,
@@ -178,8 +193,16 @@ export class BrokerAccountController {
 
     await this.brokerConnectionService.markPending(authUserId, id.trim());
 
+    this.logger.log(
+      `[Upstox OAuth Start] accountId=${id.trim()} clientRedirectUri=${redirectUri ?? 'none (default)'}`,
+    );
+
     const adapter = this.brokerRegistry.getAdapter(BrokerType.UPSTOX);
-    const state = this.oauthStateService.generateState(authUserId, id.trim());
+    const state = this.oauthStateService.generateState(
+      authUserId,
+      id.trim(),
+      redirectUri,
+    );
 
     const authorizationUrl = await adapter.getAuthorizationUrl({
       state,
@@ -211,26 +234,60 @@ export class BrokerAccountController {
         errorDescription ||
         error ||
         'Upstox authorization was cancelled or rejected';
+      let clientRedirectUri: string | undefined;
+      if (state) {
+        try {
+          const stateRecord = this.oauthStateService.validateAndConsumeState(state);
+          clientRedirectUri = stateRecord.clientRedirectUri;
+        } catch {}
+      }
       if (isJson) {
         throw new BadRequestException(errorMsg);
       }
-      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'Upstox');
+      return this.renderOAuthHtmlResponse(
+        res!,
+        false,
+        errorMsg,
+        undefined,
+        'Upstox',
+        clientRedirectUri,
+      );
     }
 
     const tokenCode = code?.trim();
     if (!tokenCode) {
       const errorMsg = 'Authorization code is required';
+      let clientRedirectUri: string | undefined;
+      if (state) {
+        try {
+          const stateRecord = this.oauthStateService.validateAndConsumeState(state);
+          clientRedirectUri = stateRecord.clientRedirectUri;
+        } catch {}
+      }
       if (isJson) {
         throw new BadRequestException(errorMsg);
       }
-      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'Upstox');
+      return this.renderOAuthHtmlResponse(
+        res!,
+        false,
+        errorMsg,
+        undefined,
+        'Upstox',
+        clientRedirectUri,
+      );
     }
 
+    let clientRedirectUri: string | undefined;
     try {
-      // Validate and consume single-use state to securely resolve userId and brokerAccountId
+      // Validate and consume single-use state to securely resolve userId, brokerAccountId, and clientRedirectUri
       const stateRecord = this.oauthStateService.validateAndConsumeState(state);
       const authUserId = stateRecord.userId;
       const accountId = stateRecord.brokerAccountId;
+      clientRedirectUri = stateRecord.clientRedirectUri;
+
+      this.logger.log(
+        `[Upstox OAuth Callback] state=${state ?? 'none'} resolved clientRedirectUri=${clientRedirectUri ?? 'none (fallback to ipovault://)'}`,
+      );
 
       const account = await this.brokerAccountService.getAccount(
         authUserId,
@@ -272,6 +329,7 @@ export class BrokerAccountController {
         'Your Upstox account has been securely linked.',
         accountId,
         'Upstox',
+        clientRedirectUri,
       );
     } catch (err: unknown) {
       const errorMsg =
@@ -280,7 +338,14 @@ export class BrokerAccountController {
         if (err instanceof BadRequestException) throw err;
         throw new BadRequestException(errorMsg);
       }
-      return this.renderOAuthHtmlResponse(res!, false, errorMsg, undefined, 'Upstox');
+      return this.renderOAuthHtmlResponse(
+        res!,
+        false,
+        errorMsg,
+        undefined,
+        'Upstox',
+        clientRedirectUri,
+      );
     }
   }
 
@@ -1447,6 +1512,7 @@ export class BrokerAccountController {
     message: string,
     accountId?: string,
     brokerName = 'Zerodha',
+    clientRedirectUri?: string,
   ): void {
     if (!res) return;
     const title = isSuccess ? `${brokerName} Connected` : 'Connection Failed';
@@ -1458,14 +1524,30 @@ export class BrokerAccountController {
         ? `&accountId=${encodeURIComponent(accountId)}`
         : ''
       : `&error=${encodeURIComponent(message)}`;
-    const deepLink = `ipovault://broker-callback?status=${statusParam}${extraParams}`;
+
+    let baseUri = 'ipovault://broker-callback';
+    if (clientRedirectUri && isValidClientRedirectUri(clientRedirectUri)) {
+      baseUri = clientRedirectUri.trim();
+    }
+    const separator = baseUri.includes('?') ? '&' : '?';
+    const deepLink = `${baseUri}${separator}status=${statusParam}${extraParams}`;
+
+    this.logger.log(
+      `[OAuth Render HTML] broker=${brokerName} status=${statusParam} finalRedirectDeepLink=${deepLink}`,
+    );
+
+    const safeTitle = escapeHtml(title);
+    const safeHeading = escapeHtml(heading);
+    const safeMessage = escapeHtml(message);
+    const safeDeepLinkHref = escapeHtml(deepLink);
+    const safeDeepLinkJson = JSON.stringify(deepLink);
 
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${title}</title>
+  <title>${safeTitle}</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #090A0C; color: #FAFAFC; text-align: center; padding: 1.25rem; }
@@ -1473,21 +1555,44 @@ export class BrokerAccountController {
     .icon { font-size: 3rem; margin-bottom: 1rem; }
     h1 { color: ${color}; font-size: 1.5rem; margin: 0 0 0.75rem 0; font-weight: 700; }
     p { color: #A1A1AA; font-size: 0.95rem; margin: 0 0 1.75rem 0; line-height: 1.5; }
-    a.btn { display: inline-block; background: #3B82F6; color: #FFFFFF; padding: 0.85rem 1.75rem; border-radius: 0.75rem; text-decoration: none; font-weight: 600; font-size: 0.95rem; }
+    a.btn { display: inline-block; background: #3B82F6; color: #FFFFFF; padding: 0.85rem 1.75rem; border-radius: 0.75rem; text-decoration: none; font-weight: 600; font-size: 0.95rem; cursor: pointer; transition: background-color 0.15s ease; user-select: none; -webkit-tap-highlight-color: transparent; }
     a.btn:hover { background-color: #2563EB; }
+    a.btn:active { background-color: #1D4ED8; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="icon">${isSuccess ? '✅' : '❌'}</div>
-    <h1>${heading}</h1>
-    <p>${message}</p>
-    <a href="${deepLink}" class="btn">Return to IPOVault</a>
+    <h1>${safeHeading}</h1>
+    <p>${safeMessage}</p>
+    <a id="return-btn" href="${safeDeepLinkHref}" onclick="handleReturn(event)" class="btn">Return to IPOVault</a>
   </div>
   <script>
-    setTimeout(function() {
-      window.location.href = '${deepLink}';
-    }, 400);
+    var targetUrl = ${safeDeepLinkJson};
+    function doRedirect() {
+      try {
+        window.location.href = targetUrl;
+      } catch (e) {
+        try {
+          window.location.replace(targetUrl);
+        } catch (err) {}
+      }
+    }
+    function handleReturn(e) {
+      var btn = document.getElementById('return-btn');
+      if (btn) {
+        btn.innerText = 'Opening...';
+      }
+      try {
+        window.location.href = targetUrl;
+      } catch (err) {
+        window.location.assign(targetUrl);
+      }
+    }
+    // Attempt automatic redirect
+    doRedirect();
+    setTimeout(doRedirect, 300);
+    setTimeout(doRedirect, 1000);
   </script>
 </body>
 </html>`;

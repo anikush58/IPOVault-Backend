@@ -5,21 +5,43 @@ export interface OAuthStateRecord {
   userId: string;
   brokerAccountId: string;
   expiresAt: number;
+  clientRedirectUri?: string;
 }
 
 const DEFAULT_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Validates whether a client redirect URI belongs to an allowlisted scheme (Expo Go or custom native scheme).
+ * Rejects arbitrary external domains, javascript/data schemes, and CRLF injection attempts.
+ */
+export function isValidClientRedirectUri(uri?: string | null): boolean {
+  if (!uri || typeof uri !== 'string') return false;
+  const trimmed = uri.trim();
+  if (!trimmed || trimmed.length > 512) return false;
+  // Reject CRLF or control characters to prevent HTTP response / header injection
+  if (/[\r\n\0\t]/.test(trimmed)) return false;
+
+  // Allow native app scheme (e.g., ipovault://broker-callback)
+  if (trimmed.startsWith('ipovault://')) return true;
+
+  // Allow Expo Go development schemes (e.g., exp://192.168.1.5:8081/--/broker-callback)
+  if (trimmed.startsWith('exp://') || trimmed.startsWith('exps://')) return true;
+
+  return false;
+}
 
 @Injectable()
 export class BrokerOAuthStateService {
   private readonly stateStore = new Map<string, OAuthStateRecord>();
 
   /**
-   * Generates a cryptographically random state token, binds it to userId and brokerAccountId,
-   * stores it server-side with a short TTL, and returns the token string.
+   * Generates a cryptographically random state token, binds it to userId, brokerAccountId,
+   * and optional validated clientRedirectUri, stores it server-side with a short TTL, and returns the token string.
    */
   generateState(
     userId: string,
     brokerAccountId: string,
+    clientRedirectUriOrTtl?: string | number,
     ttlMs: number = DEFAULT_STATE_TTL_MS,
   ): string {
     if (!userId || typeof userId !== 'string' || !userId.trim()) {
@@ -39,13 +61,26 @@ export class BrokerOAuthStateService {
 
     this.cleanExpired();
 
+    let clientRedirectUri: string | undefined;
+    let effectiveTtl = ttlMs;
+
+    if (typeof clientRedirectUriOrTtl === 'number') {
+      effectiveTtl = clientRedirectUriOrTtl;
+    } else if (
+      typeof clientRedirectUriOrTtl === 'string' &&
+      isValidClientRedirectUri(clientRedirectUriOrTtl)
+    ) {
+      clientRedirectUri = clientRedirectUriOrTtl.trim();
+    }
+
     const stateToken = randomBytes(32).toString('hex');
-    const expiresAt = Date.now() + ttlMs;
+    const expiresAt = Date.now() + effectiveTtl;
 
     this.stateStore.set(stateToken, {
       userId: userId.trim(),
       brokerAccountId: brokerAccountId.trim(),
       expiresAt,
+      ...(clientRedirectUri ? { clientRedirectUri } : {}),
     });
 
     return stateToken;
