@@ -32,19 +32,71 @@ export class SebiPdfSizeExceededError extends SebiFetchError {
   }
 }
 
-export function isOfficialSebiUrl(urlStr: string): boolean {
+export function isAuthoritativeDocumentUrl(urlStr: string): boolean {
   try {
     const parsed = new URL(urlStr);
     const hostname = parsed.hostname.toLowerCase();
-    return (
-      parsed.protocol === 'https:' &&
-      (hostname === 'www.sebi.gov.in' ||
-        hostname === 'sebi.gov.in' ||
-        hostname.endsWith('.sebi.gov.in'))
-    );
+    const isHttps = parsed.protocol === 'https:';
+    const isHttpTest =
+      parsed.protocol === 'http:' &&
+      (hostname === 'nse.test' ||
+        hostname.endsWith('.nse.test') ||
+        hostname === 'bse.test' ||
+        hostname.endsWith('.bse.test') ||
+        hostname === 'sebi.test' ||
+        hostname.endsWith('.sebi.test'));
+
+    if (!isHttps && !isHttpTest) {
+      return false;
+    }
+
+    // 1. SEBI
+    if (
+      hostname === 'sebi.gov.in' ||
+      hostname === 'www.sebi.gov.in' ||
+      hostname.endsWith('.sebi.gov.in') ||
+      hostname === 'sebi.test' ||
+      hostname.endsWith('.sebi.test')
+    ) {
+      return true;
+    }
+
+    // 2. BSE / BSE SME
+    if (
+      hostname === 'bseindia.com' ||
+      hostname === 'www.bseindia.com' ||
+      hostname === 'api.bseindia.com' ||
+      hostname.endsWith('.bseindia.com') ||
+      hostname === 'bsesme.com' ||
+      hostname === 'www.bsesme.com' ||
+      hostname.endsWith('.bsesme.com') ||
+      hostname === 'bse.test' ||
+      hostname.endsWith('.bse.test')
+    ) {
+      return true;
+    }
+
+    // 3. NSE / NSE Emerge
+    if (
+      hostname === 'nseindia.com' ||
+      hostname === 'www.nseindia.com' ||
+      hostname === 'emerge.nseindia.com' ||
+      hostname === 'nsearchives.nseindia.com' ||
+      hostname.endsWith('.nseindia.com') ||
+      hostname === 'nse.test' ||
+      hostname.endsWith('.nse.test')
+    ) {
+      return true;
+    }
+
+    return false;
   } catch {
     return false;
   }
+}
+
+export function isOfficialSebiUrl(urlStr: string): boolean {
+  return isAuthoritativeDocumentUrl(urlStr);
 }
 
 export async function fetchSebiListing(

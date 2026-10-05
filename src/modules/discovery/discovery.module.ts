@@ -21,6 +21,10 @@ import { DiscoveryCoverageService } from './discovery-coverage.service';
 import { DiscoveryQualityGateService } from './discovery-quality-gate.service';
 import { DiscoverySchedulerService } from './discovery-scheduler.service';
 
+import { SmeDocumentMatcherService } from './adapters/sebi/sme-document-matcher.service';
+import { SebiDocumentMatcherService } from './adapters/sebi/sebi-document-matcher.service';
+import { SebiDocumentRetrievalService } from './adapters/sebi/sebi-document-retrieval.service';
+
 @Module({
   providers: [
     DiscoveryRecordRepository,
@@ -42,6 +46,9 @@ import { DiscoverySchedulerService } from './discovery-scheduler.service';
     SebiSourceAdapter,
     SebiHttpClient,
     SebiDiscoveryFlow,
+    SmeDocumentMatcherService,
+    SebiDocumentMatcherService,
+    SebiDocumentRetrievalService,
   ],
   exports: [
     DiscoveryService,
@@ -60,6 +67,9 @@ import { DiscoverySchedulerService } from './discovery-scheduler.service';
     SebiSourceAdapter,
     SebiHttpClient,
     SebiDiscoveryFlow,
+    SmeDocumentMatcherService,
+    SebiDocumentMatcherService,
+    SebiDocumentRetrievalService,
   ],
 })
 export class DiscoveryModule {}

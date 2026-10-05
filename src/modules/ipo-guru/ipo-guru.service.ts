@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -15,6 +16,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { Env } from '../../config/env';
+import { EnrichmentOrchestratorService } from '../enrichment/enrichment-orchestrator.service';
 import {
   IpoGuruFetchResult,
   IpoGuruStatusResponse,
@@ -49,6 +51,8 @@ export class IpoGuruService {
   constructor(
     private readonly configService: ConfigService<Env, true>,
     private readonly prisma: PrismaService,
+    @Optional()
+    private readonly enrichmentOrchestrator?: EnrichmentOrchestratorService,
   ) {}
 
   /**
@@ -439,10 +443,21 @@ export class IpoGuruService {
       try {
         const itemResult = await this.syncSingleIpo(rawItem, sourceId, existingIpos);
         summary.items.push(itemResult);
-        if (itemResult.action === 'UPDATED') summary.matchedUpdated++;
-        else if (itemResult.action === 'CREATED') summary.newlyCreated++;
-        else if (itemResult.action === 'SKIPPED') summary.skipped++;
-        else if (itemResult.action === 'ERROR') summary.errorCount++;
+        if (itemResult.action === 'UPDATED') {
+          summary.matchedUpdated++;
+          if (itemResult.ipoId && this.enrichmentOrchestrator) {
+            this.enrichmentOrchestrator.enqueueIpoEnrichment(itemResult.ipoId);
+          }
+        } else if (itemResult.action === 'CREATED') {
+          summary.newlyCreated++;
+          if (itemResult.ipoId && this.enrichmentOrchestrator) {
+            this.enrichmentOrchestrator.enqueueIpoEnrichment(itemResult.ipoId);
+          }
+        } else if (itemResult.action === 'SKIPPED') {
+          summary.skipped++;
+        } else if (itemResult.action === 'ERROR') {
+          summary.errorCount++;
+        }
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         this.logger.error(`Error syncing IPO '${guruName}': ${errMsg}`);

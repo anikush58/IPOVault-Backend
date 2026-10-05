@@ -21,6 +21,7 @@ import { ConsoleModule } from './modules/console/console.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { BrokerModule } from './modules/broker/broker.module';
 import { IpoGuruModule } from './modules/ipo-guru/ipo-guru.module';
+import { EnrichmentModule } from './modules/enrichment/enrichment.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { IpoGuruModule } from './modules/ipo-guru/ipo-guru.module';
     AdminModule,
     BrokerModule,
     IpoGuruModule,
+    EnrichmentModule,
     HealthModule,
   ],
   providers: [

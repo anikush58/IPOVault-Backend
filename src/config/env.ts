@@ -124,6 +124,9 @@ export const envSchema = z.object({
     .int()
     .min(1000)
     .default(15_000),
+  /** AI Missing-field enrichment API keys */
+  GEMINI_API_KEY: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
 })
 .superRefine((val, ctx) => {
   if (val.NODE_ENV === 'production' && !val.CONSOLE_SESSION_SECRET) {
