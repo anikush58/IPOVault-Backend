@@ -378,7 +378,7 @@ describe('UpstoxBrokerAdapter', () => {
     });
   });
 
-  describe('getQuote', () => {
+  describe('getQuote and getQuotes', () => {
     it('fetches and normalizes market quote for an ISIN and exchange', async () => {
       const mockQuoteResponse = {
         status: 'success',
@@ -410,6 +410,108 @@ describe('UpstoxBrokerAdapter', () => {
         lastPrice: 2450.0,
         asOf: new Date('2026-09-22T10:30:00.000Z'),
       });
+    });
+
+    it('correctly maps Upstox response keyed by trading symbol (NSE_EQ:TATATECH) to requested ISIN (INE848E01016)', async () => {
+      const mockQuoteResponse = {
+        status: 'success',
+        data: {
+          'NSE_EQ:TATATECH': {
+            last_price: 1045.5,
+            instrument_token: 'NSE_EQ|INE848E01016',
+            timestamp: '2026-10-04T10:30:00.000Z',
+          },
+        },
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue(mockQuoteResponse),
+      });
+
+      const quote = await adapter.getQuote(
+        { accessToken: 'valid-token' },
+        'INE848E01016',
+        ExchangeListing.NSE,
+        'TATATECH',
+      );
+
+      expect(quote).toEqual({
+        isin: 'INE848E01016',
+        exchange: ExchangeListing.NSE,
+        symbol: 'TATATECH',
+        lastPrice: 1045.5,
+        asOf: new Date('2026-10-04T10:30:00.000Z'),
+      });
+    });
+
+    it('correctly matches quote when Upstox instrument_token contains ISIN (NSE_EQ|INE848E01016)', async () => {
+      const mockQuoteResponse = {
+        status: 'success',
+        data: {
+          '51834': {
+            last_price: 1045.5,
+            instrument_token: 'NSE_EQ|INE848E01016',
+            symbol: 'TATATECH',
+            timestamp: '2026-10-04T10:30:00.000Z',
+          },
+        },
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue(mockQuoteResponse),
+      });
+
+      const quotes = await adapter.getQuotes({ accessToken: 'valid-token' }, [
+        { isin: 'INE848E01016', symbol: 'TATATECH', exchange: ExchangeListing.NSE },
+      ]);
+
+      expect(quotes).toHaveLength(1);
+      expect(quotes[0]).toEqual({
+        isin: 'INE848E01016',
+        exchange: ExchangeListing.NSE,
+        symbol: 'TATATECH',
+        lastPrice: 1045.5,
+        asOf: new Date('2026-10-04T10:30:00.000Z'),
+      });
+    });
+
+    it('fetches multiple quotes in bulk via getQuotes without mixing up instruments', async () => {
+      const mockBulkResponse = {
+        status: 'success',
+        data: {
+          'NSE_EQ:TATATECH': {
+            last_price: 1045.5,
+            instrument_token: 'NSE_EQ|INE848E01016',
+            symbol: 'TATATECH',
+          },
+          'NSE_EQ:BELRISE': {
+            last_price: 237.0,
+            instrument_token: 'NSE_EQ|INE00AA01010',
+            symbol: 'BELRISE',
+          },
+        },
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue(mockBulkResponse),
+      });
+
+      const quotes = await adapter.getQuotes({ accessToken: 'valid-token' }, [
+        { isin: 'INE848E01016', symbol: 'TATATECH', exchange: ExchangeListing.NSE },
+        { isin: 'INE00AA01010', symbol: 'BELRISE', exchange: ExchangeListing.NSE },
+      ]);
+
+      expect(quotes).toHaveLength(2);
+      expect(quotes[0].isin).toBe('INE848E01016');
+      expect(quotes[0].lastPrice).toBe(1045.5);
+      expect(quotes[1].isin).toBe('INE00AA01010');
+      expect(quotes[1].lastPrice).toBe(237.0);
     });
   });
 

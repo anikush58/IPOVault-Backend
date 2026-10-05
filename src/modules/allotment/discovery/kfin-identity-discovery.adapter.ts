@@ -4,7 +4,7 @@ import {
   IRegistrarIdentityDiscoveryAdapter,
 } from './registrar-identity-discovery.types';
 
-const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
+export const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
   clientId: string;
   name: string;
 }> = [

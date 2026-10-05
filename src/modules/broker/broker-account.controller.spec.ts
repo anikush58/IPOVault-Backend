@@ -233,6 +233,14 @@ describe('BrokerAccountController', () => {
           tradedAt: mockDate,
         },
       ]),
+      capabilities: {
+        authorization: true,
+        holdings: true,
+        trades: true,
+        quotes: true,
+        tokenRefresh: false,
+        revocation: true,
+      },
       getQuote: jest.fn().mockResolvedValue({
         isin: 'INE002A01018',
         exchange: ExchangeListing.NSE,
@@ -240,6 +248,15 @@ describe('BrokerAccountController', () => {
         lastPrice: 2450.0,
         asOf: mockDate,
       }),
+      getQuotes: jest.fn().mockResolvedValue([
+        {
+          isin: 'INE002A01018',
+          exchange: ExchangeListing.NSE,
+          symbol: 'RELIANCE',
+          lastPrice: 2450.0,
+          asOf: mockDate,
+        },
+      ]),
     };
 
     mockDhanAdapter = {
@@ -2046,20 +2063,67 @@ describe('BrokerAccountController', () => {
     });
   });
 
-  describe('GET /api/v1/broker-accounts/portfolio', () => {
-    it('delegates to BrokerInvestmentService.getUserPortfolioSummary', async () => {
-      const result = await controller.getUserPortfolio('user-123');
+  describe('GET /api/v1/broker-accounts/:id/quotes and GET /api/v1/broker-accounts/quotes', () => {
+    it('returns bulk market quotes for an account via GET /api/v1/broker-accounts/:id/quotes', async () => {
+      mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
+      mockRegistry.getAdapter.mockReturnValue(mockUpstoxAdapter);
 
-      expect(mockInvestmentService.getUserPortfolioSummary).toHaveBeenCalledWith('user-123');
-      expect(result).toHaveProperty('summary');
-      expect(result.summary.totalCurrentHoldingValue).toBe(31000);
-      expect(result).toHaveProperty('investments');
+      const result = await controller.getAccountQuotes(
+        'acc-uuid-1',
+        'INE848E01016,INE002A01018',
+        'NSE:TATATECH,NSE:RELIANCE',
+        'NSE',
+        'user-123',
+      );
+
+      expect(mockUpstoxAdapter.getQuotes).toHaveBeenCalled();
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          isin: 'INE002A01018',
+          lastPrice: 2450.0,
+        }),
+      );
     });
 
-    it('throws UnauthorizedException if x-user-id header is missing', async () => {
-      await expect(controller.getUserPortfolio('')).rejects.toThrow(
-        UnauthorizedException,
+    it('returns bulk market quotes across any connected broker via GET /api/v1/broker-accounts/quotes', async () => {
+      mockAccountService.getAccounts.mockResolvedValue([
+        {
+          ...sampleUpstoxAccountPrisma,
+          connection: {
+            ...sampleConnectionPrisma,
+            status: 'CONNECTED',
+          },
+        },
+      ]);
+      mockRegistry.getAdapter.mockReturnValue(mockUpstoxAdapter);
+
+      const result = await controller.getQuotes(
+        'INE848E01016',
+        'NSE:TATATECH',
+        'NSE',
+        'user-123',
       );
+
+      expect(mockUpstoxAdapter.getQuotes).toHaveBeenCalled();
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(1);
+    });
+
+    it('returns empty array when no query parameters are provided', async () => {
+      mockAccountService.getAccount.mockResolvedValue(sampleUpstoxAccountPrisma);
+      mockRegistry.getAdapter.mockReturnValue(mockUpstoxAdapter);
+
+      const result = await controller.getAccountQuotes(
+        'acc-uuid-1',
+        undefined,
+        undefined,
+        undefined,
+        'user-123',
+      );
+
+      expect(result).toEqual([]);
     });
   });
 });

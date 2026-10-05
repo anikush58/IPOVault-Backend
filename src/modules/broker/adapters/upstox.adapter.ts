@@ -407,24 +407,64 @@ export class UpstoxBrokerAdapter implements BrokerAdapter {
   }
 
   /**
-   * Fetches real-time market quote from Upstox for an instrument key.
+   * Fetches real-time market quotes in bulk from Upstox.
+   * Matches returned data using the identity hierarchy:
+   * 1. Exact Upstox instrument_token (e.g. NSE_EQ|INE848E01016)
+   * 2. ISIN extracted from instrument_token
+   * 3. Exchange + normalized trading symbol (e.g. NSE_EQ:TATATECH)
+   * 4. Existing instrument key / response dictionary key
+   * 5. Conservative fallback only when single instrument is unambiguous
    */
-  async getQuote(
+  async getQuotes(
     tokens: BrokerAuthTokens,
-    isin: string,
-    exchange: ExchangeListing,
-  ): Promise<NormalizedQuote> {
+    instruments: Array<{
+      isin?: string | null;
+      symbol?: string | null;
+      exchange?: ExchangeListing | null;
+    }>,
+  ): Promise<NormalizedQuote[]> {
     if (!tokens.accessToken) {
       throw new BadRequestException('Access token is required');
     }
-    if (!isin || !isin.trim()) {
-      throw new BadRequestException('ISIN is required for quote');
+    if (!instruments || instruments.length === 0) {
+      return [];
     }
 
-    const exchSegment = exchange === ExchangeListing.BSE ? 'BSE_EQ' : 'NSE_EQ';
-    const instrumentKey = `${exchSegment}|${isin.trim()}`;
+    const keyDescriptors = instruments
+      .map((inst) => {
+        const isin = inst.isin?.trim().toUpperCase() || null;
+        const symbol = inst.symbol?.trim().toUpperCase() || null;
+        const exchange =
+          inst.exchange === ExchangeListing.BSE
+            ? ExchangeListing.BSE
+            : ExchangeListing.NSE;
+        const exchSegment =
+          exchange === ExchangeListing.BSE ? 'BSE_EQ' : 'NSE_EQ';
+        const instrumentKey = isin
+          ? `${exchSegment}|${isin}`
+          : symbol
+            ? `${exchSegment}|${symbol}`
+            : null;
+
+        return {
+          isin,
+          symbol,
+          exchange,
+          exchSegment,
+          instrumentKey,
+        };
+      })
+      .filter((k) => Boolean(k.instrumentKey));
+
+    if (keyDescriptors.length === 0) {
+      return [];
+    }
+
+    const instrumentKeys = Array.from(
+      new Set(keyDescriptors.map((k) => k.instrumentKey!)),
+    );
     const url = `${this.baseUrl}/market-quote/quotes?instrument_key=${encodeURIComponent(
-      instrumentKey,
+      instrumentKeys.join(','),
     )}`;
 
     try {
@@ -444,37 +484,175 @@ export class UpstoxBrokerAdapter implements BrokerAdapter {
         throw new BadRequestException(`Upstox quote fetch failed: ${errorMsg}`);
       }
 
-      const quoteData =
-        json.data?.[`${exchSegment}:${isin.trim()}`] ||
-        json.data?.[instrumentKey] ||
-        Object.values(json.data || {})[0] ||
-        {};
+      const dataObj = (json.data || {}) as Record<string, any>;
+      const results: NormalizedQuote[] = [];
 
-      const lastPrice = Number(
-        (quoteData as any).last_price ?? (quoteData as any).lastPrice ?? 0,
-      );
+      for (const req of keyDescriptors) {
+        let matchedKey: string | null = null;
+        let matchedData: any = null;
 
-      let asOf = new Date();
-      if ((quoteData as any).timestamp) {
-        const parsed = new Date((quoteData as any).timestamp);
-        if (!isNaN(parsed.getTime())) {
-          asOf = parsed;
+        // Identity Hierarchy:
+        // 1. Exact Upstox instrument_token match
+        for (const [key, val] of Object.entries(dataObj)) {
+          if (val && typeof val === 'object') {
+            const token = val.instrument_token || val.instrumentToken;
+            if (
+              token &&
+              req.instrumentKey &&
+              String(token).toUpperCase() === req.instrumentKey.toUpperCase()
+            ) {
+              matchedKey = key;
+              matchedData = val;
+              break;
+            }
+          }
+        }
+
+        // 2. ISIN extracted from instrument_token or response key
+        if (!matchedData && req.isin) {
+          for (const [key, val] of Object.entries(dataObj)) {
+            if (val && typeof val === 'object') {
+              const tokenIsin = extractIsinFromInstrumentKey(
+                val.instrument_token || val.instrumentToken,
+              );
+              const keyIsin = extractIsinFromInstrumentKey(key);
+              if (
+                (tokenIsin && tokenIsin.toUpperCase() === req.isin) ||
+                (keyIsin && keyIsin.toUpperCase() === req.isin)
+              ) {
+                matchedKey = key;
+                matchedData = val;
+                break;
+              }
+            }
+          }
+        }
+
+        // 3. Exchange + normalized trading symbol
+        if (!matchedData && req.symbol) {
+          const targetSymKey = `${req.exchSegment}:${req.symbol}`.toUpperCase();
+          const targetSymPipeKey = `${req.exchSegment}|${req.symbol}`.toUpperCase();
+          for (const [key, val] of Object.entries(dataObj)) {
+            const upperKey = key.toUpperCase();
+            const symbolFromKey = upperKey.includes(':')
+              ? upperKey.split(':')[1]
+              : upperKey.includes('|')
+                ? upperKey.split('|')[1]
+                : upperKey;
+            const symbolFromVal = (val?.symbol || '').toUpperCase();
+            if (
+              upperKey === targetSymKey ||
+              upperKey === targetSymPipeKey ||
+              symbolFromKey === req.symbol ||
+              symbolFromVal === req.symbol
+            ) {
+              matchedKey = key;
+              matchedData = val;
+              break;
+            }
+          }
+        }
+
+        // 4. Existing instrument key / response dictionary key
+        if (!matchedData) {
+          if (req.instrumentKey && dataObj[req.instrumentKey]) {
+            matchedKey = req.instrumentKey;
+            matchedData = dataObj[req.instrumentKey];
+          } else if (req.isin && dataObj[`${req.exchSegment}:${req.isin}`]) {
+            matchedKey = `${req.exchSegment}:${req.isin}`;
+            matchedData = dataObj[`${req.exchSegment}:${req.isin}`];
+          } else if (req.symbol && dataObj[req.symbol]) {
+            matchedKey = req.symbol;
+            matchedData = dataObj[req.symbol];
+          }
+        }
+
+        // 5. Conservative fallback: single requested instrument & single response entry
+        if (
+          !matchedData &&
+          keyDescriptors.length === 1 &&
+          Object.keys(dataObj).length === 1
+        ) {
+          const [singleKey, singleVal] = Object.entries(dataObj)[0];
+          matchedKey = singleKey;
+          matchedData = singleVal;
+        }
+
+        if (matchedData) {
+          const lastPrice = Number(
+            matchedData.last_price ??
+              matchedData.lastPrice ??
+              matchedData.price ??
+              0,
+          );
+
+          if (lastPrice > 0) {
+            let asOf = new Date();
+            if (matchedData.timestamp) {
+              const parsed = new Date(matchedData.timestamp);
+              if (!isNaN(parsed.getTime())) {
+                asOf = parsed;
+              }
+            }
+
+            const isinFromToken = extractIsinFromInstrumentKey(
+              matchedData.instrument_token,
+            );
+            const finalIsin =
+              req.isin ||
+              (isinFromToken.startsWith('IN') ? isinFromToken : '');
+            const finalSymbol =
+              req.symbol ||
+              matchedData.symbol ||
+              (matchedKey && matchedKey.includes(':')
+                ? matchedKey.split(':')[1]
+                : null);
+
+            results.push({
+              isin: finalIsin,
+              symbol: finalSymbol,
+              exchange: req.exchange,
+              lastPrice,
+              asOf,
+            });
+          }
         }
       }
 
-      return {
-        isin: isin.trim(),
-        exchange,
-        symbol: (quoteData as any).symbol || null,
-        lastPrice,
-        asOf,
-      };
+      return results;
     } catch (err: unknown) {
       if (err instanceof BadRequestException) throw err;
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Upstox getQuote error: ${msg}`);
-      throw new BadRequestException('Failed to fetch Upstox market quote');
+      this.logger.error(`Upstox getQuotes error: ${msg}`);
+      throw new BadRequestException('Failed to fetch Upstox market quotes');
     }
+  }
+
+  /**
+   * Fetches real-time market quote from Upstox for an instrument key.
+   */
+  async getQuote(
+    tokens: BrokerAuthTokens,
+    isin: string,
+    exchange: ExchangeListing,
+    symbol?: string | null,
+  ): Promise<NormalizedQuote> {
+    if (!tokens.accessToken) {
+      throw new BadRequestException('Access token is required');
+    }
+    if (!isin || !isin.trim()) {
+      throw new BadRequestException('ISIN is required for quote');
+    }
+
+    const quotes = await this.getQuotes(tokens, [
+      { isin: isin.trim(), exchange, symbol },
+    ]);
+
+    if (quotes.length > 0) {
+      return quotes[0];
+    }
+
+    throw new BadRequestException(`Failed to find quote for ISIN: ${isin}`);
   }
 
   /**

@@ -364,14 +364,17 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     const bundleCode = await bundleResponse.text();
 
     // Step 3: Extract embedded company JSON array from bundle
-    const jsonRegex = /JSON\.parse\('(\[\s*\{[\s\S]*?\}\s*\])'\)/;
+    const jsonRegex = /JSON\.parse\((['"`])(\[\s*\{[\s\S]*?\}\s*\])\1\)/;
     const match = jsonRegex.exec(bundleCode);
 
     let rawList: unknown[] = [];
-    if (match) {
-      const rawJsonStr = match[1];
+    if (match && match[2]) {
+      const rawJsonStr = match[2];
       try {
-        const unescaped = rawJsonStr.replace(/\\'/g, "'").replace(/\\"/g, '"');
+        const unescaped = rawJsonStr
+          .replace(/\\'/g, "'")
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, '\\');
         const parsed = JSON.parse(unescaped);
         if (Array.isArray(parsed)) {
           rawList = parsed;

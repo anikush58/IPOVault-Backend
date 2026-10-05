@@ -83,7 +83,20 @@ export interface BrokerAdapter {
     tokens: BrokerAuthTokens,
     isin: string,
     exchange: ExchangeListing,
+    symbol?: string | null,
   ): Promise<NormalizedQuote>;
+
+  /**
+   * Optionally fetches real-time market quotes in bulk for multiple instruments.
+   */
+  getQuotes?(
+    tokens: BrokerAuthTokens,
+    instruments: Array<{
+      isin?: string | null;
+      symbol?: string | null;
+      exchange?: ExchangeListing | null;
+    }>,
+  ): Promise<NormalizedQuote[]>;
 
   /**
    * Explicitly revokes active tokens and disconnects the session on the broker side.

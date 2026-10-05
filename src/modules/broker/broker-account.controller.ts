@@ -86,6 +86,69 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
+function parseInstrumentsFromQueryParams(
+  isinsStr?: string,
+  symbolsStr?: string,
+  defaultExchangeStr?: string,
+): Array<{ isin?: string; symbol?: string; exchange: ExchangeListing }> {
+  const isins = isinsStr
+    ? isinsStr
+        .split(',')
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean)
+    : [];
+  const symbolEntries = symbolsStr
+    ? symbolsStr
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+
+  const defaultEx =
+    defaultExchangeStr?.trim().toUpperCase() === 'BSE'
+      ? ExchangeListing.BSE
+      : ExchangeListing.NSE;
+
+  const instrumentsMap = new Map<
+    string,
+    { isin?: string; symbol?: string; exchange: ExchangeListing }
+  >();
+
+  // Process ISINs first
+  for (const isin of isins) {
+    instrumentsMap.set(isin, { isin, exchange: defaultEx });
+  }
+
+  // Process symbol entries (e.g. "NSE:TATATECH" or "TATATECH")
+  for (const symEntry of symbolEntries) {
+    let ex = defaultEx;
+    let sym = symEntry;
+    if (symEntry.includes(':')) {
+      const [exPart, sPart] = symEntry.split(':');
+      if (exPart.toUpperCase() === 'BSE') ex = ExchangeListing.BSE;
+      else if (exPart.toUpperCase() === 'NSE') ex = ExchangeListing.NSE;
+      sym = sPart;
+    }
+    sym = sym.toUpperCase();
+
+    // Check if we can attach to an existing entry with no symbol yet
+    let matched = false;
+    for (const entry of instrumentsMap.values()) {
+      if (!entry.symbol) {
+        entry.symbol = sym;
+        entry.exchange = ex;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      instrumentsMap.set(`${ex}:${sym}`, { symbol: sym, exchange: ex });
+    }
+  }
+
+  return Array.from(instrumentsMap.values());
+}
+
 @Controller('broker-accounts')
 export class BrokerAccountController {
   private readonly logger = new Logger(BrokerAccountController.name);
@@ -1323,6 +1386,134 @@ export class BrokerAccountController {
 
     const adapter = this.brokerRegistry.getAdapter(account.broker);
     return adapter.getQuote(tokens, isin.trim(), exchange);
+  }
+
+  /**
+   * Retrieves real-time normalized market quotes in bulk for an account's connected broker.
+   * GET /api/v1/broker-accounts/:id/quotes?isins=...&symbols=...
+   */
+  @Get(':id/quotes')
+  async getAccountQuotes(
+    @Param('id') id: string,
+    @Query('isins') isinsStr?: string,
+    @Query('symbols') symbolsStr?: string,
+    @Query('exchange') defaultExchangeStr?: string,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<NormalizedQuote[]> {
+    const authUserId = this.getAuthenticatedUserId(userId);
+    if (!id || typeof id !== 'string' || !id.trim()) {
+      throw new BadRequestException('Account ID is required');
+    }
+
+    const account = await this.brokerAccountService.getAccount(
+      authUserId,
+      id.trim(),
+    );
+
+    const tokens = await this.brokerConnectionService.getDecryptedTokens(
+      authUserId,
+      id.trim(),
+    );
+
+    const adapter = this.brokerRegistry.getAdapter(account.broker);
+    if (!adapter.capabilities.quotes) {
+      throw new BadRequestException(
+        `Broker ${account.broker} does not support market quotes`,
+      );
+    }
+
+    const instruments = parseInstrumentsFromQueryParams(
+      isinsStr,
+      symbolsStr,
+      defaultExchangeStr,
+    );
+    if (instruments.length === 0) {
+      return [];
+    }
+
+    if (adapter.getQuotes) {
+      return adapter.getQuotes(tokens, instruments);
+    }
+
+    const quotes: NormalizedQuote[] = [];
+    for (const inst of instruments) {
+      if (inst.isin) {
+        try {
+          const q = await adapter.getQuote(
+            tokens,
+            inst.isin,
+            inst.exchange,
+            inst.symbol,
+          );
+          if (q) quotes.push(q);
+        } catch {
+          // Gracefully continue to next instrument
+        }
+      }
+    }
+    return quotes;
+  }
+
+  /**
+   * Retrieves real-time bulk quotes across any available connected broker supporting quotes.
+   * LTP is pure market data and not tied to security ownership.
+   * GET /api/v1/broker-accounts/quotes?isins=...&symbols=...
+   */
+  @Get('quotes')
+  async getQuotes(
+    @Query('isins') isinsStr?: string,
+    @Query('symbols') symbolsStr?: string,
+    @Query('exchange') defaultExchangeStr?: string,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<NormalizedQuote[]> {
+    const authUserId = this.getAuthenticatedUserId(userId);
+    const accounts = await this.brokerAccountService.getAccounts(authUserId);
+    const connectedAccount = accounts.find(
+      (a) =>
+        a.connection?.status === 'CONNECTED' &&
+        this.brokerRegistry.getAdapter(a.broker).capabilities.quotes,
+    );
+
+    if (!connectedAccount) {
+      return [];
+    }
+
+    const tokens = await this.brokerConnectionService.getDecryptedTokens(
+      authUserId,
+      connectedAccount.id,
+    );
+
+    const adapter = this.brokerRegistry.getAdapter(connectedAccount.broker);
+    const instruments = parseInstrumentsFromQueryParams(
+      isinsStr,
+      symbolsStr,
+      defaultExchangeStr,
+    );
+    if (instruments.length === 0) {
+      return [];
+    }
+
+    if (adapter.getQuotes) {
+      return adapter.getQuotes(tokens, instruments);
+    }
+
+    const quotes: NormalizedQuote[] = [];
+    for (const inst of instruments) {
+      if (inst.isin) {
+        try {
+          const q = await adapter.getQuote(
+            tokens,
+            inst.isin,
+            inst.exchange,
+            inst.symbol,
+          );
+          if (q) quotes.push(q);
+        } catch {
+          // Gracefully continue to next instrument
+        }
+      }
+    }
+    return quotes;
   }
 
   /**
