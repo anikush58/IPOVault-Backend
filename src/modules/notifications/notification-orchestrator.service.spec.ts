@@ -371,16 +371,12 @@ describe('NotificationOrchestratorService Unit Tests (Phase 29.3)', () => {
         sharesAllotted: 0,
       };
       mockPrismaService.allotmentCheckJobItem.findUnique.mockResolvedValue(notAllottedItem);
-      mockRepository.createNotification.mockResolvedValue({ id: 'notif-none' });
 
       const res = await service.processAllotmentObservation('job-item-1');
 
-      expect(res.createdCount).toBe(1);
-      expect(mockRepository.createNotification).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: expect.stringContaining('Not Allotted'),
-        }),
-      );
+      // Requirement 9: Suppress "No Allotment" notifications
+      expect(res.createdCount).toBe(0);
+      expect(mockRepository.createNotification).not.toHaveBeenCalled();
     });
 
     it('O, P. Excludes UNKNOWN and FAILED/transient statuses', async () => {

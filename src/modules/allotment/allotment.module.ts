@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { KfinRegistrarAdapter } from './adapters/kfin-registrar.adapter';
 import { MufgIntimeRegistrarAdapter } from './adapters/mufg-intime-registrar.adapter';
 import { MaashitlaRegistrarAdapter } from './adapters/maashitla-registrar.adapter';
@@ -17,8 +17,10 @@ import { KfinIdentityDiscoveryAdapter } from './discovery/kfin-identity-discover
 import { MufgIdentityDiscoveryAdapter } from './discovery/mufg-identity-discovery.adapter';
 import { SourceIdentitySyncService } from './discovery/source-identity-sync.service';
 import { RegistrarIdentitySyncSchedulerService } from './discovery/registrar-identity-sync-scheduler.service';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
+  imports: [forwardRef(() => NotificationModule)],
   controllers: [AllotmentController],
   providers: [
     AllotmentService,

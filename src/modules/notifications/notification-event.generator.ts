@@ -213,11 +213,12 @@ export class NotificationEventGenerator {
   ): CreateNotificationInput | null {
     const status = observation.status;
 
-    // Strict exclusion of non-definitive & transient statuses
+    // Strict exclusion of non-allotted & transient statuses:
+    // Per Requirement 9: Only send notifications when the user received allotment.
+    // Do NOT send notifications for NOT_ALLOTTED or non-definitive states.
     const definitiveStatuses: AllotmentResultStatus[] = [
       AllotmentResultStatus.ALLOTTED,
       AllotmentResultStatus.PARTIALLY_ALLOTTED,
-      AllotmentResultStatus.NOT_ALLOTTED,
     ];
 
     if (!definitiveStatuses.includes(status)) {
@@ -225,18 +226,15 @@ export class NotificationEventGenerator {
     }
 
     const symbolText = ipo.symbol ? ` (${ipo.symbol})` : '';
-    let title = 'Allotment Result Available';
-    let message = `Allotment result available for ${ipo.companyName}${symbolText}.`;
+    let title = 'Allotment Status: Allotted';
+    let message = `Allotment received for ${ipo.companyName}${symbolText}.`;
 
     if (status === AllotmentResultStatus.ALLOTTED) {
       title = 'Allotment Status: Allotted';
-      message = `Congratulations! Allotment successful for ${ipo.companyName}${symbolText} (${observation.sharesAllotted ?? 'N/A'} shares).`;
+      message = `Congratulations! Allotment received for ${ipo.companyName}${symbolText} (${observation.sharesAllotted ?? 'N/A'} shares).`;
     } else if (status === AllotmentResultStatus.PARTIALLY_ALLOTTED) {
       title = 'Allotment Status: Partially Allotted';
       message = `Partial allotment received for ${ipo.companyName}${symbolText} (${observation.sharesAllotted ?? 'N/A'} shares).`;
-    } else if (status === AllotmentResultStatus.NOT_ALLOTTED) {
-      title = 'Allotment Status: Not Allotted';
-      message = `No shares allotted for ${ipo.companyName}${symbolText}.`;
     }
 
     return {

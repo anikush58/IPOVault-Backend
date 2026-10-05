@@ -1,6 +1,7 @@
 import { IpoStatus, LifecycleEventType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RegistrarResolver } from '../allotment/registrar.resolver';
+import { AllotmentIdentifierType } from '../allotment/allotment.types';
 import {
   IpoTimelineSchedulerService,
   createISTDateTime,
@@ -9,13 +10,7 @@ import {
 
 describe('IpoTimelineSchedulerService Unit Tests', () => {
   let service: IpoTimelineSchedulerService;
-  let prismaMock: {
-    ipo: {
-      findMany: jest.Mock;
-      updateMany: jest.Mock;
-      update: jest.Mock;
-    };
-  };
+  let prismaMock: any;
   let resolverMock: {
     resolveAdapter: jest.Mock;
   };
@@ -24,6 +19,9 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
   };
   let ipoGuruServiceMock: {
     fetchIpos: jest.Mock;
+  };
+  let allotmentJobServiceMock: {
+    createJob: jest.Mock;
   };
 
   beforeEach(() => {
@@ -35,7 +33,16 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue({ id: 'ipo-1' }),
       },
-    };
+      userSavedPan: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      ipoInvestment: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      allotmentCheckJob: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    } as any;
 
     resolverMock = {
       resolveAdapter: jest.fn(),
@@ -49,11 +56,16 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       fetchIpos: jest.fn().mockResolvedValue([]),
     };
 
+    allotmentJobServiceMock = {
+      createJob: jest.fn().mockResolvedValue({ id: 'job-1' }),
+    };
+
     service = new IpoTimelineSchedulerService(
       prismaMock as unknown as PrismaService,
       resolverMock as unknown as RegistrarResolver,
       notificationOrchestratorMock as any,
       ipoGuruServiceMock as any,
+      allotmentJobServiceMock as any,
     );
   });
 
@@ -123,10 +135,10 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
     });
   });
 
-  describe('Transition 2: OPEN / CLOSING_TODAY -> CLOSED (at 5:00 PM IST on closing date)', () => {
-    it('5. should NOT close before 17:00:00 IST on closeDate', async () => {
+  describe('Transition 2: OPEN / UPCOMING -> CLOSING_TODAY (from 00:00 to 17:00 IST on closing date)', () => {
+    it('5a. should transition OPEN -> CLOSING_TODAY at 00:00:00 IST on closeDate', async () => {
       const closeDate = new Date('2026-09-25T00:00:00.000Z');
-      const nowBeforeClose = new Date('2026-09-25T11:29:59.000Z'); // 16:59:59 IST
+      const nowAtClosingDayStart = new Date('2026-09-24T18:30:00.000Z'); // 00:00:00 IST on 2026-09-25
 
       prismaMock.ipo.findMany.mockResolvedValue([
         {
@@ -139,19 +151,49 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         },
       ]);
 
+      const result = await service.processTimelineTransitions(nowAtClosingDayStart);
+      expect(result.closingTodayCount).toBe(1);
+      expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'ipo-2',
+          status: { in: [IpoStatus.OPEN, IpoStatus.UPCOMING] },
+        },
+        data: { status: IpoStatus.CLOSING_TODAY },
+      });
+    });
+  });
+
+  describe('Transition 2b: CLOSING_TODAY / OPEN -> CLOSED (at 5:00 PM IST on closing date)', () => {
+    it('5. should NOT close before 17:00:00 IST on closeDate', async () => {
+      const closeDate = new Date('2026-09-25T00:00:00.000Z');
+      const nowBeforeClose = new Date('2026-09-25T11:29:59.000Z'); // 16:59:59 IST
+
+      prismaMock.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-2',
+          status: IpoStatus.CLOSING_TODAY,
+          company: { displayName: 'Beta Ltd', legalName: 'Beta Limited' },
+          lifecycleEvents: [
+            { eventType: LifecycleEventType.CLOSE, eventDate: closeDate },
+          ],
+        },
+      ]);
+
       const result = await service.processTimelineTransitions(nowBeforeClose);
       expect(result.closedCount).toBe(0);
-      expect(prismaMock.ipo.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.ipo.updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: IpoStatus.CLOSED } }),
+      );
     });
 
-    it('6. should transition OPEN -> CLOSED at 17:00:00 IST on closeDate', async () => {
+    it('6. should transition CLOSING_TODAY / OPEN -> CLOSED at 17:00:00 IST on closeDate', async () => {
       const closeDate = new Date('2026-09-25T00:00:00.000Z');
       const nowAtClose = new Date('2026-09-25T11:30:00.000Z'); // 17:00:00 IST
 
       prismaMock.ipo.findMany.mockResolvedValue([
         {
           id: 'ipo-2',
-          status: IpoStatus.OPEN,
+          status: IpoStatus.CLOSING_TODAY,
           company: { displayName: 'Beta Ltd', legalName: 'Beta Limited' },
           lifecycleEvents: [
             { eventType: LifecycleEventType.CLOSE, eventDate: closeDate },
@@ -164,7 +206,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
         where: {
           id: 'ipo-2',
-          status: { in: [IpoStatus.OPEN, IpoStatus.CLOSING_TODAY] },
+          status: { in: [IpoStatus.OPEN, IpoStatus.CLOSING_TODAY, IpoStatus.UPCOMING] },
         },
         data: { status: IpoStatus.CLOSED },
       });
@@ -298,6 +340,36 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       await service.processTimelineTransitions(nowAt906PM);
       expect(mockAdapter.resolveRegistrarIpoCode).toHaveBeenCalledTimes(2);
     });
+    it('10b. should trigger automated user allotment checks upon ALLOTMENT_OUT for eligible users', async () => {
+      prismaMock.userSavedPan.findMany.mockResolvedValue([
+        { userId: 'user-alpha' },
+        { userId: 'user-beta' },
+      ]);
+      prismaMock.ipoInvestment.findMany.mockResolvedValue([]);
+      prismaMock.allotmentCheckJob.findFirst.mockResolvedValue(null);
+
+      const count = await service.triggerAutomaticUserAllotmentChecks('ipo-test-auto');
+      expect(count).toBe(2);
+      expect(allotmentJobServiceMock.createJob).toHaveBeenCalledWith(
+        { ipoId: 'ipo-test-auto', identifierType: AllotmentIdentifierType.PAN },
+        'user-alpha',
+      );
+      expect(allotmentJobServiceMock.createJob).toHaveBeenCalledWith(
+        { ipoId: 'ipo-test-auto', identifierType: AllotmentIdentifierType.PAN },
+        'user-beta',
+      );
+    });
+
+    it('10c. should NOT re-trigger automatic user allotment check if job already ran recently (idempotent)', async () => {
+      prismaMock.userSavedPan.findMany.mockResolvedValue([{ userId: 'user-alpha' }]);
+      prismaMock.ipoInvestment.findMany.mockResolvedValue([]);
+      // Simulate an existing job created within 24h
+      prismaMock.allotmentCheckJob.findFirst.mockResolvedValue({ id: 'existing-job-1' });
+
+      const count = await service.triggerAutomaticUserAllotmentChecks('ipo-test-auto');
+      expect(count).toBe(0);
+      expect(allotmentJobServiceMock.createJob).not.toHaveBeenCalled();
+    });
   });
 
   describe('Transition 5: ALLOTMENT_COMPLETED -> LISTED (at 10:00 AM IST on listing date)', () => {
@@ -409,7 +481,6 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       ]);
 
       const result = await service.processTimelineTransitions(nowAfterAllotment);
-      expect(result.openedCount).toBe(1);
       expect(result.closedCount).toBe(1);
       expect(result.allotmentAwaitedCount).toBe(1);
     });

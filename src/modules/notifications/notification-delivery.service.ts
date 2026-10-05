@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { NotificationDeliveryAdapter } from './notification-delivery.adapter';
 import { NotificationDeliveryRepository } from './notification-delivery.repository';
 import { InAppDeliveryAdapter } from './adapters/in-app-delivery.adapter';
@@ -43,12 +43,18 @@ export class NotificationDeliveryService {
 
   constructor(
     private readonly deliveryRepository: NotificationDeliveryRepository,
-    private readonly inAppAdapter: InAppDeliveryAdapter,
-    private readonly pushAdapter: ExpoPushDeliveryAdapter,
+    @Optional()
+    private readonly inAppAdapter?: InAppDeliveryAdapter,
+    @Optional()
+    private readonly pushAdapter?: ExpoPushDeliveryAdapter,
   ) {
     this.adapterRegistry = new Map();
-    this.adapterRegistry.set(DeliveryChannel.IN_APP, this.inAppAdapter);
-    this.adapterRegistry.set(DeliveryChannel.PUSH, this.pushAdapter);
+    if (this.inAppAdapter) {
+      this.adapterRegistry.set(DeliveryChannel.IN_APP, this.inAppAdapter);
+    }
+    if (this.pushAdapter) {
+      this.adapterRegistry.set(DeliveryChannel.PUSH, this.pushAdapter);
+    }
   }
 
   /**

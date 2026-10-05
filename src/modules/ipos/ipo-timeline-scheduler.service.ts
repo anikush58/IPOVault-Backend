@@ -10,6 +10,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { RegistrarResolver } from '../allotment/registrar.resolver';
 import { NotificationOrchestratorService } from '../notifications/notification-orchestrator.service';
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
+import { AllotmentJobService } from '../allotment/allotment-job.service';
 import {
   AllotmentIdentifierType,
   CheckAllotmentRequest,
@@ -106,6 +107,8 @@ export class IpoTimelineSchedulerService
     private readonly notificationOrchestrator?: NotificationOrchestratorService,
     @Optional()
     private readonly ipoGuruService?: IpoGuruService,
+    @Optional()
+    private readonly allotmentJobService?: AllotmentJobService,
   ) {}
 
   public getConfig(): TimelineSchedulerConfig {
@@ -186,6 +189,7 @@ export class IpoTimelineSchedulerService
     now: Date = new Date(),
   ): Promise<{
     openedCount: number;
+    closingTodayCount: number;
     closedCount: number;
     allotmentAwaitedCount: number;
     allotmentConfirmedCount: number;
@@ -194,6 +198,7 @@ export class IpoTimelineSchedulerService
   }> {
     const summary = {
       openedCount: 0,
+      closingTodayCount: 0,
       closedCount: 0,
       allotmentAwaitedCount: 0,
       allotmentConfirmedCount: 0,
@@ -249,7 +254,11 @@ export class IpoTimelineSchedulerService
       // =========================================================================
       if (currentStatus === IpoStatus.UPCOMING && openDateStr) {
         const openThreshold = createISTDateTime(openDateStr, 0, 0, 0);
-        if (now >= openThreshold) {
+        const closeDayStart = closeDateStr
+          ? createISTDateTime(closeDateStr, 0, 0, 0)
+          : null;
+
+        if (now >= openThreshold && (!closeDayStart || now < closeDayStart)) {
           const updated = await this.prisma.ipo.updateMany({
             where: { id: ipo.id, status: IpoStatus.UPCOMING },
             data: { status: IpoStatus.OPEN },
@@ -265,11 +274,40 @@ export class IpoTimelineSchedulerService
       }
 
       // =========================================================================
-      // 2. OPEN / CLOSING_TODAY -> CLOSED (at closing date 5:00 PM / 17:00:00 IST)
+      // 2. OPEN / UPCOMING -> CLOSING_TODAY (from 00:00:00 to 17:00:00 IST on closing date)
+      // =========================================================================
+      if (
+        (currentStatus === IpoStatus.OPEN || currentStatus === IpoStatus.UPCOMING) &&
+        closeDateStr
+      ) {
+        const closeDayStart = createISTDateTime(closeDateStr, 0, 0, 0);
+        const closeThreshold = createISTDateTime(closeDateStr, 17, 0, 0);
+
+        if (now >= closeDayStart && now < closeThreshold) {
+          const updated = await this.prisma.ipo.updateMany({
+            where: {
+              id: ipo.id,
+              status: { in: [IpoStatus.OPEN, IpoStatus.UPCOMING] },
+            },
+            data: { status: IpoStatus.CLOSING_TODAY },
+          });
+          if (updated.count > 0) {
+            currentStatus = IpoStatus.CLOSING_TODAY;
+            summary.closingTodayCount += updated.count;
+            this.logger.log(
+              `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) -> CLOSING_TODAY`,
+            );
+          }
+        }
+      }
+
+      // =========================================================================
+      // 3. CLOSING_TODAY / OPEN / UPCOMING -> CLOSED (at closing date 5:00 PM / 17:00:00 IST)
       // =========================================================================
       if (
         (currentStatus === IpoStatus.OPEN ||
-          currentStatus === IpoStatus.CLOSING_TODAY) &&
+          currentStatus === IpoStatus.CLOSING_TODAY ||
+          currentStatus === IpoStatus.UPCOMING) &&
         closeDateStr
       ) {
         const closeThreshold = createISTDateTime(closeDateStr, 17, 0, 0);
@@ -277,7 +315,13 @@ export class IpoTimelineSchedulerService
           const updated = await this.prisma.ipo.updateMany({
             where: {
               id: ipo.id,
-              status: { in: [IpoStatus.OPEN, IpoStatus.CLOSING_TODAY] },
+              status: {
+                in: [
+                  IpoStatus.OPEN,
+                  IpoStatus.CLOSING_TODAY,
+                  IpoStatus.UPCOMING,
+                ],
+              },
             },
             data: { status: IpoStatus.CLOSED },
           });
@@ -292,7 +336,7 @@ export class IpoTimelineSchedulerService
       }
 
       // =========================================================================
-      // 3. CLOSED -> ALLOTMENT_PENDING / ALLOTMENT_AWAITED (at allotment date 12:00 AM / 00:00:00 IST)
+      // 4. CLOSED -> ALLOTMENT_PENDING / ALLOTMENT_AWAITED (at allotment date 12:00 AM / 00:00:00 IST)
       // =========================================================================
       if (currentStatus === IpoStatus.CLOSED) {
         let awaitedThreshold: Date | null = null;
@@ -324,7 +368,7 @@ export class IpoTimelineSchedulerService
       }
 
       // =========================================================================
-      // 4. Allotment Polling (around 9:00 PM / 21:00:00 IST on allotment date, every 5 mins)
+      // 5. Allotment Polling (around 9:00 PM / 21:00:00 IST on allotment date, every 5 mins)
       // -> ALLOTMENT_COMPLETED / ALLOTMENT_OUT when found
       // =========================================================================
       if (
@@ -374,6 +418,8 @@ export class IpoTimelineSchedulerService
                   this.logger.log(
                     `[Timeline] Confirmed allotment results live for IPO '${ipo.company.displayName}' (${ipo.id}). Transitioned to ALLOTMENT_COMPLETED (ALLOTMENT_OUT)`,
                   );
+
+                  // EVENT A: IPO Allotment Out notification (exactly once)
                   if (this.notificationOrchestrator) {
                     this.notificationOrchestrator
                       .processAllotmentOutEvent(ipo.id)
@@ -383,6 +429,14 @@ export class IpoTimelineSchedulerService
                         );
                       });
                   }
+
+                  // AUTOMATIC USER ALLOTMENT CHECKS & EVENT B
+                  this.triggerAutomaticUserAllotmentChecks(ipo.id)
+                    .catch((checkErr: unknown) => {
+                      this.logger.error(
+                        `Failed to trigger automatic user allotment checks for IPO ${ipo.id} (isolated): ${(checkErr as Error)?.message || checkErr}`,
+                      );
+                    });
                 }
               }
             }
@@ -391,7 +445,7 @@ export class IpoTimelineSchedulerService
       }
 
       // =========================================================================
-      // 5. ALLOTMENT_COMPLETED / LISTING_PENDING -> LISTED (at listing date 10:00:00 IST)
+      // 6. ALLOTMENT_COMPLETED / LISTING_PENDING -> LISTED (at listing date 10:00:00 IST)
       // =========================================================================
       if (
         (currentStatus === IpoStatus.ALLOTMENT_COMPLETED ||
@@ -423,7 +477,7 @@ export class IpoTimelineSchedulerService
       }
 
       // =========================================================================
-      // 6. Listing Price Detection & Persistence (when LISTED and listingPrice is null)
+      // 7. Listing Price Detection & Persistence (when LISTED and listingPrice is null)
       // =========================================================================
       if (currentStatus === IpoStatus.LISTED && ipo.listingPrice == null) {
         const persisted = await this.checkAndPersistListingPrice(ipo, now);
@@ -657,6 +711,8 @@ export class IpoTimelineSchedulerService
           this.logger.log(
             `[Manual Allotment Check] Confirmed allotment results live for IPO '${ipo.company.displayName}' (${ipo.id}). Transitioned to ALLOTMENT_COMPLETED (ALLOTMENT_OUT)`,
           );
+
+          // EVENT A: IPO Allotment Out notification
           if (this.notificationOrchestrator) {
             this.notificationOrchestrator
               .processAllotmentOutEvent(ipo.id)
@@ -666,6 +722,14 @@ export class IpoTimelineSchedulerService
                 );
               });
           }
+
+          // AUTOMATIC USER ALLOTMENT CHECKS & EVENT B
+          this.triggerAutomaticUserAllotmentChecks(ipo.id)
+            .catch((checkErr: unknown) => {
+              this.logger.error(
+                `Failed to trigger automatic user allotment checks for IPO ${ipo.id} (isolated): ${(checkErr as Error)?.message || checkErr}`,
+              );
+            });
         }
         results.push({
           id: ipo.id,
@@ -686,6 +750,98 @@ export class IpoTimelineSchedulerService
       totalUpdated,
       results,
     };
+  }
+
+  /**
+   * Automatically discovers users with applications or saved PANs for an IPO
+   * and queues background allotment checks for each user upon ALLOTMENT_OUT.
+   *
+   * Idempotent & Duplicate protected: Checks for recent jobs in last 24h.
+   * Failure isolated: Errors log diagnostics without failing caller.
+   */
+  public async triggerAutomaticUserAllotmentChecks(ipoId: string): Promise<number> {
+    if (!this.allotmentJobService) {
+      this.logger.debug(
+        `triggerAutomaticUserAllotmentChecks: AllotmentJobService not available, skipping automatic checks for ${ipoId}`,
+      );
+      return 0;
+    }
+
+    try {
+      // Find eligible users who have saved PANs or investments/applications
+      const [savedPanUsers, investmentUsers] = await Promise.all([
+        this.prisma.userSavedPan.findMany({
+          select: { userId: true },
+          distinct: ['userId'],
+        }),
+        this.prisma.ipoInvestment.findMany({
+          where: { ipoId },
+          select: { brokerAccount: { select: { userId: true } } },
+        }),
+      ]);
+
+      const targetUserIds = new Set<string>();
+      for (const sp of savedPanUsers) {
+        if (sp.userId && sp.userId.trim()) {
+          targetUserIds.add(sp.userId.trim());
+        }
+      }
+      for (const inv of investmentUsers) {
+        if (inv.brokerAccount?.userId && inv.brokerAccount.userId.trim()) {
+          targetUserIds.add(inv.brokerAccount.userId.trim());
+        }
+      }
+
+      if (targetUserIds.size === 0) {
+        this.logger.debug(
+          `triggerAutomaticUserAllotmentChecks: No eligible users found for IPO ${ipoId}`,
+        );
+        return 0;
+      }
+
+      let queuedCount = 0;
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      for (const userId of targetUserIds) {
+        // Idempotency: Check if an allotment job for this user and IPO already exists in last 24h
+        const existingJob = await this.prisma.allotmentCheckJob.findFirst({
+          where: {
+            ipoId,
+            userId,
+            createdAt: { gte: oneDayAgo },
+          },
+        });
+
+        if (existingJob) {
+          continue;
+        }
+
+        // Create and kick off the allotment check job in the background
+        try {
+          await this.allotmentJobService.createJob(
+            { ipoId, identifierType: AllotmentIdentifierType.PAN },
+            userId,
+          );
+          queuedCount++;
+          this.logger.log(
+            `[Auto Allotment Check] Queued automated allotment check for user ${userId} on IPO ${ipoId}`,
+          );
+        } catch (jobErr: unknown) {
+          // If user has no saved PANs or job fails for one user, isolate failure
+          this.logger.debug(
+            `Automated allotment check could not be queued for user ${userId} on IPO ${ipoId}: ${(jobErr as Error)?.message || jobErr}`,
+          );
+        }
+      }
+
+      return queuedCount;
+    } catch (err: unknown) {
+      this.logger.error(
+        `Failed to trigger automated user allotment checks for IPO ${ipoId} (isolated): ${(err as Error)?.message || err}`,
+        (err as Error)?.stack,
+      );
+      return 0;
+    }
   }
 }
 

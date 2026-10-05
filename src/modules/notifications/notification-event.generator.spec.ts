@@ -221,7 +221,7 @@ describe('NotificationEventGenerator', () => {
       expect(result?.title).toContain('Partially Allotted');
     });
 
-    it('generates ALLOTTED_RESULT_AVAILABLE for definitive NOT_ALLOTTED status', () => {
+    it('strictly suppresses notifications for NOT_ALLOTTED status (Requirement 9)', () => {
       const observation = {
         id: 'job-item-3',
         jobId: 'job-1',
@@ -233,8 +233,7 @@ describe('NotificationEventGenerator', () => {
       };
 
       const result = generator.generateAllotmentResultNotification('user-1', mockIpo, observation);
-      expect(result).not.toBeNull();
-      expect(result?.title).toContain('Not Allotted');
+      expect(result).toBeNull();
     });
 
     it('G. Excludes UNKNOWN status', () => {

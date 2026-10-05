@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AllotmentJobStatus, AllotmentResultStatus } from '@prisma/client';
 import { AppException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
@@ -7,6 +7,7 @@ import { AllotmentService } from './allotment.service';
 import { AllotmentIdentifierType, AllotmentStatus } from './allotment.types';
 import { decryptPan, hashIdentifier, maskIdentifier } from './allotment.utils';
 import { RegistrarResolver } from './registrar.resolver';
+import { NotificationOrchestratorService } from '../notifications/notification-orchestrator.service';
 
 export interface CreateJobDto {
   ipoId: string;
@@ -22,6 +23,9 @@ export class AllotmentJobService {
     private readonly prisma: PrismaService,
     private readonly resolver: RegistrarResolver,
     private readonly allotmentService: AllotmentService,
+    @Optional()
+    @Inject(forwardRef(() => NotificationOrchestratorService))
+    private readonly notificationOrchestrator?: NotificationOrchestratorService,
   ) {}
 
   /**
@@ -431,6 +435,17 @@ export class AllotmentJobService {
           where: { id: jobId },
           data: { status: finalStatus },
         });
+
+        // Trigger user allotment result notifications (Event B) if user received allotment
+        if (this.notificationOrchestrator && updatedJob?.userId) {
+          try {
+            await this.notificationOrchestrator.processAllotmentJob(jobId);
+          } catch (notifErr: unknown) {
+            this.logger.error(
+              `Failed to orchestrate allotment result notifications for job ${jobId} (isolated): ${(notifErr as Error)?.message || notifErr}`,
+            );
+          }
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
