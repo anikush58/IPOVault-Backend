@@ -645,8 +645,7 @@ export class IpoGuruService {
         },
       });
 
-      // --- 3. LIFECYCLE EVENTS ---
-      const openDate = this.parseDate(rawItem.open_date);
+      const openDate = this.parseDate(rawItem.open_date || rawItem.timeline?.open_date);
       if (openDate) {
         await tx.ipoLifecycleEvent.upsert({
           where: { ipoId_eventType: { ipoId, eventType: 'OPEN' } },
@@ -656,7 +655,7 @@ export class IpoGuruService {
         updatedFields.push('openDate');
       }
 
-      const closeDate = this.parseDate(rawItem.close_date);
+      const closeDate = this.parseDate(rawItem.close_date || rawItem.timeline?.close_date);
       if (closeDate) {
         await tx.ipoLifecycleEvent.upsert({
           where: { ipoId_eventType: { ipoId, eventType: 'CLOSE' } },
@@ -666,7 +665,7 @@ export class IpoGuruService {
         updatedFields.push('closeDate');
       }
 
-      const allotmentDate = this.parseDate(rawItem.allotment_date);
+      const allotmentDate = this.parseDate(rawItem.allotment_date || rawItem.timeline?.allotment_date);
       if (allotmentDate) {
         await tx.ipoLifecycleEvent.upsert({
           where: { ipoId_eventType: { ipoId, eventType: 'BASIS_OF_ALLOTMENT' } },
@@ -676,7 +675,17 @@ export class IpoGuruService {
         updatedFields.push('allotmentDate');
       }
 
-      const listingDate = this.parseDate(rawItem.listing_date);
+      const refundDate = this.parseDate(rawItem.refund_date || rawItem.timeline?.refund_date);
+      if (refundDate) {
+        await tx.ipoLifecycleEvent.upsert({
+          where: { ipoId_eventType: { ipoId, eventType: 'REFUND_INITIATION' } },
+          update: { eventDate: refundDate, sourceId },
+          create: { ipoId, eventType: 'REFUND_INITIATION', eventDate: refundDate, sourceId },
+        });
+        updatedFields.push('refundDate');
+      }
+
+      const listingDate = this.parseDate(rawItem.listing_date || rawItem.timeline?.listing_date);
       if (listingDate) {
         await tx.ipoLifecycleEvent.upsert({
           where: { ipoId_eventType: { ipoId, eventType: 'LISTING' } },
@@ -830,6 +839,7 @@ export class IpoGuruService {
           openDate: openDate || null,
           closeDate: closeDate || null,
           allotmentDate: allotmentDate || null,
+          refundDate: refundDate || null,
           listingDate: listingDate || null,
           registrarName: registrar || null,
         },
@@ -1136,6 +1146,7 @@ export class IpoGuruService {
       openDate?: Date | null;
       closeDate?: Date | null;
       allotmentDate?: Date | null;
+      refundDate?: Date | null;
       listingDate?: Date | null;
       registrarName?: string | null;
     },
@@ -1201,6 +1212,9 @@ export class IpoGuruService {
     }
     if (fields.allotmentDate) {
       records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'allotment_date', value: fields.allotmentDate.toISOString().slice(0, 10) });
+    }
+    if (fields.refundDate) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'refund_date', value: fields.refundDate.toISOString().slice(0, 10) });
     }
     if (fields.listingDate) {
       records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_date', value: fields.listingDate.toISOString().slice(0, 10) });

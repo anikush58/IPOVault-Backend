@@ -940,4 +940,150 @@ describe('IpoGuruService', () => {
       expect(status.lastFetchStatus).toBe('HTTP 200 (Success)');
     });
   });
+
+  // ── Refund Initiation Date Ingestion & Provenance Tests ───────────────────────
+  describe('Refund Initiation Date Ingestion & Provenance', () => {
+    it('Test A — direct field: upserts REFUND_INITIATION event when refund_date is present', async () => {
+      const rawIpo = {
+        name: 'Direct Refund Corp',
+        slug: 'direct-refund-corp',
+        open_date: '2026-07-09',
+        close_date: '2026-07-13',
+        allotment_date: '2026-07-14',
+        refund_date: '2026-07-15',
+        listing_date: '2026-07-16',
+      };
+
+      const result = await service.syncIpos('MANUAL', undefined, [rawIpo]);
+      expect(result.matchedUpdated + result.newlyCreated).toBe(1);
+
+      const tx = mockPrisma._txMock;
+      expect(tx.ipoLifecycleEvent.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ipoId_eventType: { ipoId: 'new-ipo-id', eventType: 'REFUND_INITIATION' },
+          }),
+          create: expect.objectContaining({
+            eventType: 'REFUND_INITIATION',
+            eventDate: new Date('2026-07-15'),
+          }),
+        }),
+      );
+
+      // Verify provenance record created for refund_date
+      expect(tx.fieldProvenance.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            fieldName: 'refund_date',
+            value: '2026-07-15',
+          }),
+        }),
+      );
+    });
+
+    it('Test B — timeline field: upserts REFUND_INITIATION from timeline.refund_date', async () => {
+      const rawIpo = {
+        name: 'Timeline Refund Corp',
+        slug: 'timeline-refund-corp',
+        timeline: {
+          open_date: '2026-07-09',
+          close_date: '2026-07-13',
+          allotment_date: '2026-07-14',
+          refund_date: '2026-07-15',
+          listing_date: '2026-07-16',
+        },
+      };
+
+      await service.syncIpos('MANUAL', undefined, [rawIpo]);
+
+      const tx = mockPrisma._txMock;
+      expect(tx.ipoLifecycleEvent.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ipoId_eventType: { ipoId: 'new-ipo-id', eventType: 'REFUND_INITIATION' },
+          }),
+          create: expect.objectContaining({
+            eventType: 'REFUND_INITIATION',
+            eventDate: new Date('2026-07-15'),
+          }),
+        }),
+      );
+
+      expect(tx.fieldProvenance.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            fieldName: 'refund_date',
+            value: '2026-07-15',
+          }),
+        }),
+      );
+    });
+
+    it('Test C — both fields: prefers rawItem.refund_date over timeline.refund_date', async () => {
+      const rawIpo = {
+        name: 'Both Refund Corp',
+        slug: 'both-refund-corp',
+        refund_date: '2026-07-15',
+        timeline: {
+          refund_date: '2026-07-18', // Should be ignored in favor of top-level
+        },
+      };
+
+      await service.syncIpos('MANUAL', undefined, [rawIpo]);
+
+      const tx = mockPrisma._txMock;
+      expect(tx.ipoLifecycleEvent.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            eventType: 'REFUND_INITIATION',
+            eventDate: new Date('2026-07-15'),
+          }),
+        }),
+      );
+    });
+
+    it('Test D — missing: does not create REFUND_INITIATION event when refund_date is absent', async () => {
+      const rawIpo = {
+        name: 'No Refund Corp',
+        slug: 'no-refund-corp',
+        open_date: '2026-07-09',
+        close_date: '2026-07-13',
+        allotment_date: '2026-07-14',
+        listing_date: '2026-07-16',
+      };
+
+      await service.syncIpos('MANUAL', undefined, [rawIpo]);
+
+      const tx = mockPrisma._txMock;
+      const upsertCalls = tx.ipoLifecycleEvent.upsert.mock.calls;
+      const refundUpsert = upsertCalls.find((call: any) => call[0].where.ipoId_eventType.eventType === 'REFUND_INITIATION');
+      expect(refundUpsert).toBeUndefined();
+    });
+
+    it('Test E & I — idempotency & existing lifecycle events: runs sync twice and preserves all 5 event types', async () => {
+      const rawIpo = {
+        name: 'Idempotent Corp',
+        slug: 'idempotent-corp',
+        open_date: '2026-07-09',
+        close_date: '2026-07-13',
+        allotment_date: '2026-07-14',
+        refund_date: '2026-07-15',
+        listing_date: '2026-07-16',
+      };
+
+      await service.syncIpos('MANUAL', undefined, [rawIpo]);
+      await service.syncIpos('MANUAL', undefined, [rawIpo]);
+
+      const tx = mockPrisma._txMock;
+      // All 5 events upserted safely with @@unique([ipoId, eventType])
+      const eventTypesUpserted = tx.ipoLifecycleEvent.upsert.mock.calls.map(
+        (c: any) => c[0].where.ipoId_eventType.eventType,
+      );
+      expect(eventTypesUpserted).toContain('OPEN');
+      expect(eventTypesUpserted).toContain('CLOSE');
+      expect(eventTypesUpserted).toContain('BASIS_OF_ALLOTMENT');
+      expect(eventTypesUpserted).toContain('REFUND_INITIATION');
+      expect(eventTypesUpserted).toContain('LISTING');
+    });
+  });
 });

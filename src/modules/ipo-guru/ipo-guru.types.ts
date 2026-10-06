@@ -54,8 +54,19 @@ export interface IpoGuruV2Ipo {
   open_date?: string | null;
   close_date?: string | null;
   allotment_date?: string | null;
+  refund_date?: string | null;
   listing_date?: string | null;
   anchor_date?: string | null;
+
+  // Timeline (v2 API detail object)
+  timeline?: {
+    open_date?: string | null;
+    close_date?: string | null;
+    allotment_date?: string | null;
+    refund_date?: string | null;
+    credit_to_demat_date?: string | null;
+    listing_date?: string | null;
+  };
 
   // Pricing
   price_band?: string | null; // e.g. "1700-1785"

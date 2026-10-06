@@ -438,4 +438,46 @@ describe('Field-Level IPOGuru Provenance Backfill', () => {
 
     expect(result.fieldsEvaluated).toBe(totalCalculated);
   });
+
+  it('12. Test F, G, H — Refund Date Backfill: Adds IPOGURU provenance for REFUND_INITIATION while preserving existing higher-priority provenance', async () => {
+    const ipoWithRefund = {
+      ...baseIpo,
+      lifecycleEvents: [
+        ...baseIpo.lifecycleEvents,
+        {
+          eventType: 'REFUND_INITIATION',
+          eventDate: new Date('2026-10-08'),
+          sourceId: 'src-guru',
+          source: { id: 'src-guru', code: 'IPOGURU' },
+        },
+      ],
+    };
+
+    mockPrisma.ipo.findUnique = jest.fn().mockResolvedValue(ipoWithRefund);
+
+    // Scenario 1 (Test F & H): No existing provenance on refund_date -> proposed action ADD
+    const summary = await backfillSingleIpoProvenance(mockPrisma, baseIpo.id, { dryRun: false });
+    const refundPlan = summary.details.find((d) => d.fieldKey === 'refund_date');
+    expect(refundPlan?.action).toBe('ADD');
+    expect(refundPlan?.canonicalValue).toBe('2026-10-08');
+    expect(refundPlan?.proposedProvenance).toContain('IPOGURU');
+
+    // Scenario 2 (Test G): Existing ADMIN provenance on refund_date -> PRESERVE untouched
+    createdProvenances.push({
+      id: 'p-admin-refund',
+      entityType: 'IPO',
+      entityId: baseIpo.id,
+      fieldName: 'refund_date',
+      value: '2026-10-08',
+      sourceId: 'src-admin',
+      sourceReference: 'ADMIN_MANUAL',
+      retrievedAt: new Date('2026-10-01'),
+      source: { id: 'src-admin', code: 'ADMIN', name: 'Admin Manual Review', sourceType: SourceType.OFFICIAL_FILING },
+    });
+
+    const summaryWithAdmin = await backfillSingleIpoProvenance(mockPrisma, baseIpo.id, { dryRun: true });
+    const adminRefundPlan = summaryWithAdmin.details.find((d) => d.fieldKey === 'refund_date');
+    expect(adminRefundPlan?.action).toBe('PRESERVE');
+    expect(adminRefundPlan?.existingSourceCode).toBe('ADMIN');
+  });
 });

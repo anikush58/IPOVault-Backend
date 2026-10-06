@@ -106,6 +106,7 @@ export async function backfillSingleIpoProvenance(
   const openEvent = ipo.lifecycleEvents.find((e) => e.eventType === 'OPEN');
   const closeEvent = ipo.lifecycleEvents.find((e) => e.eventType === 'CLOSE');
   const allotEvent = ipo.lifecycleEvents.find((e) => e.eventType === 'BASIS_OF_ALLOTMENT');
+  const refundEvent = ipo.lifecycleEvents.find((e) => e.eventType === 'REFUND_INITIATION');
   const listEvent = ipo.lifecycleEvents.find((e) => e.eventType === 'LISTING');
 
   const candidateFields: Array<{
@@ -255,6 +256,13 @@ export async function backfillSingleIpoProvenance(
       entityId: ipo.id,
       canonicalValue: allotEvent ? allotEvent.eventDate.toISOString().slice(0, 10) : null,
       supportedByGuru: Boolean(allotEvent),
+    },
+    {
+      fieldKey: 'refund_date',
+      entityType: 'IPO',
+      entityId: ipo.id,
+      canonicalValue: refundEvent ? refundEvent.eventDate.toISOString().slice(0, 10) : null,
+      supportedByGuru: Boolean(refundEvent),
     },
     {
       fieldKey: 'listing_date',
