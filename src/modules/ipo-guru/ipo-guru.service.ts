@@ -518,6 +518,7 @@ export class IpoGuruService {
       const listingPrice = this.parseDecimal(rawItem.listing_price);
 
       let ipoId: string;
+      let companyId: string;
       let action: 'UPDATED' | 'CREATED';
 
       if (match.matchedIpo) {
@@ -525,6 +526,7 @@ export class IpoGuruService {
         action = 'UPDATED';
         const existingIpo = match.matchedIpo;
         ipoId = existingIpo.id;
+        companyId = existingIpo.companyId;
 
         const updateData: Prisma.IpoUpdateInput = {};
         if (marketSegment && marketSegment !== existingIpo.marketSegment) {
@@ -592,6 +594,7 @@ export class IpoGuruService {
             displayName: guruName,
           },
         });
+        companyId = company.id;
 
         const initialStatus = status || IpoStatus.UPCOMING;
         const newIpo = await tx.ipo.create({
@@ -788,6 +791,45 @@ export class IpoGuruService {
           }
         }
       }
+
+      // --- 7. FIELD PROVENANCE ---
+      const sourceRef = externalId
+        ? `https://www.ipoguru.in/api/v2/ipos/${externalId}`
+        : 'https://www.ipoguru.in/api/v2';
+
+      await this.recordIpoGuruFieldProvenances(
+        tx,
+        ipoId,
+        companyId,
+        sourceId,
+        sourceRef,
+        {
+          legalName: guruName || null,
+          displayName: guruName || null,
+          marketSegment: marketSegment || null,
+          exchange: exchange || null,
+          status: action === 'CREATED' ? (status || IpoStatus.UPCOMING) : null,
+          symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
+          isin: rawItem.isin ? rawItem.isin.trim().toUpperCase() : null,
+          priceBandLow: priceBand.low,
+          priceBandHigh: priceBand.high,
+          lotSize: lotSize,
+          faceValue: faceValue,
+          issueSize: issueSize,
+          freshIssueSize: freshIssueSize,
+          ofsSize: ofsSize,
+          listingPrice:
+            (action === 'CREATED' && (status || IpoStatus.UPCOMING) === IpoStatus.LISTED) ||
+            (action === 'UPDATED' && match.matchedIpo?.status === IpoStatus.LISTED)
+              ? listingPrice
+              : null,
+          openDate: openDate || null,
+          closeDate: closeDate || null,
+          allotmentDate: allotmentDate || null,
+          listingDate: listingDate || null,
+          registrarName: registrar || null,
+        },
+      );
 
       return {
         guruName,
@@ -1060,5 +1102,122 @@ export class IpoGuruService {
       }
     }
     return [];
+  }
+
+  /**
+   * Records field-level provenance for fields populated by IPOGuru sync.
+   */
+  private async recordIpoGuruFieldProvenances(
+    tx: Prisma.TransactionClient,
+    ipoId: string,
+    companyId: string,
+    sourceId: string,
+    sourceReference: string,
+    fields: {
+      legalName?: string | null;
+      displayName?: string | null;
+      marketSegment?: string | null;
+      exchange?: string | null;
+      status?: string | null;
+      symbol?: string | null;
+      isin?: string | null;
+      priceBandLow?: number | Prisma.Decimal | null;
+      priceBandHigh?: number | Prisma.Decimal | null;
+      lotSize?: number | null;
+      faceValue?: number | Prisma.Decimal | null;
+      issueSize?: number | Prisma.Decimal | null;
+      freshIssueSize?: number | Prisma.Decimal | null;
+      ofsSize?: number | Prisma.Decimal | null;
+      listingPrice?: number | Prisma.Decimal | null;
+      openDate?: Date | null;
+      closeDate?: Date | null;
+      allotmentDate?: Date | null;
+      listingDate?: Date | null;
+      registrarName?: string | null;
+    },
+  ) {
+    const now = new Date();
+    const records: Array<{
+      entityType: 'IPO' | 'COMPANY';
+      entityId: string;
+      fieldName: string;
+      value: string;
+    }> = [];
+
+    if (fields.legalName) {
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.legal_name', value: fields.legalName });
+    }
+    if (fields.displayName) {
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.display_name', value: fields.displayName });
+    }
+    if (fields.marketSegment) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'market_segment', value: fields.marketSegment });
+    }
+    if (fields.exchange) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'exchange', value: fields.exchange });
+    }
+    if (fields.status) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'status', value: fields.status });
+    }
+    if (fields.symbol) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'symbol', value: fields.symbol });
+    }
+    if (fields.isin) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'isin', value: fields.isin });
+    }
+    if (fields.priceBandLow != null) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'price_band_low', value: String(fields.priceBandLow) });
+    }
+    if (fields.priceBandHigh != null) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'price_band_high', value: String(fields.priceBandHigh) });
+    }
+    if (fields.lotSize != null) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'lot_size', value: String(fields.lotSize) });
+    }
+    if (fields.faceValue != null) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'face_value', value: String(fields.faceValue) });
+    }
+    if (fields.issueSize != null) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'issue_size', value: String(fields.issueSize) });
+    }
+    if (fields.freshIssueSize != null) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'fresh_issue_size', value: String(fields.freshIssueSize) });
+    }
+    if (fields.ofsSize != null) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'ofs_size', value: String(fields.ofsSize) });
+    }
+    if (fields.listingPrice != null) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_price', value: String(fields.listingPrice) });
+    }
+    if (fields.openDate) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'open_date', value: fields.openDate.toISOString().slice(0, 10) });
+    }
+    if (fields.closeDate) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'close_date', value: fields.closeDate.toISOString().slice(0, 10) });
+    }
+    if (fields.allotmentDate) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'allotment_date', value: fields.allotmentDate.toISOString().slice(0, 10) });
+    }
+    if (fields.listingDate) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_date', value: fields.listingDate.toISOString().slice(0, 10) });
+    }
+    if (fields.registrarName) {
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'registrar_name', value: fields.registrarName });
+    }
+
+    for (const r of records) {
+      await tx.fieldProvenance.create({
+        data: {
+          entityType: r.entityType,
+          entityId: r.entityId,
+          fieldName: r.fieldName,
+          value: r.value,
+          sourceId,
+          sourceReference,
+          retrievedAt: now,
+          confidence: new Prisma.Decimal(1.0),
+        },
+      });
+    }
   }
 }

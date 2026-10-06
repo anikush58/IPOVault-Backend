@@ -7,9 +7,9 @@ import { FieldProvenanceVisualDto, ProvenanceStatus } from './admin-ipo.dto';
  * Standard field name aliases map canonical camelCase keys to potential database snake_case or prefix variations.
  */
 const FIELD_ALIASES: Record<string, string[]> = {
-  legalName: ['legalName', 'legal_name', 'company_name', 'name'],
-  displayName: ['displayName', 'display_name'],
-  cin: ['cin', 'company_cin'],
+  legalName: ['legalName', 'legal_name', 'company_name', 'name', 'company.legal_name', 'company.legalName'],
+  displayName: ['displayName', 'display_name', 'company.display_name', 'company.displayName'],
+  cin: ['cin', 'company_cin', 'company.cin'],
   symbol: ['symbol', 'trading_symbol', 'ticker'],
   marketSegment: ['marketSegment', 'market_segment', 'segment'],
   exchange: ['exchange', 'exchange_listing', 'exchangeListing'],
@@ -42,14 +42,14 @@ const FIELD_ALIASES: Record<string, string[]> = {
   listingGainPct: ['listingGainPct', 'listing_gain_pct', 'listing_gain'],
   profitAmount: ['profitAmount', 'profit_amount', 'est_profit'],
   profitPercentage: ['profitPercentage', 'profit_percentage', 'est_profit_pct'],
-  industry: ['industry', 'company_industry'],
-  sector: ['sector', 'company_sector'],
-  aboutDescription: ['aboutDescription', 'about_description', 'description', 'company_about'],
-  website: ['website', 'company_website', 'url'],
-  phone: ['phone', 'company_phone'],
-  email: ['email', 'company_email'],
-  contactPerson: ['contactPerson', 'contact_person'],
-  logoUrl: ['logoUrl', 'logo_url'],
+  industry: ['industry', 'company_industry', 'company.industry'],
+  sector: ['sector', 'company_sector', 'company.sector'],
+  aboutDescription: ['aboutDescription', 'about_description', 'description', 'company_about', 'company.about_description'],
+  website: ['website', 'company_website', 'url', 'company.website'],
+  phone: ['phone', 'company_phone', 'company.phone'],
+  email: ['email', 'company_email', 'company.email'],
+  contactPerson: ['contactPerson', 'contact_person', 'company.contact_person'],
+  logoUrl: ['logoUrl', 'logo_url', 'company.logo_url'],
   registrarName: ['registrarName', 'registrar_name', 'registrar', 'allotment_registrar'],
   leadManagers: ['leadManagers', 'lead_managers', 'brlm', 'merchant_banker', 'lead_manager'],
   qibAllocationPct: ['qibAllocationPct', 'qib_allocation_pct', 'qib_pct', 'qib_allocation'],
@@ -218,30 +218,14 @@ export class AdminProvenanceResolver {
 
     // 1. If no matching provenance records exist:
     if (matchingProvs.length === 0) {
-      const hasVal = canonicalValue !== null && canonicalValue !== undefined && String(canonicalValue).trim() !== '';
-      if (!hasVal) {
-        return {
-          fieldName: fieldKey,
-          fieldKey,
-          value: null,
-          status: 'NO_VERIFIED_DATA',
-          statusLabel: 'No verified data',
-          sourceLabel: 'Not available',
-          sourceCode: 'NONE',
-          hasConflict: false,
-        };
-      }
-
-      // Value exists canonically but no explicit provenance was captured (e.g. legacy/initial seed or direct edit)
       return {
         fieldName: fieldKey,
         fieldKey,
-        value: canonicalValue,
-        status: 'MANUAL',
-        statusLabel: 'Manual Entry',
-        sourceLabel: 'Admin / System Seed',
-        sourceCode: 'ADMIN',
-        confidence: 1.0,
+        value: canonicalValue !== undefined ? canonicalValue : null,
+        status: 'NO_VERIFIED_DATA',
+        statusLabel: 'No verified data',
+        sourceLabel: 'Not available',
+        sourceCode: 'NONE',
         hasConflict: false,
       };
     }

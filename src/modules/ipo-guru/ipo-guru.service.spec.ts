@@ -49,6 +49,10 @@ describe('IpoGuruService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'sub-1' }),
       },
+      fieldProvenance: {
+        create: jest.fn().mockResolvedValue({ id: 'fp-1' }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
 
     mockPrisma = {

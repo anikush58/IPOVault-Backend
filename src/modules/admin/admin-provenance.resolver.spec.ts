@@ -166,15 +166,22 @@ describe('AdminProvenanceResolver', () => {
       expect(res.hasConflict).toBe(false);
     });
 
-    it('5. ⚪ No Verified Data: returns NO_VERIFIED_DATA when field is null/empty and has no provenance', () => {
-      const res = resolver.resolveField('preIpoPe', null, []);
+    it('5. ⚪ No Verified Data: returns NO_VERIFIED_DATA when field has no provenance (even if canonical value exists)', () => {
+      const resNull = resolver.resolveField('preIpoPe', null, []);
+      expect(resNull.status).toBe('NO_VERIFIED_DATA');
+      expect(resNull.statusLabel).toBe('No verified data');
+      expect(resNull.sourceLabel).toBe('Not available');
+      expect(resNull.sourceCode).toBe('NONE');
+      expect(resNull.value).toBeNull();
+      expect(resNull.hasConflict).toBe(false);
 
-      expect(res.status).toBe('NO_VERIFIED_DATA');
-      expect(res.statusLabel).toBe('No verified data');
-      expect(res.sourceLabel).toBe('Not available');
-      expect(res.sourceCode).toBe('NONE');
-      expect(res.value).toBeNull();
-      expect(res.hasConflict).toBe(false);
+      const resWithVal = resolver.resolveField('cin', 'U12345MH2020PTC123456', []);
+      expect(resWithVal.status).toBe('NO_VERIFIED_DATA');
+      expect(resWithVal.statusLabel).toBe('No verified data');
+      expect(resWithVal.sourceLabel).toBe('Not available');
+      expect(resWithVal.sourceCode).toBe('NONE');
+      expect(resWithVal.value).toBe('U12345MH2020PTC123456');
+      expect(resWithVal.hasConflict).toBe(false);
     });
 
     it('6. 🔴 Conflict / Review: detects conflicting values across distinct upstream sources', () => {

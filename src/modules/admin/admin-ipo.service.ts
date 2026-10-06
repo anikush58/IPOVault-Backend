@@ -2387,48 +2387,99 @@ export class AdminIpoService {
       value: string;
     }> = [];
 
+    // Company fields
     if (dto.legalName)
-      records.push({
-        entityType: 'COMPANY',
-        entityId: companyId,
-        fieldName: 'company.legal_name',
-        value: String(dto.legalName),
-      });
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.legal_name', value: String(dto.legalName) });
+    if (dto.displayName)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.display_name', value: String(dto.displayName) });
     if (dto.cin)
-      records.push({
-        entityType: 'COMPANY',
-        entityId: companyId,
-        fieldName: 'company.cin',
-        value: String(dto.cin),
-      });
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.cin', value: String(dto.cin) });
+    if (dto.industry)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.industry', value: String(dto.industry) });
+    if (dto.sector)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.sector', value: String(dto.sector) });
+    if (dto.aboutDescription)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.about_description', value: String(dto.aboutDescription) });
+    if (dto.website)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.website', value: String(dto.website) });
+    if (dto.phone)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.phone', value: String(dto.phone) });
+    if (dto.email)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.email', value: String(dto.email) });
+    if (dto.contactPerson)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.contact_person', value: String(dto.contactPerson) });
+    if (dto.logoUrl)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.logo_url', value: String(dto.logoUrl) });
+
+    // IPO fields
+    if (dto.marketSegment)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'market_segment', value: String(dto.marketSegment) });
+    if (dto.exchange)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'exchange', value: String(dto.exchange) });
+    if (dto.status)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'status', value: String(dto.status) });
+    if (dto.publicationStatus)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'publication_status', value: String(dto.publicationStatus) });
+    if (dto.symbol)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'symbol', value: String(dto.symbol) });
+    if (dto.isin)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'isin', value: String(dto.isin) });
     if (dto.priceBandLow !== undefined && dto.priceBandLow !== null)
-      records.push({
-        entityType: 'IPO',
-        entityId: ipoId,
-        fieldName: 'price_band_low',
-        value: String(dto.priceBandLow),
-      });
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'price_band_low', value: String(dto.priceBandLow) });
     if (dto.priceBandHigh !== undefined && dto.priceBandHigh !== null)
-      records.push({
-        entityType: 'IPO',
-        entityId: ipoId,
-        fieldName: 'price_band_high',
-        value: String(dto.priceBandHigh),
-      });
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'price_band_high', value: String(dto.priceBandHigh) });
     if (dto.lotSize !== undefined && dto.lotSize !== null)
-      records.push({
-        entityType: 'IPO',
-        entityId: ipoId,
-        fieldName: 'lot_size',
-        value: String(dto.lotSize),
-      });
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'lot_size', value: String(dto.lotSize) });
+    if (dto.faceValue !== undefined && dto.faceValue !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'face_value', value: String(dto.faceValue) });
     if (dto.issueSize !== undefined && dto.issueSize !== null)
-      records.push({
-        entityType: 'IPO',
-        entityId: ipoId,
-        fieldName: 'issue_size',
-        value: String(dto.issueSize),
-      });
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'issue_size', value: String(dto.issueSize) });
+    if (dto.freshIssueSize !== undefined && dto.freshIssueSize !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'fresh_issue_size', value: String(dto.freshIssueSize) });
+    if (dto.ofsSize !== undefined && dto.ofsSize !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'ofs_size', value: String(dto.ofsSize) });
+    if (dto.issueShareCount !== undefined && dto.issueShareCount !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'issue_share_count', value: String(dto.issueShareCount) });
+    if (dto.freshIssueShareCount !== undefined && dto.freshIssueShareCount !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'fresh_issue_share_count', value: String(dto.freshIssueShareCount) });
+    if (dto.ofsShareCount !== undefined && dto.ofsShareCount !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'ofs_share_count', value: String(dto.ofsShareCount) });
+    if (dto.listingPrice !== undefined && dto.listingPrice !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_price', value: String(dto.listingPrice) });
+    if (dto.listingGainPct !== undefined && dto.listingGainPct !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_gain_pct', value: String(dto.listingGainPct) });
+    if (dto.profitAmount !== undefined && dto.profitAmount !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'profit_amount', value: String(dto.profitAmount) });
+    if (dto.profitPercentage !== undefined && dto.profitPercentage !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'profit_percentage', value: String(dto.profitPercentage) });
+    if (dto.preIpoEps !== undefined && dto.preIpoEps !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_eps', value: String(dto.preIpoEps) });
+    if (dto.postIpoEps !== undefined && dto.postIpoEps !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_eps', value: String(dto.postIpoEps) });
+    if (dto.preIpoPe !== undefined && dto.preIpoPe !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_pe', value: String(dto.preIpoPe) });
+    if (dto.postIpoPe !== undefined && dto.postIpoPe !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_pe', value: String(dto.postIpoPe) });
+    if (dto.preIpoPromoterHolding !== undefined && dto.preIpoPromoterHolding !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_promoter_holding', value: String(dto.preIpoPromoterHolding) });
+    if (dto.postIpoPromoterHolding !== undefined && dto.postIpoPromoterHolding !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_promoter_holding', value: String(dto.postIpoPromoterHolding) });
+    if (dto.preIpoMarketCap !== undefined && dto.preIpoMarketCap !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_market_cap', value: String(dto.preIpoMarketCap) });
+    if (dto.postIpoMarketCap !== undefined && dto.postIpoMarketCap !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_market_cap', value: String(dto.postIpoMarketCap) });
+    if (dto.openDate)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'open_date', value: String(dto.openDate) });
+    if (dto.closeDate)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'close_date', value: String(dto.closeDate) });
+    if (dto.allotmentDate)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'allotment_date', value: String(dto.allotmentDate) });
+    if (dto.refundDate)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'refund_date', value: String(dto.refundDate) });
+    if (dto.listingDate)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_date', value: String(dto.listingDate) });
+    if (dto.registrarName || dto.allotmentConfig?.registrar)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'registrar_name', value: String(dto.registrarName || dto.allotmentConfig?.registrar) });
 
     for (const r of records) {
       await this.prisma.fieldProvenance.create({
