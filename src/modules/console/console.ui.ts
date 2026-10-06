@@ -2523,7 +2523,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
   </div>
 
   <script>
-    const API_BASE = window.location.pathname.replace(new RegExp('/+$'), '') + '/api';
+    const API_BASE = '/api/v1/console/api';
     let currentTab = 'dashboard';
     let currentIpoData = null;
     let isAuthenticated = false;
@@ -2618,8 +2618,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           body: JSON.stringify({ username, password }),
         });
 
-        if (res.ok) {
-          const data = await res.json().catch(() => ({}));
+        const raw = await res.json().catch(() => ({}));
+        const data = raw.data || raw;
+
+        if (res.ok && (data.success || data.token)) {
           if (data.token) {
             consoleToken = data.token;
             try { localStorage.setItem('ipovault_console_token', data.token); } catch (e) {}
@@ -2631,7 +2633,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           hideLoginModal();
           initConsoleApp();
         } else {
-          const errData = await res.json().catch(() => ({}));
+          const errData = raw.error || raw.data || raw;
           const msg = errData?.message || (res.status === 401 ? 'Invalid username or password.' : 'Sign in failed (HTTP ' + res.status + ').');
           if (errEl) {
             errEl.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg);
@@ -2670,6 +2672,34 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
       if (window.feather) feather.replace();
 
+      // Check URL parameters for instant sign-in or token (?username=...&password=... or ?token=...)
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const qUser = urlParams.get('username');
+        const qPass = urlParams.get('password');
+        const qToken = urlParams.get('token');
+
+        if (qToken) {
+          consoleToken = qToken;
+          try { localStorage.setItem('ipovault_console_token', qToken); } catch (e) {}
+        }
+
+        if (qUser && qPass) {
+          const uInput = document.getElementById('login-username');
+          const pInput = document.getElementById('login-password');
+          if (uInput) uInput.value = qUser;
+          if (pInput) pInput.value = qPass;
+          try {
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+          } catch (e) {}
+          await handleLogin();
+          return;
+        }
+      } catch (e) {
+        console.warn('URL param parse error:', e);
+      }
+
       try {
         const headers = {};
         if (consoleToken) headers['Authorization'] = 'Bearer ' + consoleToken;
@@ -2678,16 +2708,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           headers: headers,
         });
         if (res.ok) {
-          const data = await res.json().catch(() => ({}));
-          const userDisplay = document.getElementById('sidebar-user-name');
-          if (userDisplay && data.username) {
-            userDisplay.textContent = data.username;
+          const raw = await res.json().catch(() => ({}));
+          const data = raw.data || raw;
+          if (data && (data.authenticated || data.username)) {
+            const userDisplay = document.getElementById('sidebar-user-name');
+            if (userDisplay && data.username) {
+              userDisplay.textContent = data.username;
+            }
+            hideLoginModal();
+            initConsoleApp();
+            return;
           }
-          hideLoginModal();
-          initConsoleApp();
-        } else {
-          showLoginModal();
         }
+        showLoginModal();
       } catch (err) {
         showLoginModal();
       }
@@ -3382,7 +3415,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           throw new Error(errData.message || 'HTTP ' + res.status);
         }
 
-        const data = await res.json();
+        const raw = await res.json();
+        const data = raw.data || raw;
         const total = data.totalChecked || 0;
         const updated = data.totalUpdated || 0;
 
