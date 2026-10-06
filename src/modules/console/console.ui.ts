@@ -3991,6 +3991,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (enabledChecked && registrarCodeVal && !codeVal) {
           banner.style.display = 'block';
         } else {
+          banner.style.display = 'none';
+        }
+      }
+    }
+
     // ==========================================
     // FIELD PROVENANCE VISUAL CODING & DETAILS
     // ==========================================
@@ -4134,14 +4139,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
 
       return (
-        '<div class="prov-badge ' + statusClass + '" onclick="toggleProvenancePopover(\'' + fieldKey + '\', event)" title="Click to view provenance details">'
+        '<div class="prov-badge ' + statusClass + '" data-field="' + fieldKey + '" onclick="toggleProvenancePopover(this.dataset.field, event)" title="Click to view provenance details">'
         + '<span class="prov-dot"></span>'
         + '<span>' + escapeHtml(badgeLabel) + '</span>'
         + '</div>'
         + '<div class="prov-popover" id="prov-popover-' + fieldKey + '">'
         + '<div class="prov-popover-header">'
         + '<span>Field Provenance</span>'
-        + '<button type="button" onclick="toggleProvenancePopover(\'' + fieldKey + '\', event)" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:13px; padding:0 2px;">✕</button>'
+        + '<button type="button" data-field="' + fieldKey + '" onclick="toggleProvenancePopover(this.dataset.field, event)" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:13px; padding:0 2px;">✕</button>'
         + '</div>'
         + detailsHtml
         + '</div>'
