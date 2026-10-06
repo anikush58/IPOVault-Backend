@@ -311,8 +311,8 @@ export class AdminProvenanceResolver {
       section: section || null,
       documentHash: documentHash || null,
       model: status === 'AI_ENRICHED' ? 'Gemini 3.5 Flash' : null,
-      retrievedAt: winner.prov.retrievedAt.toISOString(),
-      extractedAt: winner.prov.createdAt.toISOString(),
+      retrievedAt: winner.prov.retrievedAt ? new Date(winner.prov.retrievedAt).toISOString() : new Date().toISOString(),
+      extractedAt: winner.prov.createdAt ? new Date(winner.prov.createdAt).toISOString() : (winner.prov.retrievedAt ? new Date(winner.prov.retrievedAt).toISOString() : new Date().toISOString()),
       hasConflict,
       conflictingSources: hasConflict ? conflictingSources : undefined,
     };
