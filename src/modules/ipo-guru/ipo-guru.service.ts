@@ -39,6 +39,11 @@ import {
   backfillSingleIpoProvenance,
   backfillAllIposProvenance,
 } from './ipo-guru-provenance.backfill';
+import {
+  backfillSingleIpoRefundInitiation,
+  backfillAllRefundInitiations,
+  BackfillRefundOptions,
+} from './ipo-guru-refund.backfill';
 
 /**
  * IPO Guru v2 Service
@@ -1268,6 +1273,44 @@ export class IpoGuruService {
     const durationMs = Date.now() - startTime;
     this.logger.log(
       `[AUDIT] Backfill IPOGuru Provenance COMPLETED in ${durationMs}ms: adminUser='${adminUser}', scope='${ipoId ? 'SINGLE' : 'ALL'}', added=${result.added}, preserved=${result.preserved}, skipped=${result.skipped}`,
+    );
+
+    return result;
+  }
+
+  /**
+   * Safe preview (dry-run) of canonical Refund Initiation Date backfill.
+   */
+  async previewRefundBackfill(ipoId?: string, options: BackfillRefundOptions = {}) {
+    const apiKey = this.configService.get('IPOGURU_API_KEY' as keyof Env, { infer: true }) as string | undefined;
+    const opts = { ...options, dryRun: true, apiKey: options.apiKey || apiKey };
+    if (ipoId) {
+      return backfillSingleIpoRefundInitiation(this.prisma, ipoId, opts);
+    }
+    return backfillAllRefundInitiations(this.prisma, opts);
+  }
+
+  /**
+   * Safe apply of canonical Refund Initiation Date backfill (writes to DB with audit log).
+   */
+  async applyRefundBackfill(ipoId?: string, adminUser: string = 'admin', options: BackfillRefundOptions = {}) {
+    const apiKey = this.configService.get('IPOGURU_API_KEY' as keyof Env, { infer: true }) as string | undefined;
+    const startTime = Date.now();
+    this.logger.log(
+      `[AUDIT] Backfill Refund Initiation Date STARTED: adminUser='${adminUser}', scope='${ipoId ? 'SINGLE' : 'ALL'}', ipoId='${ipoId || 'ALL'}'`,
+    );
+
+    const opts = { ...options, dryRun: false, apiKey: options.apiKey || apiKey };
+    let result;
+    if (ipoId) {
+      result = await backfillSingleIpoRefundInitiation(this.prisma, ipoId, opts);
+    } else {
+      result = await backfillAllRefundInitiations(this.prisma, opts);
+    }
+
+    const durationMs = Date.now() - startTime;
+    this.logger.log(
+      `[AUDIT] Backfill Refund Initiation Date COMPLETED in ${durationMs}ms: adminUser='${adminUser}', scope='${ipoId ? 'SINGLE' : 'ALL'}'`,
     );
 
     return result;
