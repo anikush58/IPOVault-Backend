@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminIpoService } from './admin-ipo.service';
 import { AdminValidationService } from './admin-validation.service';
+import { AdminProvenanceResolver } from './admin-provenance.resolver';
 import { PrismaService } from '../../database/prisma.service';
 import { ExchangeListing, MarketSegment, PublicationStatus } from '@prisma/client';
 
@@ -84,6 +85,7 @@ describe('AdminIpoService & AdminValidationService', () => {
     },
     fieldProvenance: {
       create: jest.fn().mockResolvedValue({}),
+      findMany: jest.fn().mockResolvedValue([]),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoSourceIdentity: {
@@ -109,6 +111,7 @@ describe('AdminIpoService & AdminValidationService', () => {
       providers: [
         AdminIpoService,
         AdminValidationService,
+        AdminProvenanceResolver,
         { provide: PrismaService, useValue: mockPrisma },
       ],
     }).compile();

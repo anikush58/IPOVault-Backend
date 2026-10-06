@@ -32,6 +32,7 @@ import {
   UpdateAdminIpoDto,
 } from './admin-ipo.dto';
 import { AdminValidationService } from './admin-validation.service';
+import { AdminProvenanceResolver } from './admin-provenance.resolver';
 
 @Injectable()
 export class AdminIpoService {
@@ -40,6 +41,7 @@ export class AdminIpoService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly validationService: AdminValidationService,
+    private readonly provenanceResolver: AdminProvenanceResolver,
   ) {}
 
   /**
@@ -607,11 +609,22 @@ export class AdminIpoService {
       (e) => e.eventType === 'REFUND_INITIATION',
     );
 
+    const provenances = await this.prisma.fieldProvenance.findMany({
+      where: {
+        OR: [
+          { entityType: 'IPO', entityId: ipo.id },
+          { entityType: 'COMPANY', entityId: ipo.companyId },
+        ],
+      },
+      include: { source: true },
+      orderBy: { retrievedAt: 'desc' },
+    });
+
     const anchorDoc = (ipo.documents ?? []).find((d) => d.documentType === 'ANCHOR_LIST');
     const anchorExt = (anchorDoc?.extractionData as any) || {};
     const anchorInvestors = Array.isArray(anchorExt.anchorInvestors) ? anchorExt.anchorInvestors : [];
 
-    return {
+    const resultDto = {
       id: ipo.id,
       companyId: ipo.companyId,
       legalName: ipo.company.legalName,
@@ -728,6 +741,17 @@ export class AdminIpoService {
       }),
       createdAt: ipo.createdAt,
       updatedAt: ipo.updatedAt,
+    };
+
+    const fieldProvenanceMap = this.provenanceResolver.resolveAllFields(
+      resultDto,
+      provenances as any,
+    );
+
+    return {
+      ...resultDto,
+      fieldProvenanceMap,
+      fieldProvenances: provenances,
     };
   }
 

@@ -8,6 +8,34 @@ import {
   PublicationStatus,
 } from '@prisma/client';
 
+export type ProvenanceStatus =
+  | 'IPOGURU'
+  | 'AI_ENRICHED'
+  | 'OFFICIAL_SOURCE'
+  | 'MANUAL'
+  | 'NO_VERIFIED_DATA'
+  | 'CONFLICT_REVIEW';
+
+export interface FieldProvenanceVisualDto {
+  fieldName: string;
+  fieldKey: string;
+  value: string | number | null;
+  status: ProvenanceStatus;
+  statusLabel: string;
+  sourceLabel: string;
+  sourceCode: string;
+  sourceType?: string;
+  sourceUrl?: string | null;
+  confidence?: number | null;
+  section?: string | null;
+  documentHash?: string | null;
+  model?: string | null;
+  retrievedAt?: string | null;
+  extractedAt?: string | null;
+  hasConflict?: boolean;
+  conflictingSources?: { sourceName: string; value: string }[];
+}
+
 export class OfferCategoryDto {
   category!: OfferCategoryType;
   allocationPct?: number;

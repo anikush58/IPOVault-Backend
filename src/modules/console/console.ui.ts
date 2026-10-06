@@ -1116,6 +1116,192 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       font-weight: 500;
       display: none;
     }
+
+    /* Field Provenance Visual Coding System */
+    .prov-indicator {
+      display: flex;
+      align-items: center;
+      margin-top: 5px;
+      font-size: 11px;
+      position: relative;
+    }
+    
+    .prov-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+      width: fit-content;
+    }
+    
+    .prov-badge:hover {
+      filter: brightness(0.95);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    }
+    
+    body.dark-mode .prov-badge:hover {
+      filter: brightness(1.15);
+      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+    }
+    
+    .prov-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    
+    /* 🟢 IPOGuru */
+    .prov-badge.IPOGURU {
+      background-color: #DCFCE7;
+      color: #15803D;
+      border-color: #86EFAC;
+    }
+    .prov-badge.IPOGURU .prov-dot { background-color: #16A34A; }
+    body.dark-mode .prov-badge.IPOGURU {
+      background-color: rgba(22, 163, 74, 0.18);
+      color: #86EFAC;
+      border-color: rgba(134, 239, 172, 0.3);
+    }
+    
+    /* 🔵 AI Enriched */
+    .prov-badge.AI_ENRICHED {
+      background-color: #DBEAFE;
+      color: #1D4ED8;
+      border-color: #93C5FD;
+    }
+    .prov-badge.AI_ENRICHED .prov-dot { background-color: #2563EB; }
+    body.dark-mode .prov-badge.AI_ENRICHED {
+      background-color: rgba(37, 99, 235, 0.18);
+      color: #93C5FD;
+      border-color: rgba(147, 197, 253, 0.3);
+    }
+    
+    /* 🟣 Official Source */
+    .prov-badge.OFFICIAL_SOURCE {
+      background-color: #F3E8FF;
+      color: #7E22CE;
+      border-color: #D8B4FE;
+    }
+    .prov-badge.OFFICIAL_SOURCE .prov-dot { background-color: #9333EA; }
+    body.dark-mode .prov-badge.OFFICIAL_SOURCE {
+      background-color: rgba(147, 51, 234, 0.18);
+      color: #D8B4FE;
+      border-color: rgba(216, 180, 254, 0.3);
+    }
+    
+    /* 🟠 Manual */
+    .prov-badge.MANUAL {
+      background-color: #FFEDD5;
+      color: #C2410C;
+      border-color: #FDBA74;
+    }
+    .prov-badge.MANUAL .prov-dot { background-color: #EA580C; }
+    body.dark-mode .prov-badge.MANUAL {
+      background-color: rgba(234, 88, 12, 0.18);
+      color: #FDBA74;
+      border-color: rgba(253, 186, 116, 0.3);
+    }
+    
+    /* ⚪ No Verified Data */
+    .prov-badge.NO_VERIFIED_DATA {
+      background-color: #F1F5F9;
+      color: #64748B;
+      border-color: #CBD5E1;
+    }
+    .prov-badge.NO_VERIFIED_DATA .prov-dot { background-color: #94A3B8; }
+    body.dark-mode .prov-badge.NO_VERIFIED_DATA {
+      background-color: rgba(148, 163, 184, 0.12);
+      color: #94A3B8;
+      border-color: rgba(148, 163, 184, 0.25);
+    }
+    
+    /* 🔴 Conflict / Review */
+    .prov-badge.CONFLICT_REVIEW {
+      background-color: #FEE2E2;
+      color: #B91C1C;
+      border-color: #FCA5A5;
+    }
+    .prov-badge.CONFLICT_REVIEW .prov-dot { background-color: #DC2626; }
+    body.dark-mode .prov-badge.CONFLICT_REVIEW {
+      background-color: rgba(220, 38, 38, 0.18);
+      color: #FCA5A5;
+      border-color: rgba(252, 165, 165, 0.3);
+    }
+    
+    /* Provenance Popover Floating Card */
+    .prov-popover {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 0;
+      z-index: 1050;
+      min-width: 280px;
+      max-width: 360px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 14px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.08);
+      color: var(--text-main);
+      font-size: 11px;
+      pointer-events: auto;
+      animation: provFadeIn 0.15s ease;
+    }
+    
+    body.dark-mode .prov-popover {
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5), 0 4px 10px rgba(0, 0, 0, 0.3);
+    }
+    
+    @keyframes provFadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .prov-popover-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 6px;
+      margin-bottom: 6px;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    
+    .prov-popover-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 2.5px 0;
+      font-size: 11px;
+    }
+    
+    .prov-popover-label {
+      color: var(--text-muted);
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    
+    .prov-popover-val {
+      color: var(--text-main);
+      font-weight: 600;
+      text-align: right;
+      word-break: break-word;
+    }
+    
+    .prov-popover-val a {
+      color: var(--primary);
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -1529,18 +1715,22 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="form-group">
                   <label>Legal Company Name *</label>
                   <input type="text" id="form-legalName" autocomplete="off" required />
+                  <div class="prov-indicator" id="prov-for-legalName"></div>
                 </div>
                 <div class="form-group">
                   <label>Display Name</label>
                   <input type="text" id="form-displayName" autocomplete="off" />
+                  <div class="prov-indicator" id="prov-for-displayName"></div>
                 </div>
                 <div class="form-group">
                   <label>CIN</label>
                   <input type="text" id="form-cin" autocomplete="off" placeholder="e.g. U12345MH2024PLC000001" />
+                  <div class="prov-indicator" id="prov-for-cin"></div>
                 </div>
                 <div class="form-group">
                   <label>Trading Symbol</label>
                   <input type="text" id="form-symbol" autocomplete="off" placeholder="e.g. SYMBOL" />
+                  <div class="prov-indicator" id="prov-for-symbol"></div>
                 </div>
               </div>
 
@@ -1551,6 +1741,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                     <option value="MAINBOARD">MAINBOARD</option>
                     <option value="SME">SME</option>
                   </select>
+                  <div class="prov-indicator" id="prov-for-marketSegment"></div>
                 </div>
                 <div class="form-group">
                   <label>Exchange Listing</label>
@@ -1559,6 +1750,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                     <option value="BSE">BSE</option>
                     <option value="BOTH">BOTH</option>
                   </select>
+                  <div class="prov-indicator" id="prov-for-exchange"></div>
                 </div>
                 <div class="form-group">
                   <label>Lifecycle Status</label>
@@ -1574,6 +1766,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                     <option value="LISTED">LISTED</option>
                     <option value="CANCELLED">CANCELLED</option>
                   </select>
+                  <div class="prov-indicator" id="prov-for-status"></div>
                 </div>
                 <div class="form-group">
                   <label>Publication Status</label>
@@ -1582,6 +1775,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                     <option value="PUBLISHED">PUBLISHED (Live on Mobile App)</option>
                     <option value="ARCHIVED">ARCHIVED</option>
                   </select>
+                  <div class="prov-indicator" id="prov-for-publicationStatus"></div>
                 </div>
               </div>
 
@@ -1589,26 +1783,32 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="form-group">
                   <label>Price Band Low (₹)</label>
                   <input type="number" step="0.01" id="form-priceBandLow" />
+                  <div class="prov-indicator" id="prov-for-priceBandLow"></div>
                 </div>
                 <div class="form-group">
                   <label>Price Band High (₹)</label>
                   <input type="number" step="0.01" id="form-priceBandHigh" />
+                  <div class="prov-indicator" id="prov-for-priceBandHigh"></div>
                 </div>
                 <div class="form-group">
                   <label>Lot Size (Shares)</label>
                   <input type="number" id="form-lotSize" />
+                  <div class="prov-indicator" id="prov-for-lotSize"></div>
                 </div>
                 <div class="form-group">
                   <label>Total Issue Size (₹ Cr)</label>
                   <input type="number" step="0.01" id="form-issueSize" />
+                  <div class="prov-indicator" id="prov-for-issueSize"></div>
                 </div>
                 <div class="form-group">
                   <label>Fresh Issue Size (₹ Cr)</label>
                   <input type="number" step="0.01" id="form-freshIssueSize" placeholder="e.g. 500.00" />
+                  <div class="prov-indicator" id="prov-for-freshIssueSize"></div>
                 </div>
                 <div class="form-group">
                   <label>Offer for Sale Size (₹ Cr)</label>
                   <input type="number" step="0.01" id="form-ofsSize" placeholder="e.g. 200.00" />
+                  <div class="prov-indicator" id="prov-for-ofsSize"></div>
                 </div>
                 <div class="form-group" style="grid-column: 1 / -1; margin-top: 10px;">
                   <h4 style="margin: 0; font-size: 13px; color: var(--primary); font-weight: 700; text-transform: uppercase;">Pre & Post IPO Metrics (Valuation & Shareholding)</h4>
@@ -1616,34 +1816,42 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="form-group">
                   <label>Pre-IPO EPS (₹)</label>
                   <input type="number" step="0.01" id="form-preIpoEps" placeholder="e.g. 9.00" />
+                  <div class="prov-indicator" id="prov-for-preIpoEps"></div>
                 </div>
                 <div class="form-group">
                   <label>Post-IPO EPS (₹)</label>
                   <input type="number" step="0.01" id="form-postIpoEps" placeholder="e.g. 7.97" />
+                  <div class="prov-indicator" id="prov-for-postIpoEps"></div>
                 </div>
                 <div class="form-group">
                   <label>Pre-IPO P/E (x)</label>
                   <input type="number" step="0.01" id="form-preIpoPe" placeholder="e.g. 47.11" />
+                  <div class="prov-indicator" id="prov-for-preIpoPe"></div>
                 </div>
                 <div class="form-group">
                   <label>Post-IPO P/E (x)</label>
                   <input type="number" step="0.01" id="form-postIpoPe" placeholder="e.g. 53.20" />
+                  <div class="prov-indicator" id="prov-for-postIpoPe"></div>
                 </div>
                 <div class="form-group">
                   <label>Pre-IPO Promoter Holding (%)</label>
                   <input type="number" step="0.01" id="form-preIpoPromoterHolding" placeholder="e.g. 75.74" />
+                  <div class="prov-indicator" id="prov-for-preIpoPromoterHolding"></div>
                 </div>
                 <div class="form-group">
                   <label>Post-IPO Promoter Holding (%)</label>
                   <input type="number" step="0.01" id="form-postIpoPromoterHolding" placeholder="e.g. 0.00" />
+                  <div class="prov-indicator" id="prov-for-postIpoPromoterHolding"></div>
                 </div>
                 <div class="form-group">
                   <label>Pre-IPO Market Cap (₹ Cr)</label>
                   <input type="number" step="0.01" id="form-preIpoMarketCap" placeholder="e.g. 2500.00" />
+                  <div class="prov-indicator" id="prov-for-preIpoMarketCap"></div>
                 </div>
                 <div class="form-group">
                   <label>Post-IPO Market Cap (₹ Cr)</label>
                   <input type="number" step="0.01" id="form-postIpoMarketCap" placeholder="e.g. 3153.36" />
+                  <div class="prov-indicator" id="prov-for-postIpoMarketCap"></div>
                 </div>
               </div>
 
@@ -1651,28 +1859,34 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="form-group">
                   <label>Issue Open Date</label>
                   <input type="date" id="form-openDate" />
+                  <div class="prov-indicator" id="prov-for-openDate"></div>
                 </div>
                 <div class="form-group">
                   <label>Issue Close Date</label>
                   <input type="date" id="form-closeDate" />
+                  <div class="prov-indicator" id="prov-for-closeDate"></div>
                 </div>
                 <div class="form-group">
                   <label>Allotment Date</label>
                   <input type="date" id="form-allotmentDate" />
+                  <div class="prov-indicator" id="prov-for-allotmentDate"></div>
                 </div>
                 <div class="form-group">
                   <label>Refund Initiation Date</label>
                   <input type="date" id="form-refundDate" />
+                  <div class="prov-indicator" id="prov-for-refundDate"></div>
                 </div>
                 <div class="form-group">
                   <label>Listing Date</label>
                   <input type="date" id="form-listingDate" />
+                  <div class="prov-indicator" id="prov-for-listingDate"></div>
                 </div>
               </div>
 
               <div class="form-group">
                 <label>Company Logo URL</label>
                 <input type="url" id="form-logoUrl" placeholder="https://example.com/logo.png" />
+                <div class="prov-indicator" id="prov-for-logoUrl"></div>
               </div>
 
               <!-- Offer Breakup & Retail Category Terms -->
@@ -1684,14 +1898,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="form-group">
                   <label>QIB Allocation (%)</label>
                   <input type="number" step="0.01" id="cat-qib-pct" placeholder="e.g. 50" />
+                  <div class="prov-indicator" id="prov-for-qibAllocationPct"></div>
                 </div>
                 <div class="form-group">
                   <label>NII Allocation (%)</label>
                   <input type="number" step="0.01" id="cat-nii-pct" placeholder="e.g. 15" />
+                  <div class="prov-indicator" id="prov-for-niiAllocationPct"></div>
                 </div>
                 <div class="form-group">
                   <label>Retail Allocation (%)</label>
                   <input type="number" step="0.01" id="cat-retail-pct" placeholder="e.g. 35" />
+                  <div class="prov-indicator" id="prov-for-retailAllocationPct"></div>
                 </div>
               </div>
 
@@ -1699,18 +1916,22 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="form-group">
                   <label>Retail Min Lots</label>
                   <input type="number" id="cat-retail-min-lots" placeholder="e.g. 1" />
+                  <div class="prov-indicator" id="prov-for-retailMinLots"></div>
                 </div>
                 <div class="form-group">
                   <label>Retail Max Lots</label>
                   <input type="number" id="cat-retail-max-lots" placeholder="e.g. 13" />
+                  <div class="prov-indicator" id="prov-for-retailMaxLots"></div>
                 </div>
                 <div class="form-group">
                   <label>Retail Min Shares</label>
                   <input type="number" id="cat-retail-min-shares" placeholder="e.g. 100" />
+                  <div class="prov-indicator" id="prov-for-retailMinShares"></div>
                 </div>
                 <div class="form-group">
                   <label>Retail Max Shares</label>
                   <input type="number" id="cat-retail-max-shares" placeholder="e.g. 1300" />
+                  <div class="prov-indicator" id="prov-for-retailMaxShares"></div>
                 </div>
               </div>
 
@@ -1718,10 +1939,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="form-group">
                   <label>Retail Min Amount (₹)</label>
                   <input type="number" step="0.01" id="cat-retail-min-amount" placeholder="e.g. 14800" />
+                  <div class="prov-indicator" id="prov-for-retailMinAmount"></div>
                 </div>
                 <div class="form-group">
                   <label>Retail Max Amount (₹)</label>
                   <input type="number" step="0.01" id="cat-retail-max-amount" placeholder="e.g. 192400" />
+                  <div class="prov-indicator" id="prov-for-retailMaxAmount"></div>
                 </div>
               </div>
 
@@ -1734,6 +1957,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="form-group">
                   <label>Registrar Name</label>
                   <input type="text" id="part-reg-name" placeholder="e.g. MUFG Intime India Pvt Ltd / KFintech" />
+                  <div class="prov-indicator" id="prov-for-registrarName"></div>
                 </div>
                 <div class="form-group">
                   <label>Registrar Phone</label>
@@ -1752,6 +1976,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               <div class="form-group">
                 <label>Lead Manager / BRLM Name(s)</label>
                 <input type="text" id="part-brlm-name" placeholder="e.g. ICICI Securities, Axis Capital (comma-separated)" />
+                <div class="prov-indicator" id="prov-for-leadManagers"></div>
               </div>
 
               <!-- Company Financial Ratios & Performance -->
@@ -1763,6 +1988,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="form-group">
                   <label>Fiscal Period</label>
                   <input type="text" id="fin-period" placeholder="e.g. FY24 / 31 Mar 2024" />
+                  <div class="prov-indicator" id="prov-for-financials"></div>
                 </div>
                 <div class="form-group">
                   <label>ROE (%)</label>
@@ -1822,6 +2048,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <div class="form-group">
                     <label>GMP Amount (₹)</label>
                     <input type="number" step="0.01" id="gmp-amount" placeholder="e.g. 25.00" />
+                    <div class="prov-indicator" id="prov-for-gmp"></div>
                   </div>
                   <div class="form-group">
                     <label>GMP Percentage (%)</label>
@@ -1849,6 +2076,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <div class="form-group">
                     <label>Total Sub (x)</label>
                     <input type="number" step="0.01" id="sub-total" placeholder="e.g. 7.9" />
+                    <div class="prov-indicator" id="prov-for-subscription"></div>
                   </div>
                 </div>
               </div>
@@ -1863,18 +2091,22 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <div class="form-group">
                     <label>Listing Price (₹)</label>
                     <input type="number" step="0.01" id="form-listingPrice" placeholder="e.g. 150.00" />
+                    <div class="prov-indicator" id="prov-for-listingPrice"></div>
                   </div>
                   <div class="form-group">
                     <label>Listing Gain (%)</label>
                     <input type="number" step="0.01" id="form-listingGainPct" placeholder="e.g. 25.00" />
+                    <div class="prov-indicator" id="prov-for-listingGainPct"></div>
                   </div>
                   <div class="form-group">
                     <label>Est Profit Amount (₹)</label>
                     <input type="number" step="0.01" id="form-profitAmount" placeholder="e.g. 3500.00" />
+                    <div class="prov-indicator" id="prov-for-profitAmount"></div>
                   </div>
                   <div class="form-group">
                     <label>Est Profit (%)</label>
                     <input type="number" step="0.01" id="form-profitPercentage" placeholder="e.g. 25.00" />
+                    <div class="prov-indicator" id="prov-for-profitPercentage"></div>
                   </div>
                 </div>
               </div>
@@ -3725,9 +3957,185 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (enabledChecked && registrarCodeVal && !codeVal) {
           banner.style.display = 'block';
         } else {
-          banner.style.display = 'none';
-        }
+    // ==========================================
+    // FIELD PROVENANCE VISUAL CODING & DETAILS
+    // ==========================================
+
+    let activeProvenancePopoverKey = null;
+
+    function toggleProvenancePopover(fieldKey, event) {
+      if (event) {
+        event.stopPropagation();
+        event.preventDefault();
       }
+      const popover = document.getElementById('prov-popover-' + fieldKey);
+      if (!popover) return;
+
+      const isShowing = popover.style.display === 'block';
+
+      // Close all open popovers first
+      document.querySelectorAll('.prov-popover').forEach(el => {
+        el.style.display = 'none';
+      });
+
+      if (!isShowing) {
+        popover.style.display = 'block';
+        activeProvenancePopoverKey = fieldKey;
+      } else {
+        activeProvenancePopoverKey = null;
+      }
+    }
+
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.prov-indicator')) {
+        document.querySelectorAll('.prov-popover').forEach(el => {
+          el.style.display = 'none';
+        });
+        activeProvenancePopoverKey = null;
+      }
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.prov-popover').forEach(el => {
+          el.style.display = 'none';
+        });
+        activeProvenancePopoverKey = null;
+      }
+    });
+
+    function renderProvenanceBadgeHtml(fieldKey, provDto) {
+      if (!provDto) {
+        provDto = {
+          status: 'NO_VERIFIED_DATA',
+          statusLabel: 'No verified data',
+          sourceLabel: 'Not available',
+          confidence: null,
+          hasConflict: false,
+        };
+      }
+
+      const status = provDto.status || 'NO_VERIFIED_DATA';
+      let badgeLabel = 'No verified data';
+      let statusClass = 'NO_VERIFIED_DATA';
+
+      if (status === 'IPOGURU') {
+        badgeLabel = '🟢 IPOGuru';
+        statusClass = 'IPOGURU';
+      } else if (status === 'AI_ENRICHED') {
+        badgeLabel = '🔵 AI Enriched · ' + (provDto.sourceLabel || 'SEBI Prospectus');
+        statusClass = 'AI_ENRICHED';
+      } else if (status === 'OFFICIAL_SOURCE') {
+        badgeLabel = '🟣 Official · ' + (provDto.sourceLabel || 'Official');
+        statusClass = 'OFFICIAL_SOURCE';
+      } else if (status === 'MANUAL') {
+        badgeLabel = '🟠 Manual';
+        statusClass = 'MANUAL';
+      } else if (status === 'CONFLICT_REVIEW') {
+        badgeLabel = '🔴 Conflict / Review';
+        statusClass = 'CONFLICT_REVIEW';
+      } else {
+        badgeLabel = '⚪ No verified data';
+        statusClass = 'NO_VERIFIED_DATA';
+      }
+
+      // Format source popover details
+      let detailsHtml = '';
+      if (status === 'AI_ENRICHED') {
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Status:</span><span class="prov-popover-val" style="color:#2563EB;">AI Enriched</span></div>';
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Source Document:</span><span class="prov-popover-val">' + escapeHtml(provDto.sourceLabel || 'SEBI Statutory Filing') + '</span></div>';
+        if (provDto.section) {
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Section:</span><span class="prov-popover-val">' + escapeHtml(provDto.section) + '</span></div>';
+        }
+        if (provDto.sourceUrl) {
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Source URL:</span><span class="prov-popover-val"><a href="' + escapeHtml(provDto.sourceUrl) + '" target="_blank" rel="noopener noreferrer">View Reference</a></span></div>';
+        }
+        if (provDto.documentHash) {
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Doc Hash:</span><span class="prov-popover-val" style="font-family:monospace; font-size:10px;">' + escapeHtml(provDto.documentHash.slice(0, 16)) + '...</span></div>';
+        }
+        if (provDto.confidence !== undefined && provDto.confidence !== null) {
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Confidence:</span><span class="prov-popover-val">' + Math.round(provDto.confidence * 100) + '%</span></div>';
+        }
+        if (provDto.model) {
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Model:</span><span class="prov-popover-val">' + escapeHtml(provDto.model) + '</span></div>';
+        }
+        if (provDto.extractedAt) {
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Extracted:</span><span class="prov-popover-val">' + new Date(provDto.extractedAt).toLocaleString() + '</span></div>';
+        }
+      } else if (status === 'IPOGURU') {
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Status:</span><span class="prov-popover-val" style="color:#16A34A;">IPOGuru Ingestion</span></div>';
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Source:</span><span class="prov-popover-val">IPOGuru v2 API</span></div>';
+        if (provDto.retrievedAt) {
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Retrieved:</span><span class="prov-popover-val">' + new Date(provDto.retrievedAt).toLocaleString() + '</span></div>';
+        }
+      } else if (status === 'OFFICIAL_SOURCE') {
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Status:</span><span class="prov-popover-val" style="color:#9333EA;">Official Statutory</span></div>';
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Source:</span><span class="prov-popover-val">' + escapeHtml(provDto.sourceLabel || 'Exchange / SEBI') + '</span></div>';
+        if (provDto.sourceUrl) {
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Reference:</span><span class="prov-popover-val"><a href="' + escapeHtml(provDto.sourceUrl) + '" target="_blank" rel="noopener noreferrer">View Reference</a></span></div>';
+        }
+        if (provDto.retrievedAt) {
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Retrieved:</span><span class="prov-popover-val">' + new Date(provDto.retrievedAt).toLocaleString() + '</span></div>';
+        }
+      } else if (status === 'MANUAL') {
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Status:</span><span class="prov-popover-val" style="color:#EA580C;">Manual / Admin Entry</span></div>';
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Source:</span><span class="prov-popover-val">' + escapeHtml(provDto.sourceLabel || 'Admin Console') + '</span></div>';
+        if (provDto.extractedAt || provDto.retrievedAt) {
+          const t = provDto.extractedAt || provDto.retrievedAt;
+          detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Updated:</span><span class="prov-popover-val">' + new Date(t).toLocaleString() + '</span></div>';
+        }
+      } else if (status === 'CONFLICT_REVIEW') {
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Status:</span><span class="prov-popover-val" style="color:#DC2626; font-weight:700;">Conflicting Sources</span></div>';
+        detailsHtml += '<div style="margin-top:4px; font-size:11px; color:var(--text-muted);">Multiple upstream sources provide disagreeing values. Requires admin verification.</div>';
+        if (Array.isArray(provDto.conflictingSources) && provDto.conflictingSources.length > 0) {
+          detailsHtml += '<div style="margin-top:6px; border-top:1px solid var(--border-color); padding-top:4px;">';
+          provDto.conflictingSources.forEach(cs => {
+            detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">' + escapeHtml(cs.sourceName) + ':</span><span class="prov-popover-val">' + escapeHtml(cs.value) + '</span></div>';
+          });
+          detailsHtml += '</div>';
+        }
+      } else {
+        detailsHtml += '<div class="prov-popover-row"><span class="prov-popover-label">Status:</span><span class="prov-popover-val" style="color:var(--text-muted);">No Verified Data</span></div>';
+        detailsHtml += '<div style="margin-top:4px; font-size:11px; color:var(--text-muted);">No authoritative or verified source provides data for this field.</div>';
+      }
+
+      return (
+        '<div class="prov-badge ' + statusClass + '" onclick="toggleProvenancePopover(\'' + fieldKey + '\', event)" title="Click to view provenance details">'
+        + '<span class="prov-dot"></span>'
+        + '<span>' + escapeHtml(badgeLabel) + '</span>'
+        + '</div>'
+        + '<div class="prov-popover" id="prov-popover-' + fieldKey + '">'
+        + '<div class="prov-popover-header">'
+        + '<span>Field Provenance</span>'
+        + '<button type="button" onclick="toggleProvenancePopover(\'' + fieldKey + '\', event)" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:13px; padding:0 2px;">✕</button>'
+        + '</div>'
+        + detailsHtml
+        + '</div>'
+      );
+    }
+
+    function renderAllFieldProvenances(fieldProvenanceMap) {
+      const provMap = fieldProvenanceMap || {};
+      const standardFieldKeys = [
+        'legalName', 'displayName', 'cin', 'symbol', 'marketSegment', 'exchange',
+        'status', 'publicationStatus', 'priceBandLow', 'priceBandHigh', 'lotSize',
+        'issueSize', 'freshIssueSize', 'ofsSize', 'preIpoEps', 'postIpoEps',
+        'preIpoPe', 'postIpoPe', 'preIpoPromoterHolding', 'postIpoPromoterHolding',
+        'preIpoMarketCap', 'postIpoMarketCap', 'openDate', 'closeDate',
+        'allotmentDate', 'refundDate', 'listingDate', 'logoUrl',
+        'qibAllocationPct', 'niiAllocationPct', 'retailAllocationPct',
+        'retailMinLots', 'retailMaxLots', 'retailMinShares', 'retailMaxShares',
+        'retailMinAmount', 'retailMaxAmount',
+        'registrarName', 'leadManagers', 'financials', 'gmp', 'subscription',
+        'listingPrice', 'listingGainPct', 'profitAmount', 'profitPercentage'
+      ];
+
+      standardFieldKeys.forEach(key => {
+        const el = document.getElementById('prov-for-' + key);
+        if (!el) return;
+        const prov = provMap[key];
+        el.innerHTML = renderProvenanceBadgeHtml(key, prov);
+      });
     }
 
     function openCreateModal() {
@@ -3787,6 +4195,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
       reindexAnchorRows();
       renderDocumentsTable(null);
+      renderAllFieldProvenances(null);
       updateFormStatusSections();
       switchTab('manual-edit');
     }
@@ -3796,6 +4205,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const res = await fetch(API_BASE + '/manual-ipos/' + id);
         const json = await res.json();
         currentIpoData = json.data || json;
+        
+        renderAllFieldProvenances(currentIpoData.fieldProvenanceMap);
         
         document.getElementById('form-ipo-id').value = currentIpoData.id;
         document.getElementById('form-legalName').value = currentIpoData.legalName || currentIpoData.company?.legalName || '';

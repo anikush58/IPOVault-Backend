@@ -4,6 +4,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { AdminIpoController } from './admin-ipo.controller';
 import { AdminIpoService } from './admin-ipo.service';
 import { AdminValidationService } from './admin-validation.service';
+import { AdminProvenanceResolver } from './admin-provenance.resolver';
 import { AdminGuard } from './admin.guard';
 
 @Module({
@@ -12,8 +13,14 @@ import { AdminGuard } from './admin.guard';
   providers: [
     AdminIpoService,
     AdminValidationService,
+    AdminProvenanceResolver,
     AdminGuard,
   ],
-  exports: [AdminIpoService, AdminValidationService, AdminGuard],
+  exports: [
+    AdminIpoService,
+    AdminValidationService,
+    AdminProvenanceResolver,
+    AdminGuard,
+  ],
 })
 export class AdminModule {}
