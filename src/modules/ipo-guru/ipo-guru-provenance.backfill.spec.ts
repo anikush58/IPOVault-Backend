@@ -293,4 +293,86 @@ describe('Field-Level IPOGuru Provenance Backfill', () => {
     expect(resolved.cin.status).toBe('NO_VERIFIED_DATA');
     expect(resolved.publicationStatus.status).toBe('NO_VERIFIED_DATA');
   });
+
+  it('6. Preserves AI_ENRICHED provenance without overwriting', async () => {
+    const aiProvs = [
+      ...adminProvenances,
+      {
+        id: 'p-ai-1',
+        entityType: 'IPO',
+        entityId: baseIpo.id,
+        fieldName: 'lot_size',
+        value: '600',
+        sourceId: 'src-ai',
+        sourceReference: 'gemini-3.5-flash',
+        retrievedAt: new Date('2026-10-01T10:00:00Z'),
+        source: { id: 'src-ai', code: 'AI_ENRICHED', name: 'Gemini 3.5 Flash', sourceType: SourceType.SECONDARY },
+      },
+    ];
+    createdProvenances = [...aiProvs];
+
+    const summary = await backfillSingleIpoProvenance(mockPrisma, baseIpo.id, { dryRun: false });
+
+    const lotSizePlan = summary.details.find((d) => d.fieldKey === 'lot_size');
+    expect(lotSizePlan?.action).toBe('PRESERVE');
+    expect(lotSizePlan?.existingProvenance).toContain('AI_ENRICHED');
+    expect(summary.aiPreserved).toBe(1);
+
+    const resolved = resolver.resolveAllFields({ lotSize: 600 }, createdProvenances);
+    expect(resolved.lotSize.status).toBe('AI_ENRICHED');
+  });
+
+  it('7. All IPOs Preview: Plans batch backfill without writing to DB', async () => {
+    const { backfillAllIposProvenance } = await import('./ipo-guru-provenance.backfill');
+
+    mockPrisma.ipo.findMany = jest.fn().mockResolvedValue([
+      { id: baseIpo.id, company: { displayName: 'Acme India Industries' } },
+      { id: 'ipo-2', company: { displayName: 'Beta Solar Corp' } },
+    ]);
+
+    const result = await backfillAllIposProvenance(mockPrisma, { dryRun: true, includeDetails: true });
+
+    expect(result.iposScanned).toBe(2);
+    expect(result.eligibleIpos).toBe(2);
+    expect(result.fieldsEvaluated).toBeGreaterThan(0);
+    expect(mockPrisma.fieldProvenance.create).not.toHaveBeenCalled();
+    expect(result.errors).toEqual([]);
+  });
+
+  it('8. All IPOs Apply: Isolates individual IPO errors without failing entire batch', async () => {
+    const { backfillAllIposProvenance } = await import('./ipo-guru-provenance.backfill');
+
+    mockPrisma.ipo.findMany = jest.fn().mockResolvedValue([
+      { id: baseIpo.id, company: { displayName: 'Acme India Industries' } },
+      { id: 'invalid-ipo', company: { displayName: 'Broken Corp' } },
+    ]);
+
+    // Make findUnique reject for invalid-ipo
+    mockPrisma.ipo.findUnique = jest.fn().mockImplementation(({ where }: any) => {
+      if (where.id === baseIpo.id) return Promise.resolve(baseIpo);
+      return Promise.resolve(null);
+    });
+
+    const result = await backfillAllIposProvenance(mockPrisma, { dryRun: false });
+
+    expect(result.iposScanned).toBe(2);
+    expect(result.errors.length).toBe(1);
+    expect(result.errors[0].ipoId).toBe('invalid-ipo');
+    expect(result.errors[0].error).toContain('not found');
+    expect(result.added).toBeGreaterThan(0); // Acme still processed successfully!
+  });
+
+  it('9. Canonical IPO values remain strictly unchanged during and after backfill', async () => {
+    const copyOfBaseIpo = JSON.parse(JSON.stringify(baseIpo));
+
+    await backfillSingleIpoProvenance(mockPrisma, baseIpo.id, { dryRun: false });
+
+    // Verify IPO object fields remain identical
+    expect(baseIpo.priceBandLow).toEqual(new Prisma.Decimal('186'));
+    expect(baseIpo.priceBandHigh).toEqual(new Prisma.Decimal('196'));
+    expect(baseIpo.issueSize).toEqual(new Prisma.Decimal('121.69'));
+    expect(baseIpo.company.legalName).toBe(copyOfBaseIpo.company.legalName);
+    expect(baseIpo.company.displayName).toBe(copyOfBaseIpo.company.displayName);
+    expect(baseIpo.status).toBe(IpoStatus.CLOSING_TODAY);
+  });
 });

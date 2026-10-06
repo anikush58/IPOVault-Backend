@@ -6,6 +6,7 @@ export interface FieldBackfillPlan {
   entityId?: string;
   canonicalValue: any;
   existingProvenance: string;
+  existingSourceCode?: string;
   proposedProvenance: string;
   action: 'PRESERVE' | 'ADD' | 'SKIP';
   reason: string;
@@ -14,10 +15,30 @@ export interface FieldBackfillPlan {
 export interface IpoBackfillSummary {
   ipoId: string;
   companyName: string;
+  fieldsEvaluated: number;
   preserved: number;
+  adminPreserved: number;
+  officialPreserved: number;
+  ipoguruPreserved: number;
+  aiPreserved: number;
   added: number;
   skipped: number;
   details: FieldBackfillPlan[];
+}
+
+export interface AllIposBackfillSummary {
+  iposScanned: number;
+  eligibleIpos: number;
+  fieldsEvaluated: number;
+  added: number;
+  preserved: number;
+  adminPreserved: number;
+  officialPreserved: number;
+  ipoguruPreserved: number;
+  aiPreserved: number;
+  skipped: number;
+  errors: Array<{ ipoId: string; companyName?: string; error: string }>;
+  results?: IpoBackfillSummary[];
 }
 
 /**
@@ -264,12 +285,14 @@ export async function backfillSingleIpoProvenance(
   for (const c of candidateFields) {
     const existing = existingByField.get(c.fieldKey.toLowerCase());
     if (existing) {
+      const code = (existing.source?.code || '').toUpperCase();
       details.push({
         fieldKey: c.fieldKey,
         entityType: c.entityType,
         entityId: c.entityId,
         canonicalValue: c.canonicalValue,
         existingProvenance: `${existing.source.code} (${existing.sourceReference || 'N/A'}) = "${existing.value}"`,
+        existingSourceCode: code,
         proposedProvenance: 'N/A (Preserved)',
         action: 'PRESERVE',
         reason: `Existing ${existing.source.code} provenance row preserved`,
@@ -322,12 +345,113 @@ export async function backfillSingleIpoProvenance(
     }
   }
 
+  const preservedPlans = details.filter((d) => d.action === 'PRESERVE');
+  const adminPreserved = preservedPlans.filter((d) => d.existingSourceCode === 'ADMIN').length;
+  const officialPreserved = preservedPlans.filter((d) => ['OFFICIAL', 'NSE', 'BSE'].includes(d.existingSourceCode || '')).length;
+  const ipoguruPreserved = preservedPlans.filter((d) => d.existingSourceCode === 'IPOGURU').length;
+  const aiPreserved = preservedPlans.filter((d) => ['AI_ENRICHED', 'GEMINI'].includes(d.existingSourceCode || '')).length;
+
   return {
     ipoId: ipo.id,
     companyName: ipo.company.displayName,
-    preserved: details.filter((d) => d.action === 'PRESERVE').length,
+    fieldsEvaluated: details.length,
+    preserved: preservedPlans.length,
+    adminPreserved,
+    officialPreserved,
+    ipoguruPreserved,
+    aiPreserved,
     added: details.filter((d) => d.action === 'ADD').length,
     skipped: details.filter((d) => d.action === 'SKIP').length,
     details,
+  };
+}
+
+/**
+ * Plans and optionally executes field-level additive provenance backfill for all eligible IPOs.
+ * Processes in controlled batches and catches errors per IPO so failures are safely contained.
+ */
+export async function backfillAllIposProvenance(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  options: { dryRun?: boolean; batchSize?: number; includeDetails?: boolean } = {},
+): Promise<AllIposBackfillSummary> {
+  const dryRun = options.dryRun ?? false;
+  const batchSize = options.batchSize ?? 25;
+  const includeDetails = options.includeDetails ?? false;
+
+  // Find all IPOs that have an IPOGURU source identity
+  const eligibleIpos = await prisma.ipo.findMany({
+    where: {
+      sourceIdentities: {
+        some: {
+          source: {
+            code: {
+              equals: 'IPOGURU',
+              mode: 'insensitive',
+            },
+          },
+        },
+      },
+    },
+    select: {
+      id: true,
+      company: { select: { displayName: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const totalScanned = eligibleIpos.length;
+  const errors: Array<{ ipoId: string; companyName?: string; error: string }> = [];
+  const results: IpoBackfillSummary[] = [];
+
+  let fieldsEvaluated = 0;
+  let added = 0;
+  let preserved = 0;
+  let adminPreserved = 0;
+  let officialPreserved = 0;
+  let ipoguruPreserved = 0;
+  let aiPreserved = 0;
+  let skipped = 0;
+
+  // Process in controlled batches
+  for (let i = 0; i < eligibleIpos.length; i += batchSize) {
+    const chunk = eligibleIpos.slice(i, i + batchSize);
+    for (const item of chunk) {
+      try {
+        const summary = await backfillSingleIpoProvenance(prisma, item.id, { dryRun });
+        fieldsEvaluated += summary.fieldsEvaluated;
+        added += summary.added;
+        preserved += summary.preserved;
+        adminPreserved += summary.adminPreserved;
+        officialPreserved += summary.officialPreserved;
+        ipoguruPreserved += summary.ipoguruPreserved;
+        aiPreserved += summary.aiPreserved;
+        skipped += summary.skipped;
+
+        if (includeDetails) {
+          results.push(summary);
+        }
+      } catch (err: any) {
+        errors.push({
+          ipoId: item.id,
+          companyName: item.company?.displayName || 'Unknown',
+          error: err.message || String(err),
+        });
+      }
+    }
+  }
+
+  return {
+    iposScanned: totalScanned,
+    eligibleIpos: eligibleIpos.length,
+    fieldsEvaluated,
+    added,
+    preserved,
+    adminPreserved,
+    officialPreserved,
+    ipoguruPreserved,
+    aiPreserved,
+    skipped,
+    errors,
+    results: includeDetails ? results : undefined,
   };
 }

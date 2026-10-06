@@ -35,6 +35,10 @@ import {
   getIstNow,
   parseSlotToMinutes,
 } from './ipo-guru.types';
+import {
+  backfillSingleIpoProvenance,
+  backfillAllIposProvenance,
+} from './ipo-guru-provenance.backfill';
 
 /**
  * IPO Guru v2 Service
@@ -1219,5 +1223,39 @@ export class IpoGuruService {
         },
       });
     }
+  }
+
+  /**
+   * Safe, field-level additive IPOGuru provenance backfill preview (dry run).
+   */
+  async previewProvenanceBackfill(ipoId?: string) {
+    if (ipoId) {
+      return backfillSingleIpoProvenance(this.prisma, ipoId, { dryRun: true });
+    }
+    return backfillAllIposProvenance(this.prisma, { dryRun: true, includeDetails: true });
+  }
+
+  /**
+   * Safe, field-level additive IPOGuru provenance backfill apply (writes to DB with audit log).
+   */
+  async applyProvenanceBackfill(ipoId?: string, adminUser: string = 'admin') {
+    const startTime = Date.now();
+    this.logger.log(
+      `[AUDIT] Backfill IPOGuru Provenance STARTED: adminUser='${adminUser}', scope='${ipoId ? 'SINGLE' : 'ALL'}', ipoId='${ipoId || 'ALL'}'`,
+    );
+
+    let result;
+    if (ipoId) {
+      result = await backfillSingleIpoProvenance(this.prisma, ipoId, { dryRun: false });
+    } else {
+      result = await backfillAllIposProvenance(this.prisma, { dryRun: false, includeDetails: true });
+    }
+
+    const durationMs = Date.now() - startTime;
+    this.logger.log(
+      `[AUDIT] Backfill IPOGuru Provenance COMPLETED in ${durationMs}ms: adminUser='${adminUser}', scope='${ipoId ? 'SINGLE' : 'ALL'}', added=${result.added}, preserved=${result.preserved}, skipped=${result.skipped}`,
+    );
+
+    return result;
   }
 }

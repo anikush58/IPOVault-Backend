@@ -75,6 +75,8 @@ describe('ConsoleController', () => {
       }),
       fetchIpos: jest.fn().mockResolvedValue({ httpStatus: 200, ipos: [], total: 0 }),
       syncIpos: jest.fn().mockResolvedValue({ totalFetched: 0, matchedUpdated: 0, newlyCreated: 0, skipped: 0, errorCount: 0, items: [] }),
+      previewProvenanceBackfill: jest.fn().mockResolvedValue({ ipoId: 'ipo-1', companyName: 'Acme', added: 12, preserved: 4, skipped: 5, details: [] }),
+      applyProvenanceBackfill: jest.fn().mockResolvedValue({ ipoId: 'ipo-1', companyName: 'Acme', added: 12, preserved: 4, skipped: 5, details: [] }),
     };
 
     timelineSchedulerService = {
@@ -222,5 +224,27 @@ describe('ConsoleController', () => {
     const res = await controller.checkAllotmentAwaited();
     expect(timelineSchedulerService.checkAllotmentForAwaitedIpos).toHaveBeenCalled();
     expect(res).toEqual({ totalChecked: 2, totalUpdated: 1, results: [] });
+  });
+
+  it('should delegate provenance preview to ipoGuruService', async () => {
+    const res = await controller.previewIpoGuruProvenanceBackfill({ ipoId: 'ipo-1' });
+    expect(ipoGuruService.previewProvenanceBackfill).toHaveBeenCalledWith('ipo-1');
+    expect(res).toEqual({ ipoId: 'ipo-1', companyName: 'Acme', added: 12, preserved: 4, skipped: 5, details: [] });
+  });
+
+  it('should delegate provenance apply to ipoGuruService with authenticated admin user', async () => {
+    const mockReq = { user: { username: 'admin_test' } } as any;
+    const res = await controller.applyIpoGuruProvenanceBackfill({ ipoId: 'ipo-1' }, mockReq);
+    expect(ipoGuruService.applyProvenanceBackfill).toHaveBeenCalledWith('ipo-1', 'admin_test');
+    expect(res).toEqual({ ipoId: 'ipo-1', companyName: 'Acme', added: 12, preserved: 4, skipped: 5, details: [] });
+  });
+
+  it('should delegate single manual ipo provenance preview and apply', async () => {
+    await controller.previewSingleManualIpoProvenance('a7a4e3af-f954-4d70-9adb-9a57e4a90637');
+    expect(ipoGuruService.previewProvenanceBackfill).toHaveBeenCalledWith('a7a4e3af-f954-4d70-9adb-9a57e4a90637');
+
+    const mockReq = { user: { username: 'superadmin' } } as any;
+    await controller.applySingleManualIpoProvenance('a7a4e3af-f954-4d70-9adb-9a57e4a90637', mockReq);
+    expect(ipoGuruService.applyProvenanceBackfill).toHaveBeenCalledWith('a7a4e3af-f954-4d70-9adb-9a57e4a90637', 'superadmin');
   });
 });

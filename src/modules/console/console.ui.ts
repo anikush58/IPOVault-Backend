@@ -1488,6 +1488,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <div class="manual-toolbar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <div class="manual-toolbar-actions" style="display:flex; gap:10px; flex-wrap:wrap;">
               <button class="btn-primary" onclick="openCreateModal()"><i data-feather="plus"></i> <span>Add Manual IPO</span></button>
+              <button class="btn-secondary" onclick="openBackfillProvenanceModal('ALL')" style="border-color:#F59E0B; color:#D97706; font-size:13px; font-weight:600;" title="Backfill missing IPOGuru provenance across all eligible IPOs"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:4px;"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><span>Backfill IPOGuru Provenance</span></button>
             </div>
             <div class="manual-toolbar-filters" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
               <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
@@ -1661,6 +1662,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
                 <span>Upload JSON (Fill Missing Data)</span>
+              </button>
+              <button type="button" class="btn-secondary" id="btn-backfill-single-prov" onclick="openBackfillProvenanceModal('SINGLE')" style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; font-size:13px; font-weight:600; border-radius:8px; border-color:#F59E0B; color:#D97706;" title="Backfill missing IPOGuru provenance for this IPO">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+                <span>Backfill IPOGuru Provenance</span>
               </button>
               <input type="file" id="json-detail-file-input" accept=".json,application/json" onchange="handleJsonDetailFileSelect(event)" style="display:none;" />
               <div class="form-action-group">
@@ -2514,6 +2521,71 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               <button class="btn-secondary" onclick="closeJsonImportModal()">Cancel</button>
               <button class="btn-primary" id="btn-confirm-json-import" onclick="commitAddOnlyJsonImport()" style="display:flex; align-items:center; gap:8px;">
                 <span id="btn-confirm-json-text">Confirm & Apply Add-Only Import</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- IPOGURU PROVENANCE BACKFILL PREVIEW & APPLY MODAL -->
+        <div id="provenance-backfill-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:960px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-hover);">
+              <div>
+                <div style="font-weight:700; font-size:16px; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+                  <span id="prov-modal-title">Backfill IPOGuru Provenance (Preview)</span>
+                  <span style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(245,158,11,0.15); color:#D97706; font-weight:600;">Additive & Non-Destructive</span>
+                </div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:3px;" id="prov-modal-subtitle">
+                  Preserves existing Manual, Official & AI provenance records. Only adds IPOGuru provenance where missing for verified fields.
+                </div>
+              </div>
+              <button onclick="closeBackfillProvenanceModal()" style="background:none; border:none; font-size:22px; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
+            </div>
+
+            <!-- Summary Metrics Cards -->
+            <div style="padding:14px 20px; border-bottom:1px solid var(--border-color); background:var(--bg-surface);">
+              <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap:10px;">
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title" id="prov-stat-title-scanned">Evaluated</div>
+                  <div class="stat-value" id="prov-stat-evaluated" style="font-size:18px;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">To Add (IPOGuru)</div>
+                  <div class="stat-value" id="prov-stat-added" style="font-size:18px; color:#10B981;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Manual Preserved</div>
+                  <div class="stat-value" id="prov-stat-admin" style="font-size:18px; color:#EA580C;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Official Preserved</div>
+                  <div class="stat-value" id="prov-stat-official" style="font-size:18px; color:#9333EA;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Already IPOGuru</div>
+                  <div class="stat-value" id="prov-stat-ipoguru" style="font-size:18px; color:#16A34A;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Skipped</div>
+                  <div class="stat-value" id="prov-stat-skipped" style="font-size:18px; color:#64748B;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;" id="prov-stat-card-errors">
+                  <div class="stat-title">Errors</div>
+                  <div class="stat-value" id="prov-stat-errors" style="font-size:18px; color:#EF4444;">0</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Preview List / Table Body -->
+            <div id="prov-preview-body" style="padding:16px 20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:12px; max-height:calc(88vh - 210px);">
+              <!-- Populated dynamically via JS -->
+            </div>
+
+            <!-- Modal Footer Actions -->
+            <div style="padding:14px 20px; border-top:1px solid var(--border-color); background:var(--bg-hover); display:flex; justify-content:space-between; align-items:center;">
+              <button class="btn-secondary" onclick="closeBackfillProvenanceModal()">Cancel</button>
+              <button class="btn-primary" id="btn-confirm-prov-apply" onclick="commitProvenanceBackfill()" style="display:flex; align-items:center; gap:8px; background-color:#F59E0B; border-color:#D97706; color:#FFFFFF;">
+                <span id="btn-confirm-prov-text">Confirm & Apply Backfill</span>
               </button>
             </div>
           </div>
@@ -5332,6 +5404,271 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (dateBadge) dateBadge.textContent = 'IST Date: ' + data.istDate;
       } catch (e) {
         console.error('Failed to load IPO Guru status:', e);
+      }
+    }
+
+    var currentProvBackfillScope = 'SINGLE';
+    var currentProvBackfillIpoId = null;
+
+    async function openBackfillProvenanceModal(scope) {
+      currentProvBackfillScope = scope || 'SINGLE';
+      currentProvBackfillIpoId = null;
+
+      if (currentProvBackfillScope === 'SINGLE') {
+        var idInput = document.getElementById('form-ipo-id');
+        currentProvBackfillIpoId = (idInput && idInput.value) ? idInput.value.trim() : (currentIpoData && currentIpoData.id ? currentIpoData.id : null);
+        if (!currentProvBackfillIpoId) {
+          alert('No IPO selected. Please open an IPO first.');
+          return;
+        }
+      }
+
+      var modal = document.getElementById('provenance-backfill-modal-overlay');
+      if (!modal) return;
+
+      var titleEl = document.getElementById('prov-modal-title');
+      var subtitleEl = document.getElementById('prov-modal-subtitle');
+      var btnApply = document.getElementById('btn-confirm-prov-apply');
+      var btnText = document.getElementById('btn-confirm-prov-text');
+
+      if (titleEl) {
+        titleEl.textContent = currentProvBackfillScope === 'SINGLE'
+          ? 'Backfill IPOGuru Provenance (Single IPO Preview)'
+          : 'Backfill IPOGuru Provenance (All Eligible IPOs Preview)';
+      }
+      if (subtitleEl) {
+        subtitleEl.innerHTML = currentProvBackfillScope === 'SINGLE'
+          ? 'Preview field-level additions for this IPO. Existing <strong>Manual</strong>, <strong>Official</strong> and <strong>AI</strong> provenance records are strictly preserved.'
+          : 'Preview batch additions across all eligible IPOGuru-sourced IPOs. No existing provenance or canonical values will be overwritten.';
+      }
+      if (btnApply) {
+        btnApply.disabled = true;
+        btnApply.style.opacity = '0.6';
+      }
+      if (btnText) {
+        btnText.textContent = 'Confirm & Apply Backfill';
+      }
+
+      document.getElementById('prov-stat-evaluated').textContent = '...';
+      document.getElementById('prov-stat-added').textContent = '...';
+      document.getElementById('prov-stat-admin').textContent = '...';
+      document.getElementById('prov-stat-official').textContent = '...';
+      document.getElementById('prov-stat-ipoguru').textContent = '...';
+      document.getElementById('prov-stat-skipped').textContent = '...';
+      document.getElementById('prov-stat-errors').textContent = '0';
+
+      var bodyEl = document.getElementById('prov-preview-body');
+      if (bodyEl) {
+        bodyEl.innerHTML = '<div style="text-align:center; padding:32px; color:var(--text-muted);"><i data-feather="loader"></i> Calculating additive provenance backfill plan...</div>';
+      }
+      if (window.feather) feather.replace();
+
+      modal.style.display = 'flex';
+
+      await fetchBackfillPreview(currentProvBackfillScope, currentProvBackfillIpoId);
+    }
+
+    function closeBackfillProvenanceModal() {
+      var modal = document.getElementById('provenance-backfill-modal-overlay');
+      if (modal) modal.style.display = 'none';
+    }
+
+    async function fetchBackfillPreview(scope, ipoId) {
+      var bodyEl = document.getElementById('prov-preview-body');
+      var btnApply = document.getElementById('btn-confirm-prov-apply');
+
+      try {
+        var payload = scope === 'SINGLE' ? { ipoId: ipoId } : {};
+        var res = await fetch(API_BASE + '/ipo-guru/provenance/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        var json = await res.json();
+        var result = json.data || json;
+
+        if (!res.ok || json.error || result.error) {
+          var errMsg = (json.error && json.error.message) || (result.error && result.error.message) || result.message || ('HTTP ' + res.status);
+          if (bodyEl) {
+            bodyEl.innerHTML = '<div style="padding:16px; background:#FEF2F2; border:1px solid #EF4444; border-radius:8px; color:#991B1B; font-size:13px;">\u26A0\uFE0F Preview Failed: ' + escapeHtml(errMsg) + '</div>';
+          }
+          return;
+        }
+
+        if (scope === 'SINGLE') {
+          document.getElementById('prov-stat-evaluated').textContent = result.fieldsEvaluated || (result.details ? result.details.length : 0);
+          document.getElementById('prov-stat-added').textContent = result.added || 0;
+          document.getElementById('prov-stat-admin').textContent = result.adminPreserved || 0;
+          document.getElementById('prov-stat-official').textContent = result.officialPreserved || 0;
+          document.getElementById('prov-stat-ipoguru').textContent = result.ipoguruPreserved || 0;
+          document.getElementById('prov-stat-skipped').textContent = result.skipped || 0;
+          document.getElementById('prov-stat-errors').textContent = '0';
+
+          var details = result.details || [];
+          if (details.length === 0) {
+            if (bodyEl) bodyEl.innerHTML = '<div style="text-align:center; padding:24px; color:var(--text-muted);">No candidate fields evaluated.</div>';
+          } else {
+            var tableHtml = '<div class="grid-table-box"><table style="min-width:700px;">'
+              + '<thead><tr>'
+              + '<th>Field</th>'
+              + '<th>Canonical Value</th>'
+              + '<th>Existing Provenance</th>'
+              + '<th>Action</th>'
+              + '<th>Reason</th>'
+              + '</tr></thead><tbody>';
+
+            details.forEach(function(d) {
+              var actionBadge = '';
+              var rowStyle = '';
+
+              if (d.action === 'PRESERVE') {
+                if (String(d.existingProvenance).includes('ADMIN')) {
+                  actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#FFEDD5; color:#C2410C;">\uD83D\uDFE0 PRESERVE</span>';
+                } else if (String(d.existingProvenance).includes('OFFICIAL') || String(d.existingProvenance).includes('NSE') || String(d.existingProvenance).includes('BSE')) {
+                  actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#F3E8FF; color:#7E22CE;">\uD83D\uDFE3 PRESERVE</span>';
+                } else if (String(d.existingProvenance).includes('IPOGURU')) {
+                  actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#DCFCE7; color:#15803D;">\uD83D\uDFE2 ALREADY PRESENT</span>';
+                } else {
+                  actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#F1F5F9; color:#475569;">PRESERVE</span>';
+                }
+              } else if (d.action === 'ADD') {
+                actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#DCFCE7; color:#15803D; border:1px solid #86EFAC;">+ ADD IPOGURU</span>';
+                rowStyle = 'background-color: rgba(34, 197, 94, 0.05);';
+              } else {
+                actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:500; background:#F1F5F9; color:#94A3B8;">\u26AA SKIP</span>';
+              }
+
+              var valDisplay = d.canonicalValue !== null && d.canonicalValue !== undefined && String(d.canonicalValue).trim() !== ''
+                ? escapeHtml(String(d.canonicalValue))
+                : '<em style="color:var(--text-subtle);">null</em>';
+
+              tableHtml += '<tr style="' + rowStyle + '">'
+                + '<td style="font-weight:600; font-family:monospace; font-size:12px;">' + escapeHtml(d.fieldKey) + '</td>'
+                + '<td style="font-size:12px;">' + valDisplay + '</td>'
+                + '<td style="font-size:11px; color:var(--text-muted);">' + escapeHtml(d.existingProvenance || 'None') + '</td>'
+                + '<td>' + actionBadge + '</td>'
+                + '<td style="font-size:11px; color:var(--text-muted);">' + escapeHtml(d.reason) + '</td>'
+                + '</tr>';
+            });
+
+            tableHtml += '</tbody></table></div>';
+            if (bodyEl) bodyEl.innerHTML = tableHtml;
+          }
+        } else {
+          document.getElementById('prov-stat-evaluated').textContent = result.fieldsEvaluated || 0;
+          document.getElementById('prov-stat-added').textContent = result.added || 0;
+          document.getElementById('prov-stat-admin').textContent = result.adminPreserved || 0;
+          document.getElementById('prov-stat-official').textContent = result.officialPreserved || 0;
+          document.getElementById('prov-stat-ipoguru').textContent = result.ipoguruPreserved || 0;
+          document.getElementById('prov-stat-skipped').textContent = result.skipped || 0;
+          document.getElementById('prov-stat-errors').textContent = (result.errors ? result.errors.length : 0);
+
+          var batchHtml = '<div style="display:flex; flex-direction:column; gap:10px;">';
+          batchHtml += '<div style="padding:12px 16px; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:8px; font-size:13px;">'
+            + '<strong>Eligible IPOGuru IPOs Scanned:</strong> ' + (result.eligibleIpos || 0) + ' IPOs<br/>'
+            + '<strong>Fields Proposed for Addition:</strong> ' + (result.added || 0) + ' missing IPOGuru records<br/>'
+            + '<strong>Existing Verified Records Preserved:</strong> ' + ((result.adminPreserved || 0) + (result.officialPreserved || 0) + (result.ipoguruPreserved || 0) + (result.aiPreserved || 0)) + ' records'
+            + '</div>';
+
+          if (result.errors && result.errors.length > 0) {
+            batchHtml += '<div style="padding:10px 14px; background:#FEF2F2; border:1px solid #EF4444; border-radius:8px; color:#991B1B; font-size:12px;">'
+              + '<strong>' + result.errors.length + ' IPO(s) encountered warnings/errors:</strong>'
+              + '<ul style="margin:6px 0 0 16px; padding:0;">'
+              + result.errors.map(function(e) { return '<li>' + escapeHtml(e.companyName || e.ipoId) + ': ' + escapeHtml(e.error) + '</li>'; }).join('')
+              + '</ul></div>';
+          }
+
+          if (result.results && Array.isArray(result.results)) {
+            batchHtml += '<div class="grid-table-box"><table style="min-width:600px;"><thead><tr><th>Company</th><th>Evaluated</th><th>To Add</th><th>Preserved</th><th>Skipped</th></tr></thead><tbody>';
+            result.results.forEach(function(r) {
+              batchHtml += '<tr>'
+                + '<td style="font-weight:600;">' + escapeHtml(r.companyName || r.ipoId) + '</td>'
+                + '<td>' + (r.fieldsEvaluated || 0) + '</td>'
+                + '<td style="color:#10B981; font-weight:700;">+' + (r.added || 0) + '</td>'
+                + '<td style="color:#C2410C;">' + (r.preserved || 0) + '</td>'
+                + '<td style="color:#64748B;">' + (r.skipped || 0) + '</td>'
+                + '</tr>';
+            });
+            batchHtml += '</tbody></table></div>';
+          }
+
+          batchHtml += '</div>';
+          if (bodyEl) bodyEl.innerHTML = batchHtml;
+        }
+
+        if (btnApply) {
+          btnApply.disabled = false;
+          btnApply.style.opacity = '1';
+        }
+      } catch (err) {
+        console.error('Fetch preview error:', err);
+        if (bodyEl) {
+          bodyEl.innerHTML = '<div style="padding:16px; background:#FEF2F2; border:1px solid #EF4444; border-radius:8px; color:#991B1B; font-size:13px;">\u26A0\uFE0F Network/Client Error: ' + escapeHtml(err.message) + '</div>';
+        }
+      }
+    }
+
+    async function commitProvenanceBackfill() {
+      var btnApply = document.getElementById('btn-confirm-prov-apply');
+      var btnText = document.getElementById('btn-confirm-prov-text');
+      var bodyEl = document.getElementById('prov-preview-body');
+
+      if (!confirm('Are you sure you want to apply the IPOGuru provenance backfill? Only missing fields will receive provenance; existing records will never be overwritten.')) {
+        return;
+      }
+
+      if (btnApply) {
+        btnApply.disabled = true;
+        btnApply.style.opacity = '0.6';
+      }
+      if (btnText) {
+        btnText.innerHTML = '<i data-feather="loader"></i> Applying Backfill...';
+      }
+      if (window.feather) feather.replace();
+
+      try {
+        var payload = currentProvBackfillScope === 'SINGLE' ? { ipoId: currentProvBackfillIpoId } : {};
+        var res = await fetch(API_BASE + '/ipo-guru/provenance/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        var json = await res.json();
+        var result = json.data || json;
+
+        if (!res.ok || json.error || result.error) {
+          var errMsg = (json.error && json.error.message) || (result.error && result.error.message) || result.message || ('HTTP ' + res.status);
+          alert('Backfill failed: ' + errMsg);
+          if (btnApply) { btnApply.disabled = false; btnApply.style.opacity = '1'; }
+          if (btnText) btnText.textContent = 'Confirm & Apply Backfill';
+          return;
+        }
+
+        if (btnText) {
+          btnText.textContent = '\u2713 Backfill Applied Successfully';
+        }
+
+        if (bodyEl) {
+          var addedCount = result.added || 0;
+          var preservedCount = result.preserved || 0;
+          var successBanner = '<div style="padding:16px 20px; background:#DCFCE7; border:1px solid #86EFAC; border-radius:10px; color:#15803D; font-size:14px; font-weight:600; margin-bottom:14px;">'
+            + '\u2713 Backfill completed successfully: ' + addedCount + ' field(s) added, ' + preservedCount + ' field(s) preserved.'
+            + '</div>';
+          bodyEl.innerHTML = successBanner + bodyEl.innerHTML;
+        }
+
+        if (currentProvBackfillScope === 'SINGLE' && currentProvBackfillIpoId) {
+          fetchManualIpoDetail(currentProvBackfillIpoId);
+        } else {
+          fetchManualIpos();
+        }
+      } catch (err) {
+        console.error('Apply backfill error:', err);
+        alert('Backfill apply error: ' + err.message);
+        if (btnApply) { btnApply.disabled = false; btnApply.style.opacity = '1'; }
+        if (btnText) btnText.textContent = 'Confirm & Apply Backfill';
       }
     }
 

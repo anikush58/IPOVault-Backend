@@ -496,4 +496,78 @@ export class ConsoleController {
       });
     }
   }
+
+  /**
+   * Safe, field-level additive IPOGuru provenance backfill preview (Step 1: Dry run).
+   */
+  @Post('api/ipo-guru/provenance/preview')
+  async previewIpoGuruProvenanceBackfill(@Body() body?: { ipoId?: string }) {
+    try {
+      return await this.ipoGuruService.previewProvenanceBackfill(body?.ipoId);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Provenance backfill preview error: ${msg}`);
+      throw new BadRequestException({
+        message: 'Provenance backfill preview failed',
+        details: msg,
+      });
+    }
+  }
+
+  /**
+   * Safe, field-level additive IPOGuru provenance backfill apply (Step 2: Commit with explicit confirmation).
+   */
+  @Post('api/ipo-guru/provenance/apply')
+  async applyIpoGuruProvenanceBackfill(
+    @Body() body?: { ipoId?: string },
+    @Req() req?: Request,
+  ) {
+    try {
+      const adminUser = (req as any)?.user?.username || 'admin';
+      return await this.ipoGuruService.applyProvenanceBackfill(body?.ipoId, adminUser);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Provenance backfill apply error: ${msg}`);
+      throw new BadRequestException({
+        message: 'Provenance backfill apply failed',
+        details: msg,
+      });
+    }
+  }
+
+  /**
+   * Single IPO provenance backfill preview endpoint for convenient REST routing.
+   */
+  @Post('api/manual-ipos/:id/provenance/preview')
+  async previewSingleManualIpoProvenance(@Param('id', new ParseUUIDPipe()) id: string) {
+    try {
+      return await this.ipoGuruService.previewProvenanceBackfill(id);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException({
+        message: 'Single IPO provenance preview failed',
+        details: msg,
+      });
+    }
+  }
+
+  /**
+   * Single IPO provenance backfill apply endpoint for convenient REST routing.
+   */
+  @Post('api/manual-ipos/:id/provenance/apply')
+  async applySingleManualIpoProvenance(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Req() req?: Request,
+  ) {
+    try {
+      const adminUser = (req as any)?.user?.username || 'admin';
+      return await this.ipoGuruService.applyProvenanceBackfill(id, adminUser);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException({
+        message: 'Single IPO provenance apply failed',
+        details: msg,
+      });
+    }
+  }
 }

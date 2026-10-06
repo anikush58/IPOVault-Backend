@@ -121,17 +121,7 @@ function classifySource(source: {
     };
   }
 
-  // 3. IPOGuru feed
-  if (lowerCode.includes('ipoguru') || type === SourceType.SECONDARY) {
-    return {
-      status: 'IPOGURU',
-      statusLabel: 'IPOGuru',
-      sourceLabel: 'IPOGuru Commercial Feed',
-      priority: 3,
-    };
-  }
-
-  // 4. AI Enriched (Gemini structured extraction over statutory document)
+  // 3. AI Enriched (Gemini structured extraction over statutory document)
   if (
     code === 'SEBI_AI_EXTRACTED' ||
     code === 'BSE_SME_AI' ||
@@ -148,6 +138,16 @@ function classifySource(source: {
       statusLabel: 'AI Enriched',
       sourceLabel: sourceDocLabel,
       priority: 4,
+    };
+  }
+
+  // 4. IPOGuru feed
+  if (lowerCode.includes('ipoguru') || type === SourceType.SECONDARY) {
+    return {
+      status: 'IPOGURU',
+      statusLabel: 'IPOGuru',
+      sourceLabel: 'IPOGuru Commercial Feed',
+      priority: 3,
     };
   }
 
