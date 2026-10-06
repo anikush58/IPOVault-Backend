@@ -21,6 +21,7 @@ export interface IpoBackfillSummary {
   officialPreserved: number;
   ipoguruPreserved: number;
   aiPreserved: number;
+  otherPreserved: number;
   added: number;
   skipped: number;
   details: FieldBackfillPlan[];
@@ -36,6 +37,7 @@ export interface AllIposBackfillSummary {
   officialPreserved: number;
   ipoguruPreserved: number;
   aiPreserved: number;
+  otherPreserved: number;
   skipped: number;
   errors: Array<{ ipoId: string; companyName?: string; error: string }>;
   results?: IpoBackfillSummary[];
@@ -346,10 +348,20 @@ export async function backfillSingleIpoProvenance(
   }
 
   const preservedPlans = details.filter((d) => d.action === 'PRESERVE');
-  const adminPreserved = preservedPlans.filter((d) => d.existingSourceCode === 'ADMIN').length;
-  const officialPreserved = preservedPlans.filter((d) => ['OFFICIAL', 'NSE', 'BSE'].includes(d.existingSourceCode || '')).length;
-  const ipoguruPreserved = preservedPlans.filter((d) => d.existingSourceCode === 'IPOGURU').length;
-  const aiPreserved = preservedPlans.filter((d) => ['AI_ENRICHED', 'GEMINI'].includes(d.existingSourceCode || '')).length;
+  const adminPreserved = preservedPlans.filter((d) => {
+    const code = (d.existingSourceCode || '').toUpperCase();
+    return code === 'ADMIN' || code === 'MANUAL' || code.includes('MANUAL');
+  }).length;
+  const officialPreserved = preservedPlans.filter((d) => {
+    const code = (d.existingSourceCode || '').toUpperCase();
+    return ['OFFICIAL', 'NSE', 'BSE', 'SEBI', 'ROC', 'MCA', 'REGISTRAR'].includes(code);
+  }).length;
+  const ipoguruPreserved = preservedPlans.filter((d) => (d.existingSourceCode || '').toUpperCase() === 'IPOGURU').length;
+  const aiPreserved = preservedPlans.filter((d) => {
+    const code = (d.existingSourceCode || '').toUpperCase();
+    return ['AI_ENRICHED', 'GEMINI', 'SEBI_AI_EXTRACTED', 'BSE_SME_AI', 'NSE_EMERGE_AI'].includes(code) || code.includes('AI');
+  }).length;
+  const otherPreserved = Math.max(0, preservedPlans.length - (adminPreserved + officialPreserved + ipoguruPreserved + aiPreserved));
 
   return {
     ipoId: ipo.id,
@@ -360,6 +372,7 @@ export async function backfillSingleIpoProvenance(
     officialPreserved,
     ipoguruPreserved,
     aiPreserved,
+    otherPreserved,
     added: details.filter((d) => d.action === 'ADD').length,
     skipped: details.filter((d) => d.action === 'SKIP').length,
     details,
@@ -410,6 +423,7 @@ export async function backfillAllIposProvenance(
   let officialPreserved = 0;
   let ipoguruPreserved = 0;
   let aiPreserved = 0;
+  let otherPreserved = 0;
   let skipped = 0;
 
   // Process in controlled batches
@@ -425,6 +439,7 @@ export async function backfillAllIposProvenance(
         officialPreserved += summary.officialPreserved;
         ipoguruPreserved += summary.ipoguruPreserved;
         aiPreserved += summary.aiPreserved;
+        otherPreserved += summary.otherPreserved || 0;
         skipped += summary.skipped;
 
         if (includeDetails) {
@@ -450,6 +465,7 @@ export async function backfillAllIposProvenance(
     officialPreserved,
     ipoguruPreserved,
     aiPreserved,
+    otherPreserved,
     skipped,
     errors,
     results: includeDetails ? results : undefined,

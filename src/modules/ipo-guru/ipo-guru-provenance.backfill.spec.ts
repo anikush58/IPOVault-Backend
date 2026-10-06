@@ -375,4 +375,67 @@ describe('Field-Level IPOGuru Provenance Backfill', () => {
     expect(baseIpo.company.displayName).toBe(copyOfBaseIpo.company.displayName);
     expect(baseIpo.status).toBe(IpoStatus.CLOSING_TODAY);
   });
+
+  it('10. Preserves SEBI statutory filings and accounts them in officialPreserved', async () => {
+    const sebiProvs = [
+      {
+        id: 'p-sebi-1',
+        entityType: 'IPO',
+        entityId: baseIpo.id,
+        fieldName: 'status',
+        value: 'DRAFT',
+        sourceId: 'src-sebi',
+        sourceReference: 'https://www.sebi.gov.in/filings/sample_104333.html',
+        retrievedAt: new Date('2026-09-01T10:00:00Z'),
+        source: { id: 'src-sebi', code: 'SEBI', name: 'SEBI Statutory Filings', sourceType: SourceType.OFFICIAL_FILING },
+      },
+      {
+        id: 'p-sebi-2',
+        entityType: 'IPO',
+        entityId: baseIpo.id,
+        fieldName: 'market_segment',
+        value: 'MAINBOARD',
+        sourceId: 'src-sebi',
+        sourceReference: 'https://www.sebi.gov.in/filings/sample_104333.html',
+        retrievedAt: new Date('2026-09-01T10:00:00Z'),
+        source: { id: 'src-sebi', code: 'SEBI', name: 'SEBI Statutory Filings', sourceType: SourceType.OFFICIAL_FILING },
+      },
+    ];
+    createdProvenances = [...sebiProvs];
+
+    const summary = await backfillSingleIpoProvenance(mockPrisma, baseIpo.id, { dryRun: true });
+
+    expect(summary.officialPreserved).toBe(2);
+    expect(summary.preserved).toBe(2);
+    expect(summary.fieldsEvaluated).toBe(
+      summary.added +
+      summary.adminPreserved +
+      summary.officialPreserved +
+      summary.ipoguruPreserved +
+      summary.aiPreserved +
+      summary.otherPreserved +
+      summary.skipped,
+    );
+  });
+
+  it('11. Mathematical integrity: fieldsEvaluated matches exact sum of all categories across All IPOs', async () => {
+    const { backfillAllIposProvenance } = await import('./ipo-guru-provenance.backfill');
+
+    mockPrisma.ipo.findMany = jest.fn().mockResolvedValue([
+      { id: baseIpo.id, company: { displayName: 'Acme India Industries' } },
+    ]);
+
+    const result = await backfillAllIposProvenance(mockPrisma, { dryRun: true, includeDetails: true });
+
+    const totalCalculated =
+      result.added +
+      result.adminPreserved +
+      result.officialPreserved +
+      result.ipoguruPreserved +
+      result.aiPreserved +
+      result.otherPreserved +
+      result.skipped;
+
+    expect(result.fieldsEvaluated).toBe(totalCalculated);
+  });
 });

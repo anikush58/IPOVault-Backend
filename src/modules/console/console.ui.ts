@@ -2544,7 +2544,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
             <!-- Summary Metrics Cards -->
             <div style="padding:14px 20px; border-bottom:1px solid var(--border-color); background:var(--bg-surface);">
-              <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap:10px;">
+              <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap:8px;">
                 <div class="stat-card" style="padding:10px;">
                   <div class="stat-title" id="prov-stat-title-scanned">Evaluated</div>
                   <div class="stat-value" id="prov-stat-evaluated" style="font-size:18px;">0</div>
@@ -2560,6 +2560,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="stat-card" style="padding:10px;">
                   <div class="stat-title">Official Preserved</div>
                   <div class="stat-value" id="prov-stat-official" style="font-size:18px; color:#9333EA;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">AI Preserved</div>
+                  <div class="stat-value" id="prov-stat-ai" style="font-size:18px; color:#2563EB;">0</div>
                 </div>
                 <div class="stat-card" style="padding:10px;">
                   <div class="stat-title">Already IPOGuru</div>
@@ -5453,6 +5457,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       document.getElementById('prov-stat-added').textContent = '...';
       document.getElementById('prov-stat-admin').textContent = '...';
       document.getElementById('prov-stat-official').textContent = '...';
+      var elAi = document.getElementById('prov-stat-ai');
+      if (elAi) elAi.textContent = '...';
       document.getElementById('prov-stat-ipoguru').textContent = '...';
       document.getElementById('prov-stat-skipped').textContent = '...';
       document.getElementById('prov-stat-errors').textContent = '0';
@@ -5501,6 +5507,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           document.getElementById('prov-stat-added').textContent = result.added || 0;
           document.getElementById('prov-stat-admin').textContent = result.adminPreserved || 0;
           document.getElementById('prov-stat-official').textContent = result.officialPreserved || 0;
+          var elAi = document.getElementById('prov-stat-ai');
+          if (elAi) elAi.textContent = result.aiPreserved || 0;
           document.getElementById('prov-stat-ipoguru').textContent = result.ipoguruPreserved || 0;
           document.getElementById('prov-stat-skipped').textContent = result.skipped || 0;
           document.getElementById('prov-stat-errors').textContent = '0';
@@ -5523,11 +5531,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               var rowStyle = '';
 
               if (d.action === 'PRESERVE') {
-                if (String(d.existingProvenance).includes('ADMIN')) {
-                  actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#FFEDD5; color:#C2410C;">\uD83D\uDFE0 PRESERVE</span>';
-                } else if (String(d.existingProvenance).includes('OFFICIAL') || String(d.existingProvenance).includes('NSE') || String(d.existingProvenance).includes('BSE')) {
-                  actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#F3E8FF; color:#7E22CE;">\uD83D\uDFE3 PRESERVE</span>';
-                } else if (String(d.existingProvenance).includes('IPOGURU')) {
+                var provUpper = String(d.existingProvenance || '').toUpperCase();
+                if (provUpper.includes('ADMIN') || provUpper.includes('MANUAL')) {
+                  actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#FFEDD5; color:#C2410C;">\uD83D\uDFE0 PRESERVE (MANUAL)</span>';
+                } else if (provUpper.includes('OFFICIAL') || provUpper.includes('NSE') || provUpper.includes('BSE') || provUpper.includes('SEBI') || provUpper.includes('REGISTRAR')) {
+                  actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#F3E8FF; color:#7E22CE;">\uD83D\uDFE3 PRESERVE (OFFICIAL)</span>';
+                } else if (provUpper.includes('AI') || provUpper.includes('GEMINI')) {
+                  actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#EFF6FF; color:#2563EB;">\uD83D\uDD35 PRESERVE (AI)</span>';
+                } else if (provUpper.includes('IPOGURU')) {
                   actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#DCFCE7; color:#15803D;">\uD83D\uDFE2 ALREADY PRESENT</span>';
                 } else {
                   actionBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#F1F5F9; color:#475569;">PRESERVE</span>';
@@ -5560,6 +5571,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           document.getElementById('prov-stat-added').textContent = result.added || 0;
           document.getElementById('prov-stat-admin').textContent = result.adminPreserved || 0;
           document.getElementById('prov-stat-official').textContent = result.officialPreserved || 0;
+          var elAi = document.getElementById('prov-stat-ai');
+          if (elAi) elAi.textContent = result.aiPreserved || 0;
           document.getElementById('prov-stat-ipoguru').textContent = result.ipoguruPreserved || 0;
           document.getElementById('prov-stat-skipped').textContent = result.skipped || 0;
           document.getElementById('prov-stat-errors').textContent = (result.errors ? result.errors.length : 0);
@@ -5568,7 +5581,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           batchHtml += '<div style="padding:12px 16px; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:8px; font-size:13px;">'
             + '<strong>Eligible IPOGuru IPOs Scanned:</strong> ' + (result.eligibleIpos || 0) + ' IPOs<br/>'
             + '<strong>Fields Proposed for Addition:</strong> ' + (result.added || 0) + ' missing IPOGuru records<br/>'
-            + '<strong>Existing Verified Records Preserved:</strong> ' + ((result.adminPreserved || 0) + (result.officialPreserved || 0) + (result.ipoguruPreserved || 0) + (result.aiPreserved || 0)) + ' records'
+            + '<strong>Existing Verified Records Preserved:</strong> ' + ((result.adminPreserved || 0) + (result.officialPreserved || 0) + (result.ipoguruPreserved || 0) + (result.aiPreserved || 0) + (result.otherPreserved || 0)) + ' records'
             + '</div>';
 
           if (result.errors && result.errors.length > 0) {
