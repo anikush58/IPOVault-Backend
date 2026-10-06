@@ -924,6 +924,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         padding: 10px 12px;
         font-size: 12px;
       }
+
+      #json-import-modal-overlay {
+        padding: 8px !important;
+      }
+
+      #json-import-modal-overlay > div {
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: 94vh !important;
+        max-height: 94dvh !important;
+      }
     }
 
     @media (max-width: 480px) {
@@ -967,6 +978,18 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
       .auth-title {
         font-size: 18px;
+      }
+
+      .btn-primary, .btn-secondary {
+        min-height: 40px;
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+    }
+
+    @media (max-width: 360px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
       }
     }
 

@@ -5,6 +5,48 @@ document.addEventListener('DOMContentLoaded', () => {
     feather.replace();
   }
 
+  // Mobile Sidebar Drawer Management
+  const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+  const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
+  const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+  const sidebar = document.getElementById('sidebar') || document.querySelector('.sidebar');
+
+  const openMobileSidebar = () => {
+    document.body.classList.add('mobile-sidebar-open');
+  };
+
+  const closeMobileSidebar = () => {
+    document.body.classList.remove('mobile-sidebar-open');
+  };
+
+  if (mobileMenuBtn) {
+    mobileMenuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openMobileSidebar();
+    });
+  }
+
+  if (sidebarCloseBtn) {
+    sidebarCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileSidebar();
+    });
+  }
+
+  if (sidebarBackdrop) {
+    sidebarBackdrop.addEventListener('click', closeMobileSidebar);
+  }
+
+  // Close mobile sidebar on nav click when on mobile/tablet screen
+  const sidebarNavLinks = document.querySelectorAll('.sidebar .nav-item');
+  sidebarNavLinks.forEach((link) => {
+    link.addEventListener('click', () => {
+      if (window.innerWidth <= 1024) {
+        closeMobileSidebar();
+      }
+    });
+  });
+
   // 2. View Tab Switching
   const viewTabs = document.querySelectorAll('.view-tab[data-view]');
   const viewContainers = document.querySelectorAll('.view-container');

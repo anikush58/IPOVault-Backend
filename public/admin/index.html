@@ -20,6 +20,9 @@
     <!-- Window Control Bar -->
     <header class="window-header">
       <div class="window-controls">
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle navigation">
+          <i data-feather="menu"></i>
+        </button>
         <span class="control-btn close"></span>
         <span class="control-btn minimize"></span>
         <span class="control-btn maximize"></span>
@@ -38,15 +41,23 @@
 
     <!-- Main Application Body -->
     <div class="app-layout">
+      <!-- Mobile Backdrop Overlay -->
+      <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
       <!-- Left Sidebar Navigation -->
-      <aside class="sidebar">
+      <aside class="sidebar" id="sidebar">
         <!-- Logo & Workspace Switcher -->
         <div class="sidebar-brand">
-          <div class="brand-logo">
-            <div class="logo-box">
-              <i data-feather="box"></i>
+          <div class="brand-header-row">
+            <div class="brand-logo">
+              <div class="logo-box">
+                <i data-feather="box"></i>
+              </div>
+              <span class="brand-title">AutomatePro</span>
             </div>
-            <span class="brand-title">AutomatePro</span>
+            <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close navigation">
+              <i data-feather="x"></i>
+            </button>
           </div>
 
           <div class="workspace-picker">
