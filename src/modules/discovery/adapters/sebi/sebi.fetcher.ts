@@ -1,3 +1,4 @@
+import * as https from 'https';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -249,10 +250,92 @@ function buildAndValidateSebiUrl(
   return null;
 }
 
+async function downloadViaNodeHttps(
+  urlStr: string,
+  timeoutMs: number,
+  maxSizeBytes: number,
+): Promise<SebiDownloadDocumentResult> {
+  return new Promise((resolve, reject) => {
+    let timer: NodeJS.Timeout;
+    const req = https.get(
+      urlStr,
+      {
+        headers: {
+          'User-Agent': SEBI_BROWSER_USER_AGENT,
+          Referer: 'https://www.sebi.gov.in/',
+          Accept: '*/*',
+        },
+      },
+      (res) => {
+        if (!res.statusCode || res.statusCode < 200 || res.statusCode > 299) {
+          clearTimeout(timer);
+          reject(
+            new SebiFetchError(`SEBI document download failed with status ${res.statusCode}`),
+          );
+          return;
+        }
+
+        const contentLengthHeader = res.headers['content-length'];
+        if (contentLengthHeader) {
+          const headerBytes = parseInt(contentLengthHeader, 10);
+          if (!isNaN(headerBytes) && headerBytes > maxSizeBytes) {
+            clearTimeout(timer);
+            req.destroy();
+            reject(
+              new SebiPdfSizeExceededError(
+                `SEBI document size (${headerBytes} bytes) exceeds maximum limit (${maxSizeBytes} bytes)`,
+              ),
+            );
+            return;
+          }
+        }
+
+        const chunks: Buffer[] = [];
+        let totalBytes = 0;
+
+        res.on('data', (chunk: Buffer) => {
+          totalBytes += chunk.length;
+          if (totalBytes > maxSizeBytes) {
+            clearTimeout(timer);
+            req.destroy();
+            reject(
+              new SebiPdfSizeExceededError(
+                `SEBI document stream size (${totalBytes} bytes) exceeds maximum limit (${maxSizeBytes} bytes)`,
+              ),
+            );
+          }
+          chunks.push(chunk);
+        });
+
+        res.on('end', () => {
+          clearTimeout(timer);
+          const buffer = Buffer.concat(chunks);
+          resolve({
+            status: res.statusCode || 200,
+            contentType: (res.headers['content-type'] as string) || 'unknown',
+            contentLength: buffer.length,
+            documentBuffer: buffer,
+          });
+        });
+      },
+    );
+
+    timer = setTimeout(() => {
+      req.destroy();
+      reject(new SebiFetchError(`SEBI document download timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    req.on('error', (err) => {
+      clearTimeout(timer);
+      reject(new SebiFetchError(`SEBI document download failed: ${err.message}`));
+    });
+  });
+}
+
 export async function downloadSebiDocument(
   urlStr: string,
   fetchImpl?: typeof fetch,
-  timeoutMs = SEBI_HTTP_TIMEOUT_MS,
+  timeoutMs = SEBI_DOCUMENT_DOWNLOAD_TIMEOUT_MS,
   maxSizeBytes = DEFAULT_SEBI_MAX_PDF_SIZE_BYTES,
 ): Promise<SebiDownloadDocumentResult> {
   if (!isOfficialSebiUrl(urlStr)) {
@@ -261,11 +344,31 @@ export async function downloadSebiDocument(
     );
   }
 
+  // For direct PDF downloads without custom fetcher injection, use node https
+  const isDirectPdfUrl =
+    urlStr.toLowerCase().endsWith('.pdf') ||
+    urlStr.toLowerCase().includes('/sebi_data/attachdocs/') ||
+    urlStr.toLowerCase().includes('/sebi_data/commondocs/');
+
+  if (!fetchImpl && isDirectPdfUrl && urlStr.startsWith('https:')) {
+    try {
+      return await downloadViaNodeHttps(urlStr, timeoutMs, maxSizeBytes);
+    } catch (httpsErr: unknown) {
+      if (httpsErr instanceof SebiPdfSizeExceededError) {
+        throw httpsErr;
+      }
+      // Fall through to standard fetch if https fails
+    }
+  }
+
   const fetcher = fetchImpl ?? globalThis.fetch.bind(globalThis);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
+  let buffer: Buffer;
+  let contentType = 'unknown';
+
   try {
     response = await fetcher(urlStr, {
       method: 'GET',
@@ -275,66 +378,27 @@ export async function downloadSebiDocument(
         Referer: 'https://www.sebi.gov.in/',
       },
     });
-  } catch (error: unknown) {
-    clearTimeout(timer);
-    const msg = error instanceof Error ? error.message : String(error);
-    if (controller.signal.aborted) {
-      throw new SebiFetchError('SEBI document download timed out');
-    }
-    throw new SebiFetchError(`SEBI document download failed: ${msg}`);
-  } finally {
-    clearTimeout(timer);
-  }
 
-  if (response.status < 200 || response.status > 299) {
-    throw new SebiFetchError(
-      `SEBI document download failed with status ${response.status}`,
-    );
-  }
-
-  // A. Check Content-Length header before reading body
-  const contentLengthHeader = response.headers.get('content-length');
-  if (contentLengthHeader) {
-    const headerBytes = parseInt(contentLengthHeader, 10);
-    if (!isNaN(headerBytes) && headerBytes > maxSizeBytes) {
-      throw new SebiPdfSizeExceededError(
-        `SEBI document size (${headerBytes} bytes) exceeds maximum limit (${maxSizeBytes} bytes)`,
+    if (response.status < 200 || response.status > 299) {
+      throw new SebiFetchError(
+        `SEBI document download failed with status ${response.status}`,
       );
     }
-  }
 
-  const contentType = response.headers.get('content-type') || 'unknown';
-  let buffer: Buffer;
+    contentType = response.headers.get('content-type') || 'unknown';
 
-  // B. Streaming / chunk byte count protection when Content-Length is absent or when reading stream
-  if (response.body && typeof response.body.getReader === 'function') {
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let totalBytes = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          totalBytes += value.byteLength;
-          if (totalBytes > maxSizeBytes) {
-            await reader.cancel();
-            throw new SebiPdfSizeExceededError(
-              `SEBI document stream size (${totalBytes} bytes) exceeds maximum limit (${maxSizeBytes} bytes)`,
-            );
-          }
-          chunks.push(value);
-        }
+    // A. Check Content-Length header before reading body
+    const contentLengthHeader = response.headers.get('content-length');
+    if (contentLengthHeader) {
+      const headerBytes = parseInt(contentLengthHeader, 10);
+      if (!isNaN(headerBytes) && headerBytes > maxSizeBytes) {
+        throw new SebiPdfSizeExceededError(
+          `SEBI document size (${headerBytes} bytes) exceeds maximum limit (${maxSizeBytes} bytes)`,
+        );
       }
-      buffer = Buffer.concat(chunks);
-    } catch (err: unknown) {
-      if (err instanceof SebiPdfSizeExceededError) {
-        throw err;
-      }
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new SebiFetchError(`SEBI document stream read failed: ${msg}`);
     }
-  } else {
+
+    // B. Byte count protection when reading response buffer
     const arrayBuf = await response.arrayBuffer();
     if (arrayBuf.byteLength > maxSizeBytes) {
       throw new SebiPdfSizeExceededError(
@@ -342,6 +406,17 @@ export async function downloadSebiDocument(
       );
     }
     buffer = Buffer.from(arrayBuf);
+  } catch (error: unknown) {
+    if (error instanceof SebiPdfSizeExceededError) {
+      throw error;
+    }
+    const msg = error instanceof Error ? error.message : String(error);
+    if (controller.signal.aborted) {
+      throw new SebiFetchError(`SEBI document download timed out after ${timeoutMs}ms`);
+    }
+    throw new SebiFetchError(`SEBI document download failed: ${msg}`);
+  } finally {
+    clearTimeout(timer);
   }
 
   // C. PART A: HTML Detail Page -> PDF Resolution
@@ -360,15 +435,22 @@ export async function downloadSebiDocument(
       try {
         const pdfResult = await downloadSebiDocument(
           resolvedPdfUrl,
-          fetcher,
+          fetchImpl,
           timeoutMs,
           maxSizeBytes,
         );
-        if (pdfResult.documentBuffer && pdfResult.contentType.toLowerCase().includes('pdf')) {
+        const isPdf =
+          pdfResult.documentBuffer &&
+          (pdfResult.contentType.toLowerCase().includes('pdf') ||
+            pdfResult.documentBuffer.slice(0, 4).toString('utf-8') === '%PDF');
+        if (isPdf) {
           return pdfResult;
         }
-      } catch {
-        // Fall back to returning HTML response if PDF download fails
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new SebiFetchError(
+          `Failed to download resolved PDF from '${resolvedPdfUrl}': ${msg}`,
+        );
       }
     }
   }
@@ -380,6 +462,8 @@ export async function downloadSebiDocument(
     documentBuffer: buffer,
   };
 }
+
+export const SEBI_DOCUMENT_DOWNLOAD_TIMEOUT_MS = 120_000;
 
 @Injectable()
 export class SebiHttpClient {
@@ -411,8 +495,9 @@ export class SebiHttpClient {
     return downloadSebiDocument(
       documentUrl,
       fetchImpl,
-      SEBI_HTTP_TIMEOUT_MS,
+      SEBI_DOCUMENT_DOWNLOAD_TIMEOUT_MS,
       maxSizeBytes,
     );
   }
 }
+

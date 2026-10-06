@@ -112,7 +112,7 @@ export class AiStructuredExtractorService {
    * Constructs the strict system & user prompt with document sections.
    */
   public buildPrompt(request: AiExtractionRequest): string {
-    const MAX_SECTION_LENGTH = 15000;
+    const MAX_SECTION_LENGTH = 6000;
     const sectionsText = Object.entries(request.documentSections)
       .filter(([_, content]) => content && content.trim().length > 0)
       .map(([key, content]) => {
@@ -179,11 +179,17 @@ ${sectionsText}
       (this.configService as any)?.get?.('OPENAI_API_KEY') ||
       process.env.OPENAI_API_KEY;
 
-    // A. Google Gemini (e.g. gemini-flash-latest / gemini-flash-lite-latest / gemini-3.8-flash)
+    // A. Google Gemini (gemini-3.5-flash / gemini-3.6-flash / gemini-3.1-flash-lite / gemini-flash-lite-latest / gemini-3.8-flash)
     if (geminiKey && geminiKey.trim().length > 0) {
-      const models = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-3.8-flash'];
+      const models = [
+        'gemini-3.5-flash',
+        'gemini-3.6-flash',
+        'gemini-3.1-flash-lite',
+        'gemini-flash-lite-latest',
+        'gemini-3.8-flash',
+      ];
       for (const model of models) {
-        for (let attempt = 1; attempt <= 2; attempt++) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
           try {
             const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey.trim()}`;
             const resp = await fetchFn(endpoint, {
@@ -199,8 +205,9 @@ ${sectionsText}
             });
 
             if (resp.status === 429) {
-              this.logger.warn(`Gemini (${model}) quota reached (HTTP 429). Trying fallback model...`);
-              break; // Try next model immediately without wasting time
+              this.logger.warn(`Gemini (${model}, attempt ${attempt}) rate limited (HTTP 429). Retrying after backoff...`);
+              await new Promise((resolve) => setTimeout(resolve, 5000 * attempt));
+              continue;
             }
 
             if (resp.status === 503) {
@@ -208,7 +215,7 @@ ${sectionsText}
               this.logger.warn(
                 `Gemini (${model}, attempt ${attempt}) temporary 503 demand spike: ${errText.slice(0, 100)}`,
               );
-              await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+              await new Promise((resolve) => setTimeout(resolve, 3000 * attempt));
               continue;
             }
 
