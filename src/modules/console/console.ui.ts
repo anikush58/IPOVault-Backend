@@ -5627,6 +5627,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
       if (window.feather) feather.replace();
 
+      var result = null;
       try {
         var payload = currentProvBackfillScope === 'SINGLE' ? { ipoId: currentProvBackfillIpoId } : {};
         var res = await fetch(API_BASE + '/ipo-guru/provenance/apply', {
@@ -5636,7 +5637,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         });
 
         var json = await res.json();
-        var result = json.data || json;
+        result = json.data || json;
 
         if (!res.ok || json.error || result.error) {
           var errMsg = (json.error && json.error.message) || (result.error && result.error.message) || result.message || ('HTTP ' + res.status);
@@ -5645,30 +5646,49 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           if (btnText) btnText.textContent = 'Confirm & Apply Backfill';
           return;
         }
-
-        if (btnText) {
-          btnText.textContent = '\u2713 Backfill Applied Successfully';
-        }
-
-        if (bodyEl) {
-          var addedCount = result.added || 0;
-          var preservedCount = result.preserved || 0;
-          var successBanner = '<div style="padding:16px 20px; background:#DCFCE7; border:1px solid #86EFAC; border-radius:10px; color:#15803D; font-size:14px; font-weight:600; margin-bottom:14px;">'
-            + '\u2713 Backfill completed successfully: ' + addedCount + ' field(s) added, ' + preservedCount + ' field(s) preserved.'
-            + '</div>';
-          bodyEl.innerHTML = successBanner + bodyEl.innerHTML;
-        }
-
-        if (currentProvBackfillScope === 'SINGLE' && currentProvBackfillIpoId) {
-          fetchManualIpoDetail(currentProvBackfillIpoId);
-        } else {
-          fetchManualIpos();
-        }
-      } catch (err) {
-        console.error('Apply backfill error:', err);
-        alert('Backfill apply error: ' + err.message);
+      } catch (networkErr) {
+        console.error('Apply backfill network/server error:', networkErr);
+        alert('Backfill apply error: ' + networkErr.message);
         if (btnApply) { btnApply.disabled = false; btnApply.style.opacity = '1'; }
         if (btnText) btnText.textContent = 'Confirm & Apply Backfill';
+        return;
+      }
+
+      // Step 2: Database backfill write succeeded
+      if (btnApply) {
+        btnApply.disabled = true;
+        btnApply.style.opacity = '0.85';
+        btnApply.style.backgroundColor = '#10B981';
+        btnApply.style.borderColor = '#059669';
+      }
+      if (btnText) {
+        btnText.textContent = '\u2713 Backfill Applied Successfully';
+      }
+
+      if (bodyEl && result) {
+        var addedCount = result.added || 0;
+        var preservedCount = result.preserved || 0;
+        var successBanner = '<div style="padding:16px 20px; background:#DCFCE7; border:1px solid #86EFAC; border-radius:10px; color:#15803D; font-size:14px; font-weight:600; margin-bottom:14px;">'
+          + '\u2713 Backfill completed successfully: ' + addedCount + ' field(s) added, ' + preservedCount + ' field(s) preserved.'
+          + '</div>';
+        bodyEl.innerHTML = successBanner + bodyEl.innerHTML;
+      }
+
+      // Step 3: Attempt UI refresh safely and separately
+      try {
+        if (currentProvBackfillScope === 'SINGLE' && currentProvBackfillIpoId && typeof editManualIpo === 'function') {
+          await editManualIpo(currentProvBackfillIpoId);
+        } else if (typeof fetchManualIpos === 'function') {
+          await fetchManualIpos();
+        }
+      } catch (refreshErr) {
+        console.warn('Post-backfill UI refresh warning:', refreshErr);
+        if (bodyEl) {
+          var refreshWarn = '<div style="padding:10px 14px; background:#FEF3C7; border:1px solid #F59E0B; border-radius:8px; color:#92400E; font-size:12px; margin-bottom:12px;">'
+            + '\u26A0\uFE0F Backfill completed successfully, but the page could not refresh automatically. Please reload the page to see updated badges.'
+            + '</div>';
+          bodyEl.innerHTML = refreshWarn + bodyEl.innerHTML;
+        }
       }
     }
 
