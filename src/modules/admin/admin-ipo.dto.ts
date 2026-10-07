@@ -271,11 +271,13 @@ export class ImportCompanyFinancialDto {
   netProfit?: number; // Alias for pat
   ebitda?: number;
   ebitdaPercent?: number; // Alias for ebitda margin
+  ebitdaMarginPercent?: number;
   netWorth?: number;
   nav?: number; // Alias for netWorth
   ronw?: number; // Alias for netWorth
   roePercent?: number; // Alias for roePercentage
   roePercentage?: number;
+  rocePercent?: number; // Alias for rocePercentage
   rocePercentage?: number;
   eps?: number;
   patPercent?: number; // Alias for patMarginPercent
@@ -289,6 +291,7 @@ export class ImportCompanyDto {
   logoUrl?: string; // Added form field
   cin?: string;
   aboutDescription?: string;
+  about?: string; // Master JSON alias
   website?: string;
   email?: string;
   companyEmail?: string; // Intuitive alias
@@ -298,12 +301,20 @@ export class ImportCompanyDto {
   industry?: string;
   sector?: string;
   notes?: string;
+  strengths?: string[];
+  risks?: string[];
+  keyRisks?: string[];
+  objectsOfIssue?: string[] | string;
+  objects?: string[] | string;
   financials?: ImportCompanyFinancialDto[];
 }
 
 export class ImportIpoCoreDto {
   ipoName?: string; // Added form field
   symbol?: string;
+  isin?: string;
+  nseSymbol?: string;
+  bseSymbol?: string;
   marketSegment?: MarketSegment | string;
   issueType?: string; // Intuitive alias ('Mainboard' | 'SME')
   exchange?: ExchangeListing | string; // Intuitive ('BSE' | 'NSE' | 'BSE / NSE' | 'BOTH')
@@ -311,22 +322,50 @@ export class ImportIpoCoreDto {
   publicationStatus?: PublicationStatus;
   priceBandLow?: number;
   priceBandMin?: number; // Intuitive alias
+  floorPrice?: number; // Master JSON alias
+  minPrice?: number;
   priceBandHigh?: number;
   priceBandMax?: number; // Intuitive alias
+  capPrice?: number; // Master JSON alias
+  issuePrice?: number;
+  maxPrice?: number;
   lotSize?: number;
+  marketLot?: number; // Master JSON alias
+  minimumLots?: number;
+  minLots?: number;
   faceValue?: number;
   issueSize?: number;
+  totalIssueSize?: number; // Master JSON alias
   freshIssueSize?: number;
   ofsSize?: number;
   issueShareCount?: number;
+  totalShares?: number; // Master JSON alias
   freshIssueShareCount?: number;
   ofsShareCount?: number;
+  listingPrice?: number;
+  listingGainPct?: number;
+  profitAmount?: number;
+  profitPercentage?: number;
+  preIpoEps?: number;
+  postIpoEps?: number;
+  preIpoPe?: number;
+  postIpoPe?: number;
+  preIpoPromoterHolding?: number;
+  postIpoPromoterHolding?: number;
+  preIpoMarketCap?: number;
+  postIpoMarketCap?: number;
   openDate?: string;
   closeDate?: string;
   allotmentDate?: string;
   listingDate?: string;
+  refundDate?: string;
+  refundInitiationDate?: string;
+  dematCreditDate?: string;
+  creditToDematDate?: string;
   drhpUrl?: string;
   rhpUrl?: string;
+  prospectusUrl?: string;
+  anchorListUrl?: string;
   notes?: string;
 }
 
@@ -334,9 +373,17 @@ export class ImportIpoLifecycleDto {
   drhpDate?: string;
   rhpDate?: string;
   anchorDate?: string;
+  anchorBidDate?: string;
   openDate?: string;
+  issueOpenDate?: string;
   closeDate?: string;
+  issueCloseDate?: string;
   allotmentDate?: string;
+  basisOfAllotmentDate?: string;
+  refundDate?: string;
+  refundInitiationDate?: string;
+  dematCreditDate?: string;
+  creditToDematDate?: string;
   listingDate?: string;
 }
 
@@ -345,6 +392,7 @@ export class ImportOfferCategoryDto {
   categoryCode?: string;
   allocationPct?: number;
   allocationPercentage?: number;
+  percentage?: number;
   minLots?: number;
   maxLots?: number;
   minShares?: number;
@@ -367,17 +415,24 @@ export class ImportAllotmentConfigDto {
   registrar!: string;
   registrarPhone?: string; // Added form field
   registrarEmail?: string; // Added form field
+  registrarWebsite?: string;
   registrarIpoCode?: string;
   allotmentSourceUrl?: string;
+  allotmentUrl?: string;
   expectedAllotmentDate?: string;
   enabled?: boolean;
 }
 
 export class ImportDocumentDto {
   documentType!: DocumentType | string;
+  type?: string;
   fileName?: string;
+  title?: string;
   sourceUrl?: string;
   url?: string;
+  mimeType?: string;
+  fileSizeBytes?: number;
+  extractionData?: Record<string, any>;
 }
 
 export class ImportGmpDto {
@@ -390,71 +445,191 @@ export class ImportGmpDto {
 
 export class ImportSubscriptionDto {
   category!: OfferCategoryType | string;
+  categoryCode?: string;
   subscriptionMultiple?: number;
   sharesBid?: number;
   sharesOffered?: number;
   observedAt?: string;
 }
 
+export class ImportAnchorInvestorDto {
+  anchorName?: string;
+  investorName?: string;
+  name?: string;
+  sharesAllotted?: number;
+  shares?: number;
+  amtCr?: number;
+  amountCr?: number;
+  amount?: number;
+  pctAllocated?: number;
+  pctOfIssue?: number;
+  percentage?: number;
+}
+
 export class ImportAdminIpoJsonDto {
+  id?: string;
+  ipoId?: string;
+  targetIpoId?: string;
+
   meta?: {
     version?: string;
     sourceSystem?: string;
     exportedAt?: string;
   };
 
-  // Top-level intuitive shortcuts aligned with Manual IPO Form
+  // Identifiers
+  isin?: string;
+  cin?: string;
+  symbol?: string;
+  nseSymbol?: string;
+  bseSymbol?: string;
+
+  // Top-level intuitive shortcuts aligned with Manual IPO Form & Master JSON
   ipoName?: string;
   companyName?: string;
+  legalName?: string;
+  displayName?: string;
   logoUrl?: string;
-  symbol?: string;
   exchange?: ExchangeListing | string;
   issueType?: MarketSegment | string;
+  marketSegment?: MarketSegment | string;
   sector?: string;
   industry?: string;
 
   priceBandMin?: number;
+  priceBandLow?: number;
+  floorPrice?: number;
   priceBandMax?: number;
+  priceBandHigh?: number;
+  capPrice?: number;
+  issuePrice?: number;
   lotSize?: number;
-  issueSize?: number;
+  marketLot?: number;
+  minimumLots?: number;
+  faceValue?: number;
 
-  gmpAmount?: number;
-  gmpPercent?: number;
+  issueSize?: number;
+  totalIssueSize?: number;
+  freshIssueSize?: number;
+  ofsSize?: number;
+  issueShareCount?: number;
+  totalShares?: number;
+  freshIssueShareCount?: number;
+  ofsShareCount?: number;
+
+  listingPrice?: number;
+  listingGainPct?: number;
+  profitAmount?: number;
+  profitPercentage?: number;
+
+  preIpoEps?: number;
+  postIpoEps?: number;
+  preIpoPe?: number;
+  postIpoPe?: number;
+  preIpoPromoterHolding?: number;
+  postIpoPromoterHolding?: number;
+  preIpoMarketCap?: number;
+  postIpoMarketCap?: number;
 
   openDate?: string;
+  issueOpenDate?: string;
   closeDate?: string;
+  issueCloseDate?: string;
   allotmentDate?: string;
+  basisOfAllotmentDate?: string;
   listingDate?: string;
+  refundDate?: string;
+  refundInitiationDate?: string;
+  dematCreditDate?: string;
+  creditToDematDate?: string;
+  drhpDate?: string;
+  rhpDate?: string;
+  anchorDate?: string;
 
   registrar?: string;
   registrarPhone?: string;
   registrarEmail?: string;
-  leadManager?: string;
+  registrarWebsite?: string;
+  registrarIpoCode?: string;
+  allotmentSourceUrl?: string;
+  leadManager?: string | string[];
+  leadManagers?: string | string[];
+  coLeadManager?: string | string[];
+  brlm?: string | string[];
 
   website?: string;
   companyPhone?: string;
   companyEmail?: string;
+  contactPerson?: string;
+
+  aboutDescription?: string;
+  about?: string;
+  notes?: string;
+
+  strengths?: string[];
+  risks?: string[];
+  keyRisks?: string[];
+  objectsOfIssue?: string[] | string;
+  objects?: string[] | string;
 
   drhpUrl?: string;
+  drhp?: string;
   rhpUrl?: string;
-  notes?: string;
+  rhp?: string;
+  prospectusUrl?: string;
+  anchorListUrl?: string;
+
+  gmpAmount?: number;
+  gmpPercent?: number;
+  gmpPercentage?: number;
+  estProfitPerLot?: number;
+
+  anchorPortion?: number;
+  anchorBidDate?: string;
+  anchorLockIn?: string;
+  anchorDetails?: string;
+  anchorPrice?: number;
+  anchorQibPct?: number;
+  anchorLockIn30?: string;
+  anchorLockIn90?: string;
+  anchorInvestors?: ImportAnchorInvestorDto[];
+
+  retailMinLots?: number;
+  retailMaxLots?: number;
+  retailMinShares?: number;
+  retailMaxShares?: number;
+  retailMinAmount?: number;
+  retailMaxAmount?: number;
+  retailAllocationPct?: number;
 
   // Canonical nested structures
   company?: ImportCompanyDto;
   ipo?: ImportIpoCoreDto;
   lifecycle?: ImportIpoLifecycleDto;
   offerCategories?: ImportOfferCategoryDto[];
+  offerBreakup?: ImportOfferCategoryDto[];
+  reservation?: ImportOfferCategoryDto[];
   participants?: ImportParticipantDto[];
   allotmentConfig?: ImportAllotmentConfigDto;
   documents?: ImportDocumentDto[];
+  financials?: ImportCompanyFinancialDto[];
   gmp?: ImportGmpDto;
-  subscription?: ImportSubscriptionDto[];
+  subscription?: ImportSubscriptionDto[] | Record<string, any>;
 }
+
+export type FieldReportStatus =
+  | 'FILLED'
+  | 'UNCHANGED'
+  | 'CONFLICT'
+  | 'SKIPPED'
+  | 'UNAVAILABLE'
+  | 'INVALID';
 
 export interface FieldDiffToFill {
   field: string;
   section: string;
   newValue: any;
+  status?: FieldReportStatus;
 }
 
 export interface FieldDiffSkipped {
@@ -463,6 +638,16 @@ export interface FieldDiffSkipped {
   existingValue: any;
   skippedValue: any;
   reason: string;
+  status?: FieldReportStatus;
+}
+
+export interface FieldReportItem {
+  field: string;
+  section: string;
+  status: FieldReportStatus;
+  existingValue?: any;
+  incomingValue?: any;
+  reason?: string;
 }
 
 export interface JsonIpoPreviewItem {
@@ -476,6 +661,7 @@ export interface JsonIpoPreviewItem {
   matchedSymbol?: string;
   fieldsToFill: FieldDiffToFill[];
   fieldsSkipped: FieldDiffSkipped[];
+  fieldReport?: FieldReportItem[];
   error?: string;
 }
 
@@ -501,6 +687,7 @@ export interface JsonIpoCommitResultItem {
     | 'FAILED';
   fieldsFilledCount: number;
   fieldsFilled: string[];
+  fieldReport?: FieldReportItem[];
   error?: string;
 }
 

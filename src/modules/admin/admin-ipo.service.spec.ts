@@ -49,22 +49,31 @@ describe('AdminIpoService & AdminValidationService', () => {
     },
     ipoLifecycleEvent: {
       upsert: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     companyFinancial: {
       upsert: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoOfferCategory: {
       upsert: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoParticipant: {
       create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoAllotmentConfig: {
       upsert: jest.fn().mockResolvedValue({ registrar: 'kfintech', registrarIpoCode: 'MANIKA2026', enabled: true }),
+      create: jest.fn().mockResolvedValue({ registrar: 'kfintech', registrarIpoCode: 'MANIKA2026', enabled: true }),
+      update: jest.fn().mockResolvedValue({ registrar: 'kfintech', registrarIpoCode: 'MANIKA2026', enabled: true }),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoDocument: {
@@ -72,24 +81,29 @@ describe('AdminIpoService & AdminValidationService', () => {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ id: 'doc-uuid-1' }),
+      upsert: jest.fn().mockResolvedValue({ id: 'doc-uuid-1', parsingStatus: 'PARSED' }),
       delete: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     gmpObservation: {
       create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     subscriptionObservation: {
       create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     fieldProvenance: {
       create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
       findMany: jest.fn().mockResolvedValue([]),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     ipoSourceIdentity: {
       upsert: jest.fn().mockResolvedValue({ id: 'source-id-1' }),
+      create: jest.fn().mockResolvedValue({ id: 'source-id-1' }),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     allotmentCheckLog: {
@@ -1393,6 +1407,470 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(commitResult.skippedCount).toBe(2);
       expect(commitResult.items[0].status).toBe('SKIPPED_AMBIGUOUS');
       expect(commitResult.items[1].status).toBe('SKIPPED_UNMATCHED');
+    });
+
+    it('5. imports full Master JSON format and fills missing canonical fields, financials, and anchors', async () => {
+      const existingIpo = {
+        id: 'ipo-master-1',
+        companyId: 'comp-master-1',
+        symbol: 'MASTERCO',
+        isin: null,
+        nseSymbol: null,
+        bseSymbol: null,
+        priceBandLow: null,
+        priceBandHigh: null,
+        faceValue: null,
+        lotSize: null,
+        issueSize: null,
+        preIpoEps: null,
+        postIpoEps: null,
+        preIpoPe: null,
+        postIpoPe: null,
+        preIpoPromoterHolding: null,
+        postIpoPromoterHolding: null,
+        company: {
+          id: 'comp-master-1',
+          legalName: 'Master Technologies Limited',
+          displayName: 'Master Technologies',
+          cin: 'U72200MH2020PLC123456',
+          aboutDescription: null,
+          industry: null,
+          sector: null,
+          financials: [
+            {
+              id: 'fin-fy24',
+              fiscalPeriod: 'FY24',
+              periodType: 'ANNUAL',
+              totalRevenue: 100,
+              pat: 15,
+              ebitda: null, // missing field in existing
+              eps: null,
+            },
+          ],
+        },
+        lifecycleEvents: [
+          { eventType: 'OPEN', eventDate: new Date('2026-10-10') },
+        ],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const masterJsonPayload = {
+        companyName: 'Master Technologies Limited',
+        symbol: 'MASTERCO',
+        isin: 'INE123M01010',
+        nseSymbol: 'MASTERCO',
+        bseSymbol: '543210',
+        marketSegment: 'MAINBOARD',
+        exchange: 'NSE',
+        priceBandMin: 200,
+        priceBandMax: 215,
+        lotSize: 65,
+        faceValue: 10,
+        issueSize: 500,
+        preIpoEps: 12.5,
+        postIpoEps: 10.2,
+        preIpoPe: 16.0,
+        postIpoPe: 19.6,
+        preIpoPromoterHolding: 85.5,
+        postIpoPromoterHolding: 65.0,
+        aboutDescription: 'Leading tech solutions provider',
+        industry: 'Software',
+        sector: 'Technology',
+        openDate: '2026-10-10', // exact match with existing OPEN
+        closeDate: '2026-10-14', // new lifecycle event
+        refundInitiationDate: '2026-10-16', // refund date
+        creditToDematDate: '2026-10-19', // demat credit
+        retailMinLots: 1,
+        retailMaxLots: 13,
+        retailMinAmount: 13975,
+        leadManager: ['Alpha Capital Limited', 'Beta Securities'],
+        registrar: 'kfintech',
+        financials: [
+          {
+            fiscalPeriod: 'FY24',
+            periodType: 'ANNUAL',
+            revenue: 100, // exact match (UNCHANGED)
+            pat: 15, // exact match (UNCHANGED)
+            ebitda: 25, // fills missing
+            eps: 5.5, // fills missing
+          },
+          {
+            fiscalPeriod: 'FY25',
+            periodType: 'ANNUAL',
+            revenue: 150, // new period
+            pat: 25,
+            ebitda: 40,
+          },
+        ],
+        anchorInvestors: [
+          {
+            anchorName: 'Goldman Sachs Funds',
+            sharesAllotted: 50000,
+            amtCr: 10.75,
+          },
+        ],
+        strengths: ['Strong market share', 'Robust balance sheet'],
+        risks: ['Customer concentration risk'],
+        objectsOfIssue: ['Capex financing', 'General corporate purposes'],
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(masterJsonPayload);
+      expect(preview.matchedCount).toBe(1);
+      expect(preview.fieldsToFillTotal).toBeGreaterThan(10);
+      expect(preview.items[0].fieldReport).toBeDefined();
+
+      const filledStatuses = preview.items[0].fieldReport!.filter((r) => r.status === 'FILLED');
+      const unchangedStatuses = preview.items[0].fieldReport!.filter((r) => r.status === 'UNCHANGED');
+      expect(filledStatuses.length).toBeGreaterThan(0);
+      expect(unchangedStatuses.length).toBeGreaterThan(0);
+
+      const commit = await adminIpoService.commitAddOnlyJsonImport(masterJsonPayload);
+      expect(commit.updatedCount).toBe(1);
+      expect(commit.items[0].status).toBe('UPDATED');
+      expect(commit.items[0].fieldsFilledCount).toBeGreaterThan(0);
+    });
+
+    it('6. strictly preserves existing values and marks conflicts without mutating data', async () => {
+      const existingIpo = {
+        id: 'ipo-conflict-1',
+        companyId: 'comp-conflict-1',
+        symbol: 'CONFLICTCO',
+        isin: 'INE999C01019',
+        priceBandLow: 100,
+        priceBandHigh: 110,
+        lotSize: 50,
+        issueSize: 200,
+        company: {
+          id: 'comp-conflict-1',
+          legalName: 'Conflict Co Limited',
+          displayName: 'Conflict Co',
+          cin: 'U11111MH2020PLC111111',
+          aboutDescription: 'Official description from RHP',
+          financials: [
+            {
+              id: 'fin-1',
+              fiscalPeriod: 'FY24',
+              periodType: 'ANNUAL',
+              totalRevenue: 500,
+              pat: 50,
+            },
+          ],
+        },
+        lifecycleEvents: [
+          { eventType: 'OPEN', eventDate: new Date('2026-10-01') },
+        ],
+        allotmentConfig: { registrar: 'linkintime' },
+        offerCategories: [
+          { id: 'cat-1', category: 'RETAIL', minLots: 1, maxLots: 13, allocationPct: 35 },
+        ],
+        documents: [],
+        participants: [],
+        gmpObservations: [{ gmpAmount: 25 }],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const conflictingIncoming = {
+        companyName: 'Conflict Co Limited',
+        symbol: 'CONFLICTCO',
+        priceBandLow: 150, // Conflicting (differs from 100)
+        priceBandHigh: 110, // Exact match (UNCHANGED)
+        lotSize: 100, // Conflicting (differs from 50)
+        aboutDescription: 'Different description', // Conflicting
+        openDate: '2026-10-01', // Exact match (UNCHANGED)
+        registrar: 'kfintech', // Conflicting (differs from linkintime)
+        financials: [
+          {
+            fiscalPeriod: 'FY24',
+            periodType: 'ANNUAL',
+            revenue: 999, // Conflicting (differs from 500)
+            pat: 50, // Exact match (UNCHANGED)
+          },
+        ],
+        gmpAmount: 50, // Conflicting (differs from 25)
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(conflictingIncoming);
+      expect(preview.matchedCount).toBe(1);
+
+      const conflicts = preview.items[0].fieldReport!.filter((r) => r.status === 'CONFLICT');
+      const unchanged = preview.items[0].fieldReport!.filter((r) => r.status === 'UNCHANGED');
+
+      expect(conflicts.length).toBeGreaterThanOrEqual(4);
+      expect(unchanged.length).toBeGreaterThanOrEqual(2);
+
+      // Verify reasons explain mutation prevention
+      const conflictReasons = conflicts.map((c) => c.reason);
+      expect(conflictReasons.some((r) => r && r.includes('mutation prevented'))).toBe(true);
+    });
+
+    it('7. skips [●], NIL, N/A, and null values without converting them into 0 or overwriting data', async () => {
+      const existingIpo = {
+        id: 'ipo-nil-1',
+        companyId: 'comp-nil-1',
+        symbol: 'NILTEST',
+        priceBandLow: 100,
+        priceBandHigh: 110,
+        preIpoEps: 15.5,
+        company: {
+          id: 'comp-nil-1',
+          legalName: 'Nil Test Limited',
+          displayName: 'Nil Test',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const placeholderIncoming = {
+        companyName: 'Nil Test Limited',
+        symbol: 'NILTEST',
+        priceBandLow: '[●]', // Placeholder -> SKIP
+        priceBandHigh: 'NIL', // Placeholder -> SKIP
+        preIpoEps: 'N/A', // Placeholder -> SKIP
+        postIpoEps: '-', // Placeholder -> SKIP
+        issueSize: 'TBD', // Placeholder -> SKIP
+        aboutDescription: null, // Null -> UNAVAILABLE
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(placeholderIncoming);
+      expect(preview.matchedCount).toBe(1);
+      expect(preview.fieldsToFillTotal).toBe(0);
+
+      const skippedOrUnavailable = preview.items[0].fieldReport!.filter(
+        (r) => r.status === 'SKIPPED' || r.status === 'UNAVAILABLE',
+      );
+      expect(skippedOrUnavailable.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it('8. safe matching resolves by ISIN and rejects ambiguous match with SKIPPED_AMBIGUOUS', async () => {
+      const existingIpos = [
+        {
+          id: 'ipo-isin-1',
+          isin: 'INE000A01010',
+          company: { legalName: 'ISIN Match Alpha Limited', displayName: 'ISIN Match Alpha' },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+        {
+          id: 'ipo-isin-2',
+          isin: 'INE000B01010',
+          company: { legalName: 'ISIN Match Beta Limited', displayName: 'ISIN Match Beta' },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+      ];
+
+      mockPrisma.ipo.findMany.mockResolvedValue(existingIpos);
+
+      // Test 1: Match by ISIN
+      const isinMatch = await adminIpoService.previewAddOnlyJsonImport({
+        companyName: 'Different Display Name',
+        isin: 'INE000A01010',
+        lotSize: 50,
+      });
+      expect(isinMatch.matchedCount).toBe(1);
+      expect(isinMatch.items[0].matchedIpoId).toBe('ipo-isin-1');
+
+      // Test 2: Ambiguous matching on duplicated CIN
+      const dupCinIpos = [
+        {
+          id: 'ipo-cin-1',
+          company: { cin: 'U12345MH2020PLC111111', legalName: 'CIN Dup 1' },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+        {
+          id: 'ipo-cin-2',
+          company: { cin: 'U12345MH2020PLC111111', legalName: 'CIN Dup 2' },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+      ];
+      mockPrisma.ipo.findMany.mockResolvedValue(dupCinIpos);
+
+      const cinDupPreview = await adminIpoService.previewAddOnlyJsonImport({
+        company: { cin: 'U12345MH2020PLC111111' },
+        lotSize: 50,
+      });
+      expect(cinDupPreview.ambiguousCount).toBe(1);
+      expect(cinDupPreview.items[0].matchStatus).toBe('AMBIGUOUS');
+    });
+
+    it('9. bulkImportMasterJson processes multiple IPO JSONs independently and returns consolidated result with per-IPO status', async () => {
+      const existingIpos = [
+        {
+          id: 'ipo-bulk-1',
+          companyId: 'comp-bulk-1',
+          symbol: 'BULKONE',
+          priceBandLow: null,
+          company: {
+            id: 'comp-bulk-1',
+            legalName: 'Bulk One Limited',
+            displayName: 'Bulk One',
+            cin: 'U11111MH2020PLC111111',
+            financials: [],
+          },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+        {
+          id: 'ipo-dup-a',
+          company: { cin: 'U22222MH2020PLC222222', legalName: 'Dup A' },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+        {
+          id: 'ipo-dup-b',
+          company: { cin: 'U22222MH2020PLC222222', legalName: 'Dup B' },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+      ];
+
+      mockPrisma.ipo.findMany.mockResolvedValue(existingIpos);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpos[0]);
+
+      const bulkPayload = [
+        {
+          company: { cin: 'U11111MH2020PLC111111' },
+          priceBandLow: 120,
+        },
+        {
+          companyName: 'Totally NonExistent Corp',
+          symbol: 'NONEXISTENT',
+        },
+        {
+          company: { cin: 'U22222MH2020PLC222222' },
+          lotSize: 50,
+        },
+      ];
+
+      const result = await adminIpoService.bulkImportMasterJson(bulkPayload);
+
+      expect(result.totalRecords).toBe(3);
+      expect(result.updatedCount).toBe(1);
+      expect(result.skippedCount).toBe(2);
+      expect(result.failedCount).toBe(0);
+
+      expect(result.items[0].status).toBe('UPDATED');
+      expect(result.items[0].fieldsFilledCount).toBeGreaterThan(0);
+      expect(result.items[0].fieldReport).toBeDefined();
+
+      expect(result.items[1].status).toBe('SKIPPED_UNMATCHED');
+      expect(result.items[2].status).toBe('SKIPPED_AMBIGUOUS');
+    });
+
+    it('10. bulkImportMasterJson ensures a failure in one IPO record does not block remaining valid records', async () => {
+      const existingIpos = [
+        {
+          id: 'ipo-err-1',
+          companyId: 'comp-err-1',
+          symbol: 'ERRCO',
+          company: {
+            id: 'comp-err-1',
+            legalName: 'Error Co Limited',
+            displayName: 'Error Co',
+            cin: 'U33333MH2020PLC333333',
+            financials: [],
+          },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+        {
+          id: 'ipo-ok-2',
+          companyId: 'comp-ok-2',
+          symbol: 'OKCO',
+          company: {
+            id: 'comp-ok-2',
+            legalName: 'OK Co Limited',
+            displayName: 'OK Co',
+            cin: 'U44444MH2020PLC444444',
+            financials: [],
+          },
+          lifecycleEvents: [],
+          allotmentConfig: null,
+          offerCategories: [],
+          documents: [],
+          participants: [],
+          gmpObservations: [],
+        },
+      ];
+
+      mockPrisma.ipo.findMany.mockResolvedValue(existingIpos);
+      mockPrisma.ipo.findUniqueOrThrow
+        .mockRejectedValueOnce(new Error('Simulated DB connection timeout during transaction'))
+        .mockResolvedValueOnce(existingIpos[1]);
+
+      const bulkPayload = [
+        {
+          company: { cin: 'U33333MH2020PLC333333' },
+          priceBandLow: 100,
+        },
+        {
+          company: { cin: 'U44444MH2020PLC444444' },
+          priceBandLow: 200,
+        },
+      ];
+
+      const result = await adminIpoService.bulkImportMasterJson(bulkPayload);
+
+      expect(result.totalRecords).toBe(2);
+      expect(result.failedCount).toBe(1);
+      expect(result.updatedCount).toBe(1);
+
+      expect(result.items[0].status).toBe('FAILED');
+      expect(result.items[0].error).toContain('Simulated DB connection timeout');
+
+      expect(result.items[1].status).toBe('UPDATED');
+      expect(result.items[1].fieldsFilledCount).toBeGreaterThan(0);
     });
   });
 

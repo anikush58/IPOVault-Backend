@@ -1488,6 +1488,15 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <div class="manual-toolbar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <div class="manual-toolbar-actions" style="display:flex; gap:10px; flex-wrap:wrap;">
               <button class="btn-primary" onclick="openCreateModal()"><i data-feather="plus"></i> <span>Add Manual IPO</span></button>
+              <button class="btn-secondary" id="btn-bulk-import-jsons" onclick="triggerBulkJsonImport()" style="border-color:#6366F1; color:#4F46E5; font-size:13px; font-weight:600; display:inline-flex; align-items:center; gap:6px;" title="Select and import multiple Master IPO JSON files at once without overwriting existing data">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span>Import IPO JSONs</span>
+              </button>
+              <input type="file" id="bulk-json-files-input" accept=".json,application/json" multiple onchange="handleBulkJsonFilesSelect(event)" style="display:none;" />
               <button class="btn-secondary" onclick="openBackfillProvenanceModal('ALL')" style="border-color:#F59E0B; color:#D97706; font-size:13px; font-weight:600;" title="Backfill missing IPOGuru provenance across all eligible IPOs"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:4px;"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><span>Backfill IPOGuru Provenance</span></button>
             </div>
             <div class="manual-toolbar-filters" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
@@ -2532,6 +2541,69 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               <button class="btn-primary" id="btn-confirm-json-import" onclick="commitAddOnlyJsonImport()" style="display:flex; align-items:center; gap:8px;">
                 <span id="btn-confirm-json-text">Confirm & Apply Add-Only Import</span>
               </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- BULK JSON IMPORT CONSOLIDATED RESULTS MODAL -->
+        <div id="bulk-json-import-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:960px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
+            <!-- Modal Header -->
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-hover);">
+              <div>
+                <div style="font-weight:700; font-size:16px; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+                  <span>Bulk JSON Import Results</span>
+                  <span style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10B981; font-weight:600;">Add-Only Protected</span>
+                </div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">
+                  Consolidated import summary across selected JSON files. Existing non-empty values are strictly preserved and never overwritten.
+                </div>
+              </div>
+              <button onclick="closeBulkJsonImportModal()" style="background:none; border:none; font-size:22px; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
+            </div>
+
+            <!-- Summary Metrics Cards -->
+            <div style="padding:14px 20px; border-bottom:1px solid var(--border-color); background:var(--bg-surface);">
+              <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap:10px;">
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Total Files</div>
+                  <div class="stat-value" id="bulk-stat-files" style="font-size:18px;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Total Records</div>
+                  <div class="stat-value" id="bulk-stat-records" style="font-size:18px;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Updated</div>
+                  <div class="stat-value" id="bulk-stat-updated" style="font-size:18px; color:#10B981;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Skipped (Unmatched)</div>
+                  <div class="stat-value" id="bulk-stat-unmatched" style="font-size:18px; color:#F59E0B;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Skipped (Ambiguous)</div>
+                  <div class="stat-value" id="bulk-stat-ambiguous" style="font-size:18px; color:#EF4444;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Failed</div>
+                  <div class="stat-value" id="bulk-stat-failed" style="font-size:18px; color:#DC2626;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Fields Filled</div>
+                  <div class="stat-value" id="bulk-stat-filled" style="font-size:18px; color:#3B82F6;">0</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Per-IPO Results Body -->
+            <div id="bulk-import-results-list" style="padding:16px 20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:12px; max-height:calc(88vh - 210px);">
+              <!-- Populated dynamically via JS -->
+            </div>
+
+            <!-- Modal Footer -->
+            <div style="padding:14px 20px; border-top:1px solid var(--border-color); background:var(--bg-hover); display:flex; justify-content:flex-end; align-items:center;">
+              <button class="btn-primary" onclick="closeBulkJsonImportModal()">Done</button>
             </div>
           </div>
         </div>
@@ -5037,6 +5109,219 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (btnConfirm) btnConfirm.disabled = false;
         if (btnText) btnText.textContent = 'Confirm & Apply Add-Only Import';
       }
+    }
+
+    function triggerBulkJsonImport() {
+      const input = document.getElementById('bulk-json-files-input');
+      if (input) {
+        input.value = '';
+        input.click();
+      }
+    }
+
+    function closeBulkJsonImportModal() {
+      const modal = document.getElementById('bulk-json-import-modal-overlay');
+      if (modal) modal.style.display = 'none';
+    }
+
+    async function handleBulkJsonFilesSelect(evt) {
+      const files = evt.target.files;
+      if (!files || files.length === 0) return;
+
+      const btn = document.getElementById('btn-bulk-import-jsons');
+      const originalHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+        btn.innerHTML = '<i data-feather="loader"></i> <span>Reading & Importing ' + files.length + ' file(s)...</span>';
+        if (window.feather) feather.replace();
+      }
+
+      const totalFilesCount = files.length;
+      const collectedItems = [];
+      const parseErrors = [];
+
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          try {
+            const text = await file.text();
+            let parsed = JSON.parse(text);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.data && typeof parsed.data === 'object') {
+              parsed = parsed.data;
+            }
+            if (Array.isArray(parsed)) {
+              for (const item of parsed) {
+                if (item && typeof item === 'object') {
+                  item._sourceFileName = file.name;
+                  collectedItems.push(item);
+                }
+              }
+            } else if (parsed && typeof parsed === 'object') {
+              parsed._sourceFileName = file.name;
+              collectedItems.push(parsed);
+            } else {
+              parseErrors.push({ fileName: file.name, error: 'File content is not a valid JSON object or array' });
+            }
+          } catch (pe) {
+            parseErrors.push({ fileName: file.name, error: 'JSON parse error: ' + (pe.message || String(pe)) });
+          }
+        }
+
+        if (collectedItems.length === 0 && parseErrors.length > 0) {
+          alert('Could not parse any valid IPO records from ' + files.length + ' file(s):\\n' + parseErrors.map(function(e) { return e.fileName + ': ' + e.error; }).join('\\n'));
+          return;
+        }
+
+        const response = await fetch(API_BASE + '/manual-ipos/import-json/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: collectedItems })
+        });
+
+        const rawText = await response.text();
+        let body;
+        try {
+          body = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          body = rawText;
+        }
+
+        if (!response.ok) {
+          throw body || {
+            statusCode: response.status,
+            message: response.statusText,
+          };
+        }
+
+        const resultData = body.data || body;
+        renderBulkJsonImportResults(resultData, totalFilesCount, parseErrors);
+
+        const modal = document.getElementById('bulk-json-import-modal-overlay');
+        if (modal) modal.style.display = 'flex';
+
+        fetchManualIpos();
+      } catch (err) {
+        alert('Bulk JSON import failed:\\n' + formatApiError(err));
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.innerHTML = originalHtml;
+          if (window.feather) feather.replace();
+        }
+        evt.target.value = '';
+      }
+    }
+
+    function renderBulkJsonImportResults(data, totalFilesCount, parseErrors) {
+      const items = Array.isArray(data.items) ? data.items : [];
+      const updatedItems = items.filter(function(i) { return i.status === 'UPDATED'; });
+      const unmatchedItems = items.filter(function(i) { return i.status === 'SKIPPED_UNMATCHED'; });
+      const ambiguousItems = items.filter(function(i) { return i.status === 'SKIPPED_AMBIGUOUS'; });
+      const failedItems = items.filter(function(i) { return i.status === 'FAILED'; });
+
+      let totalFieldsFilled = 0;
+      items.forEach(function(i) {
+        totalFieldsFilled += (i.fieldsFilledCount || (Array.isArray(i.fieldsFilled) ? i.fieldsFilled.length : 0));
+      });
+
+      const failedCount = failedItems.length + (parseErrors ? parseErrors.length : 0);
+
+      document.getElementById('bulk-stat-files').textContent = totalFilesCount || 1;
+      document.getElementById('bulk-stat-records').textContent = data.totalRecords || items.length;
+      document.getElementById('bulk-stat-updated').textContent = data.updatedCount !== undefined ? data.updatedCount : updatedItems.length;
+      document.getElementById('bulk-stat-unmatched').textContent = unmatchedItems.length;
+      document.getElementById('bulk-stat-ambiguous').textContent = ambiguousItems.length;
+      document.getElementById('bulk-stat-failed').textContent = failedCount;
+      document.getElementById('bulk-stat-filled').textContent = totalFieldsFilled;
+
+      const listContainer = document.getElementById('bulk-import-results-list');
+      if (!listContainer) return;
+
+      let html = '';
+
+      if (parseErrors && parseErrors.length > 0) {
+        parseErrors.forEach(function(pe) {
+          html += '<div style="background:var(--bg-surface); border:1px solid rgba(220,38,38,0.3); border-radius:10px; padding:12px 16px;">'
+            + '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">'
+            + '<div><strong style="font-size:13px; color:var(--text-main);">' + escapeHtml(pe.fileName) + '</strong></div>'
+            + '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(220,38,38,0.15); color:#DC2626;">FAILED (PARSE ERROR)</span>'
+            + '</div>'
+            + '<div style="font-size:12px; color:#DC2626; margin-top:6px;">' + escapeHtml(pe.error) + '</div>'
+            + '</div>';
+        });
+      }
+
+      if (items.length === 0 && (!parseErrors || parseErrors.length === 0)) {
+        listContainer.innerHTML = '<div style="text-align:center; padding:24px; color:var(--text-muted);">No records processed.</div>';
+        return;
+      }
+
+      items.forEach(function(item, idx) {
+        let statusBadge = '';
+        let borderColor = 'var(--border-color)';
+        let statusClass = item.status;
+
+        if (statusClass === 'UPDATED') {
+          const filledCount = item.fieldsFilledCount || (item.fieldsFilled ? item.fieldsFilled.length : 0);
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10B981;">UPDATED (' + filledCount + ' fields)</span>';
+          borderColor = 'rgba(16,185,129,0.35)';
+        } else if (statusClass === 'SKIPPED_UNMATCHED') {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(245,158,11,0.15); color:#F59E0B;">SKIPPED (UNMATCHED)</span>';
+          borderColor = 'rgba(245,158,11,0.3)';
+        } else if (statusClass === 'SKIPPED_AMBIGUOUS') {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(239,68,68,0.15); color:#EF4444;">SKIPPED (AMBIGUOUS - REVIEW NEEDED)</span>';
+          borderColor = 'rgba(239,68,68,0.35)';
+        } else if (statusClass === 'FAILED') {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(220,38,38,0.15); color:#DC2626;">FAILED</span>';
+          borderColor = 'rgba(220,38,38,0.35)';
+        } else {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(148,163,184,0.15); color:#64748B;">NO EMPTY FIELDS TO FILL</span>';
+          borderColor = 'var(--border-color)';
+        }
+
+        let filledChipsHtml = '';
+        if (Array.isArray(item.fieldsFilled) && item.fieldsFilled.length > 0) {
+          const chips = item.fieldsFilled.map(function(f) {
+            return '<span style="font-size:11px; padding:3px 8px; border-radius:6px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.25); color:var(--text-main);"><strong><span style="color:#10B981;">&#10003;</span> ' + escapeHtml(f) + '</strong></span>';
+          }).join('');
+          filledChipsHtml = '<div style="margin-top:8px;"><div style="font-size:11px; font-weight:700; color:#10B981; margin-bottom:4px;">POPULATED FIELDS (' + item.fieldsFilled.length + '):</div><div style="display:flex; flex-wrap:wrap; gap:6px;">' + chips + '</div></div>';
+        }
+
+        let reasonHtml = '';
+        if (item.error) {
+          const errColor = (statusClass === 'SKIPPED_AMBIGUOUS' || statusClass === 'FAILED') ? '#EF4444' : '#F59E0B';
+          reasonHtml = '<div style="font-size:12px; color:' + errColor + '; margin-top:4px;">' + escapeHtml(item.error) + '</div>';
+        }
+
+        let fieldReportHtml = '';
+        if (Array.isArray(item.fieldReport) && item.fieldReport.length > 0) {
+          const reportRows = item.fieldReport.map(function(r) {
+            let rowColor = '#64748B';
+            let icon = '&#8226;';
+            if (r.status === 'FILLED') { rowColor = '#10B981'; icon = '&#10003;'; }
+            else if (r.status === 'CONFLICT') { rowColor = '#EF4444'; icon = '&#9888;'; }
+            else if (r.status === 'UNCHANGED') { rowColor = '#64748B'; icon = '='; }
+            return '<div style="font-size:11px; padding:2px 0; color:var(--text-main);"><span style="color:' + rowColor + '; font-weight:700; margin-right:4px;">' + icon + '</span> <strong>' + escapeHtml(r.section ? r.section + '.' + r.field : r.field) + '</strong>: <span style="color:var(--text-muted);">' + escapeHtml(r.reason || r.status) + '</span></div>';
+          }).join('');
+          fieldReportHtml = '<details style="margin-top:8px; font-size:12px;"><summary style="cursor:pointer; color:var(--text-muted); font-size:11px; font-weight:600;">Detailed Field Report (' + item.fieldReport.length + ' fields evaluated)</summary><div style="margin-top:6px; padding:8px 12px; background:var(--bg-hover); border-radius:6px; max-height:160px; overflow-y:auto;">' + reportRows + '</div></details>';
+        }
+
+        html += '<div style="background:var(--bg-surface); border:1px solid ' + borderColor + '; border-radius:10px; padding:12px 16px;">'
+          + '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">'
+          + '<div><strong style="font-size:13px; color:var(--text-main);">' + escapeHtml(item.ipoName || ('Record #' + (idx + 1))) + '</strong>'
+          + (item.ipoId ? ' <span style="font-size:11px; color:var(--text-muted); font-family:monospace;">(' + escapeHtml(item.ipoId.slice(0, 8)) + '...)</span>' : '')
+          + '</div>'
+          + statusBadge
+          + '</div>'
+          + reasonHtml
+          + filledChipsHtml
+          + fieldReportHtml
+          + '</div>';
+      });
+
+      listContainer.innerHTML = html;
     }
 
     async function loadQuality() {

@@ -178,4 +178,17 @@ export class AdminIpoController {
   async commitJsonImport(@Body() body: any) {
     return this.adminIpoService.commitAddOnlyJsonImport(body);
   }
+
+  /**
+   * Bulk import multiple Master IPO JSON records with non-destructive merge.
+   */
+  @Post('import-json/bulk')
+  async bulkImportJson(@Body() body: any) {
+    return this.adminIpoService.bulkImportMasterJson(body);
+  }
+
+  @Post('bulk-import-json')
+  async bulkImportJsonAlias(@Body() body: any) {
+    return this.adminIpoService.bulkImportMasterJson(body);
+  }
 }

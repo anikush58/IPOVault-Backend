@@ -414,6 +414,16 @@ export class ConsoleController {
     return this.adminIpoService.commitAddOnlyJsonImport(body);
   }
 
+  @Post('api/manual-ipos/import-json/bulk')
+  async bulkImportManualIpoJson(@Body() body: any) {
+    return this.adminIpoService.bulkImportMasterJson(body);
+  }
+
+  @Post('api/manual-ipos/bulk-import-json')
+  async bulkImportManualIpoJsonAlias(@Body() body: any) {
+    return this.adminIpoService.bulkImportMasterJson(body);
+  }
+
   @Post('api/manual-ipos/:id/allotment-config')
   async configureManualIpoAllotment(
     @Param('id', new ParseUUIDPipe()) id: string,
