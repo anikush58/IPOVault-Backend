@@ -16,6 +16,7 @@ describe('SebiDocumentRetrievalService (Phase 1)', () => {
       },
       source: {
         findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       discoveryRecord: {
         findMany: jest.fn(),
@@ -93,6 +94,35 @@ describe('SebiDocumentRetrievalService (Phase 1)', () => {
       expect(matched).not.toBeNull();
       expect(matched!.sourceUrl).toBe('https://www.sebi.gov.in/filings/tempsens.pdf');
       expect(matched!.matchSource).toBe('CIN_MATCH');
+    });
+
+    it('matches IPO to official issuer-hosted DRHP when domain matches company website', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValue({
+        id: 'ipo-acme',
+        company: {
+          id: 'comp-acme',
+          displayName: 'Acme India',
+          legalName: 'Acme India Limited',
+          website: 'https://acmeindia.co',
+          cin: null,
+        },
+        documents: [
+          {
+            id: 'doc-acme-1',
+            documentType: 'DRHP',
+            sourceUrl: 'https://acmeindia.co/assets/web/pdf/DRHP_Acme_20250930201943.pdf',
+            fileName: 'DRHP_Acme.pdf',
+          },
+        ],
+        sourceIdentities: [],
+      });
+
+      const matched = await matcherService.findOfficialDocumentForIpo('ipo-acme');
+      expect(matched).not.toBeNull();
+      expect(matched!.documentId).toBe('doc-acme-1');
+      expect(matched!.documentType).toBe('DRHP');
+      expect(matched!.sourceUrl).toBe('https://acmeindia.co/assets/web/pdf/DRHP_Acme_20250930201943.pdf');
+      expect(matched!.matchSource).toBe('ISSUER_MATCH');
     });
 
     it('returns null when no official document or filing URL is found', async () => {

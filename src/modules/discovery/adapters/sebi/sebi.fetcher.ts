@@ -33,9 +33,58 @@ export class SebiPdfSizeExceededError extends SebiFetchError {
   }
 }
 
-export function isAuthoritativeDocumentUrl(urlStr: string): boolean {
+function extractDomain(rawUrlOrHost: string): string | null {
   try {
-    const parsed = new URL(urlStr);
+    let str = rawUrlOrHost.trim().toLowerCase();
+    if (!str.startsWith('http://') && !str.startsWith('https://')) {
+      str = 'https://' + str;
+    }
+    const u = new URL(str);
+    let host = u.hostname.toLowerCase();
+    if (host.startsWith('www.')) {
+      host = host.slice(4);
+    }
+    return host || null;
+  } catch {
+    return null;
+  }
+}
+
+function isDomainMatch(docHostname: string, issuerDomain: string): boolean {
+  let docHost = docHostname.toLowerCase();
+  if (docHost.startsWith('www.')) {
+    docHost = docHost.slice(4);
+  }
+  return docHost === issuerDomain || docHost.endsWith('.' + issuerDomain);
+}
+
+function isProspectusDocumentPath(pathname: string, search: string): boolean {
+  const full = (pathname + search).toLowerCase();
+  const hasPdfOrDoc =
+    full.includes('.pdf') || full.includes('.doc') || full.includes('.docx');
+  const hasProspectusKeyword =
+    full.includes('drhp') ||
+    full.includes('rhp') ||
+    full.includes('prospectus') ||
+    full.includes('draft') ||
+    full.includes('offer-document') ||
+    full.includes('offer_document') ||
+    full.includes('offer-doc') ||
+    full.includes('offer_doc') ||
+    full.includes('filing');
+  return hasPdfOrDoc && hasProspectusKeyword;
+}
+
+export function isAuthoritativeDocumentUrl(
+  urlStr: string,
+  companyWebsite?: string | null,
+): boolean {
+  try {
+    if (!urlStr || typeof urlStr !== 'string' || urlStr.trim().length === 0) {
+      return false;
+    }
+
+    const parsed = new URL(urlStr.trim());
     const hostname = parsed.hostname.toLowerCase();
     const isHttps = parsed.protocol === 'https:';
     const isHttpTest =
@@ -45,13 +94,15 @@ export function isAuthoritativeDocumentUrl(urlStr: string): boolean {
         hostname === 'bse.test' ||
         hostname.endsWith('.bse.test') ||
         hostname === 'sebi.test' ||
-        hostname.endsWith('.sebi.test'));
+        hostname.endsWith('.sebi.test') ||
+        hostname === 'issuer.test' ||
+        hostname.endsWith('.issuer.test'));
 
     if (!isHttps && !isHttpTest) {
       return false;
     }
 
-    // 1. SEBI
+    // 1. SEBI (Highest trust regulatory)
     if (
       hostname === 'sebi.gov.in' ||
       hostname === 'www.sebi.gov.in' ||
@@ -62,7 +113,7 @@ export function isAuthoritativeDocumentUrl(urlStr: string): boolean {
       return true;
     }
 
-    // 2. BSE / BSE SME
+    // 2. BSE / BSE SME (Highest trust exchange)
     if (
       hostname === 'bseindia.com' ||
       hostname === 'www.bseindia.com' ||
@@ -77,7 +128,7 @@ export function isAuthoritativeDocumentUrl(urlStr: string): boolean {
       return true;
     }
 
-    // 3. NSE / NSE Emerge
+    // 3. NSE / NSE Emerge (Highest trust exchange)
     if (
       hostname === 'nseindia.com' ||
       hostname === 'www.nseindia.com' ||
@@ -90,14 +141,31 @@ export function isAuthoritativeDocumentUrl(urlStr: string): boolean {
       return true;
     }
 
+    // 4. Verified Issuer / Company Domain Fallback (when official website matches and path is clearly an RHP/DRHP/Prospectus)
+    if (
+      companyWebsite &&
+      typeof companyWebsite === 'string' &&
+      companyWebsite.trim().length > 0
+    ) {
+      const issuerDomain = extractDomain(companyWebsite);
+      if (issuerDomain && isDomainMatch(hostname, issuerDomain)) {
+        if (isProspectusDocumentPath(parsed.pathname, parsed.search)) {
+          return true;
+        }
+      }
+    }
+
     return false;
   } catch {
     return false;
   }
 }
 
-export function isOfficialSebiUrl(urlStr: string): boolean {
-  return isAuthoritativeDocumentUrl(urlStr);
+export function isOfficialSebiUrl(
+  urlStr: string,
+  companyWebsite?: string | null,
+): boolean {
+  return isAuthoritativeDocumentUrl(urlStr, companyWebsite);
 }
 
 export async function fetchSebiListing(
@@ -337,10 +405,11 @@ export async function downloadSebiDocument(
   fetchImpl?: typeof fetch,
   timeoutMs = SEBI_DOCUMENT_DOWNLOAD_TIMEOUT_MS,
   maxSizeBytes = DEFAULT_SEBI_MAX_PDF_SIZE_BYTES,
+  companyWebsite?: string | null,
 ): Promise<SebiDownloadDocumentResult> {
-  if (!isOfficialSebiUrl(urlStr)) {
+  if (!isOfficialSebiUrl(urlStr, companyWebsite)) {
     throw new SebiFetchError(
-      `Security error: Rejecting download from non-SEBI URL '${urlStr}'`,
+      `Security error: Rejecting download from non-authoritative URL '${urlStr}'`,
     );
   }
 
@@ -438,6 +507,7 @@ export async function downloadSebiDocument(
           fetchImpl,
           timeoutMs,
           maxSizeBytes,
+          companyWebsite,
         );
         const isPdf =
           pdfResult.documentBuffer &&
@@ -488,6 +558,7 @@ export class SebiHttpClient {
   async downloadDocument(
     documentUrl: string,
     fetchImpl?: typeof fetch,
+    companyWebsite?: string | null,
   ): Promise<SebiDownloadDocumentResult> {
     const maxSizeBytes =
       this.config.get('SEBI_MAX_PDF_SIZE_BYTES', { infer: true }) ||
@@ -497,6 +568,7 @@ export class SebiHttpClient {
       fetchImpl,
       SEBI_DOCUMENT_DOWNLOAD_TIMEOUT_MS,
       maxSizeBytes,
+      companyWebsite,
     );
   }
 }

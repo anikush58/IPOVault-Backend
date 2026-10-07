@@ -110,6 +110,9 @@ describe('EnrichmentOrchestratorService', () => {
 
     const result = await orchestrator.processIpoEnrichment('ipo-2');
     expect(result.status).toBe('DOCUMENT_UNRESOLVED');
+    expect(result.missingFieldsDetected).toEqual(['aboutDescription']);
+    expect(result.skippedFields).toEqual([]); // Must NOT label unresolved fields as skipped/preserved
+    expect(result.enrichedFields).toEqual([]);
     expect(mockExtractor.extract).not.toHaveBeenCalled();
   });
 
@@ -418,6 +421,72 @@ describe('EnrichmentOrchestratorService', () => {
     expect(mockPrisma.source.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { code: 'BSE_SME_AI' },
+      }),
+    );
+  });
+
+  it('should successfully enrich IPO using issuer-hosted official DRHP and tag ISSUER_PROSPECTUS_AI provenance', async () => {
+    mockDetector.detect.mockResolvedValue({
+      ipoId: 'ipo-acme-1',
+      hasMissingFields: true,
+      missingFields: ['aboutDescription', 'industry', 'preIpoPe'],
+      companyName: 'Acme India Limited',
+    });
+
+    mockRetrieval.retrieveAndExtractSections.mockResolvedValue({
+      status: 'SUCCESS',
+      documentId: 'doc-acme-1',
+      documentHash: 'hash-acme-drhp',
+      documentType: 'DRHP',
+      sourceUrl: 'https://acmeindia.co/assets/web/pdf/DRHP_Acme_20250930201943.pdf',
+      retrievedAt: new Date().toISOString(),
+      sections: {
+        SUMMARY_OF_THE_ISSUE: {
+          sectionKey: 'SUMMARY_OF_THE_ISSUE',
+          sectionTitle: 'Summary of Issue',
+          content: 'Acme India Limited provides industrial engineering solutions...',
+          pageRange: { startPage: 1, endPage: 10 },
+          charCount: 65,
+          contentHash: 'sec-acme-hash',
+          isTruncated: false,
+        },
+      },
+    });
+
+    mockExtractor.extract.mockResolvedValue({
+      aboutDescription: 'Acme India Limited provides industrial engineering solutions.',
+      industry: 'Industrial Engineering',
+      preIpoPe: 16.8,
+    });
+
+    mockValidator.validate.mockReturnValue({
+      aboutDescription: 'Acme India Limited provides industrial engineering solutions.',
+      industry: 'Industrial Engineering',
+      preIpoPe: 16.8,
+      validationWarnings: [],
+    });
+
+    mockPrisma.ipo.findUnique.mockResolvedValue({
+      id: 'ipo-acme-1',
+      companyId: 'comp-acme-1',
+      preIpoPe: null,
+      company: {
+        id: 'comp-acme-1',
+        aboutDescription: null,
+        industry: null,
+      },
+      participants: [],
+    });
+
+    const result = await orchestrator.processIpoEnrichment('ipo-acme-1');
+
+    expect(result.status).toBe('COMPLETED');
+    expect(result.enrichedFields).toEqual(
+      expect.arrayContaining(['aboutDescription', 'industry', 'preIpoPe']),
+    );
+    expect(mockPrisma.source.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { code: 'ISSUER_PROSPECTUS_AI' },
       }),
     );
   });

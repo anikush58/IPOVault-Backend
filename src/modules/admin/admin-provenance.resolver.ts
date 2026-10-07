@@ -126,11 +126,13 @@ function classifySource(source: {
     code === 'SEBI_AI_EXTRACTED' ||
     code === 'BSE_SME_AI' ||
     code === 'NSE_EMERGE_AI' ||
+    code === 'ISSUER_PROSPECTUS_AI' ||
     code.includes('AI')
   ) {
     let sourceDocLabel = 'SEBI Prospectus';
     if (code === 'BSE_SME_AI') sourceDocLabel = 'BSE SME Prospectus';
     else if (code === 'NSE_EMERGE_AI') sourceDocLabel = 'NSE Emerge RHP';
+    else if (code === 'ISSUER_PROSPECTUS_AI') sourceDocLabel = 'Issuer Official Filing';
     else if (code === 'SEBI_AI_EXTRACTED') sourceDocLabel = 'SEBI Statutory Filing';
 
     return {

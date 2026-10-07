@@ -80,8 +80,8 @@ export class SebiDocumentRetrievalService {
       }
     }
 
-    // 3. Validate official authoritative URL safety (SEBI, BSE, NSE)
-    if (!isOfficialSebiUrl(matched.sourceUrl)) {
+    // 3. Validate official authoritative URL safety (SEBI, BSE, NSE, or verified issuer fallback)
+    if (!isOfficialSebiUrl(matched.sourceUrl, matched.companyWebsite)) {
       this.logger.warn(
         `Rejecting document download from non-authoritative URL '${matched.sourceUrl}' for IPO '${ipoId}'`,
       );
@@ -105,6 +105,7 @@ export class SebiDocumentRetrievalService {
       downloadResult = await this.client.downloadDocument(
         matched.sourceUrl,
         options?.fetchImpl,
+        matched.companyWebsite,
       );
     } catch (downloadErr: unknown) {
       const msg =
@@ -209,7 +210,9 @@ export class SebiDocumentRetrievalService {
           },
         });
       } else {
-        const docSource = matched.matchSource.includes('BSE')
+        const docSource = matched.matchSource === 'ISSUER_MATCH'
+          ? 'ISSUER'
+          : matched.matchSource.includes('BSE')
           ? 'BSE'
           : matched.matchSource.includes('NSE')
           ? 'NSE'

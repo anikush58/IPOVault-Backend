@@ -67,6 +67,7 @@ export interface MatchedOfficialDocument {
   ipoId: string;
   companyId: string;
   companyName: string;
+  companyWebsite?: string | null;
   documentType: DocumentType;
   sourceUrl: string;
   fileName?: string;
@@ -81,7 +82,8 @@ export interface MatchedOfficialDocument {
     | 'NAME_MATCH'
     | 'BSE_SME_MATCH'
     | 'NSE_EMERGE_MATCH'
-    | 'EXCHANGE_MATCH';
+    | 'EXCHANGE_MATCH'
+    | 'ISSUER_MATCH';
 }
 
 export type SebiRetrievalStatus =

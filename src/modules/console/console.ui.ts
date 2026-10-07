@@ -5832,9 +5832,13 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       var enriched = Array.isArray(result.enrichedFields) ? result.enrichedFields : [];
       var skipped = Array.isArray(result.skippedFields) ? result.skippedFields : [];
       var detected = Array.isArray(result.missingFieldsDetected) ? result.missingFieldsDetected : [];
-      var unavailable = detected.filter(function(f) {
-        return enriched.indexOf(f) === -1 && skipped.indexOf(f) === -1;
-      });
+      var isBlocked = status === 'DOCUMENT_UNRESOLVED' || status === 'FAILED';
+      var notEnriched = isBlocked
+        ? detected.filter(function(f) { return enriched.indexOf(f) === -1 && skipped.indexOf(f) === -1; })
+        : [];
+      var unavailable = !isBlocked
+        ? detected.filter(function(f) { return enriched.indexOf(f) === -1 && skipped.indexOf(f) === -1; })
+        : [];
 
       var html = '';
 
@@ -5853,7 +5857,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           + '<div style="font-size:12px; color:var(--text-muted); margin-top:2px;">' + escapeHtml(reason) + '</div>'
           + '</div>';
       } else {
-        var errorMsg = result.error || (status === 'DOCUMENT_UNRESOLVED' ? 'No official SEBI / NSE Emerge / BSE SME filing found for this IPO.' : 'Enrichment pipeline encountered an error.');
+        var errorMsg = result.error || (status === 'DOCUMENT_UNRESOLVED' ? 'No official SEBI / NSE Emerge / BSE SME or verified issuer filing found for this IPO.' : 'Enrichment pipeline encountered an error.');
         html += '<div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:8px; padding:12px 16px;">'
           + '<div style="font-weight:600; color:#DC2626; font-size:13px;">Enrichment Could Not Proceed</div>'
           + '<div style="font-size:12px; color:var(--text-muted); margin-top:2px;"><strong>Blocking Reason:</strong> ' + escapeHtml(errorMsg) + '</div>'
@@ -5875,7 +5879,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (skipped.length > 0) {
         html += '<div>'
           + '<div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">'
-          + '\u2298 Fields Skipped (Existing Verified Data Preserved) (' + skipped.length + ')'
+          + '\u2298 Protected Fields (Existing Verified Data Preserved) (' + skipped.length + ')'
           + '</div>'
           + '<div style="display:flex; flex-wrap:wrap; gap:6px;">'
           + skipped.map(function(f) {
@@ -5884,10 +5888,22 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           + '</div></div>';
       }
 
+      if (notEnriched.length > 0) {
+        html += '<div>'
+          + '<div style="font-size:12px; font-weight:700; color:#DC2626; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">'
+          + '\u2717 Not Enriched (Document Discovery Blocked) (' + notEnriched.length + ')'
+          + '</div>'
+          + '<div style="display:flex; flex-wrap:wrap; gap:6px;">'
+          + notEnriched.map(function(f) {
+            return '<span style="background:rgba(239,68,68,0.12); color:#DC2626; font-size:12px; padding:3px 10px; border-radius:6px;">' + escapeHtml(f) + '</span>';
+          }).join('')
+          + '</div></div>';
+      }
+
       if (unavailable.length > 0) {
         html += '<div>'
           + '<div style="font-size:12px; font-weight:700; color:var(--text-subtle); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">'
-          + '\u2014 Undetermined in Filing ([●] / NIL) (' + unavailable.length + ')'
+          + '\u2014 Unavailable ([●] / NIL in Filing) (' + unavailable.length + ')'
           + '</div>'
           + '<div style="display:flex; flex-wrap:wrap; gap:6px;">'
           + unavailable.map(function(f) {

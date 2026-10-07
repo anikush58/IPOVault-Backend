@@ -51,22 +51,74 @@ describe('SEBI Official Filing Ingestion Foundation', () => {
   `;
 
   describe('URL Security & Validation (Test 7 & 8)', () => {
-    it('7. validates official SEBI PDF/document URLs', () => {
+    it('7. validates official SEBI, NSE, BSE PDF/document URLs', () => {
       expect(
         isOfficialSebiUrl('https://www.sebi.gov.in/sebi_data/attachdocs/sep-2026/12345.pdf'),
       ).toBe(true);
       expect(
         isOfficialSebiUrl('https://sebi.gov.in/filings/public-issues/doc.pdf'),
       ).toBe(true);
+      expect(
+        isOfficialSebiUrl('https://www.bseindia.com/downloads/ipo/prospectus.pdf'),
+      ).toBe(true);
+      expect(
+        isOfficialSebiUrl('https://nsearchives.nseindia.com/emerge/rhp.pdf'),
+      ).toBe(true);
     });
 
-    it('8. rejects non-SEBI document URLs', () => {
+    it('8. rejects non-authoritative third-party document URLs', () => {
       expect(isOfficialSebiUrl('https://malicious-site.com/sebi_doc.pdf')).toBe(false);
       expect(isOfficialSebiUrl('http://www.sebi.gov.in.attacker.com/doc.pdf')).toBe(false);
       expect(isOfficialSebiUrl('ftp://www.sebi.gov.in/doc.pdf')).toBe(false);
+      expect(isOfficialSebiUrl('https://ipowatch.in/acme_drhp.pdf')).toBe(false);
+      expect(isOfficialSebiUrl('https://chittorgarh.com/documents/drhp.pdf')).toBe(false);
     });
 
-    it('rejects downloading from non-SEBI URL', async () => {
+    it('validates verified issuer-hosted official DRHP/RHP URLs when domain matches and path is a prospectus', () => {
+      const issuerUrl = 'https://acmeindia.co/assets/web/pdf/DRHP_Acme_20250930201943.pdf';
+      const issuerWebsite = 'https://acmeindia.co';
+
+      // Accepted with matching company website
+      expect(isOfficialSebiUrl(issuerUrl, issuerWebsite)).toBe(true);
+      expect(isOfficialSebiUrl(issuerUrl, 'acmeindia.co')).toBe(true);
+      expect(isOfficialSebiUrl(issuerUrl, 'www.acmeindia.co')).toBe(true);
+
+      // Subdomain issuer match
+      expect(
+        isOfficialSebiUrl(
+          'https://investor.acmeindia.co/filings/RHP_Acme.pdf',
+          'https://acmeindia.co',
+        ),
+      ).toBe(true);
+    });
+
+    it('rejects issuer-hosted non-prospectus documents or mismatched domains', () => {
+      // Non-prospectus document on issuer domain
+      expect(
+        isOfficialSebiUrl(
+          'https://acmeindia.co/assets/web/pdf/product_brochure.pdf',
+          'https://acmeindia.co',
+        ),
+      ).toBe(false);
+
+      // Mismatched domain
+      expect(
+        isOfficialSebiUrl(
+          'https://anothercompany.co/assets/web/pdf/DRHP_Acme.pdf',
+          'https://acmeindia.co',
+        ),
+      ).toBe(false);
+
+      // Third party aggregator even if company website is provided
+      expect(
+        isOfficialSebiUrl(
+          'https://ipowatch.in/assets/DRHP_Acme.pdf',
+          'https://acmeindia.co',
+        ),
+      ).toBe(false);
+    });
+
+    it('rejects downloading from non-SEBI URL without valid issuer match', async () => {
       await expect(
         downloadSebiDocument('https://attacker.com/file.pdf'),
       ).rejects.toThrow('Security error');

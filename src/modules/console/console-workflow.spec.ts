@@ -219,4 +219,141 @@ describe('Phase 34.3A — Manual IPO Console Workflow & Reset Safety', () => {
       expect(draft.publicationStatus).toBe(PublicationStatus.DRAFT);
     });
   });
+
+  describe('Manual AI Enrichment Result UI & Document Discovery Verification', () => {
+    it('renders the AI enrichment modal structure with correct classification headings in console UI', () => {
+      const html = renderConsoleHtml();
+      expect(html).toContain('id="ai-enrichment-modal-overlay"');
+      expect(html).toContain('id="ai-enrich-modal-body"');
+      expect(html).toContain('Not Enriched (Document Discovery Blocked)');
+      expect(html).toContain('Protected Fields (Existing Verified Data Preserved)');
+      expect(html).toContain('Unavailable ([●] / NIL in Filing)');
+    });
+
+    it('correctly classifies State 1 (DOCUMENT_UNRESOLVED): missing fields in Not Enriched, NOT Protected Fields', () => {
+      const result: {
+        ipoId: string;
+        status: string;
+        missingFieldsDetected: string[];
+        enrichedFields: string[];
+        skippedFields: string[];
+        error: string;
+      } = {
+        ipoId: 'ipo-test-1',
+        status: 'DOCUMENT_UNRESOLVED',
+        missingFieldsDetected: ['aboutDescription', 'industry', 'sector'],
+        enrichedFields: [],
+        skippedFields: [],
+        error: 'No official SEBI / NSE Emerge / BSE SME or verified issuer filing found for this IPO.',
+      };
+
+      const enriched: string[] = Array.isArray(result.enrichedFields) ? result.enrichedFields : [];
+      const skipped: string[] = Array.isArray(result.skippedFields) ? result.skippedFields : [];
+      const detected: string[] = Array.isArray(result.missingFieldsDetected) ? result.missingFieldsDetected : [];
+      const isBlocked = result.status === 'DOCUMENT_UNRESOLVED' || result.status === 'FAILED';
+      const notEnriched = isBlocked
+        ? detected.filter((f) => enriched.indexOf(f) === -1 && skipped.indexOf(f) === -1)
+        : [];
+      const unavailable = !isBlocked
+        ? detected.filter((f) => enriched.indexOf(f) === -1 && skipped.indexOf(f) === -1)
+        : [];
+
+      expect(notEnriched).toEqual(['aboutDescription', 'industry', 'sector']);
+      expect(skipped).toEqual([]);
+      expect(unavailable).toEqual([]);
+      expect(enriched).toEqual([]);
+    });
+
+    it('correctly classifies State 2 (Existing verified fields): appears under Protected Fields', () => {
+      const result: {
+        ipoId: string;
+        status: string;
+        missingFieldsDetected: string[];
+        enrichedFields: string[];
+        skippedFields: string[];
+      } = {
+        ipoId: 'ipo-test-2',
+        status: 'COMPLETED',
+        missingFieldsDetected: ['aboutDescription', 'industry'],
+        enrichedFields: ['aboutDescription', 'industry'],
+        skippedFields: ['preIpoPromoterHolding', 'preIpoPe'],
+      };
+
+      const enriched: string[] = Array.isArray(result.enrichedFields) ? result.enrichedFields : [];
+      const skipped: string[] = Array.isArray(result.skippedFields) ? result.skippedFields : [];
+      const detected: string[] = Array.isArray(result.missingFieldsDetected) ? result.missingFieldsDetected : [];
+      const isBlocked = result.status === 'DOCUMENT_UNRESOLVED' || result.status === 'FAILED';
+      const notEnriched = isBlocked
+        ? detected.filter((f) => enriched.indexOf(f) === -1 && skipped.indexOf(f) === -1)
+        : [];
+
+      expect(skipped).toEqual(['preIpoPromoterHolding', 'preIpoPe']);
+      expect(enriched).toEqual(['aboutDescription', 'industry']);
+      expect(notEnriched).toEqual([]);
+    });
+
+    it('correctly classifies State 3 (Legitimately unavailable fields): appears under Unavailable', () => {
+      const result: {
+        ipoId: string;
+        status: string;
+        missingFieldsDetected: string[];
+        enrichedFields: string[];
+        skippedFields: string[];
+      } = {
+        ipoId: 'ipo-test-3',
+        status: 'COMPLETED',
+        missingFieldsDetected: ['aboutDescription', 'freshIssueShareCount', 'ofsShareCount'],
+        enrichedFields: ['aboutDescription'],
+        skippedFields: [],
+      };
+
+      const enriched: string[] = Array.isArray(result.enrichedFields) ? result.enrichedFields : [];
+      const skipped: string[] = Array.isArray(result.skippedFields) ? result.skippedFields : [];
+      const detected: string[] = Array.isArray(result.missingFieldsDetected) ? result.missingFieldsDetected : [];
+      const isBlocked = result.status === 'DOCUMENT_UNRESOLVED' || result.status === 'FAILED';
+      const unavailable = !isBlocked
+        ? detected.filter((f) => enriched.indexOf(f) === -1 && skipped.indexOf(f) === -1)
+        : [];
+
+      expect(enriched).toEqual(['aboutDescription']);
+      expect(unavailable).toEqual(['freshIssueShareCount', 'ofsShareCount']);
+      expect(skipped).toEqual([]);
+    });
+
+    it('validates Acme issuer-hosted official DRHP URL when company.website matches and rejects third-party URLs', () => {
+      const { isAuthoritativeDocumentUrl } = require('../discovery/adapters/sebi/sebi.fetcher');
+
+      const acmeDrhpUrl = 'https://acmeindia.co/assets/web/pdf/DRHP_Acme_20250930201943.pdf';
+      const acmeWebsite = 'https://acmeindia.co';
+      const thirdPartyUrl = 'https://ipowatch.in/assets/DRHP_Acme.pdf';
+      const nonProspectusUrl = 'https://acmeindia.co/assets/web/pdf/product_brochure.pdf';
+
+      // 1. Acme issuer-hosted official DRHP is accepted
+      expect(isAuthoritativeDocumentUrl(acmeDrhpUrl, acmeWebsite)).toBe(true);
+
+      // 2. Third-party URL is rejected
+      expect(isAuthoritativeDocumentUrl(thirdPartyUrl, acmeWebsite)).toBe(false);
+      expect(isAuthoritativeDocumentUrl(thirdPartyUrl, null)).toBe(false);
+
+      // 3. Non-prospectus document on issuer site is rejected
+      expect(isAuthoritativeDocumentUrl(nonProspectusUrl, acmeWebsite)).toBe(false);
+
+      // 4. SEBI / Exchange official URLs remain accepted
+      expect(
+        isAuthoritativeDocumentUrl(
+          'https://www.sebi.gov.in/sebi_data/attachdocs/sep-2026/drhp.pdf',
+        ),
+      ).toBe(true);
+      expect(
+        isAuthoritativeDocumentUrl(
+          'https://nsearchives.nseindia.com/emerge/rhp.pdf',
+        ),
+      ).toBe(true);
+      expect(
+        isAuthoritativeDocumentUrl(
+          'https://www.bseindia.com/downloads/ipo/prospectus.pdf',
+        ),
+      ).toBe(true);
+    });
+  });
 });

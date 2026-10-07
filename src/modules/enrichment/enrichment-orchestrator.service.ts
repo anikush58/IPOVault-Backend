@@ -128,14 +128,14 @@ export class EnrichmentOrchestratorService {
 
       if (docResult.status === 'DOCUMENT_UNRESOLVED') {
         this.logger.log(
-          `Official SEBI filing unresolved for IPO '${ipoId}'. Skipping AI extraction.`,
+          `Official SEBI/Exchange/Issuer filing unresolved for IPO '${ipoId}'. Skipping AI extraction.`,
         );
         return {
           ipoId,
           status: 'DOCUMENT_UNRESOLVED',
           missingFieldsDetected: report.missingFields,
           enrichedFields: [],
-          skippedFields: report.missingFields,
+          skippedFields: [],
           startedAt: startIso,
           completedAt: new Date().toISOString(),
           durationMs: Date.now() - startTime,
@@ -152,7 +152,7 @@ export class EnrichmentOrchestratorService {
           status: 'FAILED',
           missingFieldsDetected: report.missingFields,
           enrichedFields: [],
-          skippedFields: report.missingFields,
+          skippedFields: [],
           documentHash: docResult.documentHash,
           startedAt: startIso,
           completedAt: new Date().toISOString(),
@@ -542,7 +542,7 @@ export class EnrichmentOrchestratorService {
   }
 
   /**
-   * Ensures the appropriate AI enrichment source exists in PostgreSQL (SEBI, BSE, NSE).
+   * Ensures the appropriate AI enrichment source exists in PostgreSQL (SEBI, BSE, NSE, or Issuer).
    */
   private async ensureEnrichmentSource(sourceUrl = ''): Promise<string> {
     const lower = sourceUrl.toLowerCase();
@@ -550,7 +550,7 @@ export class EnrichmentOrchestratorService {
     let name = 'SEBI RHP AI Extraction';
     let baseUrl = 'https://www.sebi.gov.in';
 
-    if (lower.includes('bseindia') || lower.includes('bsesme')) {
+    if (lower.includes('bseindia') || lower.includes('bsesme') || lower.includes('bse.test')) {
       code = 'BSE_SME_AI';
       name = 'BSE SME Prospectus AI Extraction';
       baseUrl = 'https://www.bseindia.com';
@@ -558,6 +558,19 @@ export class EnrichmentOrchestratorService {
       code = 'NSE_EMERGE_AI';
       name = 'NSE Emerge Prospectus AI Extraction';
       baseUrl = 'https://www.nseindia.com';
+    } else if (lower.includes('sebi.gov.in') || lower.includes('sebi.test')) {
+      code = AI_ENRICHMENT_SOURCE_CODE;
+      name = 'SEBI RHP AI Extraction';
+      baseUrl = 'https://www.sebi.gov.in';
+    } else {
+      code = 'ISSUER_PROSPECTUS_AI';
+      name = 'Issuer Prospectus AI Extraction';
+      try {
+        const u = new URL(sourceUrl);
+        baseUrl = `${u.protocol}//${u.host}`;
+      } catch {
+        baseUrl = 'https://issuer.official';
+      }
     }
 
     const source = await this.prisma.source.upsert({

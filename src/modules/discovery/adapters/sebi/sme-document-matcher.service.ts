@@ -54,14 +54,15 @@ export class SmeDocumentMatcherService {
     }
 
     const companyName = ipo.company.displayName || ipo.company.legalName;
+    const companyWebsite = ipo.company.website;
 
-    // 1. Check existing IpoDocument linked to this IPO with authoritative exchange URL
+    // 1. Check existing IpoDocument linked to this IPO with authoritative exchange URL or verified issuer URL
     const validDocs = (ipo.documents ?? [])
       .filter(
         (d) =>
           d.sourceUrl &&
           d.sourceUrl.trim().length > 0 &&
-          isAuthoritativeDocumentUrl(d.sourceUrl.trim()),
+          isAuthoritativeDocumentUrl(d.sourceUrl.trim(), companyWebsite),
       )
       .sort(
         (a, b) =>
@@ -77,6 +78,7 @@ export class SmeDocumentMatcherService {
         ipoId: ipo.id,
         companyId: ipo.company.id,
         companyName,
+        companyWebsite,
         documentType: primaryDoc.documentType,
         sourceUrl: primaryDoc.sourceUrl.trim(),
         fileName: primaryDoc.fileName ?? undefined,
@@ -122,27 +124,20 @@ export class SmeDocumentMatcherService {
         ) as string | undefined;
 
         if (payloadCin && payloadCin.toUpperCase().trim() === targetCin) {
-          const docUrl =
-            meta.documentUrl ||
-            meta.detailUrl ||
-            meta.prospectusUrl ||
-            meta.rhpUrl ||
-            meta.drhpUrl ||
-            rec.sourceReference;
+          const docUrl = this.extractDocUrl(meta, payload, rec.sourceReference);
 
           if (
             docUrl &&
-            typeof docUrl === 'string' &&
-            docUrl.trim().length > 0 &&
-            isAuthoritativeDocumentUrl(docUrl.trim())
+            isAuthoritativeDocumentUrl(docUrl, companyWebsite)
           ) {
             const filingType = this.resolveFilingType(meta, docUrl);
             return {
               ipoId: ipo.id,
               companyId: ipo.company.id,
               companyName,
+              companyWebsite,
               documentType: filingType,
-              sourceUrl: docUrl.trim(),
+              sourceUrl: docUrl,
               sourceReference: rec.sourceReference ?? undefined,
               filingTitle: meta.filingTitle || meta.issueName,
               filingDate: meta.filingDate || meta.issueStartDate,
@@ -177,19 +172,11 @@ export class SmeDocumentMatcherService {
         ) as string | undefined;
 
         if (recSymbol && symbols.includes(recSymbol.toUpperCase().trim())) {
-          const docUrl =
-            meta.documentUrl ||
-            meta.detailUrl ||
-            meta.prospectusUrl ||
-            meta.rhpUrl ||
-            meta.drhpUrl ||
-            rec.sourceReference;
+          const docUrl = this.extractDocUrl(meta, payload, rec.sourceReference);
 
           if (
             docUrl &&
-            typeof docUrl === 'string' &&
-            docUrl.trim().length > 0 &&
-            isAuthoritativeDocumentUrl(docUrl.trim())
+            isAuthoritativeDocumentUrl(docUrl, companyWebsite)
           ) {
             const filingType = this.resolveFilingType(meta, docUrl);
             const matchSource = this.classifyExchangeSource(docUrl);
@@ -197,8 +184,9 @@ export class SmeDocumentMatcherService {
               ipoId: ipo.id,
               companyId: ipo.company.id,
               companyName,
+              companyWebsite,
               documentType: filingType,
-              sourceUrl: docUrl.trim(),
+              sourceUrl: docUrl,
               sourceReference: rec.sourceReference ?? undefined,
               filingTitle: meta.filingTitle || meta.issueName,
               filingDate: meta.filingDate || meta.issueStartDate,
@@ -233,25 +221,17 @@ export class SmeDocumentMatcherService {
       if (score >= 0.8) {
         const payload = (rec.rawPayload as Record<string, any>) || {};
         const meta = payload.source ? payload : (rec.rawPayload as Record<string, any>);
-        const docUrl =
-          meta.documentUrl ||
-          meta.detailUrl ||
-          meta.prospectusUrl ||
-          meta.rhpUrl ||
-          meta.drhpUrl ||
-          rec.sourceReference;
+        const docUrl = this.extractDocUrl(meta, payload, rec.sourceReference);
 
         if (
           docUrl &&
-          typeof docUrl === 'string' &&
-          docUrl.trim().length > 0 &&
-          isAuthoritativeDocumentUrl(docUrl.trim())
+          isAuthoritativeDocumentUrl(docUrl, companyWebsite)
         ) {
           const filingType = this.resolveFilingType(meta, docUrl);
           matchedCandidates.push({
             score,
             normalizedRecName: normRec,
-            docUrl: docUrl.trim(),
+            docUrl,
             filingType,
             rec,
             meta,
@@ -298,6 +278,7 @@ export class SmeDocumentMatcherService {
       ipoId: ipo.id,
       companyId: ipo.company.id,
       companyName,
+      companyWebsite,
       documentType: best.filingType,
       sourceUrl: best.docUrl,
       sourceReference: best.rec.sourceReference ?? undefined,
@@ -305,6 +286,36 @@ export class SmeDocumentMatcherService {
       filingDate: best.meta.filingDate || best.meta.issueStartDate,
       matchSource,
     };
+  }
+
+  private extractDocUrl(
+    meta: Record<string, any>,
+    payload: Record<string, any>,
+    sourceRef?: string | null,
+  ): string | null {
+    const raw =
+      meta.documentUrl ||
+      meta.detailUrl ||
+      meta.prospectusUrl ||
+      meta.rhpUrl ||
+      meta.drhpUrl ||
+      meta.prospectus_url ||
+      meta.rhp_url ||
+      meta.drhp_url ||
+      meta.drhp_link ||
+      meta.rhp_link ||
+      meta.prospectus_link ||
+      meta.document_url ||
+      payload.documentUrl ||
+      payload.drhpUrl ||
+      payload.rhpUrl ||
+      payload.prospectusUrl ||
+      sourceRef;
+
+    if (raw && typeof raw === 'string' && raw.trim().length > 0) {
+      return raw.trim();
+    }
+    return null;
   }
 
   /**
@@ -317,18 +328,36 @@ export class SmeDocumentMatcherService {
   }): string[] {
     const exchange = ipo.exchange?.toUpperCase() || '';
     if (exchange === 'BSE' || (ipo.bseSymbol && !ipo.nseSymbol)) {
-      return [BSE_SME_SOURCE_CODE, BSE_SOURCE_CODE, NSE_EMERGE_SOURCE_CODE, NSE_SOURCE_CODE, SEBI_SOURCE_CODE];
+      return [
+        BSE_SME_SOURCE_CODE,
+        BSE_SOURCE_CODE,
+        NSE_EMERGE_SOURCE_CODE,
+        NSE_SOURCE_CODE,
+        SEBI_SOURCE_CODE,
+        'IPOGURU',
+        'ipoguru',
+      ];
     }
     if (exchange === 'NSE' || (ipo.nseSymbol && !ipo.bseSymbol)) {
-      return [NSE_EMERGE_SOURCE_CODE, NSE_SOURCE_CODE, BSE_SME_SOURCE_CODE, BSE_SOURCE_CODE, SEBI_SOURCE_CODE];
+      return [
+        NSE_EMERGE_SOURCE_CODE,
+        NSE_SOURCE_CODE,
+        BSE_SME_SOURCE_CODE,
+        BSE_SOURCE_CODE,
+        SEBI_SOURCE_CODE,
+        'IPOGURU',
+        'ipoguru',
+      ];
     }
-    // BOTH or unspecified: check NSE, BSE, then SEBI
+    // BOTH or unspecified: check NSE, BSE, SEBI, then IPOGuru
     return [
       NSE_EMERGE_SOURCE_CODE,
       BSE_SME_SOURCE_CODE,
       NSE_SOURCE_CODE,
       BSE_SOURCE_CODE,
       SEBI_SOURCE_CODE,
+      'IPOGURU',
+      'ipoguru',
     ];
   }
 
@@ -354,15 +383,15 @@ export class SmeDocumentMatcherService {
    */
   private classifyExchangeSource(
     url: string,
-  ): 'BSE_SME_MATCH' | 'NSE_EMERGE_MATCH' | 'EXCHANGE_MATCH' {
+  ): 'BSE_SME_MATCH' | 'NSE_EMERGE_MATCH' | 'EXCHANGE_MATCH' | 'ISSUER_MATCH' {
     const lower = url.toLowerCase();
-    if (lower.includes('bseindia') || lower.includes('bsesme')) {
+    if (lower.includes('bseindia') || lower.includes('bsesme') || lower.includes('bse.test')) {
       return 'BSE_SME_MATCH';
     }
     if (lower.includes('nseindia') || lower.includes('nse.test')) {
       return 'NSE_EMERGE_MATCH';
     }
-    return 'EXCHANGE_MATCH';
+    return 'ISSUER_MATCH';
   }
 
   /**
