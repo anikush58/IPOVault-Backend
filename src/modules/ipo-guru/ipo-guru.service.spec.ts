@@ -415,6 +415,11 @@ describe('IpoGuruService', () => {
                 updated_at: '2024-11-13T11:30:00.000Z',
                 updated_at_label: '13 Nov 2024, 05:00 PM IST',
               },
+              subscription: {
+                qib: 1.5,
+                nii: 2.1,
+                retail: 3.59,
+              },
               subscription_total: 3.59,
             },
           ],
@@ -443,7 +448,7 @@ describe('IpoGuruService', () => {
         }),
       );
       expect(tx.gmpObservation.create).toHaveBeenCalled();
-      expect(tx.subscriptionObservation.create).toHaveBeenCalledTimes(1); // Only subscription_total -> OTHER
+      expect(tx.subscriptionObservation.create).toHaveBeenCalledTimes(3); // QIB, NII, RETAIL (no spurious OTHER for total)
       expect(tx.ipoAllotmentConfig.upsert).not.toHaveBeenCalled(); // registrar omitted
     });
 
@@ -487,6 +492,9 @@ describe('IpoGuruService', () => {
                 price: 30,
                 percentage: 7.69,
                 updated_at: '2024-11-13T11:30:00.000Z',
+              },
+              subscription: {
+                retail: 4.5,
               },
               subscription_total: 4.5,
             },

@@ -275,5 +275,50 @@ describe('SmeDocumentMatcherService', () => {
 
       expect(result).toBeNull();
     });
+
+    it('matches BSE SME prospectus for R.K.Fashion Accessories by normalized company name without CIN or symbol', async () => {
+      prisma.ipo.findUnique.mockResolvedValue({
+        id: 'dd97b183-3e8a-4674-a9c3-aec1cf25d862',
+        marketSegment: 'SME',
+        exchange: 'BOTH',
+        symbol: null,
+        company: {
+          id: 'a1f0d35b-8cfd-4490-87f7-933d0f32e23a',
+          displayName: 'R.K.Fashion Accessories',
+          legalName: 'R.K.Fashion Accessories',
+          cin: null,
+        },
+        documents: [],
+        sourceIdentities: [],
+      });
+
+      prisma.source.findMany.mockResolvedValue([
+        { id: 'src-bse-sme', code: BSE_SME_SOURCE_CODE },
+      ]);
+
+      prisma.discoveryRecord.findMany.mockResolvedValue([
+        {
+          id: 'rec-rkfashion-1',
+          sourceId: 'src-bse-sme',
+          companyName: 'R.K.Fashion Accessories Limited',
+          sourceReference: 'https://www.bseindia.com/markets/publicIssues/rkfashion',
+          rawPayload: {
+            issueName: 'R.K.Fashion Accessories Limited SME IPO',
+            documentUrl: 'https://www.bseindia.com/downloads/ipo/rkfashion_prospectus.pdf',
+            filingType: 'PROSPECTUS',
+            issueStartDate: '2026-10-05',
+          },
+          discoveredAt: new Date('2026-10-01'),
+        },
+      ]);
+
+      const result = await service.findSmeOfficialDocument('dd97b183-3e8a-4674-a9c3-aec1cf25d862');
+
+      expect(result).not.toBeNull();
+      expect(result?.companyName).toBe('R.K.Fashion Accessories');
+      expect(result?.documentType).toBe('PROSPECTUS');
+      expect(result?.sourceUrl).toBe('https://www.bseindia.com/downloads/ipo/rkfashion_prospectus.pdf');
+      expect(result?.matchSource).toBe('BSE_SME_MATCH');
+    });
   });
 });

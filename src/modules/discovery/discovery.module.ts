@@ -24,9 +24,14 @@ import { DiscoverySchedulerService } from './discovery-scheduler.service';
 import { SmeDocumentMatcherService } from './adapters/sebi/sme-document-matcher.service';
 import { SebiDocumentMatcherService } from './adapters/sebi/sebi-document-matcher.service';
 import { SebiDocumentRetrievalService } from './adapters/sebi/sebi-document-retrieval.service';
+import { SourceRegistryService } from './source-registry.service';
+import { SmeSourceAdapter } from './adapters/sme/sme-discovery.adapter';
+import { SmeDiscoveryFetcher } from './adapters/sme/sme-discovery.fetcher';
+import { SmeDiscoveryFlow } from './adapters/sme/sme-discovery.flow';
 
 @Module({
   providers: [
+    SourceRegistryService,
     DiscoveryRecordRepository,
     MatchingService,
     CanonicalizerService,
@@ -46,11 +51,15 @@ import { SebiDocumentRetrievalService } from './adapters/sebi/sebi-document-retr
     SebiSourceAdapter,
     SebiHttpClient,
     SebiDiscoveryFlow,
+    SmeSourceAdapter,
+    SmeDiscoveryFetcher,
+    SmeDiscoveryFlow,
     SmeDocumentMatcherService,
     SebiDocumentMatcherService,
     SebiDocumentRetrievalService,
   ],
   exports: [
+    SourceRegistryService,
     DiscoveryService,
     DiscoveryFreshnessService,
     DiscoveryRefreshService,
@@ -67,6 +76,9 @@ import { SebiDocumentRetrievalService } from './adapters/sebi/sebi-document-retr
     SebiSourceAdapter,
     SebiHttpClient,
     SebiDiscoveryFlow,
+    SmeSourceAdapter,
+    SmeDiscoveryFetcher,
+    SmeDiscoveryFlow,
     SmeDocumentMatcherService,
     SebiDocumentMatcherService,
     SebiDocumentRetrievalService,

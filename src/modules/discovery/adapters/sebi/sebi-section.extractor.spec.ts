@@ -196,6 +196,70 @@ describe('SebiSectionExtractor (Phase 1)', () => {
     });
   });
 
+  describe('SME & SEBI Heading Disambiguation', () => {
+    it('accurately extracts GENERAL INFORMATION for lead managers and avoids GID disclaimer false positives', () => {
+      const pages = [
+        {
+          pageNumber: 1,
+          text: 'TABLE OF CONTENTS\nSECTION I - GENERAL ....................... 1',
+        },
+        {
+          pageNumber: 2,
+          text: 'GENERAL INFORMATION DOCUMENT FOR INVESTING IN PUBLIC OFFERS\nThis document is a regulatory overview...',
+        },
+        {
+          pageNumber: 3,
+          text: 'GENERAL INFORMATION\nBOOK RUNNING LEAD MANAGER: Finshore Management Services Limited\nREGISTRAR: Cameo Corporate Services Limited',
+        },
+        {
+          pageNumber: 4,
+          text: 'CAPITAL STRUCTURE\nThe Offer comprises Fresh Issue of 4,267,200 Equity Shares.',
+        },
+      ];
+
+      const res = extractSebiDocumentSectionsFromPages(pages, 'gid-hash');
+      expect(res.sections.LEAD_MANAGERS_AND_GENERAL_INFO).toBeDefined();
+      expect(res.sections.LEAD_MANAGERS_AND_GENERAL_INFO!.pageRange.startPage).toBe(3);
+      expect(res.sections.LEAD_MANAGERS_AND_GENERAL_INFO!.content).toContain('Finshore Management Services Limited');
+    });
+
+    it('extracts OUR BUSINESS from standalone section heading and ignores mid-sentence body occurrences', () => {
+      const pages = [
+        {
+          pageNumber: 1,
+          text: 'RISK FACTORS\nAny disruption in power supply may adversely affect our business operations significantly.',
+        },
+        {
+          pageNumber: 2,
+          text: 'OUR BUSINESS\nWe are a manufacturer and distributor of fashion accessories and imitation jewellery.',
+        },
+      ];
+
+      const res = extractSebiDocumentSectionsFromPages(pages, 'biz-hash');
+      expect(res.sections.OUR_BUSINESS).toBeDefined();
+      expect(res.sections.OUR_BUSINESS!.pageRange.startPage).toBe(2);
+      expect(res.sections.OUR_BUSINESS!.content).toContain('manufacturer and distributor of fashion accessories');
+      expect(res.sections.OUR_BUSINESS!.charCount).toBeGreaterThan(0);
+    });
+
+    it('extracts INDUSTRY OVERVIEW from complex hyphenated and spaced chapter headers', () => {
+      const pages = [
+        {
+          pageNumber: 1,
+          text: 'SECTION V- ABOUT THE COMPANY INDUSTRY OVERVIEW\nThe Indian fashion accessories market is projected to grow at 12% CAGR.',
+        },
+        {
+          pageNumber: 2,
+          text: 'SECTION VI- OUR BUSINESS\nCompany overview details...',
+        },
+      ];
+
+      const res = extractSebiDocumentSectionsFromPages(pages, 'ind-hash');
+      expect(res.sections.INDUSTRY_OVERVIEW).toBeDefined();
+      expect(res.sections.INDUSTRY_OVERVIEW!.content).toContain('Indian fashion accessories market');
+    });
+  });
+
   describe('Buffer Validation', () => {
     it('rejects empty or invalid buffer', async () => {
       await expect(extractSebiDocumentSections(Buffer.from(''))).rejects.toThrow(

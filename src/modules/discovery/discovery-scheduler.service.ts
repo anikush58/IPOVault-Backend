@@ -3,12 +3,14 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { Env } from '../../config/env';
 import { NseDiscoveryFlow } from './nse-discovery.flow';
 import { SebiDiscoveryFlow } from './adapters/sebi/sebi-discovery.flow';
+import { SmeDiscoveryFlow } from './adapters/sme/sme-discovery.flow';
 
 export interface DiscoverySchedulerConfig {
   enabled: boolean;
@@ -43,6 +45,13 @@ export interface DiscoverySchedulerCycleResult {
       canonicalCreated?: number;
       error?: string;
     };
+    sme?: {
+      status: SchedulerSourceOutcome;
+      durationMs?: number;
+      totalDiscovered?: number;
+      createdRecordsCount?: number;
+      error?: string;
+    };
   };
 }
 
@@ -73,6 +82,13 @@ export interface DiscoverySchedulerHealth {
       canonicalCreated?: number;
       error?: string;
     };
+    sme?: {
+      status: SchedulerSourceOutcome;
+      durationMs?: number;
+      totalDiscovered?: number;
+      createdRecordsCount?: number;
+      error?: string;
+    };
   };
   consecutiveFailureCount: number;
   overlapSkipCount: number;
@@ -94,6 +110,7 @@ export class DiscoverySchedulerService
     private readonly configService: ConfigService<Env, true>,
     private readonly nseFlow: NseDiscoveryFlow,
     private readonly sebiFlow: SebiDiscoveryFlow,
+    @Optional() private readonly smeFlow?: SmeDiscoveryFlow,
   ) {}
 
   getConfig(): DiscoverySchedulerConfig {
@@ -350,13 +367,50 @@ export class DiscoverySchedulerService
       );
     }
 
+    // 3. Execute SME Discovery (BSE SME + NSE Emerge)
+    let smeStatus: SchedulerSourceOutcome = 'SKIPPED';
+    let smeDurationMs = 0;
+    let smeTotalDiscovered = 0;
+    let smeCreatedRecordsCount = 0;
+    let smeError: string | undefined = undefined;
+
+    if (this.smeFlow) {
+      const smeStart = Date.now();
+      try {
+        this.logger.log(`[${cycleId}] Source starting: SME`);
+        const smeResult = await this.smeFlow.ingestLive();
+        smeDurationMs = Date.now() - smeStart;
+        smeStatus = 'SUCCESS';
+        smeTotalDiscovered = smeResult.bse.totalDiscovered + smeResult.nse.totalDiscovered;
+        smeCreatedRecordsCount = smeResult.bse.createdRecordsCount + smeResult.nse.createdRecordsCount;
+        this.logger.log(
+          `[${cycleId}] Source completed: SME (outcome=SUCCESS, totalDiscovered=${smeTotalDiscovered}, created=${smeCreatedRecordsCount}, duration=${smeDurationMs}ms)`,
+        );
+      } catch (err: unknown) {
+        smeDurationMs = Date.now() - smeStart;
+        smeStatus = 'FAILED';
+        smeError = err instanceof Error ? err.message : String(err);
+        this.logger.error(
+          `[${cycleId}] Source failed: SME (outcome=FAILED, duration=${smeDurationMs}ms, error=${smeError})`,
+        );
+      }
+    }
+
     const completedAt = new Date();
     const cycleDurationMs = completedAt.getTime() - startedAt.getTime();
 
+    const activeOutcomes: SchedulerSourceOutcome[] = [nseStatus, sebiStatus];
+    if (this.smeFlow) {
+      activeOutcomes.push(smeStatus);
+    }
+
+    const allFailed = activeOutcomes.every((s) => s === 'FAILED');
+    const anyFailed = activeOutcomes.some((s) => s === 'FAILED');
+
     let cycleStatus: SchedulerCycleStatus = 'SUCCESS';
-    if (nseStatus === 'FAILED' && sebiStatus === 'FAILED') {
+    if (allFailed) {
       cycleStatus = 'FAILED';
-    } else if (nseStatus === 'FAILED' || sebiStatus === 'FAILED') {
+    } else if (anyFailed) {
       cycleStatus = 'PARTIAL_SUCCESS';
     }
 
@@ -380,6 +434,17 @@ export class DiscoverySchedulerService
           canonicalCreated: sebiCanonicalCreated,
           ...(sebiError ? { error: sebiError } : {}),
         },
+        ...(this.smeFlow
+          ? {
+              sme: {
+                status: smeStatus,
+                durationMs: smeDurationMs,
+                totalDiscovered: smeTotalDiscovered,
+                createdRecordsCount: smeCreatedRecordsCount,
+                ...(smeError ? { error: smeError } : {}),
+              },
+            }
+          : {}),
       },
     };
 

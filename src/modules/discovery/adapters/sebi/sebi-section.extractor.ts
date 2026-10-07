@@ -24,10 +24,8 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'RISK_FACTORS',
     defaultTitle: 'Risk Factors',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?RISK\s+FACTORS\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?RISK\s+FACTORS\b/im,
       /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?INTERNAL\s+AND\s+EXTERNAL\s+RISK\s+FACTORS\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?RISKS\s+RELATING\s+TO\s+(?:OUR\s+)?BUSINESS\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?RISKS\s+RELATING\s+TO\s+OUR\s+COMPANY\b/i,
       /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?FACTORS\s+RELATING\s+TO\s+THE\s+ISSUE\b/i,
     ],
     priority: 1,
@@ -36,14 +34,9 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'SUMMARY_OF_THE_ISSUE',
     defaultTitle: 'Summary of the Issue & Business',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?SUMMARY\s+OF\s+OUR\s+BUSINESS\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?SUMMARY\s+OF\s+THE\s+ISSUE\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?SUMMARY\s+OF\s+THE\s+OFFER(?:ING)?\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?SUMMARY\s+OF\s+(?:THE\s+)?PROSPECTUS\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?SUMMARY\s+OF\s+THE\s+OFFER\s+DOCUMENT\b/i,
-      /\bOFFER\s+SUMMARY\b/i,
-      /\bISSUE\s+SUMMARY\b/i,
-      /\bEXECUTIVE\s+SUMMARY\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?SUMMARY\s+OF\s+OUR\s+BUSINESS\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?SUMMARY\s+OF\s+(?:THE\s+)?(?:ISSUE|OFFER(?:ING)?|PROSPECTUS|OFFER\s+DOCUMENT)\b/im,
+      /^\s*(?:\d+\s+)?(?:OFFER|ISSUE|EXECUTIVE)\s+SUMMARY\b/im,
     ],
     priority: 2,
   },
@@ -51,12 +44,12 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'OUR_BUSINESS',
     defaultTitle: 'Our Business',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?OUR\s+BUSINESS(?:\s+AND\s+OPERATIONS)?\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?BUSINESS\s+OVERVIEW\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?ABOUT\s+OUR\s+BUSINESS\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?ABOUT\s+OUR\s+COMPANY\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?ABOUT\s+THE\s+ISSUER\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?DESCRIPTION\s+OF\s+OUR\s+BUSINESS\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?OUR\s+BUSINESS(?:\s+AND\s+OPERATIONS)?\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?BUSINESS\s+OVERVIEW\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?ABOUT\s+OUR\s+BUSINESS\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?ABOUT\s+OUR\s+COMPANY\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?ABOUT\s+THE\s+ISSUER\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?DESCRIPTION\s+OF\s+OUR\s+BUSINESS\b/im,
     ],
     priority: 3,
   },
@@ -64,11 +57,11 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'INDUSTRY_OVERVIEW',
     defaultTitle: 'Industry Overview',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?INDUSTRY\s+OVERVIEW\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?INDUSTRY\s+REPORT\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?SECTOR\s+OVERVIEW\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?AN\s+OVERVIEW\s+OF\s+THE\s+INDUSTRY\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?INDUSTRY\s+SCENARIO\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?INDUSTRY\s+OVERVIEW\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?INDUSTRY\s+REPORT\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?SECTOR\s+OVERVIEW\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?AN\s+OVERVIEW\s+OF\s+THE\s+INDUSTRY\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?INDUSTRY\s+SCENARIO\b/im,
     ],
     priority: 4,
   },
@@ -76,9 +69,9 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'CAPITAL_STRUCTURE',
     defaultTitle: 'Capital Structure',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?CAPITAL\s+STRUCTURE(?:\s+OF\s+OUR\s+COMPANY)?\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?SHARE\s+CAPITAL(?:\s+OF\s+OUR\s+COMPANY)?\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?DETAILS\s+OF\s+CAPITAL\s+STRUCTURE\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?CAPITAL\s+STRUCTURE(?:\s+OF\s+OUR\s+COMPANY)?\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?SHARE\s+CAPITAL(?:\s+OF\s+OUR\s+COMPANY)?\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?DETAILS\s+OF\s+CAPITAL\s+STRUCTURE\b/im,
     ],
     priority: 5,
   },
@@ -86,11 +79,9 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'OBJECTS_OF_THE_ISSUE',
     defaultTitle: 'Objects of the Issue',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?OBJECTS\s+OF\s+THE\s+ISSUE\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?OBJECTS\s+OF\s+THE\s+OFFER(?:ING)?\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?REQUIREMENT\s+OF\s+FUNDS\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?UTILISATION\s+OF\s+(?:ISSUE\s+)?PROCEEDS\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?UTILIZATION\s+OF\s+(?:ISSUE\s+)?PROCEEDS\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?OBJECTS\s+OF\s+THE\s+(?:ISSUE|OFFER(?:ING)?)\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?REQUIREMENT\s+OF\s+FUNDS\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?UTILIS?ATION\s+OF\s+(?:ISSUE\s+)?PROCEEDS\b/im,
     ],
     priority: 6,
   },
@@ -98,10 +89,9 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'BASIS_FOR_ISSUE_PRICE',
     defaultTitle: 'Basis for Issue Price',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?BASIS\s+FOR\s+(?:THE\s+)?ISSUE\s+PRICE\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?BASIS\s+OF\s+(?:THE\s+)?ISSUE\s+PRICE\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?VALUATION\s+AND\s+BASIS\s+FOR\s+ISSUE\s+PRICE\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?JUSTIFICATION\s+OF\s+(?:THE\s+)?ISSUE\s+PRICE\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?BASIS\s+(?:FOR|OF)\s+(?:THE\s+)?(?:ISSUE|OFFER)\s+PRICE\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?VALUATION\s+AND\s+BASIS\s+FOR\s+ISSUE\s+PRICE\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?JUSTIFICATION\s+OF\s+(?:THE\s+)?ISSUE\s+PRICE\b/im,
     ],
     priority: 7,
   },
@@ -109,10 +99,10 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'FINANCIAL_INFORMATION',
     defaultTitle: 'Financial Information',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?FINANCIAL\s+INFORMATION\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?FINANCIAL\s+STATEMENTS(?:\s+AS\s+RESTATED)?\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?RESTATED\s+(?:CONSOLIDATED\s+)?FINANCIAL\s+(?:STATEMENTS|INFORMATION)\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?SUMMARY\s+OF\s+(?:RESTATED\s+)?FINANCIAL\s+INFORMATION\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?FINANCIAL\s+INFORMATION\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?FINANCIAL\s+STATEMENTS(?:\s+AS\s+RESTATED)?\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?RESTATED\s+(?:CONSOLIDATED\s+)?FINANCIAL\s+(?:STATEMENTS|INFORMATION)\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*)?SUMMARY\s+OF\s+(?:RESTATED\s+)?FINANCIAL\s+INFORMATION\b/im,
     ],
     priority: 8,
   },
@@ -120,11 +110,11 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'PROMOTERS_AND_SHAREHOLDING',
     defaultTitle: 'Promoters & Promoter Group',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?OUR\s+PROMOTERS(?:\s+AND\s+(?:THE\s+)?PROMOTER\s+GROUP)?\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?PROMOTERS\s+AND\s+PROMOTER\s+GROUP\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?OUR\s+PROMOTERS\s+AND\s+MANAGEMENT\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?SHAREHOLDING\s+PATTERN\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+OUR\s+COMPANY\s*[-–:]\s*)?)?OUR\s+MANAGEMENT\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?OUR\s+PROMOTERS(?:\s+AND\s+(?:THE\s+)?PROMOTER\s+GROUP)?\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?PROMOTERS\s+AND\s+PROMOTER\s+GROUP\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?OUR\s+PROMOTERS\s+AND\s+MANAGEMENT\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?SHAREHOLDING\s+PATTERN\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:ABOUT\s+(?:THE\s+)?(?:OUR\s+)?COMPANY\s*[-–:]?\s*)?)?OUR\s+MANAGEMENT\b/im,
     ],
     priority: 9,
   },
@@ -132,13 +122,11 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'FRESH_ISSUE_AND_OFS',
     defaultTitle: 'The Offer & Issue Details',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?THE\s+OFFER\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?DETAILS\s+OF\s+THE\s+OFFER\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?DETAILS\s+OF\s+THE\s+ISSUE\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?THE\s+ISSUE\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?TERMS\s+OF\s+THE\s+(?:OFFER|ISSUE)\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?STRUCTURE\s+OF\s+THE\s+ISSUE\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?FRESH\s+ISSUE\s+AND\s+OFFER\s+FOR\s+SALE\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?THE\s+OFFER\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?DETAILS\s+OF\s+THE\s+(?:OFFER|ISSUE)\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?TERMS\s+OF\s+THE\s+(?:OFFER|ISSUE)\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?STRUCTURE\s+OF\s+THE\s+ISSUE\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?FRESH\s+ISSUE\s+AND\s+OFFER\s+FOR\s+SALE\b/im,
     ],
     priority: 10,
   },
@@ -146,11 +134,11 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'LEAD_MANAGERS_AND_GENERAL_INFO',
     defaultTitle: 'General Information & Lead Managers',
     headingRegexes: [
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?GENERAL\s+INFORMATION(?:\s+ABOUT\s+THE\s+ISSUER)?\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?BOOK\s+RUNNING\s+LEAD\s+MANAGERS\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?LEAD\s+MANAGER\s+TO\s+THE\s+ISSUE\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?MERCHANT\s+BANKERS?\s+TO\s+THE\s+(?:OFFER|ISSUE)\b/i,
-      /\b(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?REGISTRAR\s+TO\s+THE\s+(?:OFFER|ISSUE)\b/i,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?GENERAL\s+INFORMATION(?:\s+ABOUT\s+THE\s+ISSUER)?\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?BOOK\s+RUNNING\s+LEAD\s+MANAGERS?\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?LEAD\s+MANAGERS?\s+TO\s+THE\s+ISSUE\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?MERCHANT\s+BANKERS?\s+TO\s+THE\s+(?:OFFER|ISSUE)\b/im,
+      /^\s*(?:\d+\s+)?(?:SECTION\s+[IVXLCDM]+\s*[-–:]\s*(?:INTRODUCTION\s*[-–:]\s*)?)?REGISTRAR\s+TO\s+THE\s+(?:OFFER|ISSUE)\b/im,
     ],
     priority: 11,
   },
@@ -158,10 +146,7 @@ const SECTION_DEFINITIONS: SectionPatternDef[] = [
     key: 'ANCHOR_INVESTOR_PORTION',
     defaultTitle: 'Anchor Investor Allocation',
     headingRegexes: [
-      /\bALLOCATION\s+TO\s+ANCHOR\s+INVESTORS\b/i,
-      /\bANCHOR\s+INVESTOR\s+(?:PORTION|ALLOCATION)\b/i,
-      /\bANCHOR\s+INVESTORS\b/i,
-      /\bANCHOR\s+ALLOCATION\b/i,
+      /^\s*(?:\d+\s+)?(?:ALLOCATION\s+TO\s+ANCHOR\s+INVESTORS|ANCHOR\s+INVESTOR\s+(?:PORTION|ALLOCATION)|ANCHOR\s+INVESTORS|ANCHOR\s+ALLOCATION)\b/im,
     ],
     priority: 12,
   },
@@ -180,12 +165,12 @@ export function cleanSectionContent(rawText: string): string {
     .replace(/\u00A0/g, ' ')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
-    // Remove repeated running headers common in SEBI filings
+    // Remove repeated running headers common in SEBI filings (only short lines <= 120 chars)
     .replace(
-      /^[^\n]*(?:Draft Red Herring Prospectus|Red Herring Prospectus|Final Prospectus)[^\n]*$/gim,
+      /^[^\n]{0,120}(?:Draft Red Herring Prospectus|Red Herring Prospectus|Final Prospectus)[^\n]{0,120}$/gim,
       '',
     )
-    .replace(/^[^\n]*Dated\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}[^\n]*$/gim, '')
+    .replace(/^[^\n]{0,120}Dated\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}[^\n]{0,120}$/gim, '')
     // Clean leading/trailing spaces per line
     .split('\n')
     .map((line) => line.trim())
@@ -204,18 +189,28 @@ export function findSectionHeadingOnPage(
 ): { key: SebiSectionKey; title: string; matchIndex: number } | null {
   if (isTocPage) return null;
 
-  // Search top 1500 chars of page for section title
-  const topText = pageText.slice(0, 1500);
+  // Search top 800 chars of page for section title
+  const topText = pageText.slice(0, 800);
 
   for (const def of SECTION_DEFINITIONS) {
     for (const rx of def.headingRegexes) {
       const match = rx.exec(topText);
       if (match) {
-        // Ensure this isn't a Table of Contents entry (e.g. dots or page numbers on the line)
-        const matchedLine = match[0];
-        if (/[.]{4,}|\b\d{2,4}$/.test(matchedLine)) {
+        const matchStr = match[0];
+        // Ensure this isn't a Table of Contents entry (e.g. dots or trailing page numbers on the line)
+        if (/[.]{4,}|\b\d{2,4}$/.test(matchStr)) {
           continue;
         }
+
+        // Exclude general disclaimers like GID (General Information Document) or application guidelines
+        const restOfLine = topText.slice(match.index, match.index + 100);
+        if (
+          /GENERAL\s+INFORMATION\s+DOCUMENT/i.test(restOfLine) ||
+          /GENERAL\s+INFORMATION\s+FOR\s+ALL/i.test(restOfLine)
+        ) {
+          continue;
+        }
+
         return {
           key: def.key,
           title: match[0].trim(),

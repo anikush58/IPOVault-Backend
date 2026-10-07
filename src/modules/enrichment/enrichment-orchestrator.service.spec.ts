@@ -344,4 +344,81 @@ describe('EnrichmentOrchestratorService', () => {
     expect(backfillResult.queuedCount).toBe(1);
     expect(backfillResult.ipoIds).toEqual(['ipo-inc-1']);
   });
+
+  it('should successfully enrich R.K.Fashion Accessories using BSE SME official document fixture', async () => {
+    mockDetector.detect.mockResolvedValue({
+      ipoId: 'dd97b183-3e8a-4674-a9c3-aec1cf25d862',
+      hasMissingFields: true,
+      missingFields: ['aboutDescription', 'industry', 'preIpoPe', 'leadManagers'],
+      companyName: 'R.K.Fashion Accessories',
+    });
+
+    mockRetrieval.retrieveAndExtractSections.mockResolvedValue({
+      status: 'SUCCESS',
+      documentId: 'doc-rkfashion-1',
+      documentHash: 'hash-rkfashion-sme',
+      documentType: 'PROSPECTUS',
+      sourceUrl: 'https://www.bseindia.com/downloads/ipo/rkfashion_prospectus.pdf',
+      retrievedAt: new Date().toISOString(),
+      sections: {
+        SUMMARY_OF_THE_ISSUE: {
+          sectionKey: 'SUMMARY_OF_THE_ISSUE',
+          sectionTitle: 'Summary of Prospectus',
+          content: 'R.K.Fashion Accessories Limited specializes in high-fashion garment accessories...',
+          pageRange: { startPage: 1, endPage: 10 },
+          charCount: 80,
+          contentHash: 'sec-rkfashion-hash',
+          isTruncated: false,
+        },
+        GENERAL_INFORMATION: {
+          sectionKey: 'GENERAL_INFORMATION',
+          sectionTitle: 'General Information',
+          content: 'Book Running Lead Manager: Fast Track Capital Advisors Pvt Ltd...',
+          pageRange: { startPage: 11, endPage: 18 },
+          charCount: 60,
+          contentHash: 'sec-rkfashion-gen-hash',
+          isTruncated: false,
+        },
+      },
+    });
+
+    mockExtractor.extract.mockResolvedValue({
+      aboutDescription: 'R.K.Fashion Accessories Limited specializes in high-fashion garment accessories.',
+      industry: 'Fashion & Apparel Accessories',
+      preIpoPe: 15.2,
+      leadManagers: ['Fast Track Capital Advisors Pvt Ltd'],
+    });
+
+    mockValidator.validate.mockReturnValue({
+      aboutDescription: 'R.K.Fashion Accessories Limited specializes in high-fashion garment accessories.',
+      industry: 'Fashion & Apparel Accessories',
+      preIpoPe: 15.2,
+      leadManagers: ['Fast Track Capital Advisors Pvt Ltd'],
+      validationWarnings: [],
+    });
+
+    mockPrisma.ipo.findUnique.mockResolvedValue({
+      id: 'dd97b183-3e8a-4674-a9c3-aec1cf25d862',
+      companyId: 'a1f0d35b-8cfd-4490-87f7-933d0f32e23a',
+      preIpoPe: null,
+      company: {
+        id: 'a1f0d35b-8cfd-4490-87f7-933d0f32e23a',
+        aboutDescription: null,
+        industry: null,
+      },
+      participants: [],
+    });
+
+    const result = await orchestrator.processIpoEnrichment('dd97b183-3e8a-4674-a9c3-aec1cf25d862');
+
+    expect(result.status).toBe('COMPLETED');
+    expect(result.enrichedFields).toEqual(
+      expect.arrayContaining(['aboutDescription', 'industry', 'preIpoPe', 'leadManagers']),
+    );
+    expect(mockPrisma.source.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { code: 'BSE_SME_AI' },
+      }),
+    );
+  });
 });

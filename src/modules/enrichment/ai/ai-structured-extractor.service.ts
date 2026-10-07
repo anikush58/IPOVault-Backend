@@ -112,7 +112,7 @@ export class AiStructuredExtractorService {
    * Constructs the strict system & user prompt with document sections.
    */
   public buildPrompt(request: AiExtractionRequest): string {
-    const MAX_SECTION_LENGTH = 6000;
+    const MAX_SECTION_LENGTH = 15000;
     const sectionsText = Object.entries(request.documentSections)
       .filter(([_, content]) => content && content.trim().length > 0)
       .map(([key, content]) => {
@@ -124,21 +124,27 @@ export class AiStructuredExtractorService {
       .join('\n\n');
 
     return `
-You are a statutory financial disclosure extraction engine for Indian IPO Red Herring Prospectus (RHP) filings.
+You are a statutory financial disclosure extraction engine for Indian IPO Red Herring Prospectus (RHP) and Draft Prospectus filings.
 Company Name: "${request.companyName}"
 Missing Fields Needed: ${request.missingFields.join(', ')}
 
 MANDATORY RULES:
 1. Extract values ONLY if explicitly stated in the provided text sections.
-2. If a value or metric is not present or not mentioned, you MUST set it to null.
+2. If a value, count, name, or metric is not present, marked as undetermined/blank ("[●]"), or not mentioned, you MUST set it to null.
 3. NEVER guess, estimate, extrapolate, calculate, or hallucinate values.
-4. All financial numbers (Revenue, PAT, EBITDA, Net Worth, Total Assets) MUST be in INR Crores (₹ Cr). If reported in Millions, convert to Crores (1 Crore = 10 Million).
+4. All financial numbers (Revenue, PAT, EBITDA, Net Worth, Total Assets) MUST be in INR Crores (₹ Cr). If reported in Millions, convert to Crores (1 Crore = 10 Million). If in Lakhs, convert to Crores (1 Crore = 100 Lakhs).
 5. All percentages must be pure numbers between 0 and 100 (e.g. 85.5 for 85.5%).
-6. Financials MUST be an array of objects for each annual period, e.g.:
-   [
-     { "fiscalPeriod": "FY24", "totalRevenue": 272.82, "pat": null, "ebitda": null, "netWorth": null, "totalAssets": null, "eps": null, "roePercentage": null, "rocePercentage": null }
-   ]
-7. Return a valid JSON object matching this structure:
+6. Financials MUST be an array of objects for each annual period (e.g. FY24, FY25, FY26).
+7. Specific field extraction guidance:
+   - "aboutDescription": A concise 2-4 sentence factual description of the company's core business, products/services, and operations (from OUR_BUSINESS or SUMMARY_OF_THE_ISSUE). String or null.
+   - "industry": Specific primary industry or product category (e.g. "Fashion Accessories", "Imitation Jewellery", "Specialty Chemicals", "Hospitality") from INDUSTRY_OVERVIEW or OUR_BUSINESS. String or null.
+   - "freshIssueShareCount": Exact integer number of equity shares offered in the Fresh Issue (e.g. 4267200 for 4,267,200 shares) from CAPITAL_STRUCTURE or FRESH_ISSUE_AND_OFS. Integer number or null.
+   - "leadManagers": Array of strings with the official legal names of all Lead Managers / Book Running Lead Managers (BRLMs) from LEAD_MANAGERS_AND_GENERAL_INFO or SUMMARY_OF_THE_ISSUE (e.g. ["Finshore Management Services Limited"]). Array of strings or null.
+   - "preIpoPromoterHolding": Percentage (0-100) of promoter shareholding before the offer from CAPITAL_STRUCTURE or PROMOTERS_AND_SHAREHOLDING. Number or null.
+   - "strengths": Array of key competitive business strengths (from OUR_BUSINESS or SUMMARY_OF_THE_ISSUE). Array of strings or null.
+   - "risks": Array of prominent internal/external risk factors from RISK_FACTORS. Array of strings or null.
+
+8. Return a valid JSON object matching this structure:
 {
   "aboutDescription": "string or null",
   "sector": "string or null",

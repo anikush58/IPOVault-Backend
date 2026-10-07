@@ -774,15 +774,11 @@ export class IpoGuruService {
         (sub.updated_at || sub.updated_at_label || rawItem.sub_updated_at || rawItem.sub_updated_at_label) as string | null,
       );
 
-      const totalMultiple = rawItem.subscription_total != null
-        ? rawItem.subscription_total
-        : (sub.total != null ? sub.total : rawItem.total_sub);
-
       const subCategories: Array<{ cat: OfferCategoryType; val: unknown }> = [
         { cat: OfferCategoryType.QIB, val: sub.qib != null ? sub.qib : rawItem.qib_sub },
         { cat: OfferCategoryType.NII, val: sub.nii != null ? sub.nii : rawItem.nii_sub },
         { cat: OfferCategoryType.RETAIL, val: sub.retail != null ? sub.retail : rawItem.retail_sub },
-        { cat: OfferCategoryType.OTHER, val: totalMultiple },
+        { cat: OfferCategoryType.OTHER, val: sub.other != null ? sub.other : rawItem.other_sub },
       ];
 
       for (const { cat, val } of subCategories) {
