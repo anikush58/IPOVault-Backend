@@ -1514,4 +1514,141 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(res.counts.publication.DRAFT).toBe(1);
     });
   });
+
+  describe('enrichIpoWithAi', () => {
+    it('throws NotFoundException when target IPO does not exist', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce(null);
+
+      await expect(
+        adminIpoService.enrichIpoWithAi('non-existent-ipo-id'),
+      ).rejects.toThrow('IPO with ID \'non-existent-ipo-id\' not found.');
+    });
+
+    it('throws BadRequestException if EnrichmentOrchestratorService is not provided', async () => {
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'ipo-1',
+        company: { id: 'company-1' },
+      });
+
+      await expect(
+        adminIpoService.enrichIpoWithAi('ipo-1'),
+      ).rejects.toThrow('Enrichment orchestrator service is not available.');
+    });
+
+    it('delegates to enrichmentOrchestrator.processIpoEnrichment and returns result with updated IPO', async () => {
+      const mockOrchestrator = {
+        processIpoEnrichment: jest.fn().mockResolvedValue({
+          ipoId: 'ipo-1',
+          status: 'COMPLETED',
+          missingFieldsDetected: ['aboutDescription', 'industry'],
+          enrichedFields: ['aboutDescription', 'industry'],
+          skippedFields: [],
+          startedAt: '2026-10-07T00:00:00.000Z',
+          completedAt: '2026-10-07T00:00:05.000Z',
+          durationMs: 5000,
+        }),
+      };
+
+      const customService = new AdminIpoService(
+        mockPrisma as any,
+        validationService,
+        new AdminProvenanceResolver(),
+        mockOrchestrator as any,
+      );
+
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'ipo-1',
+        company: { id: 'company-1' },
+      });
+
+      jest.spyOn(customService, 'getIpoDetail').mockResolvedValueOnce({
+        id: 'ipo-1',
+        legalName: 'TEST ENTERPRISES LIMITED',
+        company: { id: 'company-1', industry: 'Textiles', aboutDescription: 'Enriched description' },
+      } as any);
+
+      const response = await customService.enrichIpoWithAi('ipo-1', true);
+
+      expect(mockOrchestrator.processIpoEnrichment).toHaveBeenCalledWith('ipo-1', {
+        forceRefresh: true,
+      });
+      expect(response.result.status).toBe('COMPLETED');
+      expect(response.result.enrichedFields).toEqual(['aboutDescription', 'industry']);
+      expect(response.updatedIpo.id).toBe('ipo-1');
+    });
+
+    it('handles idempotent rerun when no missing fields remain (returns SKIPPED)', async () => {
+      const mockOrchestrator = {
+        processIpoEnrichment: jest.fn().mockResolvedValue({
+          ipoId: 'ipo-1',
+          status: 'SKIPPED',
+          missingFieldsDetected: [],
+          enrichedFields: [],
+          skippedFields: [],
+          startedAt: '2026-10-07T00:00:00.000Z',
+          completedAt: '2026-10-07T00:00:00.100Z',
+          durationMs: 100,
+        }),
+      };
+
+      const customService = new AdminIpoService(
+        mockPrisma as any,
+        validationService,
+        new AdminProvenanceResolver(),
+        mockOrchestrator as any,
+      );
+
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'ipo-1',
+        company: { id: 'company-1' },
+      });
+
+      jest.spyOn(customService, 'getIpoDetail').mockResolvedValueOnce({
+        id: 'ipo-1',
+        legalName: 'TEST ENTERPRISES LIMITED',
+      } as any);
+
+      const response = await customService.enrichIpoWithAi('ipo-1', false);
+
+      expect(response.result.status).toBe('SKIPPED');
+      expect(response.result.missingFieldsDetected).toEqual([]);
+    });
+
+    it('returns failure reason cleanly when document cannot be resolved', async () => {
+      const mockOrchestrator = {
+        processIpoEnrichment: jest.fn().mockResolvedValue({
+          ipoId: 'ipo-1',
+          status: 'DOCUMENT_UNRESOLVED',
+          missingFieldsDetected: ['aboutDescription'],
+          enrichedFields: [],
+          skippedFields: ['aboutDescription'],
+          startedAt: '2026-10-07T00:00:00.000Z',
+          completedAt: '2026-10-07T00:00:01.000Z',
+          durationMs: 1000,
+          error: 'No official SEBI or SME document found for this IPO',
+        }),
+      };
+
+      const customService = new AdminIpoService(
+        mockPrisma as any,
+        validationService,
+        new AdminProvenanceResolver(),
+        mockOrchestrator as any,
+      );
+
+      mockPrisma.ipo.findUnique.mockResolvedValueOnce({
+        id: 'ipo-1',
+        company: { id: 'company-1' },
+      });
+
+      jest.spyOn(customService, 'getIpoDetail').mockResolvedValueOnce({
+        id: 'ipo-1',
+      } as any);
+
+      const response = await customService.enrichIpoWithAi('ipo-1', false);
+
+      expect(response.result.status).toBe('DOCUMENT_UNRESOLVED');
+      expect(response.result.error).toBe('No official SEBI or SME document found for this IPO');
+    });
+  });
 });

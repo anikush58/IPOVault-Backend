@@ -570,4 +570,27 @@ export class ConsoleController {
       });
     }
   }
+
+  /**
+   * Single IPO manual AI enrichment endpoint for Console UI.
+   * Reuses the single authoritative statutory AI enrichment pipeline.
+   */
+  @Post('api/manual-ipos/:id/enrich-ai')
+  async enrichManualIpoWithAi(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body?: { forceRefresh?: boolean },
+  ) {
+    try {
+      return await this.adminIpoService.enrichIpoWithAi(id, body?.forceRefresh);
+    } catch (err: unknown) {
+      if (err instanceof HttpException) {
+        throw err;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException({
+        message: 'Manual AI enrichment failed',
+        details: msg,
+      });
+    }
+  }
 }

@@ -247,4 +247,24 @@ describe('ConsoleController', () => {
     await controller.applySingleManualIpoProvenance('a7a4e3af-f954-4d70-9adb-9a57e4a90637', mockReq);
     expect(ipoGuruService.applyProvenanceBackfill).toHaveBeenCalledWith('a7a4e3af-f954-4d70-9adb-9a57e4a90637', 'superadmin');
   });
+
+  it('should delegate enrichManualIpoWithAi to adminIpoService.enrichIpoWithAi', async () => {
+    const mockEnrichResult = {
+      result: {
+        ipoId: 'a7a4e3af-f954-4d70-9adb-9a57e4a90637',
+        status: 'COMPLETED',
+        missingFieldsDetected: ['aboutDescription'],
+        enrichedFields: ['aboutDescription'],
+        skippedFields: [],
+        durationMs: 1200,
+      },
+      updatedIpo: { id: 'a7a4e3af-f954-4d70-9adb-9a57e4a90637' },
+    };
+    adminIpoService.enrichIpoWithAi = jest.fn().mockResolvedValue(mockEnrichResult);
+
+    const res = await controller.enrichManualIpoWithAi('a7a4e3af-f954-4d70-9adb-9a57e4a90637', { forceRefresh: true });
+
+    expect(adminIpoService.enrichIpoWithAi).toHaveBeenCalledWith('a7a4e3af-f954-4d70-9adb-9a57e4a90637', true);
+    expect(res).toEqual(mockEnrichResult);
+  });
 });

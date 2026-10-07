@@ -109,5 +109,27 @@ describe('AdminGuard & AdminIpoController', () => {
       expect(service.unpublishIpo).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001');
       expect(res.publicationStatus).toBe(PublicationStatus.DRAFT);
     });
+
+    it('calls service.enrichIpoWithAi on POST /admin/ipos/:id/enrich-ai', async () => {
+      const mockResult = {
+        result: {
+          ipoId: '00000000-0000-0000-0000-000000000001',
+          status: 'COMPLETED' as const,
+          missingFieldsDetected: ['aboutDescription'],
+          enrichedFields: ['aboutDescription'],
+          skippedFields: [],
+          startedAt: '2026-10-07T00:00:00.000Z',
+          completedAt: '2026-10-07T00:00:05.000Z',
+          durationMs: 5000,
+        },
+        updatedIpo: { id: '00000000-0000-0000-0000-000000000001' },
+      };
+      (service as any).enrichIpoWithAi = jest.fn().mockResolvedValue(mockResult);
+
+      const res = await controller.enrichIpoWithAi('00000000-0000-0000-0000-000000000001', { forceRefresh: true });
+
+      expect(service.enrichIpoWithAi).toHaveBeenCalledWith('00000000-0000-0000-0000-000000000001', true);
+      expect(res).toEqual(mockResult);
+    });
   });
 });

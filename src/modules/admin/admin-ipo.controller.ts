@@ -153,6 +153,17 @@ export class AdminIpoController {
   }
 
   /**
+   * Manually triggers missing-field AI enrichment for an IPO using authoritative RHP/DRHP filings.
+   */
+  @Post(':id/enrich-ai')
+  async enrichIpoWithAi(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body?: { forceRefresh?: boolean },
+  ) {
+    return this.adminIpoService.enrichIpoWithAi(id, body?.forceRefresh);
+  }
+
+  /**
    * Generate safe preview for additive-only JSON import.
    */
   @Post('import-json/preview')

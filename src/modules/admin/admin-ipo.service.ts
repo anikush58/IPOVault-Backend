@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   DocumentType,
@@ -33,6 +34,8 @@ import {
 } from './admin-ipo.dto';
 import { AdminValidationService } from './admin-validation.service';
 import { AdminProvenanceResolver } from './admin-provenance.resolver';
+import { EnrichmentOrchestratorService } from '../enrichment/enrichment-orchestrator.service';
+import { EnrichmentJobResult } from '../enrichment/enrichment.types';
 
 @Injectable()
 export class AdminIpoService {
@@ -42,6 +45,8 @@ export class AdminIpoService {
     private readonly prisma: PrismaService,
     private readonly validationService: AdminValidationService,
     private readonly provenanceResolver: AdminProvenanceResolver,
+    @Optional()
+    private readonly enrichmentOrchestrator?: EnrichmentOrchestratorService,
   ) {}
 
   /**
@@ -1213,6 +1218,42 @@ export class AdminIpoService {
       id: updated.id,
       publicationStatus: updated.publicationStatus,
       message: 'IPO archived.',
+    };
+  }
+
+  /**
+   * Manually executes missing-field AI enrichment for an IPO.
+   * Reuses the single authoritative EnrichmentOrchestratorService pipeline.
+   * Never overwrites existing verified fields.
+   */
+  async enrichIpoWithAi(
+    ipoId: string,
+    forceRefresh = false,
+  ): Promise<{
+    result: EnrichmentJobResult;
+    updatedIpo?: any;
+  }> {
+    const existing = await this.prisma.ipo.findUnique({
+      where: { id: ipoId },
+      include: { company: true },
+    });
+    if (!existing) {
+      throw new NotFoundException(`IPO with ID '${ipoId}' not found.`);
+    }
+
+    if (!this.enrichmentOrchestrator) {
+      throw new BadRequestException('Enrichment orchestrator service is not available.');
+    }
+
+    const result = await this.enrichmentOrchestrator.processIpoEnrichment(ipoId, {
+      forceRefresh,
+    });
+
+    const updatedIpo = await this.getIpoDetail(ipoId);
+
+    return {
+      result,
+      updatedIpo,
     };
   }
 
