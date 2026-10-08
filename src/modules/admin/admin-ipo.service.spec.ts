@@ -37,9 +37,52 @@ describe('AdminIpoService & AdminValidationService', () => {
         publicationStatus: PublicationStatus.DRAFT,
         symbol: 'TESTENT',
       }),
-      findUnique: jest.fn(),
-      findUniqueOrThrow: jest.fn(),
+      findUnique: jest.fn().mockImplementation(async () => ({
+        id: 'ipo-uuid-1',
+        companyId: 'company-uuid-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.NSE,
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+        symbol: 'TESTENT',
+        company: {
+          id: 'company-uuid-1',
+          legalName: 'TEST ENTERPRISES LIMITED',
+          displayName: 'TEST ENTERPRISES LIMITED',
+          cin: 'U27109HR1974PLC007126',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      })),
+      findUniqueOrThrow: jest.fn().mockImplementation(async () => ({
+        id: 'ipo-uuid-1',
+        companyId: 'company-uuid-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.NSE,
+        status: 'DRAFT',
+        publicationStatus: PublicationStatus.DRAFT,
+        symbol: 'TESTENT',
+        company: {
+          id: 'company-uuid-1',
+          legalName: 'TEST ENTERPRISES LIMITED',
+          displayName: 'TEST ENTERPRISES LIMITED',
+          cin: 'U27109HR1974PLC007126',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      })),
       findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
       count: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockResolvedValue({
         id: 'ipo-uuid-1',
@@ -1871,6 +1914,578 @@ describe('AdminIpoService & AdminValidationService', () => {
 
       expect(result.items[1].status).toBe('UPDATED');
       expect(result.items[1].fieldsFilledCount).toBeGreaterThan(0);
+    });
+
+    it('11. Master JSON Import: multi-period financials mapping (patNetProfit -> pat, roe -> roePercentage, roce -> rocePercentage, patMargin -> patMarginPercent, ebitdaMargin -> ebitdaMarginPercent, QUARTERLY vs ANNUAL inference)', async () => {
+      const existingIpo: any = {
+        id: 'ipo-hd-fire-1',
+        companyId: 'comp-hd-fire',
+        symbol: 'HDFIRE',
+        company: {
+          id: 'comp-hd-fire',
+          legalName: 'HD Fire Protect Limited',
+          displayName: 'HD Fire Protect',
+          cin: 'U29299MH1983PLC030282',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const payload = {
+        ipo: {
+          canonical: {
+            symbol: 'HDFIRE',
+          },
+          company: {
+            legalName: 'HD Fire Protect Limited',
+            cin: 'U29299MH1983PLC030282',
+          },
+          financials: [
+            {
+              fiscalPeriod: 'FY22',
+              totalAssets: 100.5,
+              totalRevenue: 80.0,
+              patNetProfit: 12.3,
+              ebitda: 18.5,
+              netWorth: 60.2,
+              roe: 15.4,
+              roce: 18.2,
+              eps: 4.5,
+              patMargin: 15.37,
+              ebitdaMargin: 23.12,
+            },
+            {
+              fiscalPeriod: 'FY23',
+              periodType: 'ANNUAL',
+              totalAssets: 120.0,
+              totalRevenue: 95.0,
+              pat: 15.0,
+              ebitda: 22.0,
+              netWorth: 75.0,
+              roePercentage: 16.0,
+              rocePercentage: 20.0,
+              eps: 5.2,
+              patMarginPercent: 15.78,
+              ebitdaMarginPercent: 23.15,
+            },
+            {
+              fiscalPeriod: 'Q1 FY25',
+              totalAssets: 135.0,
+              totalRevenue: 30.0,
+              patNetProfit: 4.8,
+              ebitda: 7.2,
+              netWorth: 82.0,
+              roe: 17.1,
+              roce: 21.3,
+              eps: 1.6,
+              patMargin: 16.0,
+              ebitdaMargin: 24.0,
+            },
+            {
+              fiscalPeriod: '6M FY25',
+              periodType: 'QUARTERLY',
+              totalAssets: 140.0,
+              totalRevenue: 62.0,
+              patNetProfit: 9.9,
+              ebitda: 14.5,
+              netWorth: 88.0,
+              roe: 17.5,
+              roce: 21.8,
+              eps: 3.3,
+              patMargin: 15.96,
+              ebitdaMargin: 23.38,
+            },
+          ],
+        },
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(payload);
+      expect(preview.items[0].matchStatus).toBe('MATCHED');
+      expect(preview.items[0].fieldsToFill.some((f) => f.field.includes('FY22 (ANNUAL)'))).toBe(true);
+      expect(preview.items[0].fieldsToFill.some((f) => f.field.includes('FY23 (ANNUAL)'))).toBe(true);
+      expect(preview.items[0].fieldsToFill.some((f) => f.field.includes('Q1 FY25 (QUARTERLY)'))).toBe(true);
+      expect(preview.items[0].fieldsToFill.some((f) => f.field.includes('6M FY25 (QUARTERLY)'))).toBe(true);
+
+      const commit = await adminIpoService.commitAddOnlyJsonImport(payload);
+      expect(commit.updatedCount).toBe(1);
+      expect(mockPrisma.companyFinancial.create).toHaveBeenCalledTimes(4);
+      expect(mockPrisma.companyFinancial.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          fiscalPeriod: 'Q1 FY25',
+          periodType: 'QUARTERLY',
+          pat: 4.8,
+          roePercentage: 17.1,
+          rocePercentage: 21.3,
+          patMarginPercent: 16.0,
+          ebitdaMarginPercent: 24.0,
+        }),
+      });
+    });
+
+    it('12. Master JSON Import: anchor investors extraction and attribute normalization (investorName -> anchorName, amountCr -> amtCr, percentAllocated -> pctAllocated, percentOfIssue -> pctOfIssue)', async () => {
+      const existingIpo: any = {
+        id: 'ipo-acme-anchor',
+        companyId: 'comp-acme-anchor',
+        symbol: 'ACMEIND',
+        company: {
+          id: 'comp-acme-anchor',
+          legalName: 'Acme India Industries Limited',
+          displayName: 'Acme India',
+          cin: 'U24233MH2000PLC123456',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const payload = {
+        ipo: {
+          canonical: {
+            symbol: 'ACMEIND',
+          },
+          company: {
+            legalName: 'Acme India Industries Limited',
+            cin: 'U24233MH2000PLC123456',
+          },
+          anchorInvestors: [
+            {
+              investorName: 'Goldman Sachs India Equity Fund',
+              sharesAllotted: 500000,
+              amountCr: 25.5,
+              percentAllocated: 30.5,
+              percentOfIssue: 10.2,
+            },
+            {
+              anchorName: 'HDFC Mutual Fund',
+              sharesAllotted: 400000,
+              amtCr: 20.4,
+              pctAllocated: 24.4,
+              pctOfIssue: 8.16,
+            },
+          ],
+        },
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(payload);
+      expect(preview.items[0].fieldsToFill.some((f) => f.field.includes('Goldman Sachs India Equity Fund'))).toBe(true);
+      expect(preview.items[0].fieldsToFill.some((f) => f.field.includes('HDFC Mutual Fund'))).toBe(true);
+
+      const commit = await adminIpoService.commitAddOnlyJsonImport(payload);
+      expect(commit.updatedCount).toBe(1);
+      expect(mockPrisma.ipoDocument.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          documentType: 'ANCHOR_LIST',
+          extractionData: expect.objectContaining({
+            anchorInvestors: expect.arrayContaining([
+              expect.objectContaining({
+                anchorName: 'Goldman Sachs India Equity Fund',
+                sharesAllotted: 500000,
+                amtCr: 25.5,
+                pctAllocated: 30.5,
+                pctOfIssue: 10.2,
+              }),
+              expect.objectContaining({
+                anchorName: 'HDFC Mutual Fund',
+                sharesAllotted: 400000,
+                amtCr: 20.4,
+                pctAllocated: 24.4,
+                pctOfIssue: 8.16,
+              }),
+            ]),
+          }),
+        }),
+      });
+    });
+
+    it('13. Master JSON Import: company research (strengths, risks, objectsOfIssue) imported into document extractionData', async () => {
+      const existingIpo: any = {
+        id: 'ipo-research-test',
+        companyId: 'comp-research-test',
+        symbol: 'RESEARCHCO',
+        company: {
+          id: 'comp-research-test',
+          legalName: 'Research Co Limited',
+          displayName: 'Research Co',
+          cin: 'U72200DL2010PLC999888',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const payload = {
+        ipo: {
+          canonical: {
+            symbol: 'RESEARCHCO',
+          },
+          company: {
+            legalName: 'Research Co Limited',
+            cin: 'U72200DL2010PLC999888',
+            strengths: ['Pan-India distribution network', 'Strong R&D capabilities'],
+            risks: ['High dependence on top 5 customers', 'Regulatory compliance changes'],
+            objectsOfIssue: ['Funding capital expenditure requirements', 'General corporate purposes'],
+          },
+          documents: [
+            {
+              documentType: 'RHP',
+              documentTitle: 'Red Herring Prospectus',
+              documentUrl: 'https://example.com/researchco-rhp.pdf',
+            },
+          ],
+        },
+      };
+
+      const commit = await adminIpoService.commitAddOnlyJsonImport(payload);
+      expect(commit.updatedCount).toBe(1);
+      expect(mockPrisma.ipoDocument.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          documentType: 'RHP',
+          sourceUrl: 'https://example.com/researchco-rhp.pdf',
+          extractionData: expect.objectContaining({
+            strengths: ['Pan-India distribution network', 'Strong R&D capabilities'],
+            risks: ['High dependence on top 5 customers', 'Regulatory compliance changes'],
+            objectsOfIssue: ['Funding capital expenditure requirements', 'General corporate purposes'],
+          }),
+        }),
+      });
+    });
+
+    it('14. Master JSON Import: SME enum safe normalization (BSE SME -> BSE, NSE Emerge -> NSE, PUBLISHED (...) -> PUBLISHED)', async () => {
+      const existingIpo: any = {
+        id: 'ipo-sme-test',
+        companyId: 'comp-sme-test',
+        symbol: 'SMETEST',
+        company: {
+          id: 'comp-sme-test',
+          legalName: 'SME Tech Limited',
+          displayName: 'SME Tech',
+          cin: 'U72900GJ2021PLC123123',
+          financials: [],
+        },
+        exchange: null,
+        marketSegment: null,
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const payload = {
+        ipo: {
+          canonical: {
+            symbol: 'SMETEST',
+            exchangeListing: 'BSE SME',
+            marketSegment: 'SME',
+          },
+          company: {
+            legalName: 'SME Tech Limited',
+            cin: 'U72900GJ2021PLC123123',
+          },
+        },
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(payload);
+      expect(preview.items[0].fieldsToFill.some((f) => f.field === 'exchange' && f.newValue === 'BSE')).toBe(true);
+      expect(preview.items[0].fieldsToFill.some((f) => f.field === 'marketSegment' && f.newValue === 'SME')).toBe(true);
+
+      const commit = await adminIpoService.commitAddOnlyJsonImport(payload);
+      expect(commit.updatedCount).toBe(1);
+      expect(mockPrisma.ipo.update).toHaveBeenCalledWith({
+        where: { id: 'ipo-sme-test' },
+        data: expect.objectContaining({
+          exchange: 'BSE',
+          marketSegment: 'SME',
+        }),
+      });
+    });
+
+    it('15. Legacy import-json endpoint compatibility: routes through canonical add-only pipeline', async () => {
+      const existingIpo: any = {
+        id: 'ipo-legacy-route-test',
+        companyId: 'comp-legacy-test',
+        symbol: 'LEGACYCO',
+        exchange: 'NSE',
+        priceBandLow: null,
+        priceBandHigh: null,
+        publicationStatus: 'DRAFT',
+        company: {
+          id: 'comp-legacy-test',
+          legalName: 'Legacy Co Limited',
+          displayName: 'Legacy Co',
+          cin: 'U51909WB2018PLC222333',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findFirst.mockResolvedValue(existingIpo);
+      mockPrisma.ipo.findUnique.mockResolvedValue(existingIpo);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+      mockPrisma.company.findFirst.mockResolvedValue(existingIpo.company);
+      mockPrisma.company.findMany.mockResolvedValue([existingIpo.company]);
+
+      const legacyPayload = {
+        targetIpoId: 'ipo-legacy-route-test',
+        legalName: 'Legacy Co Limited',
+        cin: 'U51909WB2018PLC222333',
+        symbol: 'LEGACYCO',
+        priceBandLow: 150,
+        priceBandHigh: 160,
+      };
+
+      const res = await adminIpoService.importIpoFromJson(legacyPayload);
+      expect(res.id).toBe('ipo-legacy-route-test');
+      expect(res.publicationStatus).toBe('DRAFT');
+      expect(mockPrisma.ipo.update).toHaveBeenCalledWith({
+        where: { id: 'ipo-legacy-route-test' },
+        data: expect.objectContaining({
+          priceBandLow: 150,
+          priceBandHigh: 160,
+        }),
+      });
+    });
+
+    it('16. Master JSON Import: HD Fire Protect registrar participant extraction and merge (populates name, phone, email, website and updates existing empty/manual registrar)', async () => {
+      // Scenario A: No participant exists yet -> create new REGISTRAR with all 4 fields
+      const freshIpo: any = {
+        id: 'ipo-hdfire-reg-1',
+        companyId: 'comp-hdfire-reg',
+        symbol: 'HDFIRE',
+        company: {
+          id: 'comp-hdfire-reg',
+          legalName: 'HD Fire Protect Limited',
+          displayName: 'HD Fire Protect',
+          cin: 'U29299MH1983PLC030282',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([freshIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(freshIpo);
+
+      const hdFirePayload = {
+        ipo: {
+          canonical: {
+            symbol: 'HDFIRE',
+          },
+          company: {
+            legalName: 'HD Fire Protect Limited',
+            cin: 'U29299MH1983PLC030282',
+          },
+          participants: {
+            registrarName: 'MUFG Intime India Private Limited',
+            registrarPhone: '+91 22 4918 6000',
+            registrarEmail: 'hdfire.ipo@in.mpms.mufg.com',
+            registrarWebsite: 'https://in.mpms.mufg.com/',
+            leadManagers: ['Interactive Financial Services Limited'],
+          },
+        },
+      };
+
+      const previewA = await adminIpoService.previewAddOnlyJsonImport(hdFirePayload);
+      expect(previewA.items[0].fieldsToFill.some((f) => f.field === 'REGISTRAR (NEW PARTICIPANT)')).toBe(true);
+
+      const commitA = await adminIpoService.commitAddOnlyJsonImport(hdFirePayload);
+      expect(commitA.updatedCount).toBe(1);
+      expect(mockPrisma.ipoParticipant.create).toHaveBeenCalledWith({
+        data: {
+          ipoId: 'ipo-hdfire-reg-1',
+          role: 'REGISTRAR',
+          name: 'MUFG Intime India Private Limited',
+          phone: '+91 22 4918 6000',
+          email: 'hdfire.ipo@in.mpms.mufg.com',
+          website: 'https://in.mpms.mufg.com/',
+          displayOrder: 1,
+        },
+      });
+
+      // Scenario B: Existing empty/manual registrar participant exists -> field-level merge updates empty fields without duplicate
+      const ipoWithEmptyReg: any = {
+        id: 'ipo-hdfire-reg-2',
+        companyId: 'comp-hdfire-reg-2',
+        symbol: 'HDFIRE',
+        company: {
+          id: 'comp-hdfire-reg-2',
+          legalName: 'HD Fire Protect Limited',
+          displayName: 'HD Fire Protect',
+          cin: 'U29299MH1983PLC030282',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [
+          {
+            id: 'part-reg-existing-id',
+            ipoId: 'ipo-hdfire-reg-2',
+            role: 'REGISTRAR',
+            name: '', // Empty manual value
+            phone: null,
+            email: null,
+            website: null,
+            displayOrder: 1,
+          },
+        ],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([ipoWithEmptyReg]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(ipoWithEmptyReg);
+
+      const previewB = await adminIpoService.previewAddOnlyJsonImport(hdFirePayload);
+      expect(previewB.items[0].fieldsToFill.some((f) => f.field === 'REGISTRAR.name')).toBe(true);
+      expect(previewB.items[0].fieldsToFill.some((f) => f.field === 'REGISTRAR.phone')).toBe(true);
+      expect(previewB.items[0].fieldsToFill.some((f) => f.field === 'REGISTRAR.email')).toBe(true);
+      expect(previewB.items[0].fieldsToFill.some((f) => f.field === 'REGISTRAR.website')).toBe(true);
+
+      const commitB = await adminIpoService.commitAddOnlyJsonImport(hdFirePayload);
+      expect(commitB.updatedCount).toBe(1);
+      expect(mockPrisma.ipoParticipant.update).toHaveBeenCalledWith({
+        where: { id: 'part-reg-existing-id' },
+        data: {
+          name: 'MUFG Intime India Private Limited',
+          phone: '+91 22 4918 6000',
+          email: 'hdfire.ipo@in.mpms.mufg.com',
+          website: 'https://in.mpms.mufg.com/',
+        },
+      });
+    });
+
+    it('17. Master JSON Import: timeline.refundInitiationDate extraction and merge (populates REFUND_INITIATION event when empty and preserves existing event)', async () => {
+      // Scenario A: DB has no refund date -> imports timeline.refundInitiationDate
+      const existingIpoNoRefund: any = {
+        id: 'ipo-refund-test-1',
+        companyId: 'comp-refund-test-1',
+        symbol: 'REFUNDCO',
+        company: {
+          id: 'comp-refund-test-1',
+          legalName: 'Refund Co Limited',
+          displayName: 'Refund Co',
+          cin: 'U11111MH2020PLC111222',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpoNoRefund]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpoNoRefund);
+
+      const payloadWithRefund = {
+        ipo: {
+          canonical: {
+            symbol: 'REFUNDCO',
+          },
+          company: {
+            legalName: 'Refund Co Limited',
+            cin: 'U11111MH2020PLC111222',
+          },
+          timeline: {
+            openDate: '2026-10-10',
+            closeDate: '2026-10-14',
+            allotmentDate: '2026-10-15',
+            refundInitiationDate: '2026-10-16',
+            listingDate: '2026-10-17',
+          },
+        },
+      };
+
+      const previewA = await adminIpoService.previewAddOnlyJsonImport(payloadWithRefund);
+      expect(previewA.items[0].fieldsToFill.some((f) => f.field === 'REFUND_INITIATION')).toBe(true);
+
+      const commitA = await adminIpoService.commitAddOnlyJsonImport(payloadWithRefund);
+      expect(commitA.updatedCount).toBe(1);
+      expect(mockPrisma.ipoLifecycleEvent.upsert).toHaveBeenCalledWith({
+        where: {
+          ipoId_eventType: {
+            ipoId: 'ipo-refund-test-1',
+            eventType: 'REFUND_INITIATION',
+          },
+        },
+        create: {
+          ipoId: 'ipo-refund-test-1',
+          eventType: 'REFUND_INITIATION',
+          eventDate: new Date('2026-10-16'),
+          sourceId: expect.any(String),
+        },
+        update: {
+          eventDate: new Date('2026-10-16'),
+        },
+      });
+
+      // Scenario B: DB already has a non-empty refund date -> preserves existing value
+      const existingIpoWithRefund: any = {
+        id: 'ipo-refund-test-2',
+        companyId: 'comp-refund-test-2',
+        symbol: 'REFUNDCO',
+        company: {
+          id: 'comp-refund-test-2',
+          legalName: 'Refund Co Limited',
+          displayName: 'Refund Co',
+          cin: 'U11111MH2020PLC111222',
+          financials: [],
+        },
+        lifecycleEvents: [
+          {
+            eventType: 'REFUND_INITIATION',
+            eventDate: new Date('2026-10-15T00:00:00.000Z'),
+          },
+        ],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpoWithRefund]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpoWithRefund);
+
+      const previewB = await adminIpoService.previewAddOnlyJsonImport(payloadWithRefund);
+      expect(previewB.items[0].fieldsSkipped.some((f) => f.field === 'REFUND_INITIATION')).toBe(true);
     });
   });
 

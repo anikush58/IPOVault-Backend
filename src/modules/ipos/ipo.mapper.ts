@@ -432,6 +432,29 @@ export function toIpoResponseDto(
     allotmentResultAvailableAt: ipo.allotmentResultAvailableAt
       ? ipo.allotmentResultAvailableAt.toISOString()
       : null,
+    preIpoEps: decimalToString(ipo.preIpoEps),
+    postIpoEps: decimalToString(ipo.postIpoEps),
+    preIpoPe: decimalToString(ipo.preIpoPe),
+    postIpoPe: decimalToString(ipo.postIpoPe),
+    preIpoPromoterHolding: decimalToString(ipo.preIpoPromoterHolding),
+    postIpoPromoterHolding: decimalToString(ipo.postIpoPromoterHolding),
+    preIpoMarketCap: decimalToString(ipo.preIpoMarketCap),
+    postIpoMarketCap: decimalToString(ipo.postIpoMarketCap),
+    marketCap: decimalToString(ipo.postIpoMarketCap ?? ipo.preIpoMarketCap),
+    ...(() => {
+      const researchDoc = (ipo.documents ?? []).find(
+        (d) =>
+          (d.extractionData as any)?.strengths ||
+          (d.extractionData as any)?.risks ||
+          (d.extractionData as any)?.objectsOfIssue,
+      );
+      const researchExt = (researchDoc?.extractionData as any) || {};
+      return {
+        strengths: Array.isArray(researchExt.strengths) ? researchExt.strengths : null,
+        risks: Array.isArray(researchExt.risks) ? researchExt.risks : null,
+        objectsOfIssue: Array.isArray(researchExt.objectsOfIssue) ? researchExt.objectsOfIssue : null,
+      };
+    })(),
     createdAt: ipo.createdAt.toISOString(),
     updatedAt: ipo.updatedAt.toISOString(),
   };

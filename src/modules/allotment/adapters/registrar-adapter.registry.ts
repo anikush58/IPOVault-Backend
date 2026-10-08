@@ -7,115 +7,38 @@ import { IRegistrarAdapter } from '../allotment.types';
 export function normalizeRegistrarCode(rawCode?: string | null): string {
   if (!rawCode) return '';
   const trimmed = rawCode.trim().toUpperCase();
+  const clean = trimmed.replace(/[^A-Z0-9]/g, '');
 
-  // Explicit deterministic mapping for known KFin display names and aliases
-  if (
-    trimmed === 'KFINTECH' ||
-    trimmed === 'KFIN' ||
-    trimmed === 'KFIN_TECH' ||
-    trimmed === 'KFIN TECHNOLOGIES' ||
-    trimmed === 'KFIN_TECHNOLOGIES' ||
-    trimmed === 'KFIN TECHNOLOGIES LIMITED' ||
-    trimmed === 'KFIN_TECHNOLOGIES_LIMITED' ||
-    trimmed === 'KFIN TECHNOLOGIES LTD' ||
-    trimmed === 'KFIN TECHNOLOGIES LTD.' ||
-    trimmed === 'KFIN_TECHNOLOGIES_LTD' ||
-    trimmed === 'KFIN_TECHNOLOGIES_LTD.' ||
-    trimmed === 'KFIN TECHNOLOGIES PVT LTD' ||
-    trimmed === 'KFIN_TECHNOLOGIES_PVT_LTD' ||
-    trimmed === 'KFIN TECHNOLOGIES PRIVATE LIMITED' ||
-    trimmed === 'KFIN_TECHNOLOGIES_PRIVATE_LIMITED' ||
-    trimmed === 'KARVY'
-  ) {
+  if (clean.includes('KFIN') || clean.includes('KARVY')) {
     return 'KFINTECH';
   }
 
-  // Explicit deterministic mapping for known MUFG / Link Intime display names and aliases
   if (
-    trimmed === 'MUFG_INTIME' ||
-    trimmed === 'MUFG' ||
-    trimmed === 'MUFG INTIME' ||
-    trimmed === 'MUFG INTIME INDIA' ||
-    trimmed === 'MUFG INTIME INDIA (FORMERLY LINK INTIME)' ||
-    trimmed === 'MUFG INTIME INDIA PRIVATE LIMITED' ||
-    trimmed === 'LINKINTIME' ||
-    trimmed === 'LINK_INTIME' ||
-    trimmed === 'LINK INTIME' ||
-    trimmed === 'LINK INTIME INDIA PVT LTD' ||
-    trimmed === 'LINK INTIME INDIA PRIVATE LIMITED' ||
-    trimmed === 'INTIME'
+    clean.includes('MUFG') ||
+    clean.includes('LINKINTIME') ||
+    (clean.includes('LINK') && clean.includes('INTIME'))
   ) {
     return 'MUFG_INTIME';
   }
 
-  // Explicit deterministic mapping for known Maashitla display names and aliases
-  if (
-    trimmed === 'MAASHITLA' ||
-    trimmed === 'MAASHITLA_SECURITIES' ||
-    trimmed === 'MAASHITLA SECURITIES' ||
-    trimmed === 'MAASHITLA SECURITIES LIMITED' ||
-    trimmed === 'MAASHITLA_SECURITIES_LIMITED' ||
-    trimmed === 'MAASHITLA SECURITIES PVT LTD' ||
-    trimmed === 'MAASHITLA_SECURITIES_PVT_LTD' ||
-    trimmed === 'MAASHITLA SECURITIES PRIVATE LIMITED' ||
-    trimmed === 'MAASHITLA_SECURITIES_PRIVATE_LIMITED'
-  ) {
+  if (clean.includes('MAASHITLA')) {
     return 'MAASHITLA';
   }
 
-  // Explicit deterministic mapping for known Skyline display names and aliases
-  if (
-    trimmed === 'SKYLINE' ||
-    trimmed === 'SKYLINE_FINANCIAL_SERVICES' ||
-    trimmed === 'SKYLINE FINANCIAL SERVICES' ||
-    trimmed === 'SKYLINE FINANCIAL SERVICES LIMITED' ||
-    trimmed === 'SKYLINE_FINANCIAL_SERVICES_LIMITED' ||
-    trimmed === 'SKYLINE FINANCIAL SERVICES PVT LTD' ||
-    trimmed === 'SKYLINE_FINANCIAL_SERVICES_PVT_LTD' ||
-    trimmed === 'SKYLINE FINANCIAL SERVICES PRIVATE LIMITED' ||
-    trimmed === 'SKYLINE_FINANCIAL_SERVICES_PRIVATE_LIMITED' ||
-    trimmed === 'SKYLINERTA' ||
-    trimmed === 'SKYLINE_RTA' ||
-    trimmed === 'SKYLINE RTA'
-  ) {
+  if (clean.includes('SKYLINE')) {
     return 'SKYLINE';
   }
 
-  // Explicit deterministic mapping for known Purva Sharegistry display names and aliases
-  if (
-    trimmed === 'PURVA' ||
-    trimmed === 'PURVA_SHAREGISTRY' ||
-    trimmed === 'PURVA SHAREGISTRY' ||
-    trimmed === 'PURVA SHAREGISTRY (INDIA) PVT. LTD.' ||
-    trimmed === 'PURVA SHAREGISTRY (INDIA) PVT LTD' ||
-    trimmed === 'PURVA SHAREGISTRY INDIA PVT LTD' ||
-    trimmed === 'PURVA SHAREGISTRY INDIA PRIVATE LIMITED' ||
-    trimmed === 'PURVA_SHAREGISTRY_INDIA_PVT_LTD' ||
-    trimmed === 'PURVA_SHAREGISTRY_INDIA_PRIVATE_LIMITED' ||
-    trimmed === 'PURVA SHAREGISTRY PVT LTD' ||
-    trimmed === 'PURVA SHAREGISTRY PRIVATE LIMITED' ||
-    trimmed === 'PURVASHAREREGISTRY' ||
-    trimmed === 'PURVA_SHARE' ||
-    trimmed === 'PURVASHARE'
-  ) {
+  if (clean.includes('PURVA')) {
     return 'PURVA';
   }
 
-  // Explicit deterministic mapping for known Bigshare display names and aliases
-  if (
-    trimmed === 'BIGSHARE' ||
-    trimmed === 'BIG_SHARE' ||
-    trimmed === 'BIG SHARE' ||
-    trimmed === 'BIGSHARE_SERVICES' ||
-    trimmed === 'BIGSHARE SERVICES' ||
-    trimmed === 'BIGSHARE SERVICES PVT LTD' ||
-    trimmed === 'BIGSHARE_SERVICES_PVT_LTD' ||
-    trimmed === 'BIGSHARE SERVICES PRIVATE LIMITED' ||
-    trimmed === 'BIGSHARE_SERVICES_PRIVATE_LIMITED' ||
-    trimmed === 'BIGSHAREONLINE' ||
-    trimmed === 'BIGSHARE ONLINE'
-  ) {
+  if (clean.includes('BIGSHARE')) {
     return 'BIGSHARE';
+  }
+
+  if (clean.includes('CAMEO')) {
+    return 'CAMEO';
   }
 
   return trimmed;

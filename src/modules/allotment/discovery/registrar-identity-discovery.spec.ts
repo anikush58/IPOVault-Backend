@@ -1,4 +1,7 @@
-import { KfinIdentityDiscoveryAdapter } from './kfin-identity-discovery.adapter';
+import {
+  KfinIdentityDiscoveryAdapter,
+  KFIN_VERIFIED_FALLBACK_REGISTRY,
+} from './kfin-identity-discovery.adapter';
 import { MufgIdentityDiscoveryAdapter, parseMufgRegistryHtml } from './mufg-identity-discovery.adapter';
 import { SourceIdentitySyncService } from './source-identity-sync.service';
 import { PrismaService } from '../../../database/prisma.service';
@@ -155,7 +158,7 @@ describe('Registrar Source Identity Discovery & Sync', () => {
       jest.spyOn(global, 'fetch').mockRejectedValue(new Error('CloudFront and Origin Network Error'));
 
       const issues = await kfinAdapter.discoverIssues();
-      expect(issues.length).toBe(93);
+      expect(issues.length).toBe(KFIN_VERIFIED_FALLBACK_REGISTRY.length);
 
       const srit = issues.find((i) => i.externalName === 'SRIT INDIA LIMITED');
       expect(srit).toBeDefined();

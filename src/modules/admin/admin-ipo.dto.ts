@@ -678,6 +678,9 @@ export interface JsonIpoCommitResultItem {
   index: number;
   ipoId?: string;
   ipoName: string;
+  inputName?: string;
+  matchedIpoName?: string;
+  matchReason?: string;
   success: boolean;
   status:
     | 'UPDATED'

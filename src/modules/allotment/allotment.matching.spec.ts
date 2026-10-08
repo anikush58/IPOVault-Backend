@@ -242,5 +242,54 @@ describe('Allotment Matching Pure Utility Tests', () => {
       expect(typeof res).not.toBe('string');
       expect((res as any).status).toBe(AllotmentStatus.NEEDS_REVIEW);
     });
+
+    describe('Phase 10 Production Physical-Device Regression Cases', () => {
+      it('10. Shivchem Agro matches Maashitla company list even when entries contain UUID company_id', () => {
+        const list = [
+          { company_id: 'e4979d51-7805-4b88-aac1-db4dbf559bd1', company_name: 'SHIVCHEM AGRO LIMITED' },
+          { company_id: '4a4f7df8-cedd-47f5-ba76-858ccbb27037', company_name: 'VAMA WOVENFAB LIMITED' },
+        ];
+        const req = dummyRequest('Shivchem Agro Limited', 'Shivchem Agro');
+        const res = matchRegistrarCompany(list, req, 'MAASHITLA', 'Maashitla Securities');
+        expect(res).toBe('SHIVCHEM AGRO LIMITED');
+      });
+
+      it('11. Acme Universal Safezone 9 matches Maashitla company list correctly', () => {
+        const list = [
+          { code: 'ACME UNIVERSAL SAFEZONE 9 LIMITED', name: 'ACME UNIVERSAL SAFEZONE 9 LIMITED' },
+          { code: 'OTHER COMPANY LIMITED', name: 'OTHER COMPANY LIMITED' },
+        ];
+        const req = dummyRequest('Acme Universal Safezone 9 Limited', 'Acme Universal Safezone 9');
+        const res = matchRegistrarCompany(list, req, 'MAASHITLA', 'Maashitla Securities');
+        expect(res).toBe('ACME UNIVERSAL SAFEZONE 9 LIMITED');
+      });
+
+      it('12. EverestIMS Technologies matches Maashitla EVEREST IMS TECHNOLOGIES LIMITED (with space)', () => {
+        const list = [
+          { code: 'EVEREST IMS TECHNOLOGIES LIMITED', name: 'EVEREST IMS TECHNOLOGIES LIMITED' },
+        ];
+        const req = dummyRequest('EverestIMS Technologies Limited', 'EverestIMS Technologies');
+        const res = matchRegistrarCompany(list, req, 'MAASHITLA', 'Maashitla Securities');
+        expect(res).toBe('EVEREST IMS TECHNOLOGIES LIMITED');
+      });
+
+      it('13. Nityas Gems & Jewellery matches Bigshare NITYAS GEMS AND JEWELLERY LIMITED (& vs AND normalization)', () => {
+        const list = [
+          { code: '1092', name: 'NITYAS GEMS AND JEWELLERY LIMITED' },
+        ];
+        const req = dummyRequest('Nityas Gems & Jewellery Limited', 'Nityas Gems & Jewellery');
+        const res = matchRegistrarCompany(list, req, 'BIGSHARE', 'Bigshare Services');
+        expect(res).toBe('1092');
+      });
+
+      it('14. Sollfege Smart Electronics matches KFin SOLLFEGE SMART ELECTRONICS LIMITED with display name Sollfege', () => {
+        const list = [
+          { clientId: '47651989560', name: 'SOLLFEGE SMART ELECTRONICS LIMITED' },
+        ];
+        const req = dummyRequest('Sollfege Smart Electronics Limited', 'Sollfege');
+        const res = matchRegistrarCompany(list, req, 'KFINTECH', 'KFin Technologies');
+        expect(res).toBe('47651989560');
+      });
+    });
   });
 });

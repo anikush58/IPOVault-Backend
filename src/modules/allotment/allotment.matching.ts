@@ -54,6 +54,9 @@ export function levenshteinDistance(a: string, b: string): number {
 export function stripOfferingAndCorporateSuffixes(name: string): string {
   let clean = name.toLowerCase().trim();
 
+  // Normalize conjunctions & symbols so "&" and "and" match seamlessly across data sources
+  clean = clean.replace(/&/g, ' and ').replace(/['’]/g, '');
+
   let changed = true;
   while (changed) {
     const prev = clean;
@@ -179,13 +182,13 @@ export function parseCompanyCandidates(items: unknown[]): CleanCompanyCandidate[
     if (!item || typeof item !== 'object') continue;
     const rec = item as Record<string, unknown>;
 
-    const code = String(
+    let code = String(
       rec.clientId ||
         rec.client_id ||
         rec.clientid ||
+        rec.code ||
         rec.company_id ||
         rec.id ||
-        rec.code ||
         rec.value ||
         '',
     ).trim();
@@ -205,14 +208,21 @@ export function parseCompanyCandidates(items: unknown[]): CleanCompanyCandidate[
       ? String(rec.symbol).trim().toUpperCase()
       : undefined;
 
-    // Discard empty entries and UUIDs
+    // If code is empty or is a UUID, but we have a valid company name, fallback code to name
     if (
-      code &&
+      (!code ||
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          code,
+        )) &&
       name &&
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        code,
+        name,
       )
     ) {
+      code = name;
+    }
+
+    if (code && name) {
       const cleanKey = normalizeName(name);
       const aliasKey = applyRegistrarSpellingAliases(cleanKey);
       const tokens = extractMeaningfulTokens(name);
@@ -239,8 +249,9 @@ export function parseCompanyCandidates(items: unknown[]): CleanCompanyCandidate[
  * 2. Tier 1: Strict Exact Normalized Name match.
  * 3. Tier 2: Canonical Spelling Alias match.
  * 4. Tier 3: Conservative Token Typo Fallback (Single Candidate Isolation required).
- * 5. Returns NEEDS_REVIEW if multiple candidates match at any tier.
- * 6. Returns NOT_YET_AVAILABLE if zero candidates match.
+ * 5. Tier 4: Prefix / Substring Containment Isolation Match.
+ * 6. Returns NEEDS_REVIEW if multiple candidates match at any tier.
+ * 7. Returns NOT_YET_AVAILABLE if zero candidates match.
  */
 export function matchRegistrarCompany(
   items: unknown[],
@@ -353,6 +364,30 @@ export function matchRegistrarCompany(
       sourceCode: registrarCode,
       checkedAt,
       errorMessage: `Multiple similar candidates found in ${registrarName} live list. Manual review required.`,
+    };
+  }
+
+  // ============================================================
+  // STEP 4B: Tier 4 Single Candidate Isolation Prefix / Containment Match
+  // ============================================================
+  const containmentMatches = candidates.filter((c) => {
+    const dKey = targetDisplayKey;
+    const lKey = targetLegalKey;
+    return (
+      (dKey.length >= 4 && (c.cleanKey.startsWith(dKey) || dKey.startsWith(c.cleanKey))) ||
+      (lKey.length >= 4 && (c.cleanKey.startsWith(lKey) || lKey.startsWith(c.cleanKey)))
+    );
+  });
+
+  if (containmentMatches.length === 1) {
+    return containmentMatches[0].code;
+  }
+  if (containmentMatches.length > 1) {
+    return {
+      status: AllotmentStatus.NEEDS_REVIEW,
+      sourceCode: registrarCode,
+      checkedAt,
+      errorMessage: `Multiple similar candidates found by prefix in ${registrarName} live list. Manual review required.`,
     };
   }
 

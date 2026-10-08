@@ -62,7 +62,11 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
     );
   });
 
-  it('2. Brand new IPO live on KFin (no DB code) -> clientId discovered on-the-fly and checked', async () => {
+  it('2. Generic regression test: hypothetical new KFin company (company name → discovered clientId → query configuration) works without any hardcoded mapping', async () => {
+    const hypotheticalBundle = `
+      var rf=JSON.parse('[{"clientId":"88887777666","name":"FUTURE QUANTUM ROBOTICS LIMITED"}]');
+    `;
+
     const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
       const urlStr = String(url);
       if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
@@ -76,7 +80,7 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          text: async () => sampleLiveBundle,
+          text: async () => hypotheticalBundle,
         } as unknown as Response);
       }
       if (urlStr.includes('0uz601ms56.execute-api')) {
@@ -85,10 +89,10 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
           status: 200,
           json: async () => [
             {
-              All_Shares: 50,
-              App_Shares: 100,
-              Name: 'NEW INVESTOR',
-              Appln_No: 'APP-7766',
+              All_Shares: 75,
+              App_Shares: 150,
+              Name: 'QUANTUM APPLICANT',
+              Appln_No: 'APP-FQR-9900',
             },
           ],
         } as unknown as Response);
@@ -96,24 +100,31 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
       return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
     });
 
-    const newIpoReq = {
-      ipoId: 'new-ipo-without-db-code',
+    // Verify hypothetical company is NOT in fallback registry
+    const inFallback = KFIN_VERIFIED_FALLBACK_REGISTRY.some(
+      (entry) => entry.clientId === '88887777666' || entry.name.includes('FUTURE QUANTUM'),
+    );
+    expect(inFallback).toBe(false);
+
+    const hypotheticalReq = {
+      ipoId: 'hypothetical-fqr-ipo-id',
       identifierType: AllotmentIdentifierType.PAN,
-      identifierValue: 'XYZPK9876Q',
-      companyName: 'Brand New Techno Enterprises Limited',
-      companyLegalName: 'Brand New Techno Enterprises Ltd',
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Future Quantum Robotics Limited',
+      companyLegalName: 'Future Quantum Robotics Ltd',
     };
 
-    const result = await adapter.checkAllotment(newIpoReq);
+    const result = await adapter.checkAllotment(hypotheticalReq);
     expect(result.status).toBe(AllotmentStatus.PARTIALLY_ALLOTTED);
-    expect(result.sharesApplied).toBe(100);
-    expect(result.sharesAllotted).toBe(50);
+    expect(result.sharesApplied).toBe(150);
+    expect(result.sharesAllotted).toBe(75);
+    expect(result.applicantName).toBe('QUANTUM APPLICANT');
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('0uz601ms56.execute-api'),
       expect.objectContaining({
         headers: expect.objectContaining({
-          client_id: '99998888777',
-          reqparam: 'XYZPK9876Q',
+          client_id: '88887777666',
+          reqparam: 'ABCDE1234F',
         }),
       }),
     );
@@ -376,5 +387,132 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
     await adapter.checkAllotment(req2);
 
     expect(bundleFetches).toBe(1); // Second query reused the in-memory cached company registry!
+  });
+
+  it('11. KFin zero-touch discovery dynamically extracts Sollfege Smart Electronics clientId 47651989560 from live bundle without relying on fallback registry', async () => {
+    const sollfegeLiveBundle = `
+      var rf=JSON.parse('[{"clientId":"47651989560","name":"SOLLFEGE SMART ELECTRONICS LIMITED"}]');
+    `;
+
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sampleLiveHtml,
+        } as unknown as Response);
+      }
+      if (urlStr.includes('main.30273529.js')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => sollfegeLiveBundle,
+        } as unknown as Response);
+      }
+      if (urlStr.includes('0uz601ms56.execute-api')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              All_Shares: 0,
+              App_Shares: 1200,
+              Name: 'SOLLFEGE APPLICANT',
+              Appln_No: 'APP-112233',
+            },
+          ],
+        } as unknown as Response);
+      }
+      return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+    });
+
+    const sollfegeReq = {
+      ipoId: 'sollfege-ipo-id',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Sollfege Smart Electronics Limited',
+    };
+
+    const result = await adapter.checkAllotment(sollfegeReq);
+    expect(result.status).toBe(AllotmentStatus.NOT_ALLOTTED);
+    expect(result.sharesApplied).toBe(1200);
+    expect(result.sharesAllotted).toBe(0);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('type=pan'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          client_id: '47651989560',
+          reqparam: 'ABCDE1234F',
+        }),
+      }),
+    );
+  });
+
+  it('12. KFin explicit unavailable/not-finalized response maps to NOT_YET_AVAILABLE (Allotment Not Available)', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'NOT_DECLARED',
+          message: 'Allotment is awaited from registrar',
+        }),
+      } as unknown as Response);
+    });
+
+    const req = {
+      ipoId: 'test-ipo-id',
+      registrarIpoCode: '47651989560',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+    expect(result.errorMessage).toContain('awaited');
+  });
+
+  it('13. KFin HTTP 500 / 502 / network error maps to SOURCE_UNAVAILABLE (Check Failed) without masking', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.resolve({
+        ok: false,
+        status: 502,
+        statusText: 'Bad Gateway',
+      } as unknown as Response);
+    });
+
+    const req = {
+      ipoId: 'test-ipo-id',
+      registrarIpoCode: '47651989560',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+    expect(result.errorMessage).toContain('502');
+  });
+
+  it('14. KFin malformed JSON response maps to SOURCE_RESPONSE_INVALID without silent conversion', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new Error('Unexpected token < in JSON');
+        },
+      } as unknown as Response);
+    });
+
+    const req = {
+      ipoId: 'test-ipo-id',
+      registrarIpoCode: '47651989560',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
   });
 });

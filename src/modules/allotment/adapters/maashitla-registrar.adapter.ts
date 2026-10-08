@@ -96,7 +96,7 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
       process.env.MAASHITLA_API_URL || 'https://api.maashitla.com/api';
 
     const params = new URLSearchParams({
-      company_name: companyName,
+      company_name: companyName.trim().toUpperCase(),
     });
 
     const val = request.identifierValue.trim();
@@ -189,7 +189,15 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
         ? (
             (raw as Record<string, unknown>).data as Record<string, unknown>[]
           )[0]
-        : raw;
+        : (raw as Record<string, unknown>).data &&
+          typeof (raw as Record<string, unknown>).data === 'object'
+          ? ((raw as Record<string, unknown>).data as Record<string, unknown>)
+          : (raw as Record<string, unknown>).result &&
+            typeof (raw as Record<string, unknown>).result === 'object'
+            ? Array.isArray((raw as Record<string, unknown>).result)
+              ? ((raw as Record<string, unknown>).result as Record<string, unknown>[])[0]
+              : ((raw as Record<string, unknown>).result as Record<string, unknown>)
+            : raw;
 
     if (!targetObj) {
       return {
@@ -199,13 +207,47 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
       };
     }
 
-    if (targetObj.detail || targetObj.error || targetObj.message) {
-      const errStr = String(
-        targetObj.detail || targetObj.error || targetObj.message,
-      );
+    const rawMsg = String(
+      targetObj.detail ||
+        targetObj.error ||
+        targetObj.message ||
+        targetObj.msg ||
+        '',
+    );
+    const rawStatus = String(
+      targetObj.status ||
+        targetObj.allotment_status ||
+        targetObj.allotmentStatus ||
+        '',
+    ).toUpperCase();
+
+    if (rawMsg || rawStatus) {
+      const lowerMsg = rawMsg.toLowerCase();
       if (
-        errStr.toLowerCase().includes('not found') ||
-        errStr.toLowerCase().includes('no record')
+        lowerMsg.includes('not declared') ||
+        lowerMsg.includes('not finalized') ||
+        lowerMsg.includes('in process') ||
+        lowerMsg.includes('under process') ||
+        lowerMsg.includes('basis of allotment') ||
+        rawStatus === 'NOT_DECLARED' ||
+        rawStatus === 'AWAITED'
+      ) {
+        return {
+          status: AllotmentStatus.NOT_YET_AVAILABLE,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: rawMsg || 'Allotment is awaited from registrar',
+        };
+      }
+
+      if (
+        lowerMsg.includes('not found') ||
+        lowerMsg.includes('no record') ||
+        lowerMsg.includes('no data') ||
+        lowerMsg.includes('invalid pan') ||
+        lowerMsg.includes('not applied') ||
+        rawStatus === 'NOT_FOUND' ||
+        rawStatus === 'NO_RECORD'
       ) {
         return {
           status: AllotmentStatus.APPLICATION_NOT_FOUND,
@@ -213,24 +255,47 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
           checkedAt,
         };
       }
-      return {
-        status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
-        sourceCode: this.code,
-        checkedAt,
-        errorMessage: errStr,
-      };
+
+      if (
+        rawMsg &&
+        targetObj.shares_applied === undefined &&
+        targetObj.shares_alloted === undefined &&
+        targetObj.shares_allotted === undefined &&
+        targetObj.sharesApplied === undefined &&
+        targetObj.sharesAllotted === undefined
+      ) {
+        return {
+          status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: rawMsg,
+        };
+      }
     }
 
     const applied = Number(
       targetObj.shares_applied ??
         targetObj.sharesApplied ??
+        targetObj.shares_app ??
+        targetObj.applied_shares ??
+        targetObj.applied ??
         targetObj.shares_hold ??
+        targetObj.app_shares ??
+        targetObj.applied_qty ??
+        targetObj.no_of_shares_applied ??
         0,
     );
     const allotted = Number(
       targetObj.shares_alloted ??
         targetObj.shares_allotted ??
         targetObj.sharesAllotted ??
+        targetObj.alloted_shares ??
+        targetObj.allotted_shares ??
+        targetObj.allot_shares ??
+        targetObj.alloted ??
+        targetObj.allotted ??
+        targetObj.allotted_qty ??
+        targetObj.no_of_shares_allotted ??
         0,
     );
 
@@ -244,18 +309,46 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
       status = AllotmentStatus.NOT_ALLOTTED;
     }
 
+    const applicantName =
+      targetObj.name ||
+      targetObj.applicant_name ||
+      targetObj.client_name ||
+      targetObj.shareholder_name ||
+      targetObj.investor_name ||
+      targetObj.holder_name
+        ? String(
+            targetObj.name ||
+              targetObj.applicant_name ||
+              targetObj.client_name ||
+              targetObj.shareholder_name ||
+              targetObj.investor_name ||
+              targetObj.holder_name,
+          ).trim()
+        : undefined;
+
+    const rawResponseRef =
+      targetObj.application_no ||
+      targetObj.app_no ||
+      targetObj.appno ||
+      targetObj.appl_no ||
+      targetObj.application_number
+        ? String(
+            targetObj.application_no ||
+              targetObj.app_no ||
+              targetObj.appno ||
+              targetObj.appl_no ||
+              targetObj.application_number,
+          ).trim()
+        : undefined;
+
     return {
       status,
       sharesApplied: applied,
       sharesAllotted: allotted,
-      applicantName: targetObj.name
-        ? String(targetObj.name).trim()
-        : undefined,
+      applicantName,
       sourceCode: this.code,
       checkedAt,
-      rawResponseRef: targetObj.application_no
-        ? String(targetObj.application_no).trim()
-        : undefined,
+      rawResponseRef,
     };
   }
 
@@ -296,7 +389,7 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
 
   /**
    * Fetches live active public issues list from Maashitla API, cached for 1 hour.
-   * Endpoint: GET https://api.maashitla.com/api/public-issue/companies
+   * Endpoints: GET https://api.maashitla.com/api/public-issue/companies & /api/companies
    */
   public async fetchActiveCompanyList(): Promise<
     Array<{ code: string; name: string }>
@@ -328,56 +421,57 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
   > {
     const baseUrl =
       process.env.MAASHITLA_API_URL || 'https://api.maashitla.com/api';
-    const companiesUrl = `${baseUrl}/public-issue/companies`;
-
-    const response = await this.fetchWithRetry(companiesUrl, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-        Origin: 'https://maashitla.com',
-        Referer: 'https://maashitla.com/',
-        Accept: 'application/json, text/plain, */*',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Maashitla companies endpoint returned HTTP ${response.status}`,
-      );
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = await response.json();
-    } catch (err: unknown) {
-      throw new Error(
-        `Failed to parse JSON response from Maashitla companies API: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-
-    if (!Array.isArray(parsed)) {
-      throw new Error(
-        'Expected an array of companies from Maashitla companies API',
-      );
-    }
-
+    const endpoints = ['/public-issue/companies', '/companies'];
     const validated: Array<{ code: string; name: string }> = [];
-    for (const item of parsed) {
-      if (!item || typeof item !== 'object') continue;
-      const rec = item as Record<string, unknown>;
-      const name = String(
-        rec.company_name || rec.companyName || rec.name || '',
-      ).trim();
+    const seen = new Set<string>();
 
-      if (name) {
-        // Use company_name as both code (for query param) and name (for matching)
-        validated.push({ code: name, name });
+    for (const endpoint of endpoints) {
+      try {
+        const response = await this.fetchWithRetry(`${baseUrl}${endpoint}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+            Origin: 'https://maashitla.com',
+            Referer: 'https://maashitla.com/',
+            Accept: 'application/json, text/plain, */*',
+          },
+        });
+
+        if (!response.ok) continue;
+
+        let parsed: unknown;
+        try {
+          parsed = await response.json();
+        } catch {
+          continue;
+        }
+
+        const rawList = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray((parsed as Record<string, unknown>)?.data)
+            ? ((parsed as Record<string, unknown>).data as unknown[])
+            : Array.isArray((parsed as Record<string, unknown>)?.companies)
+              ? ((parsed as Record<string, unknown>).companies as unknown[])
+              : Array.isArray((parsed as Record<string, unknown>)?.result)
+                ? ((parsed as Record<string, unknown>).result as unknown[])
+                : [];
+
+        for (const item of rawList) {
+          if (!item || typeof item !== 'object') continue;
+          const rec = item as Record<string, unknown>;
+          const name = String(
+            rec.company_name || rec.companyName || rec.name || '',
+          ).trim();
+
+          if (name && !seen.has(name.toLowerCase())) {
+            seen.add(name.toLowerCase());
+            validated.push({ code: name, name });
+          }
+        }
+      } catch {
+        // Continue to next endpoint
       }
-    }
-
-    if (validated.length === 0) {
-      throw new Error('No valid company entries found in Maashitla response');
     }
 
     return validated;

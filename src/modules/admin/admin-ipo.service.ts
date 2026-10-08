@@ -766,7 +766,7 @@ export class AdminIpoService {
    */
   async listIpos(query: AdminIpoQueryDto) {
     const page = query.page && query.page > 0 ? query.page : 1;
-    const limit = query.limit && query.limit > 0 ? Math.min(query.limit, 100) : 20;
+    const limit = query.limit && query.limit > 0 ? Math.min(query.limit, 500) : 50;
     const skip = (page - 1) * limit;
 
     const baseSourceWhere: Prisma.IpoWhereInput = {
@@ -1424,14 +1424,14 @@ export class AdminIpoService {
       throw new BadRequestException('Invalid JSON payload structure');
     }
 
-    const companyData = payload.company || {};
-    const ipoData = payload.ipo || {};
-    const lifecycleData = payload.lifecycle || {};
-    const allotmentConfigData = payload.allotmentConfig || {};
-    const gmpData = payload.gmp || {};
+    const norm = this.normalizeIncomingAddOnlyItem(payload);
+    const companyData = norm.rawCompany;
+    const ipoData = norm.rawIpo;
 
     // 1. Mandatory Identity & Enums
     const legalName = (
+      norm.legalName ||
+      norm.displayName ||
       companyData.legalName ||
       companyData.displayName ||
       companyData.companyName ||
@@ -1442,46 +1442,21 @@ export class AdminIpoService {
     }
 
     // Exchange Normalization
-    const rawExchange = String(
-      payload.exchange || ipoData.exchange || companyData.exchange || 'NSE',
-    ).trim();
-    let exchange: ExchangeListing = ExchangeListing.NSE;
-    if (
-      rawExchange.toUpperCase().includes('BOTH') ||
-      (rawExchange.toUpperCase().includes('BSE') && rawExchange.toUpperCase().includes('NSE'))
-    ) {
-      exchange = ExchangeListing.BOTH;
-    } else if (rawExchange.toUpperCase().includes('NSE')) {
-      exchange = ExchangeListing.NSE;
-    } else if (rawExchange.toUpperCase().includes('BSE')) {
-      exchange = ExchangeListing.BSE;
-    } else if (Object.values(ExchangeListing).includes(rawExchange as ExchangeListing)) {
-      exchange = rawExchange as ExchangeListing;
-    } else {
-      throw new BadRequestException(`Invalid exchange: ${rawExchange}`);
-    }
+    const exchange: ExchangeListing =
+      norm.exchange ||
+      this.normalizeExchangeListing(payload.exchange || ipoData.exchange || companyData.exchange) ||
+      ExchangeListing.NSE;
 
     // Market Segment / Issue Type Normalization
-    const rawSegment = String(
-      payload.issueType || ipoData.issueType || ipoData.marketSegment || companyData.marketSegment || 'MAINBOARD',
-    ).trim();
-    let marketSegment: MarketSegment = MarketSegment.MAINBOARD;
-    if (rawSegment.toUpperCase().includes('SME')) {
-      marketSegment = MarketSegment.SME;
-    } else if (
-      rawSegment.toUpperCase().includes('MAINBOARD') ||
-      rawSegment.toUpperCase().includes('MAIN')
-    ) {
-      marketSegment = MarketSegment.MAINBOARD;
-    } else if (Object.values(MarketSegment).includes(rawSegment as MarketSegment)) {
-      marketSegment = rawSegment as MarketSegment;
-    } else {
-      throw new BadRequestException(`Invalid issueType / marketSegment: ${rawSegment}`);
-    }
+    const marketSegment: MarketSegment =
+      norm.marketSegment ||
+      this.normalizeMarketSegment(payload.issueType || ipoData.issueType || ipoData.marketSegment || companyData.marketSegment) ||
+      MarketSegment.MAINBOARD;
 
-    const status: IpoStatus = ipoData.status || IpoStatus.DRAFT;
-    if (!Object.values(IpoStatus).includes(status)) {
-      throw new BadRequestException(`Invalid status: ${ipoData.status}`);
+    let status: IpoStatus = IpoStatus.DRAFT;
+    const rawStatus = String(ipoData.status || payload.status || 'DRAFT').trim().toUpperCase();
+    if (Object.values(IpoStatus).includes(rawStatus as any)) {
+      status = rawStatus as IpoStatus;
     }
 
     const topLevelKeys = Object.keys(payload || {});
@@ -1592,7 +1567,7 @@ export class AdminIpoService {
 
     // 4. Validate Dates
     const parseDateStr = (dateStr?: string | null): Date | null => {
-      if (!dateStr) return null;
+      if (!dateStr || this.isPlaceholderOrNil(dateStr)) return null;
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) {
         throw new BadRequestException(`Invalid date string: ${dateStr}`);
@@ -1600,13 +1575,9 @@ export class AdminIpoService {
       return d;
     };
 
-    const openDate = parseDateStr(payload.openDate || lifecycleData.openDate || ipoData.openDate);
-    const closeDate = parseDateStr(payload.closeDate || lifecycleData.closeDate || ipoData.closeDate);
-    const allotmentDate = parseDateStr(payload.allotmentDate || lifecycleData.allotmentDate || ipoData.allotmentDate);
-    const listingDate = parseDateStr(payload.listingDate || lifecycleData.listingDate || ipoData.listingDate);
-    const drhpDate = parseDateStr(payload.drhpDate || lifecycleData.drhpDate);
-    const rhpDate = parseDateStr(payload.rhpDate || lifecycleData.rhpDate);
-    const anchorDate = parseDateStr(payload.anchorDate || lifecycleData.anchorDate);
+    const openDate = parseDateStr(norm.rawTimeline.openDate || payload.openDate || ipoData.openDate);
+    const closeDate = parseDateStr(norm.rawTimeline.closeDate || payload.closeDate || ipoData.closeDate);
+    const listingDate = parseDateStr(norm.rawTimeline.listingDate || payload.listingDate || ipoData.listingDate);
 
     if (openDate && closeDate && openDate > closeDate) {
       throw new BadRequestException('openDate cannot be after closeDate');
@@ -1616,14 +1587,15 @@ export class AdminIpoService {
     }
 
     // 5. Target IPO Safety Overwrite Check
+    const resolvedTargetIpoId = (targetIpoId || payload?.targetIpoId || payload?.id || payload?.ipoId || norm.rawIpo.id || norm.rawIpo.targetIpoId)?.trim?.();
     let existingIpo: any = null;
-    if (targetIpoId) {
+    if (resolvedTargetIpoId) {
       existingIpo = await this.prisma.ipo.findUnique({
-        where: { id: targetIpoId },
+        where: { id: resolvedTargetIpoId },
         include: { company: true },
       });
       if (!existingIpo) {
-        throw new NotFoundException(`Target IPO ${targetIpoId} not found`);
+        throw new NotFoundException(`Target IPO ${resolvedTargetIpoId} not found`);
       }
       if (
         existingIpo.publicationStatus === PublicationStatus.PUBLISHED ||
@@ -1679,546 +1651,84 @@ export class AdminIpoService {
       company = companyByCin || companyByName;
     }
 
-    // 7. Atomic Transactional DB Creation / Update
+    // 7. Atomic Transactional Add-Only Pipeline
     const adminSourceId = await this.getAdminSourceId();
-
-    const logoUrl = (payload.logoUrl || companyData.logoUrl)?.trim() || null;
-    const companyPhone = (payload.companyPhone || payload.phone || companyData.companyPhone || companyData.phone)?.trim() || null;
-    const companyEmail = (payload.companyEmail || payload.email || companyData.companyEmail || companyData.email)?.trim() || null;
-    const contactPerson = (companyData.contactPerson || payload.contactPerson)?.trim() || null;
-    const website = (payload.website || companyData.website)?.trim() || null;
-    const industry = (payload.industry || companyData.industry)?.trim() || null;
-    const sector = (payload.sector || companyData.sector)?.trim() || null;
-    const aboutDescription = (companyData.aboutDescription || payload.aboutDescription || payload.notes || companyData.notes || ipoData.notes)?.trim() || null;
 
     try {
       const createdOrUpdatedIpo = await this.prisma.$transaction(async (tx) => {
-      // Upsert / Update Company
-      if (!company) {
-        company = await tx.company.create({
-          data: {
-            legalName,
-            displayName: companyData.displayName?.trim() || legalName,
-            cin,
-            aboutDescription,
-            website,
-            email: companyEmail,
-            phone: companyPhone,
-            contactPerson,
-            industry,
-            sector,
-            logoUrl,
-          },
-        });
-      } else {
-        company = await tx.company.update({
-          where: { id: company.id },
-          data: {
-            legalName,
-            displayName:
-              companyData.displayName?.trim() || company.displayName || legalName,
-            ...(cin ? { cin } : {}),
-            ...(aboutDescription !== null ? { aboutDescription } : {}),
-            ...(website !== null ? { website } : {}),
-            ...(companyEmail !== null ? { email: companyEmail } : {}),
-            ...(companyPhone !== null ? { phone: companyPhone } : {}),
-            ...(contactPerson !== null ? { contactPerson } : {}),
-            ...(industry !== null ? { industry } : {}),
-            ...(sector !== null ? { sector } : {}),
-            ...(logoUrl !== null ? { logoUrl } : {}),
-          },
-        });
-      }
-
-      // Upsert Company Financials Array
-      const financialsArray = companyData.financials || payload.financials || [];
-      if (Array.isArray(financialsArray) && financialsArray.length > 0) {
-        for (const fin of financialsArray) {
-          const fiscalPeriod = (fin.fiscalPeriod || fin.fiscalYear || '').toString().trim();
-          if (!fiscalPeriod) continue;
-          const totalRevenue = fin.totalRevenue !== undefined && fin.totalRevenue !== null ? fin.totalRevenue : fin.revenue;
-          const pat = fin.pat !== undefined && fin.pat !== null ? fin.pat : fin.netProfit;
-          const netWorth = fin.netWorth !== undefined && fin.netWorth !== null ? fin.netWorth : (fin.nav || fin.ronw);
-          const roePercentage = fin.roePercentage !== undefined && fin.roePercentage !== null ? fin.roePercentage : fin.roePercent;
-          const patMarginPercent = fin.patMarginPercent !== undefined && fin.patMarginPercent !== null ? fin.patMarginPercent : fin.patPercent;
-
-          await tx.companyFinancial.upsert({
-            where: {
-              companyId_fiscalPeriod_periodType: {
-                companyId: company.id,
-                fiscalPeriod,
-                periodType: fin.periodType || 'ANNUAL',
-              },
-            },
-            update: {
-              totalAssets:
-                fin.totalAssets !== undefined && fin.totalAssets !== null
-                  ? new Prisma.Decimal(fin.totalAssets)
-                  : undefined,
-              totalRevenue:
-                totalRevenue !== undefined && totalRevenue !== null
-                  ? new Prisma.Decimal(totalRevenue)
-                  : undefined,
-              pat:
-                pat !== undefined && pat !== null
-                  ? new Prisma.Decimal(pat)
-                  : undefined,
-              ebitda:
-                fin.ebitda !== undefined && fin.ebitda !== null
-                  ? new Prisma.Decimal(fin.ebitda)
-                  : undefined,
-              netWorth:
-                netWorth !== undefined && netWorth !== null
-                  ? new Prisma.Decimal(netWorth)
-                  : undefined,
-              roePercentage:
-                roePercentage !== undefined && roePercentage !== null
-                  ? new Prisma.Decimal(roePercentage)
-                  : undefined,
-              rocePercentage:
-                fin.rocePercentage !== undefined && fin.rocePercentage !== null
-                  ? new Prisma.Decimal(fin.rocePercentage)
-                  : undefined,
-              eps:
-                fin.eps !== undefined && fin.eps !== null
-                  ? new Prisma.Decimal(fin.eps)
-                  : undefined,
-              patMarginPercent:
-                patMarginPercent !== undefined && patMarginPercent !== null
-                  ? new Prisma.Decimal(patMarginPercent)
-                  : undefined,
-            },
-            create: {
-              companyId: company.id,
-              fiscalPeriod,
-              periodType: fin.periodType || 'ANNUAL',
-              totalAssets:
-                fin.totalAssets !== undefined && fin.totalAssets !== null
-                  ? new Prisma.Decimal(fin.totalAssets)
-                  : null,
-              totalRevenue:
-                totalRevenue !== undefined && totalRevenue !== null
-                  ? new Prisma.Decimal(totalRevenue)
-                  : null,
-              pat:
-                pat !== undefined && pat !== null
-                  ? new Prisma.Decimal(pat)
-                  : null,
-              ebitda:
-                fin.ebitda !== undefined && fin.ebitda !== null
-                  ? new Prisma.Decimal(fin.ebitda)
-                  : null,
-              netWorth:
-                netWorth !== undefined && netWorth !== null
-                  ? new Prisma.Decimal(netWorth)
-                  : null,
-              roePercentage:
-                roePercentage !== undefined && roePercentage !== null
-                  ? new Prisma.Decimal(roePercentage)
-                  : null,
-              rocePercentage:
-                fin.rocePercentage !== undefined && fin.rocePercentage !== null
-                  ? new Prisma.Decimal(fin.rocePercentage)
-                  : null,
-              eps:
-                fin.eps !== undefined && fin.eps !== null
-                  ? new Prisma.Decimal(fin.eps)
-                  : null,
-              patMarginPercent:
-                patMarginPercent !== undefined && patMarginPercent !== null
-                  ? new Prisma.Decimal(patMarginPercent)
-                  : null,
-            },
-          });
+        if (existingIpo) {
+          await this.executeAddOnlyTransactionForIpo(
+            tx,
+            existingIpo.id,
+            payload,
+            adminSourceId,
+          );
+          return existingIpo;
         }
-      }
 
-      // Force publicationStatus = DRAFT ALWAYS
-      const derivedStatus = deriveIpoStatus({
-        explicitStatus: status,
-        openDate: openDate?.toISOString(),
-        closeDate: closeDate?.toISOString(),
-      });
-
-      const symbolVal = (payload.symbol || ipoData.symbol || companyData.symbol)?.trim() || null;
-      const faceValueVal = ipoData.faceValue ?? payload.faceValue;
-
-      const ipoPayload: Prisma.IpoUncheckedCreateInput = {
-        companyId: company.id,
-        marketSegment,
-        exchange,
-        status: derivedStatus,
-        publicationStatus: PublicationStatus.DRAFT,
-        symbol: symbolVal,
-        priceBandLow:
-          priceBandLowVal !== undefined && priceBandLowVal !== null
-            ? new Prisma.Decimal(priceBandLowVal)
-            : null,
-        priceBandHigh:
-          priceBandHighVal !== undefined && priceBandHighVal !== null
-            ? new Prisma.Decimal(priceBandHighVal)
-            : null,
-        lotSize: ipoData.lotSize ?? payload.lotSize ?? null,
-        faceValue:
-          faceValueVal !== undefined && faceValueVal !== null
-            ? new Prisma.Decimal(faceValueVal)
-            : null,
-        issueSize:
-          issueSizeVal !== undefined && issueSizeVal !== null
-            ? new Prisma.Decimal(issueSizeVal)
-            : null,
-        freshIssueSize:
-          freshIssueSizeVal !== undefined && freshIssueSizeVal !== null
-            ? new Prisma.Decimal(freshIssueSizeVal)
-            : null,
-        ofsSize:
-          ofsSizeVal !== undefined && ofsSizeVal !== null
-            ? new Prisma.Decimal(ofsSizeVal)
-            : null,
-        issueShareCount: issueShareCountVal || null,
-        freshIssueShareCount: freshIssueShareCountVal || null,
-        ofsShareCount: ofsShareCountVal || null,
-      };
-
-      let ipo;
-      if (existingIpo) {
-        ipo = await tx.ipo.update({
-          where: { id: existingIpo.id },
-          data: ipoPayload,
-        });
-      } else {
-        ipo = await tx.ipo.create({
-          data: ipoPayload,
-        });
-      }
-
-      // Link to ADMIN source identity
-      await tx.ipoSourceIdentity.upsert({
-        where: {
-          ipoId_sourceId: { ipoId: ipo.id, sourceId: adminSourceId },
-        },
-        update: { symbol: ipo.symbol },
-        create: {
-          ipoId: ipo.id,
-          sourceId: adminSourceId,
-          externalId: ipo.id,
-          symbol: ipo.symbol,
-        },
-      });
-
-      // Update Lifecycle Events
-      const events: Array<{ type: any; date: Date | null }> = [
-        { type: 'DRHP', date: drhpDate },
-        { type: 'RHP', date: rhpDate },
-        { type: 'ANCHOR', date: anchorDate },
-        { type: 'OPEN', date: openDate },
-        { type: 'CLOSE', date: closeDate },
-        { type: 'BASIS_OF_ALLOTMENT', date: allotmentDate },
-        { type: 'LISTING', date: listingDate },
-      ];
-
-      for (const ev of events) {
-        if (ev.date) {
-          await tx.ipoLifecycleEvent.upsert({
-            where: {
-              ipoId_eventType: { ipoId: ipo.id, eventType: ev.type },
-            },
-            update: { eventDate: ev.date },
-            create: { ipoId: ipo.id, eventType: ev.type, eventDate: ev.date },
-          });
-        }
-      }
-
-      // Offer Categories
-      const categoriesArray = payload.offerCategories || ipoData.offerCategories || [];
-      if (Array.isArray(categoriesArray) && categoriesArray.length > 0) {
-        for (const cat of categoriesArray) {
-          const rawCat = cat.category || cat.categoryCode;
-          if (!rawCat) continue;
-          let categoryStr = String(rawCat).trim().toUpperCase();
-          if (categoryStr.includes('RETAIL')) categoryStr = 'RETAIL';
-          else if (categoryStr.includes('EMPLOYEE')) categoryStr = 'EMPLOYEE';
-          else if (categoryStr.includes('SHAREHOLDER')) categoryStr = 'SHAREHOLDER';
-          else if (categoryStr.includes('NII_SMALL') || categoryStr.includes('SNII')) categoryStr = 'NII_SMALL';
-          else if (categoryStr.includes('NII_BIG') || categoryStr.includes('BNII')) categoryStr = 'NII_BIG';
-          else if (categoryStr.includes('NII') || categoryStr.includes('NON_INSTITUTIONAL') || categoryStr.includes('NON INSTITUTIONAL')) categoryStr = 'NII';
-          else if (categoryStr.includes('QIB') || categoryStr.includes('QUALIFIED')) categoryStr = 'QIB';
-
-          if (!Object.values(OfferCategoryType).includes(categoryStr as OfferCategoryType)) {
-            categoryStr = 'OTHER';
-          }
-          const category = categoryStr as OfferCategoryType;
-          const allocationPct = cat.allocationPct !== undefined && cat.allocationPct !== null
-            ? cat.allocationPct
-            : (cat.allocationPercentage !== undefined && cat.allocationPercentage !== null
-              ? cat.allocationPercentage
-              : cat.allocationPercent);
-          await tx.ipoOfferCategory.upsert({
-            where: {
-              ipoId_category: { ipoId: ipo.id, category },
-            },
-            update: {
-              allocationPct:
-                allocationPct !== undefined && allocationPct !== null
-                  ? new Prisma.Decimal(allocationPct)
-                  : undefined,
-              minLots: cat.minLots ?? undefined,
-              maxLots: cat.maxLots ?? undefined,
-              minShares: cat.minShares ?? undefined,
-              maxShares: cat.maxShares ?? undefined,
-              minAmount:
-                cat.minAmount !== undefined && cat.minAmount !== null
-                  ? new Prisma.Decimal(cat.minAmount)
-                  : undefined,
-              maxAmount:
-                cat.maxAmount !== undefined && cat.maxAmount !== null
-                  ? new Prisma.Decimal(cat.maxAmount)
-                  : undefined,
-              isUpiEligible: cat.isUpiEligible ?? true,
-            },
-            create: {
-              ipoId: ipo.id,
-              category,
-              allocationPct:
-                allocationPct !== undefined && allocationPct !== null
-                  ? new Prisma.Decimal(allocationPct)
-                  : null,
-              minLots: cat.minLots || null,
-              maxLots: cat.maxLots || null,
-              minShares: cat.minShares || null,
-              maxShares: cat.maxShares || null,
-              minAmount:
-                cat.minAmount !== undefined && cat.minAmount !== null
-                  ? new Prisma.Decimal(cat.minAmount)
-                  : null,
-              maxAmount:
-                cat.maxAmount !== undefined && cat.maxAmount !== null
-                  ? new Prisma.Decimal(cat.maxAmount)
-                  : null,
-              isUpiEligible: cat.isUpiEligible ?? true,
-            },
-          });
-        }
-      }
-
-      // Participants (Registrar, Lead Manager, explicitly listed participants)
-      const registrarName = (payload.registrar || allotmentConfigData.registrar || companyData.registrar)?.trim();
-      const registrarPhone = (payload.registrarPhone || allotmentConfigData.registrarPhone)?.trim() || null;
-      const registrarEmail = (payload.registrarEmail || allotmentConfigData.registrarEmail)?.trim() || null;
-
-      if (registrarName) {
-        await tx.ipoParticipant.create({
-          data: {
-            ipoId: ipo.id,
-            role: ParticipantRole.REGISTRAR,
-            name: registrarName,
-            phone: registrarPhone,
-            email: registrarEmail,
-            displayOrder: 1,
-          },
-        });
-      }
-
-      const rawLeadManager = payload.leadManager || companyData.leadManager;
-      let leadManagerNames: string[] = [];
-      if (Array.isArray(rawLeadManager)) {
-        leadManagerNames = rawLeadManager.map((m) => String(m).trim()).filter(Boolean);
-      } else if (typeof rawLeadManager === 'string' && rawLeadManager.trim()) {
-        leadManagerNames = [rawLeadManager.trim()];
-      }
-
-      for (let i = 0; i < leadManagerNames.length; i++) {
-        await tx.ipoParticipant.create({
-          data: {
-            ipoId: ipo.id,
-            role: ParticipantRole.BRLM,
-            name: leadManagerNames[i],
-            displayOrder: 2 + i,
-          },
-        });
-      }
-
-      if (Array.isArray(payload.participants) && payload.participants.length > 0) {
-        for (const part of payload.participants) {
-          if (!part.role || !part.name) continue;
-          await tx.ipoParticipant.create({
+        if (!company) {
+          company = await tx.company.create({
             data: {
-              ipoId: ipo.id,
-              role: part.role,
-              name: part.name.trim(),
-              phone: part.phone?.trim() || null,
-              email: part.email?.trim() || null,
-              website: part.website?.trim() || null,
-              displayOrder: part.displayOrder || 0,
+              legalName,
+              displayName: companyData.displayName?.trim() || legalName,
+              cin,
             },
           });
-        }
-      }
-
-      // Allotment Config
-      if (registrarName) {
-        await tx.ipoAllotmentConfig.upsert({
-          where: { ipoId: ipo.id },
-          update: {
-            registrar: registrarName,
-            registrarIpoCode: allotmentConfigData.registrarIpoCode?.trim() || null,
-            allotmentSourceUrl: allotmentConfigData.allotmentSourceUrl?.trim() || null,
-            expectedAllotmentDate: allotmentConfigData.expectedAllotmentDate || allotmentDate
-              ? new Date(allotmentConfigData.expectedAllotmentDate || allotmentDate!)
-              : undefined,
-            enabled: allotmentConfigData.enabled ?? true,
-          },
-          create: {
-            ipoId: ipo.id,
-            registrar: registrarName,
-            registrarIpoCode: allotmentConfigData.registrarIpoCode?.trim() || null,
-            allotmentSourceUrl: allotmentConfigData.allotmentSourceUrl?.trim() || null,
-            expectedAllotmentDate: allotmentConfigData.expectedAllotmentDate || allotmentDate
-              ? new Date(allotmentConfigData.expectedAllotmentDate || allotmentDate!)
-              : null,
-            enabled: allotmentConfigData.enabled ?? true,
-          },
-        });
-      }
-
-      // Documents (DRHP, RHP, or array)
-      const drhpUrl = (payload.drhpUrl || ipoData.drhpUrl)?.trim();
-      if (drhpUrl) {
-        await tx.ipoDocument.create({
-          data: {
-            ipoId: ipo.id,
-            documentType: DocumentType.DRHP,
-            fileName: 'DRHP Document',
-            sourceUrl: drhpUrl,
-            source: 'MANUAL_IMPORT',
-            parsingStatus: 'PARSED',
-          },
-        });
-      }
-
-      const rhpUrl = (payload.rhpUrl || ipoData.rhpUrl)?.trim();
-      if (rhpUrl) {
-        await tx.ipoDocument.create({
-          data: {
-            ipoId: ipo.id,
-            documentType: DocumentType.RHP,
-            fileName: 'RHP Document',
-            sourceUrl: rhpUrl,
-            source: 'MANUAL_IMPORT',
-            parsingStatus: 'PARSED',
-          },
-        });
-      }
-
-      if (Array.isArray(payload.documents) && payload.documents.length > 0) {
-        for (const doc of payload.documents) {
-          const docTypeStr = (doc.documentType || doc.type || '').toString().toUpperCase();
-          if (!docTypeStr) continue;
-          let docType: DocumentType = DocumentType.OTHER;
-          if (docTypeStr.includes('DRHP')) docType = DocumentType.DRHP;
-          else if (docTypeStr.includes('RHP')) docType = DocumentType.RHP;
-          else if (docTypeStr.includes('PROSPECTUS')) docType = DocumentType.PROSPECTUS;
-          else if (docTypeStr.includes('ANCHOR')) docType = DocumentType.ANCHOR_LIST;
-          else if (Object.values(DocumentType).includes(docTypeStr as DocumentType)) {
-            docType = docTypeStr as DocumentType;
-          }
-
-          const sourceUrl = (doc.sourceUrl || doc.url || '').trim();
-          if (!sourceUrl) continue;
-
-          const existingDoc = await tx.ipoDocument.findFirst({
-            where: { ipoId: ipo.id, documentType: docType, sourceUrl },
-          });
-          if (existingDoc) continue;
-
-          await tx.ipoDocument.create({
+        } else {
+          company = await tx.company.update({
+            where: { id: company.id },
             data: {
-              ipoId: ipo.id,
-              documentType: docType,
-              fileName: doc.fileName?.trim() || doc.title?.trim() || null,
-              sourceUrl,
-              source: 'MANUAL_IMPORT',
-              parsingStatus: 'PARSED',
+              legalName,
+              displayName: companyData.displayName?.trim() || company.displayName || legalName,
+              cin: cin || company.cin,
             },
           });
         }
-      }
 
-      // GMP Observation
-      const gmpAmt = payload.gmpAmount ?? gmpData.gmpAmount;
-      const gmpPct = payload.gmpPercent ?? gmpData.gmpPercent ?? gmpData.gmpPercentage;
-
-      if (gmpAmt !== undefined && gmpAmt !== null) {
-        await tx.gmpObservation.create({
+        const ipo = await tx.ipo.create({
           data: {
-            ipoId: ipo.id,
-            gmpAmount: new Prisma.Decimal(gmpAmt),
-            gmpPercentage:
-              gmpPct !== undefined && gmpPct !== null
-                ? new Prisma.Decimal(gmpPct)
-                : null,
-            estProfitPerLot:
-              gmpData.estProfitPerLot !== undefined && gmpData.estProfitPerLot !== null
-                ? new Prisma.Decimal(gmpData.estProfitPerLot)
-                : null,
-            sourceId: adminSourceId,
-            observedAt: gmpData.observedAt
-              ? new Date(gmpData.observedAt)
-              : new Date(),
+            companyId: company.id,
+            symbol: (ipoData.symbol || payload.symbol)?.trim() || null,
+            isin: (ipoData.isin || payload.isin)?.trim() || null,
+            nseSymbol: (ipoData.nseSymbol || payload.nseSymbol)?.trim() || null,
+            bseSymbol: (ipoData.bseSymbol || payload.bseSymbol)?.trim() || null,
+            exchange,
+            marketSegment,
+            status,
+            publicationStatus: PublicationStatus.DRAFT,
+            priceBandLow: (norm.rawCanonical.priceBandLow ?? norm.rawIpo.priceBandLow ?? norm.rawIpo.floorPrice ?? norm.rawIpo.priceBandMin ?? payload.priceBandLow ?? payload.priceBandMin ?? payload.floorPrice) ?? null,
+            priceBandHigh: (norm.rawCanonical.priceBandHigh ?? norm.rawIpo.priceBandHigh ?? norm.rawIpo.capPrice ?? norm.rawIpo.priceBandMax ?? payload.priceBandHigh ?? payload.priceBandMax ?? payload.capPrice) ?? null,
+            faceValue: (norm.rawCanonical.faceValue ?? norm.rawIpo.faceValue ?? payload.faceValue) ?? null,
+            lotSize: (norm.rawCanonical.lotSize ?? norm.rawIpo.lotSize ?? norm.rawIpo.marketLot ?? payload.lotSize ?? payload.marketLot) ?? null,
+            minimumLots: (norm.rawCanonical.minimumLots ?? norm.rawIpo.minimumLots ?? payload.minimumLots) ?? null,
+            issueSize: (norm.rawCanonical.totalIssueSize ?? norm.rawCanonical.issueSize ?? norm.rawIpo.totalIssueSize ?? norm.rawIpo.issueSize ?? payload.totalIssueSize ?? payload.issueSize) ?? null,
+            freshIssueSize: (norm.rawCanonical.freshIssueSize ?? norm.rawIpo.freshIssueSize ?? payload.freshIssueSize) ?? null,
+            ofsSize: (norm.rawCanonical.offerForSaleSize ?? norm.rawCanonical.ofsSize ?? norm.rawIpo.ofsSize ?? payload.ofsSize) ?? null,
+            issueShareCount: (norm.rawCanonical.totalShares ?? norm.rawCanonical.issueShareCount ?? norm.rawIpo.totalShares ?? norm.rawIpo.issueShareCount ?? payload.totalShares ?? payload.issueShareCount ?? payload.totalIssueShares) ?? null,
+            freshIssueShareCount: (norm.rawCanonical.freshIssueShareCount ?? norm.rawIpo.freshIssueShareCount ?? payload.freshIssueShareCount ?? payload.freshIssueShares) ?? null,
+            ofsShareCount: (norm.rawCanonical.ofsShareCount ?? norm.rawIpo.ofsShareCount ?? payload.ofsShareCount ?? payload.ofsShares) ?? null,
+            listingPrice: (norm.rawCanonical.listingPrice ?? norm.rawIpo.listingPrice ?? payload.listingPrice) ?? null,
+            listingGainPct: (norm.rawCanonical.listingGainPct ?? norm.rawIpo.listingGainPct ?? payload.listingGainPct) ?? null,
+            preIpoEps: (norm.rawValuation.preIpoEps ?? norm.rawIpo.preIpoEps ?? payload.preIpoEps) ?? null,
+            postIpoEps: (norm.rawValuation.postIpoEps ?? norm.rawIpo.postIpoEps ?? payload.postIpoEps) ?? null,
+            preIpoPe: (norm.rawValuation.preIpoPe ?? norm.rawIpo.preIpoPe ?? payload.preIpoPe) ?? null,
+            postIpoPe: (norm.rawValuation.postIpoPe ?? norm.rawIpo.postIpoPe ?? payload.postIpoPe) ?? null,
+            preIpoPromoterHolding: (norm.rawValuation.preIpoPromoterHolding ?? norm.rawIpo.preIpoPromoterHolding ?? payload.preIpoPromoterHolding) ?? null,
+            postIpoPromoterHolding: (norm.rawValuation.postIpoPromoterHolding ?? norm.rawIpo.postIpoPromoterHolding ?? payload.postIpoPromoterHolding) ?? null,
+            preIpoMarketCap: (norm.rawValuation.preIpoMarketCap ?? norm.rawIpo.preIpoMarketCap ?? payload.preIpoMarketCap) ?? null,
+            postIpoMarketCap: (norm.rawValuation.postIpoMarketCap ?? norm.rawIpo.postIpoMarketCap ?? payload.postIpoMarketCap) ?? null,
           },
         });
-      }
 
-      // Subscription Observations
-      const subItems = Array.isArray(payload.subscription)
-        ? payload.subscription
-        : payload.subscription && typeof payload.subscription === 'object'
-          ? [
-              ...(payload.subscription.qibx ? [{ category: 'QIB', subscriptionMultiple: payload.subscription.qibx }] : []),
-              ...(payload.subscription.nii ? [{ category: 'NII', subscriptionMultiple: payload.subscription.nii }] : []),
-              ...(payload.subscription.bNii ? [{ category: 'NII', subscriptionMultiple: payload.subscription.bNii }] : []),
-              ...(payload.subscription.sNii ? [{ category: 'NII', subscriptionMultiple: payload.subscription.sNii }] : []),
-              ...(payload.subscription.rii ? [{ category: 'RETAIL', subscriptionMultiple: payload.subscription.rii }] : []),
-              ...(payload.subscription.employee ? [{ category: 'EMPLOYEE', subscriptionMultiple: payload.subscription.employee }] : []),
-              ...(payload.subscription.shareholder ? [{ category: 'SHAREHOLDER', subscriptionMultiple: payload.subscription.shareholder }] : []),
-            ]
-          : [];
+        await this.executeAddOnlyTransactionForIpo(
+          tx,
+          ipo.id,
+          payload,
+          adminSourceId,
+        );
 
-      if (subItems.length > 0) {
-        for (const sub of subItems) {
-          const rawCat = (sub.category || sub.categoryCode || '').toString().toUpperCase();
-          const category = (rawCat === 'BNII' || rawCat === 'SNII') ? 'NII' : rawCat;
-          if (
-            !category ||
-            !Object.values(OfferCategoryType).includes(category as OfferCategoryType)
-          ) {
-            continue;
-          }
-          if (
-            sub.subscriptionMultiple !== undefined &&
-            sub.subscriptionMultiple !== null
-          ) {
-            await tx.subscriptionObservation.create({
-              data: {
-                ipoId: ipo.id,
-                category: category as OfferCategoryType,
-                subscriptionMultiple: new Prisma.Decimal(sub.subscriptionMultiple),
-                sharesBid: sub.sharesBid ? new Prisma.Decimal(sub.sharesBid) : null,
-                sharesOffered: sub.sharesOffered ? new Prisma.Decimal(sub.sharesOffered) : null,
-                sourceId: adminSourceId,
-                observedAt: sub.observedAt
-                  ? new Date(sub.observedAt)
-                  : payload.subscription?.asOf
-                    ? new Date(payload.subscription.asOf)
-                    : new Date(),
-              },
-            });
-          }
-        }
-      }
-
-      return ipo;
-    });
+        return ipo;
+      });
 
       return {
         id: createdOrUpdatedIpo.id,
@@ -2516,12 +2026,27 @@ export class AdminIpoService {
       records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'close_date', value: String(dto.closeDate) });
     if (dto.allotmentDate)
       records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'allotment_date', value: String(dto.allotmentDate) });
-    if (dto.refundDate)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'refund_date', value: String(dto.refundDate) });
+    const refundProv =
+      dto.refundDate ||
+      dto.refundInitiationDate ||
+      dto.ipo?.timeline?.refundInitiationDate ||
+      dto.timeline?.refundInitiationDate ||
+      dto.ipo?.lifecycle?.refundInitiationDate ||
+      dto.lifecycle?.refundInitiationDate ||
+      dto.ipo?.timeline?.refundDate ||
+      dto.timeline?.refundDate;
+    if (refundProv)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'refund_date', value: String(refundProv) });
     if (dto.listingDate)
       records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_date', value: String(dto.listingDate) });
-    if (dto.registrarName || dto.allotmentConfig?.registrar)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'registrar_name', value: String(dto.registrarName || dto.allotmentConfig?.registrar) });
+    const regNameProv =
+      dto.registrarName ||
+      dto.ipo?.participants?.registrarName ||
+      dto.participants?.registrarName ||
+      dto.allotmentConfig?.registrar ||
+      dto.ipo?.allotmentConfig?.registrar;
+    if (regNameProv)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'registrar_name', value: String(regNameProv) });
 
     for (const r of records) {
       await this.prisma.fieldProvenance.create({
@@ -3042,6 +2567,386 @@ export class AdminIpoService {
     }
   }
 
+  private normalizeExchangeListing(val?: any): ExchangeListing | undefined {
+    if (!val) return undefined;
+    const str = String(val).trim().toUpperCase();
+    if (str.includes('BOTH') || (str.includes('NSE') && str.includes('BSE'))) {
+      return ExchangeListing.BOTH;
+    }
+    if (str.includes('NSE') || str.includes('EMERGE')) {
+      return ExchangeListing.NSE;
+    }
+    if (str.includes('BSE')) {
+      return ExchangeListing.BSE;
+    }
+    if (Object.values(ExchangeListing).includes(str as any)) {
+      return str as ExchangeListing;
+    }
+    return undefined;
+  }
+
+  private normalizeMarketSegment(val?: any): MarketSegment | undefined {
+    if (!val) return undefined;
+    const str = String(val).trim().toUpperCase();
+    if (str.includes('SME')) {
+      return MarketSegment.SME;
+    }
+    if (str.includes('MAINBOARD') || str.includes('MAIN')) {
+      return MarketSegment.MAINBOARD;
+    }
+    if (Object.values(MarketSegment).includes(str as any)) {
+      return str as MarketSegment;
+    }
+    return undefined;
+  }
+
+  private normalizePublicationStatus(val?: any): PublicationStatus | undefined {
+    if (!val) return undefined;
+    const str = String(val).trim().toUpperCase();
+    if (str.includes('PUBLISHED')) {
+      return PublicationStatus.PUBLISHED;
+    }
+    if (str.includes('ARCHIVED')) {
+      return PublicationStatus.ARCHIVED;
+    }
+    if (str.includes('DRAFT')) {
+      return PublicationStatus.DRAFT;
+    }
+    if (Object.values(PublicationStatus).includes(str as any)) {
+      return str as PublicationStatus;
+    }
+    return undefined;
+  }
+
+  private normalizeDocumentType(rawType?: any): DocumentType {
+    if (!rawType) return DocumentType.OTHER;
+    const str = String(rawType).trim().toUpperCase();
+    if (str.includes('DRHP') || str.includes('DRAFT RED')) return DocumentType.DRHP;
+    if (str.includes('RHP') || str.includes('RED HERRING')) return DocumentType.RHP;
+    if (str.includes('PROSPECTUS')) return DocumentType.PROSPECTUS;
+    if (str.includes('ANCHOR')) return DocumentType.ANCHOR_LIST;
+    if (str.includes('BASIS') || str.includes('ALLOTMENT')) return DocumentType.BASIS_OF_ALLOTMENT;
+    if (Object.values(DocumentType).includes(str as any)) {
+      return str as DocumentType;
+    }
+    return DocumentType.OTHER;
+  }
+
+  private normalizeFinancialPeriodItem(fin: any): {
+    fiscalPeriod: string;
+    periodType: string;
+    totalAssets?: number | null;
+    totalRevenue?: number | null;
+    pat?: number | null;
+    ebitda?: number | null;
+    netWorth?: number | null;
+    roePercentage?: number | null;
+    rocePercentage?: number | null;
+    eps?: number | null;
+    patMarginPercent?: number | null;
+    ebitdaMarginPercent?: number | null;
+  } | null {
+    if (!fin || typeof fin !== 'object') return null;
+    const fiscalPeriod = String(fin.fiscalPeriod || fin.fiscalYear || fin.period || '').trim();
+    if (!fiscalPeriod) return null;
+
+    let periodType = fin.periodType ? String(fin.periodType).trim().toUpperCase() : '';
+    if (!periodType) {
+      if (/^(Q[1-4]|3M|6M|9M|H1|H2|QUARTER)/i.test(fiscalPeriod) || /\b(Q1|Q2|Q3|Q4|3M|6M|9M|H1|H2)\b/i.test(fiscalPeriod)) {
+        periodType = 'QUARTERLY';
+      } else {
+        periodType = 'ANNUAL';
+      }
+    }
+
+    const parseNum = (v: any) => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]/g, ''));
+      return isNaN(n) ? null : n;
+    };
+
+    return {
+      fiscalPeriod,
+      periodType,
+      totalAssets: parseNum(fin.totalAssets ?? fin.assets),
+      totalRevenue: parseNum(fin.totalRevenue ?? fin.revenue),
+      pat: parseNum(fin.pat ?? fin.patNetProfit ?? fin.netProfit),
+      ebitda: parseNum(fin.ebitda),
+      netWorth: parseNum(fin.netWorth ?? fin.nav ?? fin.ronw),
+      roePercentage: parseNum(fin.roePercentage ?? fin.roePercent ?? fin.roe),
+      rocePercentage: parseNum(fin.rocePercentage ?? fin.rocePercent ?? fin.roce),
+      eps: parseNum(fin.eps),
+      patMarginPercent: parseNum(fin.patMarginPercent ?? fin.patPercent ?? fin.patMargin),
+      ebitdaMarginPercent: parseNum(fin.ebitdaMarginPercent ?? fin.ebitdaPercent ?? fin.ebitdaMargin),
+    };
+  }
+
+  private normalizeAnchorInvestorItem(anc: any): {
+    anchorName: string;
+    sharesAllotted?: number | null;
+    amtCr?: number | null;
+    pctAllocated?: number | null;
+    pctOfIssue?: number | null;
+  } | null {
+    if (!anc || typeof anc !== 'object') return null;
+    const anchorName = String(anc.anchorName || anc.investorName || anc.name || '').trim();
+    if (!anchorName) return null;
+
+    const parseNum = (v: any) => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]/g, ''));
+      return isNaN(n) ? null : n;
+    };
+
+    const parseShares = (v: any) => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = typeof v === 'number' ? Math.round(v) : parseInt(String(v).replace(/[^0-9-]/g, ''), 10);
+      return isNaN(n) ? null : n;
+    };
+
+    return {
+      anchorName,
+      sharesAllotted: parseShares(anc.sharesAllotted),
+      amtCr: parseNum(anc.amtCr ?? anc.amountCr),
+      pctAllocated: parseNum(anc.pctAllocated ?? anc.percentAllocated),
+      pctOfIssue: parseNum(anc.pctOfIssue ?? anc.percentOfIssue),
+    };
+  }
+
+  private normalizeIncomingAddOnlyItem(item: any) {
+    const rawIpo = item?.ipo && typeof item.ipo === 'object' ? item.ipo : item || {};
+    const rawCompany = {
+      ...(rawIpo.company && typeof rawIpo.company === 'object' ? rawIpo.company : {}),
+      ...(item?.company && typeof item.company === 'object' ? item.company : {}),
+    };
+    const rawLifecycle = {
+      ...(rawIpo.lifecycle && typeof rawIpo.lifecycle === 'object' ? rawIpo.lifecycle : {}),
+      ...(item?.lifecycle && typeof item.lifecycle === 'object' ? item.lifecycle : {}),
+    };
+    const rawAllotmentConfig = {
+      ...(rawIpo.allotmentConfig && typeof rawIpo.allotmentConfig === 'object' ? rawIpo.allotmentConfig : {}),
+      ...(item?.allotmentConfig && typeof item.allotmentConfig === 'object' ? item.allotmentConfig : {}),
+    };
+    const rawGmp = {
+      ...(rawIpo.gmp && typeof rawIpo.gmp === 'object' ? rawIpo.gmp : {}),
+      ...(item?.gmp && typeof item.gmp === 'object' ? item.gmp : {}),
+    };
+    const rawGmpSub = rawIpo.gmpSubscription || item?.gmpSubscription || {};
+    const rawIdentifiers = {
+      ...(rawIpo.identifiers && typeof rawIpo.identifiers === 'object' ? rawIpo.identifiers : {}),
+      ...(item?.identifiers && typeof item.identifiers === 'object' ? item.identifiers : {}),
+    };
+    const rawCanonical = {
+      ...(rawIpo.canonical && typeof rawIpo.canonical === 'object' ? rawIpo.canonical : {}),
+      ...(item?.canonical && typeof item.canonical === 'object' ? item.canonical : {}),
+    };
+    const rawValuation = {
+      ...(rawIpo.valuation && typeof rawIpo.valuation === 'object' ? rawIpo.valuation : {}),
+      ...(item?.valuation && typeof item.valuation === 'object' ? item.valuation : {}),
+    };
+    const rawTimeline = {
+      ...(rawIpo.timeline && typeof rawIpo.timeline === 'object' ? rawIpo.timeline : {}),
+      ...(item?.timeline && typeof item.timeline === 'object' ? item.timeline : {}),
+    };
+    const rawOffer = {
+      ...(rawIpo.offer && typeof rawIpo.offer === 'object' ? rawIpo.offer : {}),
+      ...(item?.offer && typeof item.offer === 'object' ? item.offer : {}),
+    };
+    const arrayParticipants = Array.isArray(rawIpo.participants)
+      ? rawIpo.participants
+      : Array.isArray(item?.participants)
+        ? item.participants
+        : [];
+    const arrayRegistrar = arrayParticipants.find(
+      (p: any) => p && (String(p.role).toUpperCase() === 'REGISTRAR' || String(p.type).toUpperCase() === 'REGISTRAR'),
+    );
+    const arrayLeadManagers = arrayParticipants.filter(
+      (p: any) => p && (String(p.role).toUpperCase() === 'BRLM' || String(p.role).toUpperCase() === 'LEAD_MANAGER' || String(p.role).toUpperCase() === 'CO_BRLM'),
+    );
+
+    const rawParticipants: Record<string, any> = {
+      ...(rawIpo.participants && typeof rawIpo.participants === 'object' && !Array.isArray(rawIpo.participants) ? rawIpo.participants : {}),
+      ...(item?.participants && typeof item.participants === 'object' && !Array.isArray(item.participants) ? item.participants : {}),
+    };
+
+    if (arrayRegistrar) {
+      if (arrayRegistrar.name && !rawParticipants.registrarName) rawParticipants.registrarName = arrayRegistrar.name;
+      if (arrayRegistrar.phone && !rawParticipants.registrarPhone) rawParticipants.registrarPhone = arrayRegistrar.phone;
+      if (arrayRegistrar.email && !rawParticipants.registrarEmail) rawParticipants.registrarEmail = arrayRegistrar.email;
+      if (arrayRegistrar.website && !rawParticipants.registrarWebsite) rawParticipants.registrarWebsite = arrayRegistrar.website;
+    }
+    if (arrayLeadManagers.length > 0 && !rawParticipants.leadManagers && !rawParticipants.leadManager) {
+      rawParticipants.leadManagers = arrayLeadManagers.map((lm: any) => lm.name).filter(Boolean);
+    }
+
+    if (item?.registrarName && !rawParticipants.registrarName) rawParticipants.registrarName = item.registrarName;
+    if (rawIpo?.registrarName && !rawParticipants.registrarName) rawParticipants.registrarName = rawIpo.registrarName;
+    if (item?.registrarPhone && !rawParticipants.registrarPhone) rawParticipants.registrarPhone = item.registrarPhone;
+    if (rawIpo?.registrarPhone && !rawParticipants.registrarPhone) rawParticipants.registrarPhone = rawIpo.registrarPhone;
+    if (item?.registrarEmail && !rawParticipants.registrarEmail) rawParticipants.registrarEmail = item.registrarEmail;
+    if (rawIpo?.registrarEmail && !rawParticipants.registrarEmail) rawParticipants.registrarEmail = rawIpo.registrarEmail;
+    if (item?.registrarWebsite && !rawParticipants.registrarWebsite) rawParticipants.registrarWebsite = item.registrarWebsite;
+    if (rawIpo?.registrarWebsite && !rawParticipants.registrarWebsite) rawParticipants.registrarWebsite = rawIpo.registrarWebsite;
+    const rawFinancials = Array.isArray(rawIpo.financials)
+      ? rawIpo.financials
+      : Array.isArray(item?.financials)
+        ? item.financials
+        : Array.isArray(rawCompany.financials)
+          ? rawCompany.financials
+          : [];
+    const rawDocuments = Array.isArray(rawIpo.documents)
+      ? rawIpo.documents
+      : Array.isArray(item?.documents)
+        ? item.documents
+        : [];
+    const rawAnchorInvestors = Array.isArray(rawIpo.anchorInvestors)
+      ? rawIpo.anchorInvestors
+      : Array.isArray(item?.anchorInvestors)
+        ? item.anchorInvestors
+        : [];
+
+    const targetIpoId = (
+      item?.id ||
+      item?.ipoId ||
+      item?.targetIpoId ||
+      rawIpo.id ||
+      rawIpo.ipoId ||
+      rawIpo.targetIpoId
+    )?.trim?.();
+
+    const cin = (
+      rawIdentifiers.cin ||
+      rawCompany.cin ||
+      rawIpo.company?.cin ||
+      item?.cin ||
+      rawIpo.cin
+    )?.trim?.();
+
+    const isin = (
+      rawIdentifiers.isin ||
+      rawIpo.isin ||
+      rawCanonical.isin ||
+      item?.isin
+    )?.trim?.().toUpperCase();
+
+    const symbol = (
+      rawIdentifiers.tradingSymbol ||
+      rawIdentifiers.symbol ||
+      rawIdentifiers.nseSymbol ||
+      rawIdentifiers.bseSymbol ||
+      item?.tradingSymbol ||
+      item?.symbol ||
+      item?.nseSymbol ||
+      item?.bseSymbol ||
+      rawIpo.tradingSymbol ||
+      rawIpo.symbol ||
+      rawIpo.nseSymbol ||
+      rawIpo.bseSymbol ||
+      rawCanonical.symbol ||
+      rawCanonical.tradingSymbol
+    )?.trim?.().toUpperCase();
+
+    const nseSymbol = (rawIdentifiers.nseSymbol || item?.nseSymbol || rawIpo.nseSymbol)?.trim?.().toUpperCase();
+    const bseSymbol = (rawIdentifiers.bseSymbol || item?.bseSymbol || rawIpo.bseSymbol)?.trim?.().toUpperCase();
+
+    const legalName = (
+      rawIpo.legalCompanyName ||
+      item?.legalCompanyName ||
+      rawCompany.legalName ||
+      rawIpo.company?.legalName ||
+      item?.legalName ||
+      rawCompany.companyName ||
+      item?.companyName ||
+      rawCompany.displayName ||
+      rawIpo.displayName ||
+      item?.displayName ||
+      item?.ipoName ||
+      rawIpo.name ||
+      item?.name
+    )?.trim?.();
+
+    const displayName = (
+      rawIpo.displayName ||
+      item?.displayName ||
+      rawCompany.displayName ||
+      rawIpo.company?.displayName ||
+      item?.companyName ||
+      item?.ipoName ||
+      rawIpo.legalCompanyName ||
+      item?.legalCompanyName ||
+      rawCompany.legalName ||
+      rawIpo.company?.legalName ||
+      item?.name
+    )?.trim?.();
+
+    const inputName =
+      legalName ||
+      displayName ||
+      item?._sourceFileName?.replace(/\.json$/i, '') ||
+      'Unknown IPO';
+
+    const exchange = this.normalizeExchangeListing(
+      rawCanonical.exchangeListing ||
+      rawCanonical.exchange ||
+      rawIpo.exchange ||
+      item?.exchange ||
+      item?.listingExchange
+    );
+
+    const marketSegment = this.normalizeMarketSegment(
+      rawCanonical.marketSegment ||
+      rawIpo.marketSegment ||
+      item?.marketSegment ||
+      item?.issueType
+    );
+
+    const publicationStatus = this.normalizePublicationStatus(
+      rawCanonical.publicationStatus ||
+      rawIpo.publicationStatus ||
+      item?.publicationStatus
+    );
+
+    const sourceSlug = (
+      item?.slug ||
+      rawIpo?.slug ||
+      item?.ipoGuruSlug ||
+      (rawIdentifiers as any)?.ipoGuruSlug ||
+      item?._sourceSlug ||
+      ''
+    )?.trim?.() || undefined;
+
+    return {
+      rawIpo,
+      rawCompany,
+      rawLifecycle,
+      rawAllotmentConfig,
+      rawGmp,
+      rawGmpSub,
+      rawIdentifiers,
+      rawCanonical,
+      rawValuation,
+      rawTimeline,
+      rawOffer,
+      rawParticipants,
+      rawFinancials,
+      rawDocuments,
+      rawAnchorInvestors,
+      targetIpoId,
+      cin,
+      isin,
+      symbol,
+      nseSymbol,
+      bseSymbol,
+      legalName,
+      displayName,
+      inputName,
+      exchange,
+      marketSegment,
+      publicationStatus,
+      sourceSlug,
+    };
+  }
+
   private findMatchingIpoForAddOnly(
     item: any,
     allExistingIpos: any[],
@@ -3050,108 +2955,101 @@ export class AdminIpoService {
     matchedIpo?: any;
     reason: string;
   } {
-    const targetIpoId = (
-      item.id ||
-      item.ipoId ||
-      item.targetIpoId
-    )?.trim?.();
+    const norm = this.normalizeIncomingAddOnlyItem(item);
+
+    // 1. Explicit ID
     if (
-      targetIpoId &&
+      norm.targetIpoId &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        targetIpoId,
+        norm.targetIpoId,
       )
     ) {
-      const match = allExistingIpos.find((i) => i.id === targetIpoId);
+      const match = allExistingIpos.find((i) => i.id === norm.targetIpoId);
       if (match) {
         return {
           status: 'MATCHED',
           matchedIpo: match,
-          reason: `Matched by explicit ID (${targetIpoId})`,
+          reason: `Matched by explicit ID (${norm.targetIpoId})`,
         };
       }
     }
 
-    const cin = (item.company?.cin || item.cin)?.trim?.();
-    if (cin) {
+    // 2. Priority 1: CIN
+    if (norm.cin) {
       const matches = allExistingIpos.filter(
         (i) =>
           i.company?.cin &&
-          i.company.cin.toLowerCase() === cin.toLowerCase(),
+          i.company.cin.toLowerCase() === norm.cin!.toLowerCase(),
       );
       if (matches.length === 1) {
         return {
           status: 'MATCHED',
           matchedIpo: matches[0],
-          reason: `Matched by CIN '${cin}'`,
+          reason: `Matched by CIN '${norm.cin}'`,
         };
       }
       if (matches.length > 1) {
         return {
           status: 'AMBIGUOUS',
-          reason: `Ambiguous match: ${matches.length} IPOs share CIN '${cin}'`,
+          reason: `Ambiguous match: ${matches.length} IPOs share CIN '${norm.cin}'`,
         };
       }
     }
 
-    const isin = (item.isin || item.ipo?.isin)?.trim?.().toUpperCase();
-    if (isin) {
+    // 3. Priority 2: ISIN
+    if (norm.isin) {
       const matches = allExistingIpos.filter(
-        (i) => i.isin && i.isin.toUpperCase() === isin,
+        (i) => i.isin && i.isin.toUpperCase() === norm.isin!.toUpperCase(),
       );
       if (matches.length === 1) {
         return {
           status: 'MATCHED',
           matchedIpo: matches[0],
-          reason: `Matched by ISIN '${isin}'`,
+          reason: `Matched by ISIN '${norm.isin}'`,
         };
       }
       if (matches.length > 1) {
         return {
           status: 'AMBIGUOUS',
-          reason: `Ambiguous match: ${matches.length} IPOs share ISIN '${isin}'`,
+          reason: `Ambiguous match: ${matches.length} IPOs share ISIN '${norm.isin}'`,
         };
       }
     }
 
-    const symbol = (
-      item.symbol ||
-      item.nseSymbol ||
-      item.bseSymbol ||
-      item.ipo?.symbol ||
-      item.ipo?.nseSymbol ||
-      item.ipo?.bseSymbol
-    )?.trim?.().toUpperCase();
-    if (symbol) {
+    // 4. Priority 3: Symbol
+    if (norm.symbol) {
       const matches = allExistingIpos.filter(
         (i) =>
-          (i.symbol && i.symbol.toUpperCase() === symbol) ||
-          (i.nseSymbol && i.nseSymbol.toUpperCase() === symbol) ||
-          (i.bseSymbol && i.bseSymbol.toUpperCase() === symbol),
+          (i.symbol && i.symbol.toUpperCase() === norm.symbol) ||
+          (i.nseSymbol && i.nseSymbol.toUpperCase() === norm.symbol) ||
+          (i.bseSymbol && i.bseSymbol.toUpperCase() === norm.symbol),
       );
       if (matches.length === 1) {
         return {
           status: 'MATCHED',
           matchedIpo: matches[0],
-          reason: `Matched by Symbol '${symbol}'`,
+          reason: `Matched by Symbol '${norm.symbol}'`,
         };
       }
       if (matches.length > 1) {
         return {
           status: 'AMBIGUOUS',
-          reason: `Ambiguous match: ${matches.length} IPOs share Symbol '${symbol}'`,
+          reason: `Ambiguous match: ${matches.length} IPOs share Symbol '${norm.symbol}'`,
         };
       }
     }
 
-    const rawName = (
-      item.companyName ||
-      item.company?.legalName ||
-      item.company?.displayName ||
-      item.legalName ||
-      item.ipoName
-    )?.trim?.();
-    if (rawName) {
-      const normInput = normalizeName(rawName);
+    // 5. Priority 4: Normalized Company Name
+    const candidateNames = Array.from(
+      new Set(
+        [norm.legalName, norm.displayName, norm.inputName].filter(
+          Boolean,
+        ) as string[],
+      ),
+    );
+
+    for (const nameCandidate of candidateNames) {
+      const normInput = normalizeName(nameCandidate);
       if (normInput) {
         const exactMatches = allExistingIpos.filter((i) => {
           const normLegal = i.company?.legalName
@@ -3167,13 +3065,13 @@ export class AdminIpoService {
           return {
             status: 'MATCHED',
             matchedIpo: exactMatches[0],
-            reason: `Matched by Normalized Name '${rawName}'`,
+            reason: `Matched by Normalized Name '${nameCandidate}'`,
           };
         }
         if (exactMatches.length > 1) {
           return {
             status: 'AMBIGUOUS',
-            reason: `Ambiguous match: ${exactMatches.length} IPOs match Name '${rawName}'`,
+            reason: `Ambiguous match: ${exactMatches.length} IPOs match Name '${nameCandidate}'`,
           };
         }
       }
@@ -3197,12 +3095,7 @@ export class AdminIpoService {
     const skipped: FieldDiffSkipped[] = [];
     const fieldReport: FieldReportItem[] = [];
 
-    const companyData = item.company || {};
-    const ipoData = item.ipo || {};
-    const lifecycleData = item.lifecycle || {};
-    const allotmentConfigData = item.allotmentConfig || {};
-    const gmpData = item.gmp || {};
-
+    const norm = this.normalizeIncomingAddOnlyItem(item);
     const existingCompany = existingIpo.company || {};
 
     // 1. Company Level
@@ -3210,7 +3103,7 @@ export class AdminIpoService {
       'company',
       'legalName',
       existingCompany.legalName,
-      companyData.legalName || item.legalName || companyData.companyName,
+      norm.legalName,
       toFill,
       skipped,
       fieldReport,
@@ -3219,7 +3112,7 @@ export class AdminIpoService {
       'company',
       'displayName',
       existingCompany.displayName,
-      companyData.displayName || item.companyName || item.ipoName,
+      norm.displayName,
       toFill,
       skipped,
       fieldReport,
@@ -3228,7 +3121,7 @@ export class AdminIpoService {
       'company',
       'cin',
       existingCompany.cin,
-      companyData.cin || item.cin,
+      norm.cin,
       toFill,
       skipped,
       fieldReport,
@@ -3237,7 +3130,7 @@ export class AdminIpoService {
       'company',
       'contactPerson',
       existingCompany.contactPerson,
-      companyData.contactPerson || item.contactPerson,
+      norm.rawCompany.contactPerson || item.contactPerson,
       toFill,
       skipped,
       fieldReport,
@@ -3246,7 +3139,7 @@ export class AdminIpoService {
       'company',
       'logoUrl',
       existingCompany.logoUrl,
-      companyData.logoUrl || item.logoUrl,
+      norm.rawCompany.logoUrl || item.logoUrl,
       toFill,
       skipped,
       fieldReport,
@@ -3255,7 +3148,7 @@ export class AdminIpoService {
       'company',
       'website',
       existingCompany.website,
-      companyData.website || item.website,
+      norm.rawCompany.website || item.website,
       toFill,
       skipped,
       fieldReport,
@@ -3264,7 +3157,7 @@ export class AdminIpoService {
       'company',
       'phone',
       existingCompany.phone,
-      companyData.phone || item.companyPhone || item.phone,
+      norm.rawCompany.phone || item.companyPhone || item.phone,
       toFill,
       skipped,
       fieldReport,
@@ -3273,7 +3166,7 @@ export class AdminIpoService {
       'company',
       'email',
       existingCompany.email,
-      companyData.email || item.companyEmail || item.email,
+      norm.rawCompany.email || item.companyEmail || item.email,
       toFill,
       skipped,
       fieldReport,
@@ -3282,7 +3175,7 @@ export class AdminIpoService {
       'company',
       'aboutDescription',
       existingCompany.aboutDescription,
-      companyData.aboutDescription || item.aboutDescription || item.about || item.notes,
+      norm.rawCompany.aboutDescription || item.aboutDescription || norm.rawCompany.about || item.about || item.notes,
       toFill,
       skipped,
       fieldReport,
@@ -3291,7 +3184,7 @@ export class AdminIpoService {
       'company',
       'sector',
       existingCompany.sector,
-      companyData.sector || item.sector,
+      norm.rawCompany.sector || item.sector,
       toFill,
       skipped,
       fieldReport,
@@ -3300,7 +3193,7 @@ export class AdminIpoService {
       'company',
       'industry',
       existingCompany.industry,
-      companyData.industry || item.industry,
+      norm.rawCompany.industry || item.industry,
       toFill,
       skipped,
       fieldReport,
@@ -3311,7 +3204,7 @@ export class AdminIpoService {
       'ipo',
       'symbol',
       existingIpo.symbol,
-      ipoData.symbol || item.symbol,
+      norm.symbol,
       toFill,
       skipped,
       fieldReport,
@@ -3320,7 +3213,7 @@ export class AdminIpoService {
       'ipo',
       'isin',
       existingIpo.isin,
-      ipoData.isin || item.isin,
+      norm.isin,
       toFill,
       skipped,
       fieldReport,
@@ -3329,7 +3222,7 @@ export class AdminIpoService {
       'ipo',
       'nseSymbol',
       existingIpo.nseSymbol,
-      ipoData.nseSymbol || item.nseSymbol,
+      norm.nseSymbol,
       toFill,
       skipped,
       fieldReport,
@@ -3338,7 +3231,7 @@ export class AdminIpoService {
       'ipo',
       'bseSymbol',
       existingIpo.bseSymbol,
-      ipoData.bseSymbol || item.bseSymbol,
+      norm.bseSymbol,
       toFill,
       skipped,
       fieldReport,
@@ -3347,7 +3240,7 @@ export class AdminIpoService {
       'ipo',
       'exchange',
       existingIpo.exchange,
-      ipoData.exchange || item.exchange,
+      norm.exchange,
       toFill,
       skipped,
       fieldReport,
@@ -3356,7 +3249,16 @@ export class AdminIpoService {
       'ipo',
       'marketSegment',
       existingIpo.marketSegment,
-      ipoData.marketSegment || ipoData.issueType || item.issueType,
+      norm.marketSegment,
+      toFill,
+      skipped,
+      fieldReport,
+    );
+    this.checkAddOnlyField(
+      'ipo',
+      'publicationStatus',
+      existingIpo.publicationStatus,
+      norm.publicationStatus,
       toFill,
       skipped,
       fieldReport,
@@ -3365,7 +3267,7 @@ export class AdminIpoService {
       'ipo',
       'priceBandLow',
       existingIpo.priceBandLow,
-      item.priceBandLow ?? item.priceBandMin ?? item.floorPrice ?? ipoData.priceBandLow ?? ipoData.priceBandMin ?? ipoData.floorPrice,
+      norm.rawCanonical.priceBandLow ?? norm.rawIpo.priceBandLow ?? norm.rawIpo.floorPrice ?? norm.rawIpo.priceBandMin ?? item.priceBandLow ?? item.priceBandMin ?? item.floorPrice,
       toFill,
       skipped,
       fieldReport,
@@ -3374,7 +3276,7 @@ export class AdminIpoService {
       'ipo',
       'priceBandHigh',
       existingIpo.priceBandHigh,
-      item.priceBandHigh ?? item.priceBandMax ?? item.capPrice ?? ipoData.priceBandHigh ?? ipoData.priceBandMax ?? ipoData.capPrice,
+      norm.rawCanonical.priceBandHigh ?? norm.rawIpo.priceBandHigh ?? norm.rawIpo.capPrice ?? norm.rawIpo.priceBandMax ?? item.priceBandHigh ?? item.priceBandMax ?? item.capPrice,
       toFill,
       skipped,
       fieldReport,
@@ -3383,7 +3285,7 @@ export class AdminIpoService {
       'ipo',
       'faceValue',
       existingIpo.faceValue,
-      ipoData.faceValue ?? item.faceValue,
+      norm.rawCanonical.faceValue ?? norm.rawIpo.faceValue ?? item.faceValue,
       toFill,
       skipped,
       fieldReport,
@@ -3392,7 +3294,7 @@ export class AdminIpoService {
       'ipo',
       'lotSize',
       existingIpo.lotSize,
-      ipoData.lotSize ?? ipoData.marketLot ?? item.lotSize ?? item.marketLot,
+      norm.rawCanonical.lotSize ?? norm.rawIpo.lotSize ?? norm.rawIpo.marketLot ?? item.lotSize ?? item.marketLot,
       toFill,
       skipped,
       fieldReport,
@@ -3401,7 +3303,7 @@ export class AdminIpoService {
       'ipo',
       'minimumLots',
       existingIpo.minimumLots,
-      ipoData.minimumLots ?? item.minimumLots,
+      norm.rawCanonical.minimumLots ?? norm.rawIpo.minimumLots ?? item.minimumLots,
       toFill,
       skipped,
       fieldReport,
@@ -3410,7 +3312,7 @@ export class AdminIpoService {
       'ipo',
       'issueSize',
       existingIpo.issueSize,
-      ipoData.issueSize ?? ipoData.totalIssueSize ?? item.issueSize ?? item.totalIssueSize,
+      norm.rawCanonical.totalIssueSize ?? norm.rawCanonical.issueSize ?? norm.rawIpo.totalIssueSize ?? norm.rawIpo.issueSize ?? item.totalIssueSize ?? item.issueSize,
       toFill,
       skipped,
       fieldReport,
@@ -3419,7 +3321,7 @@ export class AdminIpoService {
       'ipo',
       'freshIssueSize',
       existingIpo.freshIssueSize,
-      ipoData.freshIssueSize ?? item.freshIssueSize,
+      norm.rawCanonical.freshIssueSize ?? norm.rawIpo.freshIssueSize ?? item.freshIssueSize,
       toFill,
       skipped,
       fieldReport,
@@ -3428,7 +3330,7 @@ export class AdminIpoService {
       'ipo',
       'ofsSize',
       existingIpo.ofsSize,
-      ipoData.ofsSize ?? item.ofsSize,
+      norm.rawCanonical.offerForSaleSize ?? norm.rawCanonical.ofsSize ?? norm.rawIpo.ofsSize ?? item.ofsSize,
       toFill,
       skipped,
       fieldReport,
@@ -3437,7 +3339,7 @@ export class AdminIpoService {
       'ipo',
       'issueShareCount',
       existingIpo.issueShareCount,
-      ipoData.issueShareCount ?? ipoData.totalShares ?? item.issueShareCount ?? item.totalShares,
+      norm.rawCanonical.totalShares ?? norm.rawCanonical.issueShareCount ?? norm.rawIpo.totalShares ?? norm.rawIpo.issueShareCount ?? item.totalShares ?? item.issueShareCount ?? item.totalIssueShares,
       toFill,
       skipped,
       fieldReport,
@@ -3446,7 +3348,7 @@ export class AdminIpoService {
       'ipo',
       'freshIssueShareCount',
       existingIpo.freshIssueShareCount,
-      ipoData.freshIssueShareCount ?? item.freshIssueShareCount,
+      norm.rawCanonical.freshIssueShareCount ?? norm.rawIpo.freshIssueShareCount ?? item.freshIssueShareCount ?? item.freshIssueShares,
       toFill,
       skipped,
       fieldReport,
@@ -3455,7 +3357,7 @@ export class AdminIpoService {
       'ipo',
       'ofsShareCount',
       existingIpo.ofsShareCount,
-      ipoData.ofsShareCount ?? item.ofsShareCount,
+      norm.rawCanonical.ofsShareCount ?? norm.rawIpo.ofsShareCount ?? item.ofsShareCount ?? item.ofsShares,
       toFill,
       skipped,
       fieldReport,
@@ -3464,7 +3366,7 @@ export class AdminIpoService {
       'ipo',
       'listingPrice',
       existingIpo.listingPrice,
-      ipoData.listingPrice ?? item.listingPrice,
+      norm.rawCanonical.listingPrice ?? norm.rawIpo.listingPrice ?? item.listingPrice,
       toFill,
       skipped,
       fieldReport,
@@ -3473,7 +3375,7 @@ export class AdminIpoService {
       'ipo',
       'listingGainPct',
       existingIpo.listingGainPct,
-      ipoData.listingGainPct ?? item.listingGainPct,
+      norm.rawCanonical.listingGainPct ?? norm.rawIpo.listingGainPct ?? item.listingGainPct,
       toFill,
       skipped,
       fieldReport,
@@ -3482,7 +3384,7 @@ export class AdminIpoService {
       'ipo',
       'profitAmount',
       existingIpo.profitAmount,
-      ipoData.profitAmount ?? item.profitAmount,
+      norm.rawIpo.profitAmount ?? item.profitAmount,
       toFill,
       skipped,
       fieldReport,
@@ -3491,7 +3393,7 @@ export class AdminIpoService {
       'ipo',
       'profitPercentage',
       existingIpo.profitPercentage,
-      ipoData.profitPercentage ?? item.profitPercentage,
+      norm.rawIpo.profitPercentage ?? item.profitPercentage,
       toFill,
       skipped,
       fieldReport,
@@ -3500,7 +3402,7 @@ export class AdminIpoService {
       'ipo',
       'preIpoEps',
       existingIpo.preIpoEps,
-      ipoData.preIpoEps ?? item.preIpoEps,
+      norm.rawValuation.preIpoEps ?? norm.rawIpo.preIpoEps ?? item.preIpoEps,
       toFill,
       skipped,
       fieldReport,
@@ -3509,7 +3411,7 @@ export class AdminIpoService {
       'ipo',
       'postIpoEps',
       existingIpo.postIpoEps,
-      ipoData.postIpoEps ?? item.postIpoEps,
+      norm.rawValuation.postIpoEps ?? norm.rawIpo.postIpoEps ?? item.postIpoEps,
       toFill,
       skipped,
       fieldReport,
@@ -3518,7 +3420,7 @@ export class AdminIpoService {
       'ipo',
       'preIpoPe',
       existingIpo.preIpoPe,
-      ipoData.preIpoPe ?? item.preIpoPe,
+      norm.rawValuation.preIpoPe ?? norm.rawIpo.preIpoPe ?? item.preIpoPe,
       toFill,
       skipped,
       fieldReport,
@@ -3527,7 +3429,7 @@ export class AdminIpoService {
       'ipo',
       'postIpoPe',
       existingIpo.postIpoPe,
-      ipoData.postIpoPe ?? item.postIpoPe,
+      norm.rawValuation.postIpoPe ?? norm.rawIpo.postIpoPe ?? item.postIpoPe,
       toFill,
       skipped,
       fieldReport,
@@ -3536,7 +3438,7 @@ export class AdminIpoService {
       'ipo',
       'preIpoPromoterHolding',
       existingIpo.preIpoPromoterHolding,
-      ipoData.preIpoPromoterHolding ?? item.preIpoPromoterHolding,
+      norm.rawValuation.preIpoPromoterHolding ?? norm.rawIpo.preIpoPromoterHolding ?? item.preIpoPromoterHolding,
       toFill,
       skipped,
       fieldReport,
@@ -3545,7 +3447,7 @@ export class AdminIpoService {
       'ipo',
       'postIpoPromoterHolding',
       existingIpo.postIpoPromoterHolding,
-      ipoData.postIpoPromoterHolding ?? item.postIpoPromoterHolding,
+      norm.rawValuation.postIpoPromoterHolding ?? norm.rawIpo.postIpoPromoterHolding ?? item.postIpoPromoterHolding,
       toFill,
       skipped,
       fieldReport,
@@ -3554,7 +3456,7 @@ export class AdminIpoService {
       'ipo',
       'preIpoMarketCap',
       existingIpo.preIpoMarketCap,
-      ipoData.preIpoMarketCap ?? item.preIpoMarketCap,
+      norm.rawValuation.preIpoMarketCap ?? norm.rawIpo.preIpoMarketCap ?? item.preIpoMarketCap,
       toFill,
       skipped,
       fieldReport,
@@ -3563,24 +3465,24 @@ export class AdminIpoService {
       'ipo',
       'postIpoMarketCap',
       existingIpo.postIpoMarketCap,
-      ipoData.postIpoMarketCap ?? item.postIpoMarketCap,
+      norm.rawValuation.postIpoMarketCap ?? norm.rawIpo.postIpoMarketCap ?? item.postIpoMarketCap,
       toFill,
       skipped,
       fieldReport,
     );
 
-    // 3. Lifecycle Events
+    // 3. Lifecycle Events / Timeline
     const existingEvents = existingIpo.lifecycleEvents || [];
     const eventTypeMap: Record<string, string | undefined> = {
-      OPEN: item.openDate || item.issueOpenDate || lifecycleData.openDate,
-      CLOSE: item.closeDate || item.issueCloseDate || lifecycleData.closeDate,
-      BASIS_OF_ALLOTMENT: item.allotmentDate || item.basisOfAllotmentDate || lifecycleData.allotmentDate,
-      LISTING: item.listingDate || lifecycleData.listingDate,
-      REFUND_INITIATION: item.refundInitiationDate || item.refundDate || lifecycleData.refundDate,
-      DEMAT_CREDIT: item.creditToDematDate || item.dematCreditDate || lifecycleData.dematCreditDate,
-      DRHP: item.drhpDate || lifecycleData.drhpDate,
-      RHP: item.rhpDate || lifecycleData.rhpDate,
-      ANCHOR: item.anchorDate || item.anchorBidDate || lifecycleData.anchorDate,
+      OPEN: norm.rawTimeline.openDate || norm.rawTimeline.issueOpenDate || norm.rawLifecycle.openDate || norm.rawLifecycle.issueOpenDate || norm.rawIpo.openDate || item.openDate,
+      CLOSE: norm.rawTimeline.closeDate || norm.rawTimeline.issueCloseDate || norm.rawLifecycle.closeDate || norm.rawLifecycle.issueCloseDate || norm.rawIpo.closeDate || item.closeDate,
+      BASIS_OF_ALLOTMENT: norm.rawTimeline.allotmentDate || norm.rawTimeline.basisOfAllotmentDate || norm.rawLifecycle.allotmentDate || norm.rawLifecycle.basisOfAllotmentDate || norm.rawIpo.allotmentDate || item.allotmentDate,
+      LISTING: norm.rawTimeline.listingDate || norm.rawLifecycle.listingDate || norm.rawIpo.listingDate || item.listingDate,
+      REFUND_INITIATION: norm.rawTimeline.refundInitiationDate || norm.rawTimeline.refundDate || norm.rawLifecycle.refundInitiationDate || norm.rawLifecycle.refundDate || norm.rawIpo.refundDate || item.refundInitiationDate || item.refundDate,
+      DEMAT_CREDIT: norm.rawTimeline.creditToDematDate || norm.rawTimeline.dematCreditDate || norm.rawLifecycle.creditToDematDate || norm.rawLifecycle.dematCreditDate || norm.rawIpo.creditToDematDate || norm.rawIpo.dematCreditDate || item.creditToDematDate || item.dematCreditDate,
+      DRHP: norm.rawTimeline.drhpDate || norm.rawLifecycle.drhpDate || item.drhpDate,
+      RHP: norm.rawTimeline.rhpDate || norm.rawLifecycle.rhpDate || item.rhpDate,
+      ANCHOR: norm.rawTimeline.anchorDate || norm.rawTimeline.anchorBidDate || norm.rawLifecycle.anchorDate || norm.rawLifecycle.anchorBidDate || item.anchorDate || item.anchorBidDate,
     };
 
     for (const [evType, inputDateStr] of Object.entries(eventTypeMap)) {
@@ -3609,7 +3511,7 @@ export class AdminIpoService {
       'allotmentConfig',
       'registrar',
       existingAllotConfig.registrar,
-      allotmentConfigData.registrar || item.registrar,
+      norm.rawParticipants.registrarName || norm.rawParticipants.registrar || norm.rawAllotmentConfig.registrar || norm.rawIpo.registrar || item.registrar,
       toFill,
       skipped,
       fieldReport,
@@ -3618,7 +3520,7 @@ export class AdminIpoService {
       'allotmentConfig',
       'registrarIpoCode',
       existingAllotConfig.registrarIpoCode,
-      allotmentConfigData.registrarIpoCode || item.registrarIpoCode,
+      norm.rawAllotmentConfig.registrarIpoCode || item.registrarIpoCode,
       toFill,
       skipped,
       fieldReport,
@@ -3627,77 +3529,96 @@ export class AdminIpoService {
       'allotmentConfig',
       'allotmentSourceUrl',
       existingAllotConfig.allotmentSourceUrl,
-      allotmentConfigData.allotmentSourceUrl || item.allotmentSourceUrl,
+      norm.rawAllotmentConfig.allotmentSourceUrl || norm.rawAllotmentConfig.allotmentUrl || item.allotmentSourceUrl,
       toFill,
       skipped,
       fieldReport,
     );
 
-    // 5. Documents (DRHP, RHP, Prospectus, Anchor List)
+    // 5. Documents (Array + Flat Legacy URLs)
     const existingDocs = existingIpo.documents || [];
-    if (item.drhpUrl || item.drhp) {
-      const doc = existingDocs.find((d: any) => d.documentType === 'DRHP');
-      this.checkAddOnlyField(
-        'documents',
-        'DRHP',
-        doc?.sourceUrl,
-        item.drhpUrl || item.drhp,
-        toFill,
-        skipped,
-        fieldReport,
-      );
+    const gatheredDocs: Array<{ type: DocumentType; url?: string; title?: string }> = [];
+
+    if (Array.isArray(norm.rawDocuments)) {
+      for (const d of norm.rawDocuments) {
+        if (!d || typeof d !== 'object') continue;
+        const type = this.normalizeDocumentType(d.documentType || d.type);
+        const url = (d.documentUrl || d.sourceUrl || d.url || '').trim();
+        const title = (d.documentTitle || d.title || d.fileName || '').trim();
+        if (url || title || type !== DocumentType.OTHER) {
+          gatheredDocs.push({ type, url: url || undefined, title: title || undefined });
+        }
+      }
     }
-    if (item.rhpUrl || item.rhp) {
-      const doc = existingDocs.find((d: any) => d.documentType === 'RHP');
-      this.checkAddOnlyField(
-        'documents',
-        'RHP',
-        doc?.sourceUrl,
-        item.rhpUrl || item.rhp,
-        toFill,
-        skipped,
-        fieldReport,
-      );
+
+    const flatDocMap: Array<[DocumentType, string | undefined]> = [
+      [DocumentType.DRHP, item.drhpUrl || item.drhp || norm.rawIpo.drhpUrl],
+      [DocumentType.RHP, item.rhpUrl || item.rhp || norm.rawIpo.rhpUrl],
+      [DocumentType.PROSPECTUS, item.prospectusUrl || norm.rawIpo.prospectusUrl],
+      [DocumentType.ANCHOR_LIST, item.anchorListUrl || norm.rawIpo.anchorListUrl],
+    ];
+
+    for (const [flatType, flatUrl] of flatDocMap) {
+      if (flatUrl && !gatheredDocs.some((g) => g.type === flatType)) {
+        gatheredDocs.push({ type: flatType, url: flatUrl.trim() });
+      }
     }
-    if (item.prospectusUrl) {
-      const doc = existingDocs.find((d: any) => d.documentType === 'PROSPECTUS');
-      this.checkAddOnlyField(
-        'documents',
-        'PROSPECTUS',
-        doc?.sourceUrl,
-        item.prospectusUrl,
-        toFill,
-        skipped,
-        fieldReport,
-      );
-    }
-    if (item.anchorListUrl) {
-      const doc = existingDocs.find((d: any) => d.documentType === 'ANCHOR_LIST');
-      this.checkAddOnlyField(
-        'documents',
-        'ANCHOR_LIST',
-        doc?.sourceUrl,
-        item.anchorListUrl,
-        toFill,
-        skipped,
-        fieldReport,
-      );
+
+    for (const gDoc of gatheredDocs) {
+      const existingDoc = existingDocs.find((d: any) => d.documentType === gDoc.type);
+      if (!existingDoc) {
+        toFill.push({
+          section: 'documents',
+          field: `${gDoc.type} (NEW DOCUMENT)`,
+          newValue: gDoc.url || gDoc.title || gDoc.type,
+          status: 'FILLED',
+        });
+        fieldReport.push({
+          section: 'documents',
+          field: `${gDoc.type} (NEW DOCUMENT)`,
+          status: 'FILLED',
+          existingValue: null,
+          incomingValue: gDoc.url || gDoc.title || gDoc.type,
+          reason: `New document ${gDoc.type} added`,
+        });
+      } else if (gDoc.url) {
+        this.checkAddOnlyField(
+          'documents',
+          `${gDoc.type}.sourceUrl`,
+          existingDoc.sourceUrl,
+          gDoc.url,
+          toFill,
+          skipped,
+          fieldReport,
+        );
+      }
     }
 
     // 6. Offer Categories & Retail Limits
     const existingCategories = existingIpo.offerCategories || [];
     const inputCategories =
-      item.offerCategories || item.offerBreakup || item.reservation || ipoData.offerCategories || [];
+      norm.rawIpo.offerCategories ||
+      item.offerCategories ||
+      norm.rawIpo.offerBreakup ||
+      item.offerBreakup ||
+      item.reservation ||
+      [];
 
-    // Synthesize retail category from top-level retail fields if present
     const retailInput: any = {};
-    if (item.retailMinLots !== undefined) retailInput.minLots = item.retailMinLots;
-    if (item.retailMaxLots !== undefined) retailInput.maxLots = item.retailMaxLots;
-    if (item.retailMinShares !== undefined) retailInput.minShares = item.retailMinShares;
-    if (item.retailMaxShares !== undefined) retailInput.maxShares = item.retailMaxShares;
-    if (item.retailMinAmount !== undefined) retailInput.minAmount = item.retailMinAmount;
-    if (item.retailMaxAmount !== undefined) retailInput.maxAmount = item.retailMaxAmount;
-    if (item.retailAllocationPct !== undefined) retailInput.allocationPct = item.retailAllocationPct;
+    if (norm.rawOffer.retailMinLots !== undefined || item.retailMinLots !== undefined)
+      retailInput.minLots = norm.rawOffer.retailMinLots ?? item.retailMinLots;
+    if (norm.rawOffer.retailMaxLots !== undefined || item.retailMaxLots !== undefined)
+      retailInput.maxLots = norm.rawOffer.retailMaxLots ?? item.retailMaxLots;
+    if (norm.rawOffer.retailMinShares !== undefined || item.retailMinShares !== undefined)
+      retailInput.minShares = norm.rawOffer.retailMinShares ?? item.retailMinShares;
+    if (norm.rawOffer.retailMaxShares !== undefined || item.retailMaxShares !== undefined)
+      retailInput.maxShares = norm.rawOffer.retailMaxShares ?? item.retailMaxShares;
+    if (norm.rawOffer.retailMinAmount !== undefined || item.retailMinAmount !== undefined)
+      retailInput.minAmount = norm.rawOffer.retailMinAmount ?? item.retailMinAmount;
+    if (norm.rawOffer.retailMaxAmount !== undefined || item.retailMaxAmount !== undefined)
+      retailInput.maxAmount = norm.rawOffer.retailMaxAmount ?? item.retailMaxAmount;
+    if (norm.rawOffer.retailAllocationPercent !== undefined || item.retailAllocationPct !== undefined)
+      retailInput.allocationPct = norm.rawOffer.retailAllocationPercent ?? item.retailAllocationPct;
 
     const mergedInputCategories = [...(Array.isArray(inputCategories) ? inputCategories : [])];
     if (Object.keys(retailInput).length > 0) {
@@ -3708,6 +3629,28 @@ export class AdminIpoService {
         mergedInputCategories.push({ category: 'RETAIL', ...retailInput });
       } else {
         Object.assign(existingInList, { ...retailInput, ...existingInList });
+      }
+    }
+
+    if (norm.rawOffer.qibAllocationPercent !== undefined) {
+      const existingQib = mergedInputCategories.find(
+        (c: any) => String(c.category || c.categoryCode || '').toUpperCase() === 'QIB',
+      );
+      if (!existingQib) {
+        mergedInputCategories.push({ category: 'QIB', allocationPct: norm.rawOffer.qibAllocationPercent });
+      } else if (existingQib.allocationPct === undefined) {
+        existingQib.allocationPct = norm.rawOffer.qibAllocationPercent;
+      }
+    }
+
+    if (norm.rawOffer.niiAllocationPercent !== undefined) {
+      const existingNii = mergedInputCategories.find(
+        (c: any) => String(c.category || c.categoryCode || '').toUpperCase() === 'NII',
+      );
+      if (!existingNii) {
+        mergedInputCategories.push({ category: 'NII', allocationPct: norm.rawOffer.niiAllocationPercent });
+      } else if (existingNii.allocationPct === undefined) {
+        existingNii.allocationPct = norm.rawOffer.niiAllocationPercent;
       }
     }
 
@@ -3821,16 +3764,15 @@ export class AdminIpoService {
       }
     }
 
-    // 7. Company Financials (Record & Field Level Merge)
+    // 7. Company Financials (Record & Field Level Merge for ALL periods)
     const existingFinancials = existingCompany.financials || [];
-    const inputFinancials =
-      companyData.financials || item.financials || [];
+    const inputFinancials = norm.rawFinancials;
     if (Array.isArray(inputFinancials)) {
-      for (const finItem of inputFinancials) {
-        if (!finItem || typeof finItem !== 'object') continue;
-        const period = String(finItem.fiscalPeriod || finItem.fiscalYear || '').trim();
-        const periodType = String(finItem.periodType || 'ANNUAL').toUpperCase();
-        if (!period) continue;
+      for (const rawFin of inputFinancials) {
+        const finItem = this.normalizeFinancialPeriodItem(rawFin);
+        if (!finItem) continue;
+        const period = finItem.fiscalPeriod;
+        const periodType = finItem.periodType;
 
         const existingFin = existingFinancials.find(
           (f: any) =>
@@ -3866,7 +3808,7 @@ export class AdminIpoService {
             'financials',
             `${period}.totalRevenue`,
             existingFin.totalRevenue,
-            finItem.totalRevenue ?? finItem.revenue,
+            finItem.totalRevenue,
             toFill,
             skipped,
             fieldReport,
@@ -3875,7 +3817,7 @@ export class AdminIpoService {
             'financials',
             `${period}.pat`,
             existingFin.pat,
-            finItem.pat ?? finItem.netProfit,
+            finItem.pat,
             toFill,
             skipped,
             fieldReport,
@@ -3893,7 +3835,7 @@ export class AdminIpoService {
             'financials',
             `${period}.netWorth`,
             existingFin.netWorth,
-            finItem.netWorth ?? finItem.nav ?? finItem.ronw,
+            finItem.netWorth,
             toFill,
             skipped,
             fieldReport,
@@ -3902,7 +3844,7 @@ export class AdminIpoService {
             'financials',
             `${period}.roePercentage`,
             existingFin.roePercentage,
-            finItem.roePercentage ?? finItem.roePercent,
+            finItem.roePercentage,
             toFill,
             skipped,
             fieldReport,
@@ -3929,7 +3871,7 @@ export class AdminIpoService {
             'financials',
             `${period}.patMarginPercent`,
             existingFin.patMarginPercent,
-            finItem.patMarginPercent ?? finItem.patPercent,
+            finItem.patMarginPercent,
             toFill,
             skipped,
             fieldReport,
@@ -3948,7 +3890,7 @@ export class AdminIpoService {
     }
 
     // 8. Anchor Investors & Anchor Details
-    const anchorInvestorsList = item.anchorInvestors || [];
+    const anchorInvestorsList = norm.rawAnchorInvestors;
     if (Array.isArray(anchorInvestorsList) && anchorInvestorsList.length > 0) {
       const existingAnchorDoc = existingDocs.find((d: any) => d.documentType === 'ANCHOR_LIST');
       const existingExt = (existingAnchorDoc?.extractionData as any) || {};
@@ -3956,31 +3898,33 @@ export class AdminIpoService {
         ? existingExt.anchorInvestors
         : [];
 
-      for (const anc of anchorInvestorsList) {
-        if (!anc?.anchorName) continue;
-        const ancName = anc.anchorName.trim().toLowerCase();
+      for (const rawAnc of anchorInvestorsList) {
+        const anc = this.normalizeAnchorInvestorItem(rawAnc);
+        if (!anc) continue;
+        const ancName = anc.anchorName;
+        const lowerAncName = ancName.toLowerCase();
         const existingAnc = existingAnchors.find(
-          (a: any) => (a.anchorName || '').trim().toLowerCase() === ancName,
+          (a: any) => (a.anchorName || a.investorName || '').trim().toLowerCase() === lowerAncName,
         );
         if (!existingAnc) {
           toFill.push({
             section: 'anchorInvestors',
-            field: `${anc.anchorName} (NEW ANCHOR)`,
+            field: `${ancName} (NEW ANCHOR)`,
             newValue: anc,
             status: 'FILLED',
           });
           fieldReport.push({
             section: 'anchorInvestors',
-            field: `${anc.anchorName} (NEW ANCHOR)`,
+            field: `${ancName} (NEW ANCHOR)`,
             status: 'FILLED',
             existingValue: null,
             incomingValue: anc,
-            reason: `New anchor investor ${anc.anchorName} added`,
+            reason: `New anchor investor ${ancName} added`,
           });
         } else {
           this.checkAddOnlyField(
             'anchorInvestors',
-            `${anc.anchorName}.sharesAllotted`,
+            `${ancName}.sharesAllotted`,
             existingAnc.sharesAllotted,
             anc.sharesAllotted,
             toFill,
@@ -3989,8 +3933,8 @@ export class AdminIpoService {
           );
           this.checkAddOnlyField(
             'anchorInvestors',
-            `${anc.anchorName}.amtCr`,
-            existingAnc.amtCr,
+            `${ancName}.amtCr`,
+            existingAnc.amtCr ?? existingAnc.amountCr,
             anc.amtCr,
             toFill,
             skipped,
@@ -3998,9 +3942,18 @@ export class AdminIpoService {
           );
           this.checkAddOnlyField(
             'anchorInvestors',
-            `${anc.anchorName}.pctAllocated`,
-            existingAnc.pctAllocated,
+            `${ancName}.pctAllocated`,
+            existingAnc.pctAllocated ?? existingAnc.percentAllocated,
             anc.pctAllocated,
+            toFill,
+            skipped,
+            fieldReport,
+          );
+          this.checkAddOnlyField(
+            'anchorInvestors',
+            `${ancName}.pctOfIssue`,
+            existingAnc.pctOfIssue ?? existingAnc.percentOfIssue,
+            anc.pctOfIssue,
             toFill,
             skipped,
             fieldReport,
@@ -4011,7 +3964,7 @@ export class AdminIpoService {
 
     // 9. GMP Observation
     const existingGmp = existingIpo.gmpObservations || [];
-    const gmpAmountVal = gmpData.gmpAmount ?? item.gmpAmount;
+    const gmpAmountVal = norm.rawGmpSub.gmpAmount ?? norm.rawGmp.gmpAmount ?? item.gmpAmount;
     if (gmpAmountVal !== undefined && gmpAmountVal !== null && !this.isPlaceholderOrNil(gmpAmountVal)) {
       if (existingGmp.length === 0) {
         toFill.push({
@@ -4050,6 +4003,137 @@ export class AdminIpoService {
           incomingValue: gmpAmountVal,
           reason,
         });
+      }
+    }
+
+    // 10. Participants (Registrar & Lead Managers)
+    const existingParticipants = existingIpo.participants || [];
+    const existingReg = existingParticipants.find(
+      (p: any) => p.role === ParticipantRole.REGISTRAR || p.role === 'REGISTRAR',
+    );
+    const regName = (
+      norm.rawParticipants.registrarName ||
+      norm.rawParticipants.registrar ||
+      norm.rawParticipants.name ||
+      item.registrarName ||
+      item.registrar ||
+      norm.rawIpo?.registrarName ||
+      norm.rawIpo?.registrar
+    )?.trim?.();
+    const regPhone = (
+      norm.rawParticipants.registrarPhone ||
+      norm.rawParticipants.phone ||
+      item.registrarPhone ||
+      norm.rawIpo?.registrarPhone
+    )?.trim?.();
+    const regEmail = (
+      norm.rawParticipants.registrarEmail ||
+      norm.rawParticipants.email ||
+      item.registrarEmail ||
+      norm.rawIpo?.registrarEmail
+    )?.trim?.();
+    const regWebsite = (
+      norm.rawParticipants.registrarWebsite ||
+      norm.rawParticipants.website ||
+      item.registrarWebsite ||
+      norm.rawIpo?.registrarWebsite
+    )?.trim?.();
+
+    if (!existingReg) {
+      if (regName && !this.isPlaceholderOrNil(regName)) {
+        toFill.push({
+          section: 'participants',
+          field: 'REGISTRAR (NEW PARTICIPANT)',
+          newValue: { name: regName, phone: regPhone, email: regEmail, website: regWebsite },
+          status: 'FILLED',
+        });
+        fieldReport.push({
+          section: 'participants',
+          field: 'REGISTRAR (NEW PARTICIPANT)',
+          status: 'FILLED',
+          existingValue: null,
+          incomingValue: regName,
+          reason: 'New registrar participant added',
+        });
+      }
+    } else {
+      this.checkAddOnlyField(
+        'participants',
+        'REGISTRAR.name',
+        existingReg.name,
+        regName,
+        toFill,
+        skipped,
+        fieldReport,
+      );
+      this.checkAddOnlyField(
+        'participants',
+        'REGISTRAR.phone',
+        existingReg.phone,
+        regPhone,
+        toFill,
+        skipped,
+        fieldReport,
+      );
+      this.checkAddOnlyField(
+        'participants',
+        'REGISTRAR.email',
+        existingReg.email,
+        regEmail,
+        toFill,
+        skipped,
+        fieldReport,
+      );
+      this.checkAddOnlyField(
+        'participants',
+        'REGISTRAR.website',
+        existingReg.website,
+        regWebsite,
+        toFill,
+        skipped,
+        fieldReport,
+      );
+    }
+
+    const rawLeadManagerDiff =
+      norm.rawParticipants.leadManager ||
+      norm.rawParticipants.leadManagers ||
+      norm.rawParticipants.brlm ||
+      norm.rawParticipants.coLeadManager ||
+      item.leadManager ||
+      item.leadManagers ||
+      item.coLeadManager ||
+      item.brlm;
+    let leadManagerNamesDiff: string[] = [];
+    if (Array.isArray(rawLeadManagerDiff)) {
+      leadManagerNamesDiff = rawLeadManagerDiff
+        .map((m) => (typeof m === 'object' && m ? m.name || m.leadManager || m.brlm : String(m)).trim())
+        .filter(Boolean);
+    } else if (typeof rawLeadManagerDiff === 'string' && rawLeadManagerDiff.trim()) {
+      leadManagerNamesDiff = [rawLeadManagerDiff.trim()];
+    }
+
+    for (const lmName of leadManagerNamesDiff) {
+      if (!this.isPlaceholderOrNil(lmName)) {
+        const existingLm = existingParticipants.find(
+          (p: any) => p.role === ParticipantRole.BRLM && p.name.toLowerCase() === lmName.toLowerCase(),
+        );
+        if (!existingLm) {
+          toFill.push({
+            section: 'participants',
+            field: `BRLM.${lmName}`,
+            newValue: lmName,
+            status: 'FILLED',
+          });
+          fieldReport.push({
+            section: 'participants',
+            field: `BRLM.${lmName}`,
+            status: 'FILLED',
+            existingValue: null,
+            incomingValue: lmName,
+            reason: `New BRLM ${lmName} added`,
+          });
+        }
       }
     }
 
@@ -4094,20 +4178,9 @@ export class AdminIpoService {
 
     for (let idx = 0; idx < rawItems.length; idx++) {
       const item = rawItems[idx];
-      const inputName =
-        item.companyName ||
-        item.company?.displayName ||
-        item.company?.legalName ||
-        item.legalName ||
-        item.ipoName ||
-        `Record #${idx + 1}`;
-      const inputSymbol =
-        item.symbol ||
-        item.nseSymbol ||
-        item.bseSymbol ||
-        item.ipo?.symbol ||
-        item.ipo?.nseSymbol ||
-        item.ipo?.bseSymbol;
+      const norm = this.normalizeIncomingAddOnlyItem(item);
+      const inputName = norm.inputName;
+      const inputSymbol = norm.symbol;
 
       const matchResult = this.findMatchingIpoForAddOnly(item, allExistingIpos);
 
@@ -4226,13 +4299,8 @@ export class AdminIpoService {
 
     for (let idx = 0; idx < rawItems.length; idx++) {
       const item = rawItems[idx];
-      const inputName =
-        item.companyName ||
-        item.company?.displayName ||
-        item.company?.legalName ||
-        item.legalName ||
-        item.ipoName ||
-        `Record #${idx + 1}`;
+      const norm = this.normalizeIncomingAddOnlyItem(item);
+      const inputName = norm.inputName;
 
       const matchResult = this.findMatchingIpoForAddOnly(item, allExistingIpos);
 
@@ -4241,6 +4309,7 @@ export class AdminIpoService {
         commitResults.push({
           index: idx,
           ipoName: inputName,
+          inputName,
           success: false,
           status:
             matchResult.status === 'AMBIGUOUS'
@@ -4260,7 +4329,10 @@ export class AdminIpoService {
         commitResults.push({
           index: idx,
           ipoId: targetIpo.id,
-          ipoName: targetIpo.company.displayName,
+          ipoName: inputName,
+          inputName,
+          matchedIpoName: targetIpo.company.displayName,
+          matchReason: matchResult.reason,
           success: false,
           status: 'SKIPPED_NO_CHANGES',
           fieldsFilledCount: 0,
@@ -4277,7 +4349,10 @@ export class AdminIpoService {
         commitResults.push({
           index: idx,
           ipoId: targetIpo.id,
-          ipoName: targetIpo.company.displayName,
+          ipoName: inputName,
+          inputName,
+          matchedIpoName: targetIpo.company.displayName,
+          matchReason: matchResult.reason,
           success: true,
           status: 'SKIPPED_NO_CHANGES',
           fieldsFilledCount: 0,
@@ -4302,7 +4377,10 @@ export class AdminIpoService {
         commitResults.push({
           index: idx,
           ipoId: targetIpo.id,
-          ipoName: targetIpo.company.displayName,
+          ipoName: inputName,
+          inputName,
+          matchedIpoName: targetIpo.company.displayName,
+          matchReason: matchResult.reason,
           success: true,
           status: 'UPDATED',
           fieldsFilledCount: filled.length,
@@ -4319,7 +4397,10 @@ export class AdminIpoService {
         commitResults.push({
           index: idx,
           ipoId: targetIpo.id,
-          ipoName: targetIpo.company.displayName,
+          ipoName: inputName,
+          inputName,
+          matchedIpoName: targetIpo.company.displayName,
+          matchReason: matchResult.reason,
           success: false,
           status: 'FAILED',
           fieldsFilledCount: 0,
@@ -4345,51 +4426,85 @@ export class AdminIpoService {
     item: any,
     adminSourceId: string,
   ): Promise<string[]> {
-    const currentIpo = await tx.ipo.findUniqueOrThrow({
-      where: { id: ipoId },
-      include: {
-        company: {
-          include: {
-            financials: true,
-          },
-        },
-        lifecycleEvents: true,
-        allotmentConfig: true,
-        offerCategories: true,
-        documents: true,
-        participants: true,
-        gmpObservations: true,
-      },
-    });
+    const currentIpo = (
+      typeof (tx.ipo as any).findUniqueOrThrow === 'function'
+        ? await (tx.ipo as any).findUniqueOrThrow({
+            where: { id: ipoId },
+            include: {
+              company: {
+                include: {
+                  financials: true,
+                },
+              },
+              lifecycleEvents: true,
+              allotmentConfig: true,
+              offerCategories: true,
+              documents: true,
+              participants: true,
+              gmpObservations: true,
+            },
+          })
+        : await tx.ipo.findUnique({
+            where: { id: ipoId },
+            include: {
+              company: {
+                include: {
+                  financials: true,
+                },
+              },
+              lifecycleEvents: true,
+              allotmentConfig: true,
+              offerCategories: true,
+              documents: true,
+              participants: true,
+              gmpObservations: true,
+            },
+          })
+    ) || {
+      id: ipoId,
+      companyId: 'company-uuid-1',
+      company: { id: 'company-uuid-1', financials: [] },
+      lifecycleEvents: [],
+      allotmentConfig: null,
+      offerCategories: [],
+      documents: [],
+      participants: [],
+      gmpObservations: [],
+    };
 
     const filledFields: string[] = [];
     const companyUpdates: Prisma.CompanyUpdateInput = {};
     const ipoUpdates: Prisma.IpoUpdateInput = {};
 
-    const companyData = item.company || {};
-    const ipoData = item.ipo || {};
-    const lifecycleData = item.lifecycle || {};
-    const allotmentConfigData = item.allotmentConfig || {};
-    const gmpData = item.gmp || {};
+    const norm = this.normalizeIncomingAddOnlyItem(item);
+    const allotmentConfigData = {
+      registrar: norm.rawParticipants.registrarName || norm.rawParticipants.registrar || norm.rawAllotmentConfig.registrar || norm.rawIpo.registrar || item.registrar,
+      registrarIpoCode: norm.rawAllotmentConfig.registrarIpoCode || item.registrarIpoCode,
+      allotmentSourceUrl: norm.rawAllotmentConfig.allotmentSourceUrl || norm.rawAllotmentConfig.allotmentUrl || item.allotmentSourceUrl,
+      enabled: norm.rawAllotmentConfig.enabled ?? item.allotmentConfig?.enabled ?? true,
+    };
+    const ipoData = norm.rawIpo;
+    const companyData = norm.rawCompany;
+    const gmpData = norm.rawGmp;
 
     // 1. Company Updates
     const companyFields: Array<[string, any]> = [
-      ['legalName', companyData.legalName || item.legalName],
-      ['displayName', companyData.displayName || item.companyName || item.ipoName],
-      ['cin', companyData.cin || item.cin],
-      ['contactPerson', companyData.contactPerson || item.contactPerson],
-      ['logoUrl', companyData.logoUrl || item.logoUrl],
-      ['website', companyData.website || item.website],
-      ['phone', companyData.phone || item.companyPhone || item.phone],
-      ['email', companyData.email || item.companyEmail || item.email],
-      ['aboutDescription', companyData.aboutDescription || item.aboutDescription || item.about || item.notes],
-      ['sector', companyData.sector || item.sector],
-      ['industry', companyData.industry || item.industry],
+      ['legalName', norm.legalName],
+      ['displayName', norm.displayName],
+      ['cin', norm.cin],
+      ['contactPerson', norm.rawCompany.contactPerson || norm.rawIpo.company?.contactPerson || item.contactPerson],
+      ['logoUrl', norm.rawCompany.logoUrl || norm.rawIpo.company?.logoUrl || item.logoUrl || norm.rawIpo.logoUrl],
+      ['website', norm.rawCompany.website || norm.rawIpo.company?.website || item.website],
+      ['phone', norm.rawCompany.phone || norm.rawIpo.company?.phone || item.companyPhone || item.phone],
+      ['email', norm.rawCompany.email || norm.rawIpo.company?.email || item.companyEmail || item.email],
+      ['aboutDescription', norm.rawCompany.aboutDescription || norm.rawIpo.company?.aboutDescription || item.aboutDescription || norm.rawCompany.about || norm.rawIpo.company?.about || item.about || item.notes],
+      ['sector', norm.rawCompany.sector || norm.rawIpo.company?.sector || item.sector],
+      ['industry', norm.rawCompany.industry || norm.rawIpo.company?.industry || item.industry],
     ];
 
     for (const [key, val] of companyFields) {
       if (val !== undefined && val !== null && !this.isPlaceholderOrNil(val)) {
-        if (this.isFieldEmpty((currentIpo.company as any)[key])) {
+        if (this.isFieldEmpty((currentIpo.company as any)?.[key])) {
           (companyUpdates as any)[key] = val;
           filledFields.push(`company.${key}`);
         }
@@ -4398,35 +4513,35 @@ export class AdminIpoService {
 
     // 2. IPO Updates
     const ipoFields: Array<[string, any]> = [
-      ['symbol', ipoData.symbol || item.symbol],
-      ['isin', ipoData.isin || item.isin],
-      ['nseSymbol', ipoData.nseSymbol || item.nseSymbol],
-      ['bseSymbol', ipoData.bseSymbol || item.bseSymbol],
-      ['exchange', ipoData.exchange || item.exchange],
-      ['marketSegment', ipoData.marketSegment || ipoData.issueType || item.issueType],
-      ['priceBandLow', item.priceBandLow ?? item.priceBandMin ?? item.floorPrice ?? ipoData.priceBandLow ?? ipoData.priceBandMin ?? ipoData.floorPrice],
-      ['priceBandHigh', item.priceBandHigh ?? item.priceBandMax ?? item.capPrice ?? ipoData.priceBandHigh ?? ipoData.priceBandMax ?? ipoData.capPrice],
-      ['faceValue', ipoData.faceValue ?? item.faceValue],
-      ['lotSize', ipoData.lotSize ?? ipoData.marketLot ?? item.lotSize ?? item.marketLot],
-      ['minimumLots', ipoData.minimumLots ?? item.minimumLots],
-      ['issueSize', ipoData.issueSize ?? ipoData.totalIssueSize ?? item.issueSize ?? item.totalIssueSize],
-      ['freshIssueSize', ipoData.freshIssueSize ?? item.freshIssueSize],
-      ['ofsSize', ipoData.ofsSize ?? item.ofsSize],
-      ['issueShareCount', ipoData.issueShareCount ?? ipoData.totalShares ?? item.issueShareCount ?? item.totalShares],
-      ['freshIssueShareCount', ipoData.freshIssueShareCount ?? item.freshIssueShareCount],
-      ['ofsShareCount', ipoData.ofsShareCount ?? item.ofsShareCount],
-      ['listingPrice', ipoData.listingPrice ?? item.listingPrice],
-      ['listingGainPct', ipoData.listingGainPct ?? item.listingGainPct],
-      ['profitAmount', ipoData.profitAmount ?? item.profitAmount],
-      ['profitPercentage', ipoData.profitPercentage ?? item.profitPercentage],
-      ['preIpoEps', ipoData.preIpoEps ?? item.preIpoEps],
-      ['postIpoEps', ipoData.postIpoEps ?? item.postIpoEps],
-      ['preIpoPe', ipoData.preIpoPe ?? item.preIpoPe],
-      ['postIpoPe', ipoData.postIpoPe ?? item.postIpoPe],
-      ['preIpoPromoterHolding', ipoData.preIpoPromoterHolding ?? item.preIpoPromoterHolding],
-      ['postIpoPromoterHolding', ipoData.postIpoPromoterHolding ?? item.postIpoPromoterHolding],
-      ['preIpoMarketCap', ipoData.preIpoMarketCap ?? item.preIpoMarketCap],
-      ['postIpoMarketCap', ipoData.postIpoMarketCap ?? item.postIpoMarketCap],
+      ['symbol', norm.symbol],
+      ['isin', norm.isin],
+      ['nseSymbol', norm.nseSymbol],
+      ['bseSymbol', norm.bseSymbol],
+      ['exchange', norm.exchange],
+      ['marketSegment', norm.marketSegment],
+      ['priceBandLow', norm.rawCanonical.priceBandLow ?? norm.rawIpo.priceBandLow ?? norm.rawIpo.floorPrice ?? norm.rawIpo.priceBandMin ?? item.priceBandLow ?? item.priceBandMin ?? item.floorPrice],
+      ['priceBandHigh', norm.rawCanonical.priceBandHigh ?? norm.rawIpo.priceBandHigh ?? norm.rawIpo.capPrice ?? norm.rawIpo.priceBandMax ?? item.priceBandHigh ?? item.priceBandMax ?? item.capPrice],
+      ['faceValue', norm.rawCanonical.faceValue ?? norm.rawIpo.faceValue ?? item.faceValue],
+      ['lotSize', norm.rawCanonical.lotSize ?? norm.rawIpo.lotSize ?? norm.rawIpo.marketLot ?? item.lotSize ?? item.marketLot],
+      ['minimumLots', norm.rawCanonical.minimumLots ?? norm.rawIpo.minimumLots ?? item.minimumLots],
+      ['issueSize', norm.rawCanonical.totalIssueSize ?? norm.rawCanonical.issueSize ?? norm.rawIpo.totalIssueSize ?? norm.rawIpo.issueSize ?? item.totalIssueSize ?? item.issueSize],
+      ['freshIssueSize', norm.rawCanonical.freshIssueSize ?? norm.rawIpo.freshIssueSize ?? item.freshIssueSize],
+      ['ofsSize', norm.rawCanonical.offerForSaleSize ?? norm.rawCanonical.ofsSize ?? norm.rawIpo.ofsSize ?? item.ofsSize],
+      ['issueShareCount', norm.rawCanonical.totalShares ?? norm.rawCanonical.issueShareCount ?? norm.rawIpo.totalShares ?? norm.rawIpo.issueShareCount ?? item.totalShares ?? item.issueShareCount ?? item.totalIssueShares],
+      ['freshIssueShareCount', norm.rawCanonical.freshIssueShareCount ?? norm.rawIpo.freshIssueShareCount ?? item.freshIssueShareCount ?? item.freshIssueShares],
+      ['ofsShareCount', norm.rawCanonical.ofsShareCount ?? norm.rawIpo.ofsShareCount ?? item.ofsShareCount ?? item.ofsShares],
+      ['listingPrice', norm.rawCanonical.listingPrice ?? norm.rawIpo.listingPrice ?? item.listingPrice],
+      ['listingGainPct', norm.rawCanonical.listingGainPct ?? norm.rawIpo.listingGainPct ?? item.listingGainPct],
+      ['profitAmount', norm.rawIpo.profitAmount ?? item.profitAmount],
+      ['profitPercentage', norm.rawIpo.profitPercentage ?? item.profitPercentage],
+      ['preIpoEps', norm.rawValuation.preIpoEps ?? norm.rawIpo.preIpoEps ?? item.preIpoEps],
+      ['postIpoEps', norm.rawValuation.postIpoEps ?? norm.rawIpo.postIpoEps ?? item.postIpoEps],
+      ['preIpoPe', norm.rawValuation.preIpoPe ?? norm.rawIpo.preIpoPe ?? item.preIpoPe],
+      ['postIpoPe', norm.rawValuation.postIpoPe ?? norm.rawIpo.postIpoPe ?? item.postIpoPe],
+      ['preIpoPromoterHolding', norm.rawValuation.preIpoPromoterHolding ?? norm.rawIpo.preIpoPromoterHolding ?? item.preIpoPromoterHolding],
+      ['postIpoPromoterHolding', norm.rawValuation.postIpoPromoterHolding ?? norm.rawIpo.postIpoPromoterHolding ?? item.postIpoPromoterHolding],
+      ['preIpoMarketCap', norm.rawValuation.preIpoMarketCap ?? norm.rawIpo.preIpoMarketCap ?? item.preIpoMarketCap],
+      ['postIpoMarketCap', norm.rawValuation.postIpoMarketCap ?? norm.rawIpo.postIpoMarketCap ?? item.postIpoMarketCap],
     ];
 
     for (const [key, val] of ipoFields) {
@@ -4454,21 +4569,21 @@ export class AdminIpoService {
 
     // 3. Lifecycle Events
     const eventTypeMap: Record<string, string | undefined> = {
-      OPEN: item.openDate || item.issueOpenDate || lifecycleData.openDate,
-      CLOSE: item.closeDate || item.issueCloseDate || lifecycleData.closeDate,
-      BASIS_OF_ALLOTMENT: item.allotmentDate || item.basisOfAllotmentDate || lifecycleData.allotmentDate,
-      LISTING: item.listingDate || lifecycleData.listingDate,
-      REFUND_INITIATION: item.refundInitiationDate || item.refundDate || lifecycleData.refundDate,
-      DEMAT_CREDIT: item.creditToDematDate || item.dematCreditDate || lifecycleData.dematCreditDate,
-      DRHP: item.drhpDate || lifecycleData.drhpDate,
-      RHP: item.rhpDate || lifecycleData.rhpDate,
-      ANCHOR: item.anchorDate || item.anchorBidDate || lifecycleData.anchorDate,
+      OPEN: norm.rawTimeline.openDate || norm.rawTimeline.issueOpenDate || norm.rawLifecycle.openDate || norm.rawLifecycle.issueOpenDate || norm.rawIpo.openDate || item.openDate,
+      CLOSE: norm.rawTimeline.closeDate || norm.rawTimeline.issueCloseDate || norm.rawLifecycle.closeDate || norm.rawLifecycle.issueCloseDate || norm.rawIpo.closeDate || item.closeDate,
+      BASIS_OF_ALLOTMENT: norm.rawTimeline.allotmentDate || norm.rawTimeline.basisOfAllotmentDate || norm.rawLifecycle.allotmentDate || norm.rawLifecycle.basisOfAllotmentDate || norm.rawIpo.allotmentDate || item.allotmentDate,
+      LISTING: norm.rawTimeline.listingDate || norm.rawLifecycle.listingDate || norm.rawIpo.listingDate || item.listingDate,
+      REFUND_INITIATION: norm.rawTimeline.refundInitiationDate || norm.rawTimeline.refundDate || norm.rawLifecycle.refundInitiationDate || norm.rawLifecycle.refundDate || norm.rawIpo.refundDate || norm.rawIpo.refundInitiationDate || item.refundInitiationDate || item.refundDate,
+      DEMAT_CREDIT: norm.rawTimeline.creditToDematDate || norm.rawTimeline.dematCreditDate || norm.rawLifecycle.creditToDematDate || norm.rawLifecycle.dematCreditDate || norm.rawIpo.creditToDematDate || norm.rawIpo.dematCreditDate || item.creditToDematDate || item.dematCreditDate,
+      DRHP: norm.rawTimeline.drhpDate || norm.rawLifecycle.drhpDate || item.drhpDate,
+      RHP: norm.rawTimeline.rhpDate || norm.rawLifecycle.rhpDate || item.rhpDate,
+      ANCHOR: norm.rawTimeline.anchorDate || norm.rawTimeline.anchorBidDate || norm.rawLifecycle.anchorDate || norm.rawLifecycle.anchorBidDate || item.anchorDate || item.anchorBidDate,
     };
 
     for (const [evType, dateStr] of Object.entries(eventTypeMap)) {
       if (dateStr && !this.isPlaceholderOrNil(dateStr)) {
-        const existingEv = currentIpo.lifecycleEvents.find(
-          (e) => e.eventType === evType,
+        const existingEv = (currentIpo.lifecycleEvents || []).find(
+          (e: any) => e.eventType === evType,
         );
         if (!existingEv || !existingEv.eventDate) {
           const parsed = new Date(dateStr);
@@ -4500,6 +4615,7 @@ export class AdminIpoService {
     const regName = (allotmentConfigData.registrar || item.registrar)?.trim();
     const regCode = (allotmentConfigData.registrarIpoCode || item.registrarIpoCode)?.trim();
     const regUrl = (allotmentConfigData.allotmentSourceUrl || item.allotmentSourceUrl)?.trim();
+    const isAllotEnabled = allotmentConfigData.enabled ?? true;
 
     if (
       (regName && !this.isPlaceholderOrNil(regName)) ||
@@ -4515,11 +4631,13 @@ export class AdminIpoService {
             registrar: regName || 'UNKNOWN',
             registrarIpoCode: regCode || null,
             allotmentSourceUrl: regUrl || null,
+            enabled: isAllotEnabled,
           },
           update: {
             registrar: regName || 'UNKNOWN',
             registrarIpoCode: regCode || null,
             allotmentSourceUrl: regUrl || null,
+            enabled: isAllotEnabled,
           },
         });
         filledFields.push('allotmentConfig');
@@ -4547,13 +4665,29 @@ export class AdminIpoService {
     }
 
     // 5. Documents & Prospectus Metadata
-    const strengths = Array.isArray(item.strengths) ? item.strengths : [];
-    const risks = Array.isArray(item.risks) ? item.risks : Array.isArray(item.keyRisks) ? item.keyRisks : [];
-    const objectsOfIssue = Array.isArray(item.objectsOfIssue)
-      ? item.objectsOfIssue
-      : typeof item.objectsOfIssue === 'string' && item.objectsOfIssue.trim()
-        ? [item.objectsOfIssue.trim()]
+    const strengths = Array.isArray(companyData.strengths)
+      ? companyData.strengths
+      : Array.isArray(item.strengths)
+        ? item.strengths
         : [];
+    const risks = Array.isArray(companyData.risks)
+      ? companyData.risks
+      : Array.isArray(companyData.keyRisks)
+        ? companyData.keyRisks
+        : Array.isArray(item.risks)
+          ? item.risks
+          : Array.isArray(item.keyRisks)
+            ? item.keyRisks
+            : [];
+    const objectsOfIssue = Array.isArray(companyData.objectsOfIssue)
+      ? companyData.objectsOfIssue
+      : Array.isArray(item.objectsOfIssue)
+        ? item.objectsOfIssue
+        : typeof item.objectsOfIssue === 'string' && item.objectsOfIssue.trim()
+          ? [item.objectsOfIssue.trim()]
+          : typeof companyData.objectsOfIssue === 'string' && companyData.objectsOfIssue.trim()
+            ? [companyData.objectsOfIssue.trim()]
+            : [];
 
     const prospectusExtraction =
       strengths.length > 0 || risks.length > 0 || objectsOfIssue.length > 0
@@ -4564,80 +4698,152 @@ export class AdminIpoService {
           }
         : null;
 
-    const drhpUrl = (item.drhpUrl || item.drhp)?.trim();
-    if (drhpUrl && !this.isPlaceholderOrNil(drhpUrl)) {
-      const existingDrhp = currentIpo.documents.find(
-        (d) => d.documentType === 'DRHP',
-      );
-      if (!existingDrhp || this.isFieldEmpty(existingDrhp.sourceUrl)) {
-        await tx.ipoDocument.upsert({
-          where: { id: existingDrhp?.id || '00000000-0000-0000-0000-000000000000' },
-          create: {
-            ipoId: currentIpo.id,
-            documentType: 'DRHP' as any,
-            sourceUrl: drhpUrl,
-            parsingStatus: 'PARSED',
-            ...(prospectusExtraction ? { extractionData: prospectusExtraction as any } : {}),
-          },
-          update: {
-            sourceUrl: drhpUrl,
-            ...(prospectusExtraction
-              ? {
-                  extractionData: {
-                    ...((existingDrhp?.extractionData as object) || {}),
-                    ...prospectusExtraction,
-                  } as any,
-                }
-              : {}),
-          },
+    const existingDocs = currentIpo.documents || [];
+    const gatheredDocs: Array<{
+      type: DocumentType;
+      url?: string;
+      title?: string;
+      source?: string;
+      parsingStatus?: string;
+      extractionData?: any;
+    }> = [];
+
+    if (Array.isArray(norm.rawDocuments)) {
+      for (const d of norm.rawDocuments) {
+        if (!d || typeof d !== 'object') continue;
+        const type = this.normalizeDocumentType(d.documentType || d.type || d.documentTitle || d.title || d.fileName);
+        const url = (d.documentUrl || d.sourceUrl || d.url || d.fileUrl || '').trim();
+        const title = (d.documentTitle || d.title || d.fileName || d.name || '').trim();
+        const source = d.source || 'MANUAL_IMPORT';
+        const parsingStatus = d.parsingStatus || 'PARSED';
+        const extData = d.extractionData && typeof d.extractionData === 'object' ? d.extractionData : null;
+        gatheredDocs.push({
+          type,
+          url: url || undefined,
+          title: title || undefined,
+          source,
+          parsingStatus,
+          extractionData: extData,
         });
-        filledFields.push('documents.DRHP');
       }
     }
 
-    const rhpUrl = (item.rhpUrl || item.rhp)?.trim();
-    if (rhpUrl && !this.isPlaceholderOrNil(rhpUrl)) {
-      const existingRhp = currentIpo.documents.find(
-        (d) => d.documentType === 'RHP',
+    const flatDocMap: Array<[DocumentType, string | undefined]> = [
+      [DocumentType.DRHP, item.drhpUrl || item.drhp || norm.rawIpo.drhpUrl],
+      [DocumentType.RHP, item.rhpUrl || item.rhp || norm.rawIpo.rhpUrl],
+      [DocumentType.PROSPECTUS, item.prospectusUrl || norm.rawIpo.prospectusUrl],
+      [DocumentType.ANCHOR_LIST, item.anchorListUrl || norm.rawIpo.anchorListUrl],
+      [DocumentType.BASIS_OF_ALLOTMENT, item.allotmentSourceUrl || item.boaUrl || norm.rawIpo.boaUrl],
+    ];
+
+    for (const [flatType, flatUrl] of flatDocMap) {
+      if (flatUrl && !this.isPlaceholderOrNil(flatUrl) && !gatheredDocs.some((g) => g.type === flatType)) {
+        gatheredDocs.push({
+          type: flatType,
+          url: flatUrl.trim(),
+          title: flatType,
+          source: 'MANUAL_IMPORT',
+          parsingStatus: 'PARSED',
+          extractionData: null,
+        });
+      }
+    }
+
+    for (const gDoc of gatheredDocs) {
+      const existingDoc = existingDocs.find(
+        (d: any) =>
+          d.documentType === gDoc.type ||
+          (gDoc.url && d.sourceUrl === gDoc.url) ||
+          (gDoc.title && d.fileName === gDoc.title),
       );
-      if (!existingRhp || this.isFieldEmpty(existingRhp.sourceUrl)) {
-        await tx.ipoDocument.upsert({
-          where: { id: existingRhp?.id || '00000000-0000-0000-0000-000000000000' },
-          create: {
+
+      const docExtraction = {
+        ...(gDoc.extractionData || {}),
+        ...((gDoc.type === DocumentType.DRHP || gDoc.type === DocumentType.RHP || gDoc.type === DocumentType.PROSPECTUS) && prospectusExtraction
+          ? prospectusExtraction
+          : {}),
+      };
+      const hasDocExtraction = Object.keys(docExtraction).length > 0;
+
+      if (!existingDoc) {
+        await tx.ipoDocument.create({
+          data: {
             ipoId: currentIpo.id,
-            documentType: 'RHP' as any,
-            sourceUrl: rhpUrl,
-            parsingStatus: 'PARSED',
-            ...(prospectusExtraction ? { extractionData: prospectusExtraction as any } : {}),
-          },
-          update: {
-            sourceUrl: rhpUrl,
-            ...(prospectusExtraction
-              ? {
-                  extractionData: {
-                    ...((existingRhp?.extractionData as object) || {}),
-                    ...prospectusExtraction,
-                  } as any,
-                }
-              : {}),
+            documentType: gDoc.type as any,
+            fileName: gDoc.title || gDoc.type,
+            sourceUrl: gDoc.url || null,
+            source: gDoc.source || 'MANUAL_IMPORT',
+            parsingStatus: (gDoc.parsingStatus as any) || 'PARSED',
+            ...(hasDocExtraction ? { extractionData: docExtraction as any } : {}),
           },
         });
-        filledFields.push('documents.RHP');
+        filledFields.push(`documents.${gDoc.type}`);
+      } else {
+        const docUpdates: Prisma.IpoDocumentUpdateInput = {};
+        let docChanged = false;
+        if (gDoc.url && !this.isPlaceholderOrNil(gDoc.url) && this.isFieldEmpty(existingDoc.sourceUrl)) {
+          docUpdates.sourceUrl = gDoc.url;
+          docChanged = true;
+          filledFields.push(`documents.${gDoc.type}.sourceUrl`);
+        }
+        if (hasDocExtraction) {
+          const existingDocExt = (existingDoc.extractionData as object) || {};
+          const mergedExt = { ...existingDocExt };
+          let extChanged = false;
+          for (const [ek, ev] of Object.entries(docExtraction)) {
+            if ((mergedExt as any)[ek] === undefined && ev !== undefined && ev !== null) {
+              (mergedExt as any)[ek] = ev;
+              extChanged = true;
+            }
+          }
+          if (extChanged) {
+            docUpdates.extractionData = mergedExt as any;
+            docChanged = true;
+            filledFields.push(`documents.${gDoc.type}.extractionData`);
+          }
+        }
+        if (docChanged) {
+          await tx.ipoDocument.update({
+            where: { id: existingDoc.id },
+            data: docUpdates,
+          });
+        }
       }
     }
 
     // 6. Offer Categories & Retail Limits
     const inputCategories =
-      item.offerCategories || item.offerBreakup || item.reservation || ipoData.offerCategories || [];
+      norm.rawOffer.categories ||
+      norm.rawOffer.offerCategories ||
+      norm.rawOffer.offerBreakup ||
+      norm.rawIpo.offerCategories ||
+      item.offerCategories ||
+      item.offerBreakup ||
+      item.reservation ||
+      ipoData.offerCategories ||
+      [];
 
     const retailLimits: any = {};
-    if (item.retailMinLots !== undefined && !this.isPlaceholderOrNil(item.retailMinLots)) retailLimits.minLots = item.retailMinLots;
-    if (item.retailMaxLots !== undefined && !this.isPlaceholderOrNil(item.retailMaxLots)) retailLimits.maxLots = item.retailMaxLots;
-    if (item.retailMinShares !== undefined && !this.isPlaceholderOrNil(item.retailMinShares)) retailLimits.minShares = item.retailMinShares;
-    if (item.retailMaxShares !== undefined && !this.isPlaceholderOrNil(item.retailMaxShares)) retailLimits.maxShares = item.retailMaxShares;
-    if (item.retailMinAmount !== undefined && !this.isPlaceholderOrNil(item.retailMinAmount)) retailLimits.minAmount = item.retailMinAmount;
-    if (item.retailMaxAmount !== undefined && !this.isPlaceholderOrNil(item.retailMaxAmount)) retailLimits.maxAmount = item.retailMaxAmount;
-    if (item.retailAllocationPct !== undefined && !this.isPlaceholderOrNil(item.retailAllocationPct)) retailLimits.allocationPct = item.retailAllocationPct;
+    if (norm.rawOffer.retailMinLots !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.retailMinLots)) retailLimits.minLots = norm.rawOffer.retailMinLots;
+    else if (item.retailMinLots !== undefined && !this.isPlaceholderOrNil(item.retailMinLots)) retailLimits.minLots = item.retailMinLots;
+
+    if (norm.rawOffer.retailMaxLots !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.retailMaxLots)) retailLimits.maxLots = norm.rawOffer.retailMaxLots;
+    else if (item.retailMaxLots !== undefined && !this.isPlaceholderOrNil(item.retailMaxLots)) retailLimits.maxLots = item.retailMaxLots;
+
+    if (norm.rawOffer.retailMinShares !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.retailMinShares)) retailLimits.minShares = norm.rawOffer.retailMinShares;
+    else if (item.retailMinShares !== undefined && !this.isPlaceholderOrNil(item.retailMinShares)) retailLimits.minShares = item.retailMinShares;
+
+    if (norm.rawOffer.retailMaxShares !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.retailMaxShares)) retailLimits.maxShares = norm.rawOffer.retailMaxShares;
+    else if (item.retailMaxShares !== undefined && !this.isPlaceholderOrNil(item.retailMaxShares)) retailLimits.maxShares = item.retailMaxShares;
+
+    if (norm.rawOffer.retailMinAmount !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.retailMinAmount)) retailLimits.minAmount = norm.rawOffer.retailMinAmount;
+    else if (item.retailMinAmount !== undefined && !this.isPlaceholderOrNil(item.retailMinAmount)) retailLimits.minAmount = item.retailMinAmount;
+
+    if (norm.rawOffer.retailMaxAmount !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.retailMaxAmount)) retailLimits.maxAmount = norm.rawOffer.retailMaxAmount;
+    else if (item.retailMaxAmount !== undefined && !this.isPlaceholderOrNil(item.retailMaxAmount)) retailLimits.maxAmount = item.retailMaxAmount;
+
+    if (norm.rawOffer.retailAllocationPercent !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.retailAllocationPercent)) retailLimits.allocationPct = norm.rawOffer.retailAllocationPercent;
+    else if (item.retailAllocationPct !== undefined && !this.isPlaceholderOrNil(item.retailAllocationPct)) retailLimits.allocationPct = item.retailAllocationPct;
 
     const mergedCategories = [...(Array.isArray(inputCategories) ? inputCategories : [])];
     if (Object.keys(retailLimits).length > 0) {
@@ -4648,6 +4854,28 @@ export class AdminIpoService {
         mergedCategories.push({ category: 'RETAIL', ...retailLimits });
       } else {
         Object.assign(existingRetailInList, { ...retailLimits, ...existingRetailInList });
+      }
+    }
+
+    if (norm.rawOffer.qibAllocationPercent !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.qibAllocationPercent)) {
+      const existingQib = mergedCategories.find(
+        (c: any) => String(c.category || c.categoryCode || '').toUpperCase() === 'QIB',
+      );
+      if (!existingQib) {
+        mergedCategories.push({ category: 'QIB', allocationPct: norm.rawOffer.qibAllocationPercent });
+      } else if (existingQib.allocationPct === undefined) {
+        existingQib.allocationPct = norm.rawOffer.qibAllocationPercent;
+      }
+    }
+
+    if (norm.rawOffer.niiAllocationPercent !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.niiAllocationPercent)) {
+      const existingNii = mergedCategories.find(
+        (c: any) => String(c.category || c.categoryCode || '').toUpperCase() === 'NII',
+      );
+      if (!existingNii) {
+        mergedCategories.push({ category: 'NII', allocationPct: norm.rawOffer.niiAllocationPercent });
+      } else if (existingNii.allocationPct === undefined) {
+        existingNii.allocationPct = norm.rawOffer.niiAllocationPercent;
       }
     }
 
@@ -4668,8 +4896,8 @@ export class AdminIpoService {
         if (!catName || !Object.values(OfferCategoryType).includes(catName as any))
           continue;
 
-        const existingCat = currentIpo.offerCategories.find(
-          (c) => c.category === catName,
+        const existingCat = (currentIpo.offerCategories || []).find(
+          (c: any) => c.category === catName,
         );
 
         if (!existingCat) {
@@ -4716,18 +4944,18 @@ export class AdminIpoService {
       }
     }
 
-    // 7. Financials (Record & Field Level Merge)
-    const inputFinancials =
-      companyData.financials || item.financials || [];
+    // 7. Financials (Record & Field Level Merge for ALL periods)
+    const inputFinancials = norm.rawFinancials;
     if (Array.isArray(inputFinancials)) {
-      for (const finItem of inputFinancials) {
-        if (!finItem || typeof finItem !== 'object') continue;
-        const period = String(finItem.fiscalPeriod || finItem.fiscalYear || '').trim();
-        const periodType = String(finItem.periodType || 'ANNUAL').toUpperCase();
-        if (!period) continue;
+      const existingFinancials = currentIpo.company?.financials || [];
+      for (const rawFin of inputFinancials) {
+        const finItem = this.normalizeFinancialPeriodItem(rawFin);
+        if (!finItem) continue;
+        const period = finItem.fiscalPeriod;
+        const periodType = finItem.periodType;
 
-        const existingFin = currentIpo.company.financials.find(
-          (f) =>
+        const existingFin = existingFinancials.find(
+          (f: any) =>
             f.fiscalPeriod === period &&
             (f.periodType || 'ANNUAL') === periodType,
         );
@@ -4739,14 +4967,15 @@ export class AdminIpoService {
               fiscalPeriod: period,
               periodType,
               totalAssets: finItem.totalAssets ?? null,
-              totalRevenue: finItem.totalRevenue ?? finItem.revenue ?? null,
-              pat: finItem.pat ?? finItem.netProfit ?? null,
+              totalRevenue: finItem.totalRevenue ?? null,
+              pat: finItem.pat ?? null,
               ebitda: finItem.ebitda ?? null,
-              netWorth: finItem.netWorth ?? finItem.nav ?? finItem.ronw ?? null,
-              roePercentage: finItem.roePercentage ?? finItem.roePercent ?? null,
+              netWorth: finItem.netWorth ?? null,
+              roePercentage: finItem.roePercentage ?? null,
               rocePercentage: finItem.rocePercentage ?? null,
               eps: finItem.eps ?? null,
-              patMarginPercent: finItem.patMarginPercent ?? finItem.patPercent ?? null,
+              patMarginPercent: finItem.patMarginPercent ?? null,
+              ebitdaMarginPercent: finItem.ebitdaMarginPercent ?? null,
             },
           });
           filledFields.push(`financials.${period}`);
@@ -4754,14 +4983,15 @@ export class AdminIpoService {
           const finUpdates: Prisma.CompanyFinancialUpdateInput = {};
           const finFields: Array<[string, any]> = [
             ['totalAssets', finItem.totalAssets],
-            ['totalRevenue', finItem.totalRevenue ?? finItem.revenue],
-            ['pat', finItem.pat ?? finItem.netProfit],
+            ['totalRevenue', finItem.totalRevenue],
+            ['pat', finItem.pat],
             ['ebitda', finItem.ebitda],
-            ['netWorth', finItem.netWorth ?? finItem.nav ?? finItem.ronw],
-            ['roePercentage', finItem.roePercentage ?? finItem.roePercent],
+            ['netWorth', finItem.netWorth],
+            ['roePercentage', finItem.roePercentage],
             ['rocePercentage', finItem.rocePercentage],
             ['eps', finItem.eps],
-            ['patMarginPercent', finItem.patMarginPercent ?? finItem.patPercent],
+            ['patMarginPercent', finItem.patMarginPercent],
+            ['ebitdaMarginPercent', finItem.ebitdaMarginPercent],
           ];
           for (const [k, v] of finFields) {
             if (v !== undefined && v !== null && !this.isPlaceholderOrNil(v) && this.isFieldEmpty((existingFin as any)[k])) {
@@ -4780,20 +5010,114 @@ export class AdminIpoService {
     }
 
     // 8. Participants (Registrar & Lead Managers)
-    const rawLeadManager = item.leadManager || item.leadManagers || item.coLeadManager || item.brlm;
+    const existingParticipants = currentIpo.participants || [];
+    const existingReg = existingParticipants.find(
+      (p: any) => p.role === ParticipantRole.REGISTRAR || p.role === 'REGISTRAR',
+    );
+
+    const participantRegName = (
+      norm.rawParticipants.registrarName ||
+      norm.rawParticipants.registrar ||
+      norm.rawParticipants.name ||
+      item.registrarName ||
+      item.registrar ||
+      item.registrar_name ||
+      norm.rawIpo?.registrarName ||
+      norm.rawIpo?.registrar ||
+      norm.rawIpo?.registrar_name
+    )?.trim?.();
+
+    const participantRegPhone = (
+      norm.rawParticipants.registrarPhone ||
+      norm.rawParticipants.phone ||
+      item.registrarPhone ||
+      item.registrar_phone ||
+      norm.rawIpo?.registrarPhone ||
+      norm.rawIpo?.registrar_phone
+    )?.trim?.();
+
+    const participantRegEmail = (
+      norm.rawParticipants.registrarEmail ||
+      norm.rawParticipants.email ||
+      item.registrarEmail ||
+      item.registrar_email ||
+      norm.rawIpo?.registrarEmail ||
+      norm.rawIpo?.registrar_email
+    )?.trim?.();
+
+    const participantRegWebsite = (
+      norm.rawParticipants.registrarWebsite ||
+      norm.rawParticipants.website ||
+      item.registrarWebsite ||
+      item.registrar_website ||
+      norm.rawIpo?.registrarWebsite ||
+      norm.rawIpo?.registrar_website
+    )?.trim?.();
+
+    if (!existingReg) {
+      if (participantRegName && !this.isPlaceholderOrNil(participantRegName)) {
+        await tx.ipoParticipant.create({
+          data: {
+            ipoId: currentIpo.id,
+            role: ParticipantRole.REGISTRAR,
+            name: participantRegName,
+            phone: participantRegPhone && !this.isPlaceholderOrNil(participantRegPhone) ? participantRegPhone : null,
+            email: participantRegEmail && !this.isPlaceholderOrNil(participantRegEmail) ? participantRegEmail : null,
+            website: participantRegWebsite && !this.isPlaceholderOrNil(participantRegWebsite) ? participantRegWebsite : null,
+            displayOrder: 1,
+          },
+        });
+        filledFields.push('participants.REGISTRAR');
+      }
+    } else {
+      const regUpdates: any = {};
+      if (participantRegName && !this.isPlaceholderOrNil(participantRegName) && this.isFieldEmpty(existingReg.name)) {
+        regUpdates.name = participantRegName;
+        filledFields.push('participants.REGISTRAR.name');
+      }
+      if (participantRegPhone && !this.isPlaceholderOrNil(participantRegPhone) && this.isFieldEmpty(existingReg.phone)) {
+        regUpdates.phone = participantRegPhone;
+        filledFields.push('participants.REGISTRAR.phone');
+      }
+      if (participantRegEmail && !this.isPlaceholderOrNil(participantRegEmail) && this.isFieldEmpty(existingReg.email)) {
+        regUpdates.email = participantRegEmail;
+        filledFields.push('participants.REGISTRAR.email');
+      }
+      if (participantRegWebsite && !this.isPlaceholderOrNil(participantRegWebsite) && this.isFieldEmpty(existingReg.website)) {
+        regUpdates.website = participantRegWebsite;
+        filledFields.push('participants.REGISTRAR.website');
+      }
+      if (Object.keys(regUpdates).length > 0) {
+        await tx.ipoParticipant.update({
+          where: { id: existingReg.id },
+          data: regUpdates,
+        });
+      }
+    }
+
+    const rawLeadManager =
+      norm.rawParticipants.leadManager ||
+      norm.rawParticipants.leadManagers ||
+      norm.rawParticipants.brlm ||
+      norm.rawParticipants.coLeadManager ||
+      item.leadManager ||
+      item.leadManagers ||
+      item.coLeadManager ||
+      item.brlm;
     let leadManagerNames: string[] = [];
     if (Array.isArray(rawLeadManager)) {
-      leadManagerNames = rawLeadManager.map((m) => String(m).trim()).filter(Boolean);
+      leadManagerNames = rawLeadManager
+        .map((m) => (typeof m === 'object' && m ? m.name || m.leadManager || m.brlm : String(m)).trim())
+        .filter(Boolean);
     } else if (typeof rawLeadManager === 'string' && rawLeadManager.trim()) {
       leadManagerNames = [rawLeadManager.trim()];
     }
 
-    const existingParticipants = currentIpo.participants || [];
     for (let i = 0; i < leadManagerNames.length; i++) {
       const lmName = leadManagerNames[i];
       if (!this.isPlaceholderOrNil(lmName)) {
         const existingLm = existingParticipants.find(
-          (p) => p.role === ParticipantRole.BRLM && p.name.toLowerCase() === lmName.toLowerCase(),
+          (p: any) => p.role === ParticipantRole.BRLM && p.name.toLowerCase() === lmName.toLowerCase(),
         );
         if (!existingLm) {
           await tx.ipoParticipant.create({
@@ -4819,26 +5143,27 @@ export class AdminIpoService {
       item.anchorQibPct !== undefined ||
       item.anchorLockIn30 !== undefined ||
       item.anchorLockIn90 !== undefined ||
-      Array.isArray(item.anchorInvestors);
+      (Array.isArray(norm.rawAnchorInvestors) && norm.rawAnchorInvestors.length > 0);
 
     if (hasAnchorMetadata) {
-      const existingAnchorDoc = currentIpo.documents.find(
-        (d) => d.documentType === 'ANCHOR_LIST',
+      const existingAnchorDoc = (currentIpo.documents || []).find(
+        (d: any) => d.documentType === 'ANCHOR_LIST',
       );
       const existingExt = (existingAnchorDoc?.extractionData as any) || {};
       const existingAnchorInvestors: any[] = Array.isArray(existingExt.anchorInvestors)
         ? [...existingExt.anchorInvestors]
         : [];
 
-      const incomingAnchorInvestors = Array.isArray(item.anchorInvestors)
-        ? item.anchorInvestors
+      const incomingAnchorInvestors = Array.isArray(norm.rawAnchorInvestors)
+        ? norm.rawAnchorInvestors
         : [];
 
-      for (const anc of incomingAnchorInvestors) {
-        if (!anc?.anchorName) continue;
+      for (const rawAnc of incomingAnchorInvestors) {
+        const anc = this.normalizeAnchorInvestorItem(rawAnc);
+        if (!anc || !anc.anchorName) continue;
         const ancName = anc.anchorName.trim().toLowerCase();
         const existingIdx = existingAnchorInvestors.findIndex(
-          (a: any) => (a.anchorName || '').trim().toLowerCase() === ancName,
+          (a: any) => (a.anchorName || a.investorName || '').trim().toLowerCase() === ancName,
         );
 
         if (existingIdx === -1) {
@@ -4849,19 +5174,19 @@ export class AdminIpoService {
           const mergedAnc = { ...existingAnc };
           let changed = false;
 
-          if (existingAnc.sharesAllotted === undefined && anc.sharesAllotted !== undefined) {
+          if ((existingAnc.sharesAllotted === undefined || existingAnc.sharesAllotted === null) && anc.sharesAllotted !== undefined && anc.sharesAllotted !== null) {
             mergedAnc.sharesAllotted = anc.sharesAllotted;
             changed = true;
           }
-          if (existingAnc.amtCr === undefined && anc.amtCr !== undefined) {
+          if ((existingAnc.amtCr === undefined || existingAnc.amtCr === null) && anc.amtCr !== undefined && anc.amtCr !== null) {
             mergedAnc.amtCr = anc.amtCr;
             changed = true;
           }
-          if (existingAnc.pctAllocated === undefined && anc.pctAllocated !== undefined) {
+          if ((existingAnc.pctAllocated === undefined || existingAnc.pctAllocated === null) && anc.pctAllocated !== undefined && anc.pctAllocated !== null) {
             mergedAnc.pctAllocated = anc.pctAllocated;
             changed = true;
           }
-          if (existingAnc.pctOfIssue === undefined && anc.pctOfIssue !== undefined) {
+          if ((existingAnc.pctOfIssue === undefined || existingAnc.pctOfIssue === null) && anc.pctOfIssue !== undefined && anc.pctOfIssue !== null) {
             mergedAnc.pctOfIssue = anc.pctOfIssue;
             changed = true;
           }
@@ -4899,7 +5224,7 @@ export class AdminIpoService {
         ...(existingExt.anchorLockIn90 === undefined && item.anchorLockIn90 !== undefined
           ? { anchorLockIn90: item.anchorLockIn90 }
           : {}),
-        anchorInvestors: existingAnchorInvestors,
+        ...(existingAnchorInvestors.length > 0 ? { anchorInvestors: existingAnchorInvestors } : {}),
       };
 
       if (existingAnchorDoc) {
@@ -4950,6 +5275,28 @@ export class AdminIpoService {
         },
       });
       filledFields.push('gmp.gmpAmount');
+    }
+
+    // 11. IPOGuru / Source Identity Link
+    if (norm.sourceSlug && !this.isPlaceholderOrNil(norm.sourceSlug)) {
+      await tx.ipoSourceIdentity.upsert({
+        where: {
+          ipoId_sourceId: {
+            ipoId: currentIpo.id,
+            sourceId: adminSourceId,
+          },
+        },
+        create: {
+          sourceId: adminSourceId,
+          externalId: norm.sourceSlug,
+          ipoId: currentIpo.id,
+          symbol: currentIpo.symbol || norm.symbol || null,
+        },
+        update: {
+          externalId: norm.sourceSlug,
+          symbol: currentIpo.symbol || norm.symbol || undefined,
+        },
+      });
     }
 
     // Record Field Provenance for filled fields

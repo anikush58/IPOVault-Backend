@@ -597,6 +597,61 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       background-color: var(--bg-hover) !important;
     }
 
+    /* Pagination Styles */
+    .manual-pagination-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 12px 18px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      font-size: 13px;
+    }
+    .pagination-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      height: 32px;
+      padding: 0 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      color: var(--text-main);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .pagination-btn:hover:not(:disabled):not(.active) {
+      background: var(--bg-hover);
+      border-color: var(--text-muted);
+    }
+    .pagination-btn.active {
+      background: var(--primary) !important;
+      border-color: var(--primary) !important;
+      color: #FFFFFF !important;
+      cursor: default;
+    }
+    .pagination-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .pagination-ellipsis {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 24px;
+      height: 32px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
     /* Segmented Actions Icon Group (Table: 170px for 4 icons, Form: 212px for 5 icons) */
     .table-action-group {
       display: inline-flex;
@@ -1501,7 +1556,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             </div>
             <div class="manual-toolbar-filters" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
               <input type="text" id="man-search-q" placeholder="Search company or symbol..." oninput="debounceFetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" />
-              <select id="man-filter-pub" onchange="fetchManualIpos()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
+              <select id="man-filter-pub" onchange="onManualPubFilterChange()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;">
                 <option value="">All Publication States</option>
                 <option value="PUBLISHED">Published</option>
                 <option value="DRAFT">Draft</option>
@@ -1532,6 +1587,15 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <span id="sort-order-icon">↓</span>
                   <span id="sort-order-text">Desc</span>
                 </button>
+              </div>
+              <div class="page-size-group" style="display:flex; align-items:center; gap:6px;">
+                <label for="man-page-size" style="font-size:12px; font-weight:600; color:var(--text-muted);">Show:</label>
+                <select id="man-page-size" onchange="onManualPageSizeChange(this.value)" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" title="Records per page">
+                  <option value="25">25 / page</option>
+                  <option value="50" selected>50 / page</option>
+                  <option value="100">100 / page</option>
+                  <option value="200">200 / page</option>
+                </select>
               </div>
             </div>
           </div>
@@ -1650,6 +1714,27 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <tr><td colspan="8" style="text-align:center; padding: 24px;">Loading Manual IPOs...</td></tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- Pagination Bar for Manual IPOs -->
+          <div id="manual-pagination-container" class="manual-pagination-bar" style="display:none;">
+            <div id="manual-pagination-info" style="color:var(--text-muted); font-size:13px; font-weight:500;">
+              Showing 1 to 50 of 165 records (Page 1 of 4)
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <div id="manual-pagination-controls" style="display:flex; align-items:center; gap:5px;">
+                <!-- Dynamic page navigation buttons -->
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; margin-left:6px; border-left:1px solid var(--border-color); padding-left:12px;">
+                <label for="man-page-size-bottom" style="font-size:12px; color:var(--text-muted); font-weight:500;">Per page:</label>
+                <select id="man-page-size-bottom" onchange="onManualPageSizeChange(this.value)" style="padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; cursor:pointer;">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2005,62 +2090,41 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <div class="prov-indicator" id="prov-for-leadManagers"></div>
               </div>
 
-              <!-- Company Financial Ratios & Performance -->
+              <!-- Company Financial Ratios & Performance (Multi-Period Table) -->
               <div style="border-top:1px solid var(--border-color); margin:12px 0; padding-top:12px;">
-                <strong style="color:var(--primary); font-size:14px;">Company Financial Ratios & Performance</strong>
-              </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <strong style="color:var(--primary); font-size:14px;">Company Financial Ratios & Performance</strong>
+                    <span id="financials-count-badge" style="font-size:11px; padding:2px 8px; background:var(--primary-light); color:var(--primary); border-radius:12px; font-weight:600;">0 periods</span>
+                    <div class="prov-indicator" id="prov-for-financials"></div>
+                  </div>
+                  <button type="button" class="btn-secondary" onclick="addFinancialRow()" style="font-size:12px; padding:4px 10px;">+ Add Financial Period</button>
+                </div>
 
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>Fiscal Period</label>
-                  <input type="text" id="fin-period" placeholder="e.g. FY24 / 31 Mar 2024" />
-                  <div class="prov-indicator" id="prov-for-financials"></div>
-                </div>
-                <div class="form-group">
-                  <label>ROE (%)</label>
-                  <input type="number" step="0.01" id="fin-roe-pct" placeholder="e.g. 18.5" />
-                </div>
-                <div class="form-group">
-                  <label>PAT Margin (%)</label>
-                  <input type="number" step="0.01" id="fin-pat-margin-pct" placeholder="e.g. 12.4" />
-                </div>
-                <div class="form-group">
-                  <label>EBITDA Margin (%)</label>
-                  <input type="number" step="0.01" id="fin-ebitda-margin-pct" placeholder="e.g. 21.0" />
-                </div>
-              </div>
-
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>EPS (₹)</label>
-                  <input type="number" step="0.01" id="fin-eps" placeholder="e.g. 8.50" />
-                </div>
-                <div class="form-group">
-                  <label>ROCE (%)</label>
-                  <input type="number" step="0.01" id="fin-roce-pct" placeholder="e.g. 22.1" />
-                </div>
-                <div class="form-group">
-                  <label>Total Assets (₹ Cr)</label>
-                  <input type="number" step="0.01" id="fin-assets" placeholder="e.g. 450.00" />
-                </div>
-                <div class="form-group">
-                  <label>Total Revenue (₹ Cr)</label>
-                  <input type="number" step="0.01" id="fin-revenue" placeholder="e.g. 620.00" />
-                </div>
-              </div>
-
-              <div class="form-grid">
-                <div class="form-group">
-                  <label>PAT / Net Profit (₹ Cr)</label>
-                  <input type="number" step="0.01" id="fin-pat" placeholder="e.g. 76.80" />
-                </div>
-                <div class="form-group">
-                  <label>EBITDA (₹ Cr)</label>
-                  <input type="number" step="0.01" id="fin-ebitda" placeholder="e.g. 130.20" />
-                </div>
-                <div class="form-group">
-                  <label>Net Worth (₹ Cr)</label>
-                  <input type="number" step="0.01" id="fin-networth" placeholder="e.g. 415.00" />
+                <div class="grid-table-box" style="margin-bottom:12px; overflow-x:auto;">
+                  <table id="financials-table" style="min-width:1150px;">
+                    <thead>
+                      <tr>
+                        <th style="width:35px; text-align:center;">#</th>
+                        <th style="width:110px;">Fiscal Period</th>
+                        <th style="width:100px;">Period Type</th>
+                        <th style="width:85px; text-align:right;">ROE (%)</th>
+                        <th style="width:95px; text-align:right;">PAT Margin (%)</th>
+                        <th style="width:105px; text-align:right;">EBITDA Margin (%)</th>
+                        <th style="width:80px; text-align:right;">EPS (₹)</th>
+                        <th style="width:85px; text-align:right;">ROCE (%)</th>
+                        <th style="width:105px; text-align:right;">Total Assets (₹ Cr)</th>
+                        <th style="width:110px; text-align:right;">Total Revenue (₹ Cr)</th>
+                        <th style="width:110px; text-align:right;">PAT / Net Profit (₹ Cr)</th>
+                        <th style="width:100px; text-align:right;">EBITDA (₹ Cr)</th>
+                        <th style="width:105px; text-align:right;">Net Worth (₹ Cr)</th>
+                        <th style="width:50px; text-align:center;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="financials-tbody">
+                      <tr id="no-financials-row"><td colspan="14" style="text-align:center; padding:16px; color:var(--text-muted); font-size:12px;">No financial periods added yet. Click "+ Add Financial Period".</td></tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -3493,6 +3557,31 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     let currentStatusFilter = 'OPEN';
     let currentManualSort = 'smart';
     let currentManualOrder = 'desc';
+    let currentManualPage = 1;
+    let currentManualLimit = 50;
+    let currentManualTotal = 0;
+    let currentManualTotalPages = 1;
+
+    function onManualPageSizeChange(newLimit) {
+      currentManualLimit = parseInt(newLimit, 10) || 50;
+      currentManualPage = 1;
+      const topSelect = document.getElementById('man-page-size');
+      if (topSelect) topSelect.value = String(currentManualLimit);
+      const bottomSelect = document.getElementById('man-page-size-bottom');
+      if (bottomSelect) bottomSelect.value = String(currentManualLimit);
+      fetchManualIpos();
+    }
+
+    function onManualPubFilterChange() {
+      currentManualPage = 1;
+      fetchManualIpos();
+    }
+
+    function goToManualPage(page) {
+      if (page < 1 || page > currentManualTotalPages || page === currentManualPage) return;
+      currentManualPage = page;
+      fetchManualIpos();
+    }
 
     function onManualSortChange() {
       const select = document.getElementById('man-sort-by');
@@ -3503,6 +3592,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         } else {
           currentManualOrder = 'desc';
         }
+        currentManualPage = 1;
         updateSortOrderButtonUI();
         fetchManualIpos();
       }
@@ -3510,6 +3600,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     function toggleManualSortOrder() {
       currentManualOrder = currentManualOrder === 'asc' ? 'desc' : 'asc';
+      currentManualPage = 1;
       updateSortOrderButtonUI();
       fetchManualIpos();
     }
@@ -3566,6 +3657,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
     function setStatusFilter(filterKey) {
       currentStatusFilter = filterKey;
+      currentManualPage = 1;
       ['OPEN', 'UPCOMING', 'CLOSED', 'ALLOTMENT_PENDING', 'ALLOTMENT_COMPLETED', 'LISTED', 'ALL'].forEach(k => {
         const btn = document.getElementById('pill-filter-' + k);
         if (btn) {
@@ -3630,8 +3722,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       setStatusFilter(val || 'ALL');
     }
 
-    async function fetchManualIpos() {
+    async function fetchManualIpos(targetPage) {
       try {
+        if (typeof targetPage === 'number') {
+          currentManualPage = targetPage;
+        }
         const q = document.getElementById('man-search-q').value;
         const pub = document.getElementById('man-filter-pub').value;
         const filterKey = currentStatusFilter;
@@ -3653,7 +3748,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           statusParam = filterKey;
         }
 
-        const query = new URLSearchParams({ page: 1, limit: 100 });
+        const query = new URLSearchParams({ page: currentManualPage, limit: currentManualLimit });
         if (q) query.set('q', q);
         if (pub) query.set('publicationStatus', pub);
         if (statusParam) query.set('status', statusParam);
@@ -3665,6 +3760,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const dataObj = json.data || json;
         const items = dataObj.items || [];
         const counts = dataObj.counts || json.counts;
+        const pagination = dataObj.pagination || json.pagination || {
+          page: currentManualPage,
+          limit: currentManualLimit,
+          total: items.length,
+          totalPages: Math.max(1, Math.ceil(items.length / currentManualLimit))
+        };
+
+        currentManualPage = pagination.page || 1;
+        currentManualLimit = pagination.limit || currentManualLimit;
+        currentManualTotal = pagination.total !== undefined ? pagination.total : items.length;
+        currentManualTotalPages = pagination.totalPages || Math.max(1, Math.ceil(currentManualTotal / currentManualLimit));
 
         if (counts) {
           updateManualTabCounts(counts);
@@ -3675,6 +3781,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (items.length === 0) {
           tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 24px; color:var(--text-muted);">No Manual IPOs found matching filter.</td></tr>';
           updateBulkSelectionBar();
+          renderManualPagination();
           return;
         }
 
@@ -3697,14 +3804,95 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           \`;
         }).join('');
         updateBulkSelectionBar();
+        renderManualPagination();
       } catch (err) {
         console.error('Fetch manual IPOs error:', err);
       }
     }
 
+    function renderManualPagination() {
+      const container = document.getElementById('manual-pagination-container');
+      if (!container) return;
+
+      if (currentManualTotal <= 0) {
+        container.style.display = 'none';
+        return;
+      }
+
+      // Show pagination if more than 50 records in tab OR multiple pages
+      if (currentManualTotal > 50 || currentManualTotalPages > 1 || currentManualTotal > currentManualLimit) {
+        container.style.display = 'flex';
+      } else {
+        container.style.display = 'none';
+        return;
+      }
+
+      const startIdx = Math.min((currentManualPage - 1) * currentManualLimit + 1, currentManualTotal);
+      const endIdx = Math.min(currentManualPage * currentManualLimit, currentManualTotal);
+
+      const infoEl = document.getElementById('manual-pagination-info');
+      if (infoEl) {
+        infoEl.innerHTML = 'Showing <strong>' + startIdx + '</strong> to <strong>' + endIdx + '</strong> of <strong>' + currentManualTotal + '</strong> records' +
+          (currentManualTotalPages > 1 ? ' <span style="opacity:0.75;">(Page ' + currentManualPage + ' of ' + currentManualTotalPages + ')</span>' : '');
+      }
+
+      const controlsEl = document.getElementById('manual-pagination-controls');
+      if (!controlsEl) return;
+
+      let html = '';
+
+      // Prev Button
+      const isPrevDisabled = currentManualPage <= 1;
+      html += '<button type="button" class="pagination-btn" ' + (isPrevDisabled ? 'disabled' : 'onclick="goToManualPage(' + (currentManualPage - 1) + ')"') + ' title="Previous Page">' +
+        '&#8592; Prev' +
+        '</button>';
+
+      // Page numbers with smart ellipsis
+      const totalPages = currentManualTotalPages;
+      const current = currentManualPage;
+
+      if (totalPages <= 7) {
+        for (let p = 1; p <= totalPages; p++) {
+          const isActive = p === current;
+          html += '<button type="button" class="pagination-btn ' + (isActive ? 'active' : '') + '" onclick="goToManualPage(' + p + ')">' + p + '</button>';
+        }
+      } else {
+        // First page
+        html += '<button type="button" class="pagination-btn ' + (current === 1 ? 'active' : '') + '" onclick="goToManualPage(1)">1</button>';
+
+        if (current > 3) {
+          html += '<span class="pagination-ellipsis">&#8230;</span>';
+        }
+
+        const start = Math.max(2, current - 1);
+        const end = Math.min(totalPages - 1, current + 1);
+
+        for (let p = start; p <= end; p++) {
+          const isActive = p === current;
+          html += '<button type="button" class="pagination-btn ' + (isActive ? 'active' : '') + '" onclick="goToManualPage(' + p + ')">' + p + '</button>';
+        }
+
+        if (current < totalPages - 2) {
+          html += '<span class="pagination-ellipsis">&#8230;</span>';
+        }
+
+        // Last page
+        html += '<button type="button" class="pagination-btn ' + (current === totalPages ? 'active' : '') + '" onclick="goToManualPage(' + totalPages + ')">' + totalPages + '</button>';
+      }
+
+      // Next Button
+      const isNextDisabled = currentManualPage >= totalPages;
+      html += '<button type="button" class="pagination-btn" ' + (isNextDisabled ? 'disabled' : 'onclick="goToManualPage(' + (currentManualPage + 1) + ')"') + ' title="Next Page">' +
+        'Next &#8594;' +
+        '</button>';
+
+      controlsEl.innerHTML = html;
+    }
+
     let debounceTimer;
     function debounceFetchManualIpos() {
       clearTimeout(debounceTimer);
+      currentManualPage = 1;
       debounceTimer = setTimeout(fetchManualIpos, 300);
     }
 
@@ -4057,50 +4245,132 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    function addFinancialRow(finData = {}) {
+      const tbody = document.getElementById('financials-tbody');
+      if (!tbody) return;
+      const noRow = document.getElementById('no-financials-row');
+      if (noRow) noRow.style.display = 'none';
+
+      const row = document.createElement('tr');
+      row.className = 'fin-row';
+      if (finData.id) row.setAttribute('data-id', String(finData.id));
+
+      const escAttr = (val) => (val !== null && val !== undefined ? String(val).replace(/"/g, '&quot;') : '');
+      const numVal = (val) => (val !== null && val !== undefined && !isNaN(Number(val)) ? Number(val) : '');
+
+      const fiscalPeriod = finData.fiscalPeriod || finData.fiscalYear || finData.period || '';
+      let periodType = (finData.periodType || '').toUpperCase();
+      if (!periodType) {
+        if (/^(Q[1-4]|3M|6M|9M|H1|H2|QUARTER)/i.test(fiscalPeriod)) {
+          periodType = 'QUARTERLY';
+        } else {
+          periodType = 'ANNUAL';
+        }
+      }
+
+      const roe = numVal(finData.roePercentage ?? finData.roe);
+      const patMargin = numVal(finData.patMarginPercent ?? finData.patMargin);
+      let ebitdaMargin = numVal(finData.ebitdaMarginPercent ?? finData.ebitdaMargin);
+      if (ebitdaMargin === '' && finData.ebitda != null && finData.totalRevenue != null && Number(finData.totalRevenue) > 0) {
+        ebitdaMargin = ((Number(finData.ebitda) / Number(finData.totalRevenue)) * 100).toFixed(2);
+      }
+      const eps = numVal(finData.eps);
+      const roce = numVal(finData.rocePercentage ?? finData.roce);
+      const totalAssets = numVal(finData.totalAssets);
+      const totalRevenue = numVal(finData.totalRevenue);
+      const pat = numVal(finData.pat ?? finData.patNetProfit);
+      const ebitda = numVal(finData.ebitda);
+      const netWorth = numVal(finData.netWorth);
+
+      row.innerHTML =
+        '<td class="fin-row-index" style="text-align:center; font-weight:600; font-size:12px; color:var(--text-muted);">1</td>' +
+        '<td><input type="text" class="fin-period-input" value="' + escAttr(fiscalPeriod) + '" placeholder="e.g. FY24" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:80px;" /></td>' +
+        '<td><select class="fin-period-type-select" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:90px;">' +
+        '<option value="ANNUAL" ' + (periodType === 'ANNUAL' ? 'selected' : '') + '>ANNUAL</option>' +
+        '<option value="QUARTERLY" ' + (periodType === 'QUARTERLY' ? 'selected' : '') + '>QUARTERLY</option>' +
+        '</select></td>' +
+        '<td><input type="number" step="0.01" class="fin-roe-input" value="' + escAttr(roe) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:70px; text-align:right;" /></td>' +
+        '<td><input type="number" step="0.01" class="fin-pat-margin-input" value="' + escAttr(patMargin) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:75px; text-align:right;" /></td>' +
+        '<td><input type="number" step="0.01" class="fin-ebitda-margin-input" value="' + escAttr(ebitdaMargin) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:75px; text-align:right;" /></td>' +
+        '<td><input type="number" step="0.01" class="fin-eps-input" value="' + escAttr(eps) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:65px; text-align:right;" /></td>' +
+        '<td><input type="number" step="0.01" class="fin-roce-input" value="' + escAttr(roce) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:70px; text-align:right;" /></td>' +
+        '<td><input type="number" step="0.01" class="fin-assets-input" value="' + escAttr(totalAssets) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:85px; text-align:right;" /></td>' +
+        '<td><input type="number" step="0.01" class="fin-revenue-input" value="' + escAttr(totalRevenue) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:85px; text-align:right;" /></td>' +
+        '<td><input type="number" step="0.01" class="fin-pat-input" value="' + escAttr(pat) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:85px; text-align:right;" /></td>' +
+        '<td><input type="number" step="0.01" class="fin-ebitda-input" value="' + escAttr(ebitda) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:85px; text-align:right;" /></td>' +
+        '<td><input type="number" step="0.01" class="fin-networth-input" value="' + escAttr(netWorth) + '" placeholder="0.00" style="padding:6px 8px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:12px; width:100%; min-width:85px; text-align:right;" /></td>' +
+        '<td style="text-align:center;"><button type="button" onclick="removeFinancialRow(this)" style="background:none; border:none; color:var(--danger); cursor:pointer; padding:4px;" title="Remove Financial Period">✕</button></td>';
+
+      tbody.appendChild(row);
+      reindexFinancialRows();
+    }
+
+    function removeFinancialRow(btn) {
+      const row = btn.closest('.fin-row');
+      if (row) row.remove();
+      reindexFinancialRows();
+    }
+
+    function reindexFinancialRows() {
+      const tbody = document.getElementById('financials-tbody');
+      if (!tbody) return;
+      const rows = tbody.querySelectorAll('.fin-row');
+      const noRow = document.getElementById('no-financials-row');
+      if (rows.length === 0) {
+        if (noRow) noRow.style.display = 'table-row';
+      } else {
+        if (noRow) noRow.style.display = 'none';
+        rows.forEach((row, idx) => {
+          const idxEl = row.querySelector('.fin-row-index');
+          if (idxEl) idxEl.textContent = String(idx + 1);
+        });
+      }
+      const badge = document.getElementById('financials-count-badge');
+      if (badge) badge.textContent = rows.length + (rows.length === 1 ? ' period' : ' periods');
+    }
+
     function getFinancialsFromForm() {
-      const periodEl = document.getElementById('fin-period');
-      const roeEl = document.getElementById('fin-roe-pct');
-      const patMarginEl = document.getElementById('fin-pat-margin-pct');
-      const ebitdaMarginEl = document.getElementById('fin-ebitda-margin-pct');
-      const epsEl = document.getElementById('fin-eps');
-      const roceEl = document.getElementById('fin-roce-pct');
-      const assetsEl = document.getElementById('fin-assets');
-      const revenueEl = document.getElementById('fin-revenue');
-      const patEl = document.getElementById('fin-pat');
-      const ebitdaEl = document.getElementById('fin-ebitda');
-      const netWorthEl = document.getElementById('fin-networth');
+      const tbody = document.getElementById('financials-tbody');
+      if (!tbody) return undefined;
+      const rows = tbody.querySelectorAll('.fin-row');
+      if (rows.length === 0) return [];
 
-      if (!periodEl || !roeEl) return undefined;
+      const list = [];
+      rows.forEach(r => {
+        const id = r.getAttribute('data-id') || undefined;
+        const periodVal = r.querySelector('.fin-period-input')?.value?.trim();
+        const periodTypeVal = r.querySelector('.fin-period-type-select')?.value || 'ANNUAL';
+        const roeVal = parseFloat(r.querySelector('.fin-roe-input')?.value);
+        const patMarginVal = parseFloat(r.querySelector('.fin-pat-margin-input')?.value);
+        const ebitdaMarginVal = parseFloat(r.querySelector('.fin-ebitda-margin-input')?.value);
+        const epsVal = parseFloat(r.querySelector('.fin-eps-input')?.value);
+        const roceVal = parseFloat(r.querySelector('.fin-roce-input')?.value);
+        const assetsVal = parseFloat(r.querySelector('.fin-assets-input')?.value);
+        const revenueVal = parseFloat(r.querySelector('.fin-revenue-input')?.value);
+        const patVal = parseFloat(r.querySelector('.fin-pat-input')?.value);
+        const ebitdaVal = parseFloat(r.querySelector('.fin-ebitda-input')?.value);
+        const netWorthVal = parseFloat(r.querySelector('.fin-networth-input')?.value);
 
-      const period = periodEl.value.trim();
-      const roe = parseFloat(roeEl.value);
-      const patMargin = parseFloat(patMarginEl.value);
-      const ebitdaMargin = parseFloat(ebitdaMarginEl.value);
-      const eps = parseFloat(epsEl.value);
-      const roce = parseFloat(roceEl.value);
-      const assets = parseFloat(assetsEl.value);
-      const revenue = parseFloat(revenueEl.value);
-      const pat = parseFloat(patEl.value);
-      const ebitda = parseFloat(ebitdaEl.value);
-      const netWorth = parseFloat(netWorthEl.value);
-
-      const hasAnyValue = [roe, patMargin, ebitdaMargin, eps, roce, assets, revenue, pat, ebitda, netWorth].some(v => !isNaN(v));
-      if (!hasAnyValue && !period) return undefined;
-
-      return [{
-        fiscalPeriod: period || 'FY24',
-        periodType: 'ANNUAL',
-        roePercentage: !isNaN(roe) ? roe : undefined,
-        patMarginPercent: !isNaN(patMargin) ? patMargin : undefined,
-        ebitdaMarginPercent: !isNaN(ebitdaMargin) ? ebitdaMargin : undefined,
-        eps: !isNaN(eps) ? eps : undefined,
-        rocePercentage: !isNaN(roce) ? roce : undefined,
-        totalAssets: !isNaN(assets) ? assets : undefined,
-        totalRevenue: !isNaN(revenue) ? revenue : undefined,
-        pat: !isNaN(pat) ? pat : undefined,
-        ebitda: !isNaN(ebitda) ? ebitda : undefined,
-        netWorth: !isNaN(netWorth) ? netWorth : undefined,
-      }];
+        const hasAnyNum = [roeVal, patMarginVal, ebitdaMarginVal, epsVal, roceVal, assetsVal, revenueVal, patVal, ebitdaVal, netWorthVal].some(v => !isNaN(v));
+        if (periodVal || hasAnyNum) {
+          list.push({
+            id,
+            fiscalPeriod: periodVal || 'FY24',
+            periodType: periodTypeVal,
+            roePercentage: !isNaN(roeVal) ? roeVal : undefined,
+            patMarginPercent: !isNaN(patMarginVal) ? patMarginVal : undefined,
+            ebitdaMarginPercent: !isNaN(ebitdaMarginVal) ? ebitdaMarginVal : undefined,
+            eps: !isNaN(epsVal) ? epsVal : undefined,
+            rocePercentage: !isNaN(roceVal) ? roceVal : undefined,
+            totalAssets: !isNaN(assetsVal) ? assetsVal : undefined,
+            totalRevenue: !isNaN(revenueVal) ? revenueVal : undefined,
+            pat: !isNaN(patVal) ? patVal : undefined,
+            ebitda: !isNaN(ebitdaVal) ? ebitdaVal : undefined,
+            netWorth: !isNaN(netWorthVal) ? netWorthVal : undefined,
+          });
+        }
+      });
+      return list;
     }
 
     function getDocumentsFromForm() {
@@ -4403,17 +4673,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       document.getElementById('sub-nii').value = '';
       document.getElementById('sub-retail').value = '';
       document.getElementById('sub-total').value = '';
-      document.getElementById('fin-period').value = '';
-      document.getElementById('fin-roe-pct').value = '';
-      document.getElementById('fin-pat-margin-pct').value = '';
-      document.getElementById('fin-ebitda-margin-pct').value = '';
-      document.getElementById('fin-eps').value = '';
-      document.getElementById('fin-roce-pct').value = '';
-      document.getElementById('fin-assets').value = '';
-      document.getElementById('fin-revenue').value = '';
-      document.getElementById('fin-pat').value = '';
-      document.getElementById('fin-ebitda').value = '';
-      document.getElementById('fin-networth').value = '';
+      const finTbody = document.getElementById('financials-tbody');
+      if (finTbody) {
+        finTbody.querySelectorAll('.fin-row').forEach(r => r.remove());
+      }
+      reindexFinancialRows();
       const tbody = document.getElementById('anchor-investors-tbody');
       if (tbody) {
         tbody.querySelectorAll('.anchor-row').forEach(r => r.remove());
@@ -4494,36 +4758,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         document.getElementById('part-reg-website').value = regPart?.website ?? '';
         document.getElementById('part-brlm-name').value = brlmParts.length > 0 ? brlmParts.map(b => b.name).join(', ') : '';
 
-        // Populate Company Financials & Ratios
-        const fin = (currentIpoData.financials && currentIpoData.financials[0]) || (currentIpoData.company?.financials && currentIpoData.company.financials[0]);
-        if (fin) {
-          document.getElementById('fin-period').value = fin.fiscalPeriod || 'FY24';
-          document.getElementById('fin-roe-pct').value = fin.roePercentage ?? '';
-          document.getElementById('fin-pat-margin-pct').value = fin.patMarginPercent ?? '';
-          document.getElementById('fin-ebitda-margin-pct').value = fin.ebitdaMarginPercent ?? (
-            fin.ebitda != null && fin.totalRevenue != null && Number(fin.totalRevenue) > 0
-              ? ((Number(fin.ebitda) / Number(fin.totalRevenue)) * 100).toFixed(2)
-              : ''
-          );
-          document.getElementById('fin-eps').value = fin.eps ?? '';
-          document.getElementById('fin-roce-pct').value = fin.rocePercentage ?? '';
-          document.getElementById('fin-assets').value = fin.totalAssets ?? '';
-          document.getElementById('fin-revenue').value = fin.totalRevenue ?? '';
-          document.getElementById('fin-pat').value = fin.pat ?? '';
-          document.getElementById('fin-ebitda').value = fin.ebitda ?? '';
-          document.getElementById('fin-networth').value = fin.netWorth ?? '';
+        // Populate Company Financials & Ratios (Multi-Period Table)
+        const finTbody = document.getElementById('financials-tbody');
+        if (finTbody) {
+          finTbody.querySelectorAll('.fin-row').forEach(r => r.remove());
+        }
+        const financials = currentIpoData.financials || currentIpoData.company?.financials || [];
+        if (Array.isArray(financials) && financials.length > 0) {
+          financials.forEach(f => addFinancialRow(f));
         } else {
-          document.getElementById('fin-period').value = '';
-          document.getElementById('fin-roe-pct').value = '';
-          document.getElementById('fin-pat-margin-pct').value = '';
-          document.getElementById('fin-ebitda-margin-pct').value = '';
-          document.getElementById('fin-eps').value = '';
-          document.getElementById('fin-roce-pct').value = '';
-          document.getElementById('fin-assets').value = '';
-          document.getElementById('fin-revenue').value = '';
-          document.getElementById('fin-pat').value = '';
-          document.getElementById('fin-ebitda').value = '';
-          document.getElementById('fin-networth').value = '';
+          reindexFinancialRows();
         }
 
         // Populate Subscription Observations
@@ -5259,26 +5503,45 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
 
       items.forEach(function(item, idx) {
+        const jsonIpoName = item.inputName || item.ipoName || ('Record #' + (idx + 1));
         let statusBadge = '';
         let borderColor = 'var(--border-color)';
         let statusClass = item.status;
+        let cardTitleHtml = '';
+        let matchedMetaHtml = '';
 
-        if (statusClass === 'UPDATED') {
-          const filledCount = item.fieldsFilledCount || (item.fieldsFilled ? item.fieldsFilled.length : 0);
-          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10B981;">UPDATED (' + filledCount + ' fields)</span>';
-          borderColor = 'rgba(16,185,129,0.35)';
-        } else if (statusClass === 'SKIPPED_UNMATCHED') {
-          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(245,158,11,0.15); color:#F59E0B;">SKIPPED (UNMATCHED)</span>';
+        if (statusClass === 'SKIPPED_UNMATCHED') {
+          cardTitleHtml = '<strong style="font-size:13px; color:var(--text-main);">' + escapeHtml(jsonIpoName) + ' \u2014 SKIPPED (UNMATCHED)</strong>';
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(245,158,11,0.15); color:#F59E0B;">UNMATCHED</span>';
           borderColor = 'rgba(245,158,11,0.3)';
         } else if (statusClass === 'SKIPPED_AMBIGUOUS') {
-          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(239,68,68,0.15); color:#EF4444;">SKIPPED (AMBIGUOUS - REVIEW NEEDED)</span>';
+          cardTitleHtml = '<strong style="font-size:13px; color:var(--text-main);">' + escapeHtml(jsonIpoName) + ' \u2014 SKIPPED (AMBIGUOUS)</strong>';
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(239,68,68,0.15); color:#EF4444;">AMBIGUOUS</span>';
           borderColor = 'rgba(239,68,68,0.35)';
         } else if (statusClass === 'FAILED') {
+          cardTitleHtml = '<strong style="font-size:13px; color:var(--text-main);">' + escapeHtml(jsonIpoName) + '</strong>';
           statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(220,38,38,0.15); color:#DC2626;">FAILED</span>';
           borderColor = 'rgba(220,38,38,0.35)';
         } else {
-          statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(148,163,184,0.15); color:#64748B;">NO EMPTY FIELDS TO FILL</span>';
-          borderColor = 'var(--border-color)';
+          cardTitleHtml = '<strong style="font-size:13px; color:var(--text-main);">' + escapeHtml(jsonIpoName) + '</strong>';
+          if (statusClass === 'UPDATED') {
+            const filledCount = item.fieldsFilledCount || (item.fieldsFilled ? item.fieldsFilled.length : 0);
+            statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10B981;">UPDATED (' + filledCount + ' fields)</span>';
+            borderColor = 'rgba(16,185,129,0.35)';
+          } else {
+            statusBadge = '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(148,163,184,0.15); color:#64748B;">NO EMPTY FIELDS TO FILL</span>';
+            borderColor = 'var(--border-color)';
+          }
+        }
+
+        if (statusClass !== 'SKIPPED_UNMATCHED' && statusClass !== 'SKIPPED_AMBIGUOUS' && (item.matchedIpoName || item.matchReason || item.ipoId)) {
+          const matchedName = item.matchedIpoName || item.ipoName;
+          const matchMethod = item.matchReason || 'Identifier Match';
+          matchedMetaHtml = '<div style="font-size:12px; color:var(--text-muted); margin-top:4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">'
+            + '<span>Matched Existing: <strong style="color:var(--text-main);">' + escapeHtml(matchedName) + '</strong></span>'
+            + '<span style="font-size:11px; padding:1px 6px; border-radius:4px; background:var(--bg-hover); border:1px solid var(--border-color); color:var(--text-muted);">&#128269; ' + escapeHtml(matchMethod) + '</span>'
+            + (item.ipoId ? '<span style="font-size:11px; font-family:monospace; opacity:0.7;">(' + escapeHtml(item.ipoId.slice(0, 8)) + '...)</span>' : '')
+            + '</div>';
         }
 
         let filledChipsHtml = '';
@@ -5310,11 +5573,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
         html += '<div style="background:var(--bg-surface); border:1px solid ' + borderColor + '; border-radius:10px; padding:12px 16px;">'
           + '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">'
-          + '<div><strong style="font-size:13px; color:var(--text-main);">' + escapeHtml(item.ipoName || ('Record #' + (idx + 1))) + '</strong>'
-          + (item.ipoId ? ' <span style="font-size:11px; color:var(--text-muted); font-family:monospace;">(' + escapeHtml(item.ipoId.slice(0, 8)) + '...)</span>' : '')
-          + '</div>'
+          + '<div>' + cardTitleHtml + '</div>'
           + statusBadge
           + '</div>'
+          + matchedMetaHtml
           + reasonHtml
           + filledChipsHtml
           + fieldReportHtml

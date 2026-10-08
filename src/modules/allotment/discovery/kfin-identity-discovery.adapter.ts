@@ -8,6 +8,7 @@ export const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
   clientId: string;
   name: string;
 }> = [
+  { clientId: '47651989560', name: 'SOLLFEGE SMART ELECTRONICS LIMITED' },
   { clientId: '37168935020', name: 'SRIT INDIA LIMITED' },
   { clientId: '93220762680', name: 'ORIENT CABLES (INDIA) LIMITED-IPO' },
   { clientId: '27219762590', name: 'BENCH MARK INFOTECH SERVICES LIMITED' },

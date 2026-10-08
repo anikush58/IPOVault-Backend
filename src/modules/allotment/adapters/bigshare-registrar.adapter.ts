@@ -358,9 +358,38 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
           };
         }
 
-        const applicantName = comp.Name?.trim() || undefined;
-        const allottedRaw = comp.ALLOTED !== undefined ? String(comp.ALLOTED).trim() : '';
-        const appliedRaw = comp.APPLIED !== undefined ? String(comp.APPLIED).trim() : '';
+        const applicantName =
+          comp.Name?.trim() ||
+          comp.NAME?.trim() ||
+          comp.ApplicantName?.trim() ||
+          comp.InvestorName?.trim() ||
+          undefined;
+
+        const allottedRaw =
+          comp.ALLOTED !== undefined
+            ? String(comp.ALLOTED).trim()
+            : comp.ALLOTTED !== undefined
+              ? String(comp.ALLOTTED).trim()
+              : comp.Alloted !== undefined
+                ? String(comp.Alloted).trim()
+                : comp.Allotted !== undefined
+                  ? String(comp.Allotted).trim()
+                  : comp.SharesAllotted !== undefined
+                    ? String(comp.SharesAllotted).trim()
+                    : comp.shares_allotted !== undefined
+                      ? String(comp.shares_allotted).trim()
+                      : '';
+
+        const appliedRaw =
+          comp.APPLIED !== undefined
+            ? String(comp.APPLIED).trim()
+            : comp.Applied !== undefined
+              ? String(comp.Applied).trim()
+              : comp.SharesApplied !== undefined
+                ? String(comp.SharesApplied).trim()
+                : comp.shares_applied !== undefined
+                  ? String(comp.shares_applied).trim()
+                  : '';
 
         const sharesAllotted = parseInt(allottedRaw, 10);
         const sharesApplied = parseInt(appliedRaw, 10);
@@ -390,8 +419,14 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
         // Check if multiple records returned in comp.Records
         if (Array.isArray(comp.Records) && comp.Records.length > 0) {
           const rec = comp.Records[0];
-          const recAllotted = parseInt(String(rec.ALLOTED), 10);
-          const recApplied = parseInt(String(rec.APPLIED), 10);
+          const recAllotted = parseInt(
+            String(rec.ALLOTED ?? rec.ALLOTTED ?? rec.Alloted ?? rec.Allotted ?? 0),
+            10,
+          );
+          const recApplied = parseInt(
+            String(rec.APPLIED ?? rec.Applied ?? 0),
+            10,
+          );
           return {
             status:
               !isNaN(recAllotted) && recAllotted > 0
@@ -399,7 +434,7 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
                 : AllotmentStatus.NOT_ALLOTTED,
             sourceCode: this.code,
             checkedAt,
-            applicantName: rec.Name?.trim() || applicantName,
+            applicantName: rec.Name?.trim() || rec.NAME?.trim() || applicantName,
             sharesAllotted: !isNaN(recAllotted) ? recAllotted : 0,
             sharesApplied: !isNaN(recApplied) ? recApplied : 0,
           };

@@ -561,6 +561,18 @@ export type IpoResponseDto = {
   currentSubscription?: CurrentSubscriptionSnapshotDto | null;
   dataReadiness?: IpoDataReadinessDto;
   allotmentResultAvailableAt?: string | null;
+  preIpoEps?: string | null;
+  postIpoEps?: string | null;
+  preIpoPe?: string | null;
+  postIpoPe?: string | null;
+  preIpoPromoterHolding?: string | null;
+  postIpoPromoterHolding?: string | null;
+  preIpoMarketCap?: string | null;
+  postIpoMarketCap?: string | null;
+  marketCap?: string | null;
+  strengths?: string[] | null;
+  risks?: string[] | null;
+  objectsOfIssue?: string[] | null;
   createdAt: string;
   updatedAt: string;
 };

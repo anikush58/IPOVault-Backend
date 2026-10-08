@@ -11,6 +11,7 @@ import {
   matchRegistrarCompany,
   normalizeName,
 } from '../allotment.matching';
+import { KFIN_VERIFIED_FALLBACK_REGISTRY } from '../discovery/kfin-identity-discovery.adapter';
 
 @Injectable()
 export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
@@ -183,7 +184,15 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
         ? (
             (raw as Record<string, unknown>).data as Record<string, unknown>[]
           )[0]
-        : raw;
+        : (raw as Record<string, unknown>).data &&
+          typeof (raw as Record<string, unknown>).data === 'object'
+          ? ((raw as Record<string, unknown>).data as Record<string, unknown>)
+          : (raw as Record<string, unknown>).result &&
+            typeof (raw as Record<string, unknown>).result === 'object'
+            ? Array.isArray((raw as Record<string, unknown>).result)
+              ? ((raw as Record<string, unknown>).result as Record<string, unknown>[])[0]
+              : ((raw as Record<string, unknown>).result as Record<string, unknown>)
+            : raw;
 
     if (!targetObj) {
       return {
@@ -194,11 +203,44 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     }
 
     // Check for error field in JSON response (e.g. {"error": "Record Not Found"})
-    if (targetObj.error) {
-      const errStr = String(targetObj.error);
+    const rawMsg = String(
+      targetObj.error ||
+        targetObj.message ||
+        targetObj.msg ||
+        targetObj.detail ||
+        '',
+    );
+    const rawStatus = String(
+      targetObj.status || targetObj.STATUS || targetObj.res_code || '',
+    ).toUpperCase();
+
+    if (rawMsg || rawStatus) {
+      const lowerMsg = rawMsg.toLowerCase();
       if (
-        errStr.toLowerCase().includes('not found') ||
-        errStr.toLowerCase().includes('no record')
+        lowerMsg.includes('not declared') ||
+        lowerMsg.includes('not finalized') ||
+        lowerMsg.includes('in process') ||
+        lowerMsg.includes('under process') ||
+        lowerMsg.includes('allotment awaited') ||
+        rawStatus === 'NOT_DECLARED' ||
+        rawStatus === 'AWAITED'
+      ) {
+        return {
+          status: AllotmentStatus.NOT_YET_AVAILABLE,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: rawMsg || 'Allotment is awaited from registrar',
+        };
+      }
+
+      if (
+        lowerMsg.includes('not found') ||
+        lowerMsg.includes('no record') ||
+        lowerMsg.includes('no data') ||
+        lowerMsg.includes('invalid pan') ||
+        lowerMsg.includes('not applied') ||
+        rawStatus === 'NOT_FOUND' ||
+        rawStatus === 'NO_RECORD'
       ) {
         return {
           status: AllotmentStatus.APPLICATION_NOT_FOUND,
@@ -206,22 +248,41 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
           checkedAt,
         };
       }
-      return {
-        status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
-        sourceCode: this.code,
-        checkedAt,
-        errorMessage: errStr,
-      };
+
+      if (
+        rawMsg &&
+        targetObj.App_Shares === undefined &&
+        targetObj.applied_qty === undefined &&
+        targetObj.All_Shares === undefined &&
+        targetObj.allotted_qty === undefined
+      ) {
+        return {
+          status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: rawMsg,
+        };
+      }
     }
 
     const applied = Number(
       targetObj.App_Shares ??
         targetObj.applied_qty ??
+        targetObj.app_qty ??
+        targetObj.shares_applied ??
+        targetObj.sharesApplied ??
+        targetObj.applied ??
         targetObj.All_Shares ??
         0,
     );
     const allotted = Number(
-      targetObj.All_Shares ?? targetObj.allotted_qty ?? 0,
+      targetObj.All_Shares ??
+        targetObj.allotted_qty ??
+        targetObj.allot_qty ??
+        targetObj.shares_allotted ??
+        targetObj.sharesAllotted ??
+        targetObj.allotted ??
+        0,
     );
 
     let status: AllotmentStatus;
@@ -234,16 +295,44 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       status = AllotmentStatus.NOT_ALLOTTED;
     }
 
+    const applicantName =
+      targetObj.Name ||
+      targetObj.NAME ||
+      targetObj.name ||
+      targetObj.applicant_name ||
+      targetObj.investor_name
+        ? String(
+            targetObj.Name ||
+              targetObj.NAME ||
+              targetObj.name ||
+              targetObj.applicant_name ||
+              targetObj.investor_name,
+          ).trim()
+        : undefined;
+
+    const rawResponseRef =
+      targetObj.Appln_No ||
+      targetObj.appln_no ||
+      targetObj.app_no ||
+      targetObj.application_no ||
+      targetObj.appno
+        ? String(
+            targetObj.Appln_No ||
+              targetObj.appln_no ||
+              targetObj.app_no ||
+              targetObj.application_no ||
+              targetObj.appno,
+          ).trim()
+        : undefined;
+
     return {
       status,
       sharesApplied: applied,
       sharesAllotted: allotted,
-      applicantName: targetObj.Name ? String(targetObj.Name).trim() : undefined,
+      applicantName,
       sourceCode: this.code,
       checkedAt,
-      rawResponseRef: targetObj.Appln_No
-        ? String(targetObj.Appln_No)
-        : undefined,
+      rawResponseRef,
     };
   }
 
@@ -262,8 +351,35 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     const checkedAt = new Date();
     try {
       const list = await this.fetchActiveCompanyList();
-      return this.matchCompanyInList(list, request, checkedAt);
+      const matched = this.matchCompanyInList(list, request, checkedAt);
+      if (typeof matched === 'string') {
+        return matched;
+      }
+
+      // If active list did not yield a match, check verified fallback registry if different
+      if (list !== KFIN_VERIFIED_FALLBACK_REGISTRY) {
+        const fallbackMatch = this.matchCompanyInList(
+          KFIN_VERIFIED_FALLBACK_REGISTRY,
+          request,
+          checkedAt,
+        );
+        if (typeof fallbackMatch === 'string') {
+          return fallbackMatch;
+        }
+      }
+
+      return matched;
     } catch (err: unknown) {
+      // Attempt fallback matching before surfacing error
+      const fallbackMatch = this.matchCompanyInList(
+        KFIN_VERIFIED_FALLBACK_REGISTRY,
+        request,
+        checkedAt,
+      );
+      if (typeof fallbackMatch === 'string') {
+        return fallbackMatch;
+      }
+
       const msg = err instanceof Error ? err.message : String(err);
       if (
         msg.includes('JSON') ||
@@ -315,6 +431,19 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     }
   }
 
+  private isHtmlPayload(text: string): boolean {
+    if (!text || typeof text !== 'string') return true;
+    const trimmed = text.trim();
+    return (
+      trimmed.startsWith('<!doctype') ||
+      trimmed.startsWith('<!DOCTYPE') ||
+      trimmed.startsWith('<html') ||
+      trimmed.startsWith('<HTML') ||
+      trimmed.includes('<head>') ||
+      trimmed.includes('<body>')
+    );
+  }
+
   private async discoverCompanyListFromPortal(): Promise<
     Array<{ clientId: string; name: string }>
   > {
@@ -329,107 +458,118 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       Referer: 'https://ipostatus.kfintech.com/',
     };
 
-    // Step 1: Fetch root portal HTML to find the active main JS bundle
-    const htmlResponse = await this.fetchWithRetry(portalUrl, {
-      method: 'GET',
-      headers: browserHeaders,
-    });
+    try {
+      // Step 1: Fetch root portal HTML to find the active main JS bundle
+      const htmlResponse = await this.fetchWithRetry(portalUrl, {
+        method: 'GET',
+        headers: browserHeaders,
+      });
 
-    if (!htmlResponse.ok) {
-      throw new Error(`Portal HTML returned HTTP ${htmlResponse.status}`);
-    }
-
-    const html = await htmlResponse.text();
-    const scriptMatch = html.match(/src=["']?(\.?\/static\/js\/[^"'\s>]+)/i);
-
-    let bundleUrl: string;
-    if (scriptMatch && scriptMatch[1]) {
-      const cleanPath = scriptMatch[1].replace(/^\./, '');
-      bundleUrl = new URL(cleanPath, portalUrl).toString();
-    } else {
-      const base = portalUrl.endsWith('/') ? portalUrl.slice(0, -1) : portalUrl;
-      bundleUrl = `${base}/static/js/main.js`;
-    }
-
-    // Step 2: Fetch active JS bundle
-    const bundleResponse = await this.fetchWithRetry(bundleUrl, {
-      method: 'GET',
-      headers: browserHeaders,
-    });
-
-    if (!bundleResponse.ok) {
-      throw new Error(`Portal JS bundle returned HTTP ${bundleResponse.status}`);
-    }
-
-    const bundleCode = await bundleResponse.text();
-
-    // Step 3: Extract embedded company JSON array from bundle
-    const jsonRegex = /JSON\.parse\((['"`])(\[\s*\{[\s\S]*?\}\s*\])\1\)/;
-    const match = jsonRegex.exec(bundleCode);
-
-    let rawList: unknown[] = [];
-    if (match && match[2]) {
-      const rawJsonStr = match[2];
-      try {
-        const unescaped = rawJsonStr
-          .replace(/\\'/g, "'")
-          .replace(/\\"/g, '"')
-          .replace(/\\\\/g, '\\');
-        const parsed = JSON.parse(unescaped);
-        if (Array.isArray(parsed)) {
-          rawList = parsed;
-        }
-      } catch (err: unknown) {
-        throw new Error(
-          `Failed to parse JSON string in KFintech bundle: ${err instanceof Error ? err.message : String(err)}`,
-        );
+      if (!htmlResponse.ok) {
+        throw new Error(`Portal HTML returned HTTP ${htmlResponse.status}`);
       }
-    } else {
-      // Fallback: try direct array matching in bundle
-      const directArrayRegex =
-        /\[\s*\{"clientId"\s*:\s*"[^"]+"\s*,\s*"name"\s*:\s*"[^"]+"\}[\s\S]*?\]/;
-      const directMatch = directArrayRegex.exec(bundleCode);
-      if (directMatch) {
+
+      const html = await htmlResponse.text();
+      const scriptMatch = html.match(/src=["']?(\.?\/static\/js\/[^"'\s>]+)/i);
+
+      let bundleUrl: string;
+      if (scriptMatch && scriptMatch[1]) {
+        const cleanPath = scriptMatch[1].replace(/^\./, '');
+        bundleUrl = new URL(cleanPath, portalUrl).toString();
+      } else {
+        const base = portalUrl.endsWith('/') ? portalUrl.slice(0, -1) : portalUrl;
+        bundleUrl = `${base}/static/js/main.js`;
+      }
+
+      // Step 2: Fetch active JS bundle
+      const bundleResponse = await this.fetchWithRetry(bundleUrl, {
+        method: 'GET',
+        headers: browserHeaders,
+      });
+
+      if (!bundleResponse.ok) {
+        throw new Error(`Portal JS bundle returned HTTP ${bundleResponse.status}`);
+      }
+
+      const bundleCode = await bundleResponse.text();
+      if (this.isHtmlPayload(bundleCode)) {
+        throw new Error('Received HTML payload instead of JavaScript bundle');
+      }
+
+      // Step 3: Extract embedded company JSON array from bundle
+      const jsonRegex = /JSON\.parse\((['"`])(\[\s*\{[\s\S]*?\}\s*\])\1\)/;
+      const match = jsonRegex.exec(bundleCode);
+
+      let rawList: unknown[] = [];
+      if (match && match[2]) {
+        const rawJsonStr = match[2];
         try {
-          const parsed = JSON.parse(directMatch[0]);
+          const unescaped = rawJsonStr
+            .replace(/\\'/g, "'")
+            .replace(/\\"/g, '"')
+            .replace(/\\\\/g, '\\');
+          const parsed = JSON.parse(unescaped);
           if (Array.isArray(parsed)) {
             rawList = parsed;
           }
-        } catch {
-          // Ignore fallback error and throw main parse error below
+        } catch (err: unknown) {
+          throw new Error(
+            `Failed to parse JSON string in KFintech bundle: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      } else {
+        // Fallback: try direct array matching in bundle
+        const directArrayRegex =
+          /\[\s*\{"clientId"\s*:\s*"[^"]+"\s*,\s*"name"\s*:\s*"[^"]+"\}[\s\S]*?\]/;
+        const directMatch = directArrayRegex.exec(bundleCode);
+        if (directMatch) {
+          try {
+            const parsed = JSON.parse(directMatch[0]);
+            if (Array.isArray(parsed)) {
+              rawList = parsed;
+            }
+          } catch {
+            // Ignore fallback error
+          }
         }
       }
-    }
 
-    if (rawList.length === 0) {
-      throw new Error('Unable to extract active company list from KFintech bundle');
-    }
-
-    // Step 4: Validate extracted items
-    const validated: Array<{ clientId: string; name: string }> = [];
-    for (const item of rawList) {
-      if (!item || typeof item !== 'object') continue;
-      const rec = item as Record<string, unknown>;
-      const code = String(rec.clientId || rec.client_id || '').trim();
-      const name = String(rec.name || rec.company_name || '').trim();
-
-      // Ensure valid non-empty string, not UUID
-      if (
-        code &&
-        name &&
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          code,
-        )
-      ) {
-        validated.push({ clientId: code, name });
+      if (rawList.length === 0) {
+        throw new Error('Unable to extract active company list from KFintech bundle');
       }
-    }
 
-    if (validated.length === 0) {
-      throw new Error('No valid company entries found in KFintech bundle');
-    }
+      // Step 4: Validate extracted items
+      const validated: Array<{ clientId: string; name: string }> = [];
+      for (const item of rawList) {
+        if (!item || typeof item !== 'object') continue;
+        const rec = item as Record<string, unknown>;
+        const code = String(rec.clientId || rec.client_id || '').trim();
+        const name = String(rec.name || rec.company_name || '').trim();
 
-    return validated;
+        // Ensure valid non-empty string, not UUID
+        if (
+          code &&
+          name &&
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            code,
+          )
+        ) {
+          validated.push({ clientId: code, name });
+        }
+      }
+
+      if (validated.length === 0) {
+        throw new Error('No valid company entries found in KFintech bundle');
+      }
+
+      return validated;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Live KFintech bundle discovery failed (${msg}); falling back to verified registry (${KFIN_VERIFIED_FALLBACK_REGISTRY.length} companies)`,
+      );
+      return KFIN_VERIFIED_FALLBACK_REGISTRY;
+    }
   }
 
   public matchCompanyInList(

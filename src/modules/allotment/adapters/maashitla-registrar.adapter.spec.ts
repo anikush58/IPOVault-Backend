@@ -276,4 +276,55 @@ describe('MaashitlaRegistrarAdapter Production Contract Tests', () => {
       expect.anything(),
     );
   });
+
+  it('14. should normalize wrapper object structure with nested data object', () => {
+    const fixture = {
+      success: true,
+      data: {
+        company_name: 'SHIVCHEM AGRO LIMITED',
+        pan: 'ABCDE1234F',
+        name: 'ANISH KUMAR',
+        shares_applied: 2000,
+        shares_alloted: 2000,
+      },
+    };
+
+    const result = adapter.normalizeMaashitlaResponse(fixture);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(result.sharesApplied).toBe(2000);
+    expect(result.sharesAllotted).toBe(2000);
+    expect(result.applicantName).toBe('ANISH KUMAR');
+  });
+
+  it('15. should recognize "basis of allotment in process" as NOT_YET_AVAILABLE', () => {
+    const fixture = {
+      status: 'error',
+      message: 'Basis of allotment is in process. Please check back later.',
+    };
+
+    const result = adapter.normalizeMaashitlaResponse(fixture);
+    expect(result.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+    expect(result.sourceCode).toBe('MAASHITLA');
+  });
+
+  it('16. should discover companies from wrapper structure { data: [...] }', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: [
+            { company_name: 'SHIVCHEM AGRO LIMITED' },
+            { company_name: 'ACME UNIVERSAL SAFEZONE 9 LIMITED' },
+          ],
+        }),
+      } as Response),
+    );
+
+    const list = await adapter.fetchActiveCompanyList();
+    expect(list).toHaveLength(2);
+    expect(list[0].name).toBe('SHIVCHEM AGRO LIMITED');
+    expect(list[1].name).toBe('ACME UNIVERSAL SAFEZONE 9 LIMITED');
+  });
 });
