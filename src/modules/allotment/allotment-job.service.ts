@@ -31,7 +31,16 @@ export class AllotmentJobService {
   /**
    * Initiates a bulk allotment check job for an IPO across user's saved PANs or explicitly provided identifiers.
    */
-  async createJob(dto: CreateJobDto, userId?: string) {
+  async createJob(dto: CreateJobDto, userId: string) {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      throw new AppException(
+        ErrorCode.UNAUTHORIZED,
+        'Authentication is required to create an allotment check job',
+        401,
+      );
+    }
+    const cleanUserId = userId.trim();
+
     const {
       ipoId,
       identifierValues: explicitValues,
@@ -42,10 +51,10 @@ export class AllotmentJobService {
 
     if (explicitValues && explicitValues.length > 0) {
       targetValues = explicitValues;
-    } else if (userId) {
+    } else {
       // Load saved PANs for authenticated user
       const savedPans = await this.prisma.userSavedPan.findMany({
-        where: { userId },
+        where: { userId: cleanUserId },
       });
 
       targetValues = savedPans.map((sp) => decryptPan(sp.panEncrypted));
@@ -115,11 +124,11 @@ export class AllotmentJobService {
 
     const resolvedIpoId = String(ipo.id);
 
-    // Create persistent job record bound to userId and resolved ipoId
+    // Create persistent job record bound to authenticated userId and resolved ipoId
     const job = await this.prisma.allotmentCheckJob.create({
       data: {
         ipoId: resolvedIpoId,
-        userId: userId || null,
+        userId: cleanUserId,
         status: AllotmentJobStatus.QUEUED,
         totalChecks: targetValues.length,
         processedChecks: 0,
@@ -141,7 +150,7 @@ export class AllotmentJobService {
     });
 
     this.logger.log(
-      `Created bulk allotment job ${job.id} for IPO ${ipoId} (User: ${userId || 'ANONYMOUS'}, ${targetValues.length} items queued)`,
+      `Created bulk allotment job ${job.id} for IPO ${ipoId} (User: ${cleanUserId}, ${targetValues.length} items queued)`,
     );
 
     // Trigger async job execution with transient targetValues in RAM
@@ -158,7 +167,16 @@ export class AllotmentJobService {
    * Retrieves current status, progress, and results of a bulk allotment check job.
    * Enforces strict user ownership verification.
    */
-  async getJob(jobId: string, userId?: string) {
+  async getJob(jobId: string, userId: string) {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      throw new AppException(
+        ErrorCode.UNAUTHORIZED,
+        'Authentication is required to view an allotment check job',
+        401,
+      );
+    }
+    const cleanUserId = userId.trim();
+
     const job = await this.prisma.allotmentCheckJob.findUnique({
       where: { id: jobId },
       include: {
@@ -174,8 +192,8 @@ export class AllotmentJobService {
       );
     }
 
-    // Ownership check: User A cannot read User B's job
-    if (job.userId && userId && job.userId !== userId) {
+    // Ownership check: User A cannot read User B's job or unowned job
+    if (job.userId !== cleanUserId) {
       throw new AppException(
         ErrorCode.NOT_FOUND,
         `Job with ID '${jobId}' was not found`,
@@ -215,9 +233,18 @@ export class AllotmentJobService {
    */
   async retryFailedItems(
     jobId: string,
-    userId?: string,
+    userId: string,
     identifierValuesMap?: Record<string, string>,
   ) {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      throw new AppException(
+        ErrorCode.UNAUTHORIZED,
+        'Authentication is required to retry an allotment check job',
+        401,
+      );
+    }
+    const cleanUserId = userId.trim();
+
     const job = await this.prisma.allotmentCheckJob.findUnique({
       where: { id: jobId },
       include: { items: true },
@@ -232,7 +259,7 @@ export class AllotmentJobService {
     }
 
     // Ownership check
-    if (job.userId && userId && job.userId !== userId) {
+    if (job.userId !== cleanUserId) {
       throw new AppException(
         ErrorCode.NOT_FOUND,
         `Job with ID '${jobId}' was not found`,

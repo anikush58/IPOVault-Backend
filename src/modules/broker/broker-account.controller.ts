@@ -12,6 +12,7 @@ import {
   Query,
   Res,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { BrokerType, ExchangeListing } from '@prisma/client';
@@ -37,6 +38,9 @@ import {
   BrokerAccountResponseDto,
   BrokerConnectionResponseDto,
 } from './dto/broker-account-response.dto';
+import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 
 function mapAccountToSafeResponse(account: any): BrokerAccountResponseDto {
   return {
@@ -150,6 +154,7 @@ function parseInstrumentsFromQueryParams(
 }
 
 @Controller('broker-accounts')
+@UseGuards(FirebaseAuthGuard)
 export class BrokerAccountController {
   private readonly logger = new Logger(BrokerAccountController.name);
 
@@ -164,7 +169,7 @@ export class BrokerAccountController {
   private getAuthenticatedUserId(userId?: string): string {
     if (!userId || typeof userId !== 'string' || !userId.trim()) {
       throw new UnauthorizedException(
-        'Authentication header x-user-id is required',
+        'Authentication required (verified token required)',
       );
     }
     return userId.trim();
@@ -187,7 +192,7 @@ export class BrokerAccountController {
    */
   @Get()
   async getAccounts(
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerAccountResponseDto[]> {
     const authUserId = this.getAuthenticatedUserId(userId);
     const accounts = await this.brokerAccountService.getAccounts(authUserId);
@@ -202,7 +207,7 @@ export class BrokerAccountController {
   @HttpCode(HttpStatus.CREATED)
   async createAccount(
     @Body() body: unknown,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerAccountResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
 
@@ -236,7 +241,7 @@ export class BrokerAccountController {
   async startUpstoxConnect(
     @Param('id') id: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -279,6 +284,7 @@ export class BrokerAccountController {
    * Meets Upstox's strict HTTPS Redirect URL requirement:
    * GET /api/v1/broker-accounts/connect/upstox/callback
    */
+  @Public()
   @Get('connect/upstox/callback')
   async completeUpstoxConnectCallback(
     @Query('code') code?: string,
@@ -425,7 +431,7 @@ export class BrokerAccountController {
     @Query('code') code?: string,
     @Query('state') state?: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -479,6 +485,7 @@ export class BrokerAccountController {
    * Meets Dhan's strict HTTPS Redirect URL requirement:
    * GET /api/v1/broker-accounts/connect/dhan/callback
    */
+  @Public()
   @Get('connect/dhan/callback')
   async completeDhanConnectCallback(
     @Query('tokenId') tokenId?: string,
@@ -583,7 +590,7 @@ export class BrokerAccountController {
   async startDhanConnect(
     @Param('id') id: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -627,7 +634,7 @@ export class BrokerAccountController {
     @Query('tokenId') tokenId?: string,
     @Query('state') state?: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -682,6 +689,7 @@ export class BrokerAccountController {
    * Meets FYERS's strict HTTPS Redirect URL requirement:
    * GET /api/v1/broker-accounts/connect/fyers/callback
    */
+  @Public()
   @Get('connect/fyers/callback')
   async completeFyersConnectCallback(
     @Query('auth_code') authCode?: string,
@@ -786,7 +794,7 @@ export class BrokerAccountController {
   async startFyersConnect(
     @Param('id') id: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -830,7 +838,7 @@ export class BrokerAccountController {
     @Query('auth_code') authCode?: string,
     @Query('state') state?: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -885,6 +893,7 @@ export class BrokerAccountController {
    * Meets Zerodha's strict HTTPS Redirect URL requirement:
    * GET /api/v1/broker-accounts/connect/zerodha/callback
    */
+  @Public()
   @Get('connect/zerodha/callback')
   async completeZerodhaConnectCallback(
     @Query('request_token') requestToken?: string,
@@ -985,7 +994,7 @@ export class BrokerAccountController {
   async startZerodhaConnect(
     @Param('id') id: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1029,7 +1038,7 @@ export class BrokerAccountController {
     @Query('code') code?: string,
     @Query('state') state?: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1088,7 +1097,7 @@ export class BrokerAccountController {
   async startGrowwConnect(
     @Param('id') id: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1131,7 +1140,7 @@ export class BrokerAccountController {
     @Query('code') code?: string,
     @Query('state') state?: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1190,7 +1199,7 @@ export class BrokerAccountController {
   async startMillionsConnect(
     @Param('id') id: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1234,7 +1243,7 @@ export class BrokerAccountController {
     @Query('tokenId') tokenId?: string,
     @Query('state') state?: string,
     @Query('redirectUri') redirectUri?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1292,7 +1301,7 @@ export class BrokerAccountController {
   @Get(':id/holdings')
   async getHoldings(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<NormalizedHolding[]> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1321,7 +1330,7 @@ export class BrokerAccountController {
   @Get(':id/trades')
   async getTrades(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<NormalizedTrade[]> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1352,7 +1361,7 @@ export class BrokerAccountController {
     @Param('id') id: string,
     @Query('isin') isin?: string,
     @Query('exchange') exchangeStr?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<NormalizedQuote> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1398,7 +1407,7 @@ export class BrokerAccountController {
     @Query('isins') isinsStr?: string,
     @Query('symbols') symbolsStr?: string,
     @Query('exchange') defaultExchangeStr?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<NormalizedQuote[]> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1464,7 +1473,7 @@ export class BrokerAccountController {
     @Query('isins') isinsStr?: string,
     @Query('symbols') symbolsStr?: string,
     @Query('exchange') defaultExchangeStr?: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<NormalizedQuote[]> {
     const authUserId = this.getAuthenticatedUserId(userId);
     const accounts = await this.brokerAccountService.getAccounts(authUserId);
@@ -1522,7 +1531,7 @@ export class BrokerAccountController {
    */
   @Get('portfolio')
   async getUserPortfolio(
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<UserPortfolioSummaryResponse> {
     const authUserId = this.getAuthenticatedUserId(userId);
     return this.brokerInvestmentService.getUserPortfolioSummary(authUserId);
@@ -1535,7 +1544,7 @@ export class BrokerAccountController {
   @Get(':id')
   async getAccount(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerAccountResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1556,7 +1565,7 @@ export class BrokerAccountController {
   @Get(':id/connection')
   async getConnection(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerConnectionResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1578,7 +1587,7 @@ export class BrokerAccountController {
   @HttpCode(HttpStatus.OK)
   async disconnectAccount(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ): Promise<BrokerAccountResponseDto> {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1602,7 +1611,7 @@ export class BrokerAccountController {
   async recordAllotmentInvestment(
     @Param('id') id: string,
     @Body() body: unknown,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ) {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1632,7 +1641,7 @@ export class BrokerAccountController {
   async getInvestmentSummary(
     @Param('id') id: string,
     @Param('ipoId') ipoId: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ) {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1658,7 +1667,7 @@ export class BrokerAccountController {
   async syncInvestment(
     @Param('id') id: string,
     @Param('ipoId') ipoId: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ) {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {
@@ -1684,7 +1693,7 @@ export class BrokerAccountController {
   @HttpCode(HttpStatus.OK)
   async syncAccountNow(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ) {
     const authUserId = this.getAuthenticatedUserId(userId);
     if (!id || typeof id !== 'string' || !id.trim()) {

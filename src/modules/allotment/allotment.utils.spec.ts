@@ -57,14 +57,52 @@ describe('Allotment Utilities', () => {
   });
 
   describe('encryptPan & decryptPan', () => {
-    it('should correctly encrypt and decrypt PAN transiently using AES-256-GCM', () => {
+    const testSecret = 'test_encryption_secret_key_32_bytes!';
+
+    it('should correctly encrypt and decrypt PAN transiently using explicit secret key', () => {
       const originalPan = 'ABCDE1234F';
+      const encrypted = encryptPan(originalPan, testSecret);
+      expect(encrypted).not.toContain(originalPan);
+      expect(encrypted.split(':')).toHaveLength(3);
+
+      const decrypted = decryptPan(encrypted, testSecret);
+      expect(decrypted).toBe('ABCDE1234F');
+    });
+
+    it('should correctly encrypt and decrypt PAN transiently using process.env secret', () => {
+      process.env.ALLOTMENT_ENCRYPTION_SECRET = testSecret;
+      const originalPan = 'XYZAB5678C';
       const encrypted = encryptPan(originalPan);
       expect(encrypted).not.toContain(originalPan);
       expect(encrypted.split(':')).toHaveLength(3);
 
       const decrypted = decryptPan(encrypted);
-      expect(decrypted).toBe('ABCDE1234F');
+      expect(decrypted).toBe('XYZAB5678C');
+    });
+
+    it('should throw when encryption secret is missing or too short', () => {
+      const oldSecret = process.env.ALLOTMENT_ENCRYPTION_SECRET;
+      delete process.env.ALLOTMENT_ENCRYPTION_SECRET;
+
+      expect(() => encryptPan('ABCDE1234F')).toThrow(
+        /ALLOTMENT_ENCRYPTION_SECRET.*is required/,
+      );
+      expect(() => encryptPan('ABCDE1234F', 'short')).toThrow(
+        /ALLOTMENT_ENCRYPTION_SECRET.*is required/,
+      );
+
+      process.env.ALLOTMENT_ENCRYPTION_SECRET = oldSecret;
+    });
+
+    it('should throw when hash secret is missing', () => {
+      const oldSecret = process.env.ALLOTMENT_HASH_SECRET;
+      delete process.env.ALLOTMENT_HASH_SECRET;
+
+      expect(() => hashIdentifier('ABCDE1234F')).toThrow(
+        /ALLOTMENT_HASH_SECRET.*is required/,
+      );
+
+      process.env.ALLOTMENT_HASH_SECRET = oldSecret;
     });
   });
 });

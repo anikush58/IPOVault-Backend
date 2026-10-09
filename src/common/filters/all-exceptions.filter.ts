@@ -106,6 +106,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     switch (status) {
       case HttpStatus.BAD_REQUEST:
         return ErrorCode.VALIDATION_ERROR;
+      case HttpStatus.UNAUTHORIZED:
+        return ErrorCode.UNAUTHORIZED;
+      case HttpStatus.FORBIDDEN:
+        return 'FORBIDDEN';
       case HttpStatus.NOT_FOUND:
         return ErrorCode.NOT_FOUND;
       case HttpStatus.SERVICE_UNAVAILABLE:
@@ -122,6 +126,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     switch (status) {
       case HttpStatus.BAD_REQUEST:
         return 'The request is invalid';
+      case HttpStatus.UNAUTHORIZED:
+        return 'Authentication required';
+      case HttpStatus.FORBIDDEN:
+        return 'Access forbidden';
       case HttpStatus.NOT_FOUND:
         return 'The requested resource was not found';
       case HttpStatus.SERVICE_UNAVAILABLE:

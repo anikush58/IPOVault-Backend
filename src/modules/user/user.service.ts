@@ -17,14 +17,15 @@ export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
   async syncPans(userId: string, dto: SyncPansBodyDto) {
-    if (!userId) {
+    if (!userId || !userId.trim()) {
       throw new AppException(
         ErrorCode.UNAUTHORIZED,
-        'Authentication identity required (x-user-id)',
+        'Authenticated user ID is required',
         401,
       );
     }
 
+    const cleanUserId = userId.trim();
     const results = [];
     for (const item of dto.pans) {
       const panUpper = item.pan.trim().toUpperCase();
@@ -34,7 +35,7 @@ export class UserService {
 
       const existing = await this.prisma.userSavedPan.findFirst({
         where: {
-          userId,
+          userId: cleanUserId,
           panHash,
         },
       });
@@ -53,7 +54,7 @@ export class UserService {
       } else {
         const created = await this.prisma.userSavedPan.create({
           data: {
-            userId,
+            userId: cleanUserId,
             panHash,
             panEncrypted,
             panMasked,
@@ -65,12 +66,78 @@ export class UserService {
     }
 
     this.logger.log(
-      `Synchronized ${results.length} saved PANs for user ${userId}`,
+      `Synchronized ${results.length} saved PANs for user ${cleanUserId}`,
     );
 
     return {
       syncedCount: results.length,
       pans: results,
+    };
+  }
+
+  /**
+   * Deletes a specific saved PAN record owned by the authenticated user.
+   * Rejects cross-user deletion attempts with 404.
+   */
+  async deletePan(userId: string, panId: string) {
+    if (!userId || !userId.trim()) {
+      throw new AppException(
+        ErrorCode.UNAUTHORIZED,
+        'Authenticated user ID is required',
+        401,
+      );
+    }
+
+    const cleanUserId = userId.trim();
+    const existing = await this.prisma.userSavedPan.findUnique({
+      where: { id: panId },
+    });
+
+    if (!existing || existing.userId !== cleanUserId) {
+      throw new AppException(
+        ErrorCode.NOT_FOUND,
+        `Saved PAN with ID '${panId}' was not found`,
+        404,
+      );
+    }
+
+    await this.prisma.userSavedPan.delete({
+      where: { id: panId },
+    });
+
+    this.logger.log(`Deleted saved PAN ${panId} for user ${cleanUserId}`);
+
+    return {
+      success: true,
+      id: panId,
+      deleted: true,
+    };
+  }
+
+  /**
+   * Deletes all saved PAN records belonging to the authenticated user.
+   */
+  async deleteAllPans(userId: string) {
+    if (!userId || !userId.trim()) {
+      throw new AppException(
+        ErrorCode.UNAUTHORIZED,
+        'Authenticated user ID is required',
+        401,
+      );
+    }
+
+    const cleanUserId = userId.trim();
+    const result = await this.prisma.userSavedPan.deleteMany({
+      where: { userId: cleanUserId },
+    });
+
+    this.logger.log(
+      `Deleted all ${result.count} saved PANs for user ${cleanUserId}`,
+    );
+
+    return {
+      success: true,
+      deletedCount: result.count,
     };
   }
 }

@@ -19,6 +19,7 @@ import { NotificationModule } from './modules/notifications/notification.module'
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ConsoleModule } from './modules/console/console.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { BrokerModule } from './modules/broker/broker.module';
 import { IpoGuruModule } from './modules/ipo-guru/ipo-guru.module';
 import { EnrichmentModule } from './modules/enrichment/enrichment.module';
@@ -36,6 +37,7 @@ import { EnrichmentModule } from './modules/enrichment/enrichment.module';
         createLoggerParams(config),
     }),
     DatabaseModule,
+    AuthModule,
     CompaniesModule,
     IposModule,
     SourcesModule,

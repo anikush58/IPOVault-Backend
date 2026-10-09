@@ -39,10 +39,12 @@ export function maskIdentifier(
  */
 export function hashIdentifier(value: string, secretKey?: string): string {
   const normalized = value.trim().toUpperCase();
-  const secret =
-    secretKey ||
-    process.env.ALLOTMENT_HASH_SECRET ||
-    'ipovault_default_secure_allotment_hash_secret_key';
+  const secret = secretKey || process.env.ALLOTMENT_HASH_SECRET;
+  if (!secret) {
+    throw new Error(
+      'ALLOTMENT_HASH_SECRET environment variable or explicit secretKey is required',
+    );
+  }
   return createHmac('sha256', secret).update(normalized).digest('hex');
 }
 
@@ -57,15 +59,15 @@ export function isValidPan(pan: string): boolean {
  * Encrypts a sensitive PAN string transiently for secure storage at rest using AES-256-GCM.
  */
 export function encryptPan(pan: string, secretKey?: string): string {
-  const secret = (
-    secretKey ||
-    process.env.ALLOTMENT_ENCRYPTION_SECRET ||
-    'ipovault_default_encryption_secret_key_32_bytes!'
-  )
-    .slice(0, 32)
-    .padEnd(32, '0');
+  const secret = secretKey || process.env.ALLOTMENT_ENCRYPTION_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error(
+      'ALLOTMENT_ENCRYPTION_SECRET (at least 32 bytes) is required for PAN encryption',
+    );
+  }
+  const key = Buffer.from(secret.slice(0, 32));
   const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', Buffer.from(secret), iv);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
   let encrypted = cipher.update(pan.trim().toUpperCase(), 'utf8', 'hex');
   encrypted += cipher.final('hex');
   const authTag = cipher.getAuthTag().toString('hex');
@@ -76,13 +78,12 @@ export function encryptPan(pan: string, secretKey?: string): string {
  * Decrypts a stored encrypted PAN string transiently in memory.
  */
 export function decryptPan(encryptedData: string, secretKey?: string): string {
-  const secret = (
-    secretKey ||
-    process.env.ALLOTMENT_ENCRYPTION_SECRET ||
-    'ipovault_default_encryption_secret_key_32_bytes!'
-  )
-    .slice(0, 32)
-    .padEnd(32, '0');
+  const secret = secretKey || process.env.ALLOTMENT_ENCRYPTION_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error(
+      'ALLOTMENT_ENCRYPTION_SECRET (at least 32 bytes) is required for PAN decryption',
+    );
+  }
   const parts = encryptedData.split(':');
   if (parts.length !== 3) {
     throw new Error('Invalid encrypted payload format');
@@ -93,7 +94,7 @@ export function decryptPan(encryptedData: string, secretKey?: string): string {
 
   const decipher = createDecipheriv(
     'aes-256-gcm',
-    Buffer.from(secret),
+    Buffer.from(secret.slice(0, 32)),
     Buffer.from(ivHex, 'hex'),
   );
   decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));

@@ -18,9 +18,10 @@ import { MufgIdentityDiscoveryAdapter } from './discovery/mufg-identity-discover
 import { SourceIdentitySyncService } from './discovery/source-identity-sync.service';
 import { RegistrarIdentitySyncSchedulerService } from './discovery/registrar-identity-sync-scheduler.service';
 import { NotificationModule } from '../notifications/notification.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [forwardRef(() => NotificationModule)],
+  imports: [forwardRef(() => NotificationModule), AuthModule],
   controllers: [AllotmentController],
   providers: [
     AllotmentService,

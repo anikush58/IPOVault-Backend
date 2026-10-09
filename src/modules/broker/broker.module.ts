@@ -13,8 +13,10 @@ import { FyersBrokerAdapter } from './adapters/fyers.adapter';
 import { ZerodhaBrokerAdapter } from './adapters/zerodha.adapter';
 import { GrowwBrokerAdapter } from './adapters/groww.adapter';
 import { MillionsBrokerAdapter } from './adapters/millions.adapter';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
+  imports: [AuthModule],
   controllers: [BrokerAccountController],
   providers: [
     BrokerCryptoService,

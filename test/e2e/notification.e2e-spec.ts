@@ -255,7 +255,7 @@ describe('Notification API & Preferences (e2e)', () => {
     it('1, 2, 3. GET /api/v1/notifications/preferences returns all supported types in default state', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/v1/notifications/preferences')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(200);
 
       expect(response.body.data.preferences).toHaveLength(6);
@@ -268,7 +268,7 @@ describe('Notification API & Preferences (e2e)', () => {
     it('4, 5. PUT /api/v1/notifications/preferences/:type disables a notification type and persists state', async () => {
       const response = await request(app.getHttpServer())
         .put('/api/v1/notifications/preferences/IPO_OPENED')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .send({ enabled: false })
         .expect(200);
 
@@ -281,7 +281,7 @@ describe('Notification API & Preferences (e2e)', () => {
       // Verify GET preferences reflects disabled state for userA
       const getRes = await request(app.getHttpServer())
         .get('/api/v1/notifications/preferences')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(200);
 
       const ipoOpenedPref = getRes.body.data.preferences.find(
@@ -297,7 +297,7 @@ describe('Notification API & Preferences (e2e)', () => {
     it('6. PUT /api/v1/notifications/preferences/:type re-enables a notification type', async () => {
       const response = await request(app.getHttpServer())
         .put('/api/v1/notifications/preferences/IPO_OPENED')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .send({ enabled: true })
         .expect(200);
 
@@ -308,12 +308,12 @@ describe('Notification API & Preferences (e2e)', () => {
       // First disable a preference
       await request(app.getHttpServer())
         .put('/api/v1/notifications/preferences/IPO_CLOSED')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .send({ enabled: false });
 
       const response = await request(app.getHttpServer())
         .post('/api/v1/notifications/preferences/reset')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(200);
 
       expect(response.body.data.preferences).toHaveLength(6);
@@ -324,13 +324,13 @@ describe('Notification API & Preferences (e2e)', () => {
       // Disable IPO_DATA_CHANGED for userA
       await request(app.getHttpServer())
         .put('/api/v1/notifications/preferences/IPO_DATA_CHANGED')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .send({ enabled: false });
 
       // Check User B preferences
       const response = await request(app.getHttpServer())
         .get('/api/v1/notifications/preferences')
-        .set('x-user-id', userB)
+        .set('Authorization', `Bearer test-token:${userB}`)
         .expect(200);
 
       const userBPref = response.body.data.preferences.find(
@@ -343,7 +343,7 @@ describe('Notification API & Preferences (e2e)', () => {
     it('9. Returns 400 Bad Request for unsupported notification type', async () => {
       const response = await request(app.getHttpServer())
         .put('/api/v1/notifications/preferences/INVALID_UNKNOWN_TYPE')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .send({ enabled: false })
         .expect(400);
 
@@ -353,7 +353,7 @@ describe('Notification API & Preferences (e2e)', () => {
     it('10. Returns 400 Bad Request for invalid request body', async () => {
       await request(app.getHttpServer())
         .put('/api/v1/notifications/preferences/IPO_OPENED')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .send({ enabled: 'not-a-boolean' })
         .expect(400);
     });
@@ -361,12 +361,12 @@ describe('Notification API & Preferences (e2e)', () => {
     it('11. Disabling preference preserves existing notifications in list', async () => {
       await request(app.getHttpServer())
         .put('/api/v1/notifications/preferences/IPO_OPENED')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .send({ enabled: false });
 
       const response = await request(app.getHttpServer())
         .get('/api/v1/notifications')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(200);
 
       // Existing sample notification of type IPO_OPENED remains
@@ -381,7 +381,7 @@ describe('Notification API & Preferences (e2e)', () => {
     it('lists notifications for authenticated user', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/v1/notifications')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(200);
 
       expect(response.body.data.notifications.length).toBeGreaterThan(0);
@@ -390,7 +390,7 @@ describe('Notification API & Preferences (e2e)', () => {
     it('retrieves owned notification', async () => {
       const response = await request(app.getHttpServer())
         .get(`/api/v1/notifications/${sampleNotifications[0].id}`)
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(200);
 
       expect(response.body.data.id).toBe(sampleNotifications[0].id);
@@ -399,14 +399,14 @@ describe('Notification API & Preferences (e2e)', () => {
     it('returns 404 for unowned notification', async () => {
       await request(app.getHttpServer())
         .get(`/api/v1/notifications/${sampleNotifications[2].id}`)
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(404);
     });
 
     it('marks notification as read', async () => {
       const response = await request(app.getHttpServer())
         .post(`/api/v1/notifications/${sampleNotifications[0].id}/read`)
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(200);
 
       expect(response.body.data.readAt).not.toBeNull();
@@ -415,22 +415,23 @@ describe('Notification API & Preferences (e2e)', () => {
     it('marks all unread notifications as read', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/v1/notifications/read-all')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(200);
 
       expect(response.body.data.updatedCount).toBeGreaterThanOrEqual(0);
     });
 
-    it('returns 401 if x-user-id header is missing', async () => {
+    it('returns 401 if Authorization header is missing (x-user-id ignored)', async () => {
       await request(app.getHttpServer())
         .get('/api/v1/notifications')
+        .set('x-user-id', userA)
         .expect(401);
     });
 
     it('verifies sensitive data (PAN, panHash, panEncrypted) is not exposed', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/v1/notifications')
-        .set('x-user-id', userA)
+        .set('Authorization', `Bearer test-token:${userA}`)
         .expect(200);
 
       const jsonString = JSON.stringify(response.body);

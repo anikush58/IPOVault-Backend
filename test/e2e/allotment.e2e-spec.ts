@@ -153,7 +153,7 @@ describe('Allotment E2E User Flow', () => {
     // 2. Create Job via POST /api/v1/allotment/jobs (ipoId only)
     const createRes = await request(app.getHttpServer())
       .post('/api/v1/allotment/jobs')
-      .set('x-user-id', userId)
+      .set('Authorization', `Bearer test-token:${userId}`)
       .send({ ipoId })
       .expect(201);
 
@@ -167,7 +167,7 @@ describe('Allotment E2E User Flow', () => {
     // 3. Query Job status via GET /api/v1/allotment/jobs/:id
     const getRes = await request(app.getHttpServer())
       .get(`/api/v1/allotment/jobs/${jobId}`)
-      .set('x-user-id', userId)
+      .set('Authorization', `Bearer test-token:${userId}`)
       .expect(200);
 
     const fetchJobData = getRes.body.data || getRes.body;
@@ -188,10 +188,17 @@ describe('Allotment E2E User Flow', () => {
     expect(dbString).not.toContain(pan2);
   });
 
+  it('should reject x-user-id spoofing without valid Bearer token with 401 UNAUTHORIZED', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/allotment/intelligence/summary')
+      .set('x-user-id', userId)
+      .expect(401);
+  });
+
   it('should return authenticated user summary allotment intelligence', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/v1/allotment/intelligence/summary')
-      .set('x-user-id', userId)
+      .set('Authorization', `Bearer test-token:${userId}`)
       .expect(200);
 
     expect(res.body.data).toBeDefined();
@@ -216,7 +223,7 @@ describe('Allotment E2E User Flow', () => {
   it('should return authenticated job-specific intelligence', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/v1/allotment/jobs/e2e-job-uuid-999/intelligence')
-      .set('x-user-id', userId)
+      .set('Authorization', `Bearer test-token:${userId}`)
       .expect(200);
 
     expect(res.body.data).toBeDefined();
@@ -228,14 +235,14 @@ describe('Allotment E2E User Flow', () => {
   it('should return 404 NOT_FOUND when accessing job belonging to another user', async () => {
     await request(app.getHttpServer())
       .get('/api/v1/allotment/jobs/e2e-job-uuid-999/intelligence')
-      .set('x-user-id', 'other-user-uuid-999')
+      .set('Authorization', 'Bearer test-token:other-user-uuid-999')
       .expect(404);
   });
 
   it('should return authenticated user allotment history (GET /intelligence/history)', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/v1/allotment/intelligence/history')
-      .set('x-user-id', userId)
+      .set('Authorization', `Bearer test-token:${userId}`)
       .expect(200);
 
     expect(res.body.data).toBeDefined();
@@ -267,7 +274,7 @@ describe('Allotment E2E User Flow', () => {
   it('should return authenticated per-PAN intelligence (GET /intelligence/pans)', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/v1/allotment/intelligence/pans')
-      .set('x-user-id', userId)
+      .set('Authorization', `Bearer test-token:${userId}`)
       .expect(200);
 
     expect(res.body.data).toBeDefined();
@@ -299,7 +306,7 @@ describe('Allotment E2E User Flow', () => {
   it('should return authenticated per-IPO intelligence (GET /ipos/:id/intelligence)', async () => {
     const res = await request(app.getHttpServer())
       .get(`/api/v1/allotment/ipos/${ipoId}/intelligence`)
-      .set('x-user-id', userId)
+      .set('Authorization', `Bearer test-token:${userId}`)
       .expect(200);
 
     expect(res.body.data).toBeDefined();
@@ -327,7 +334,7 @@ describe('Allotment E2E User Flow', () => {
 
     await request(app.getHttpServer())
       .get('/api/v1/allotment/ipos/00000000-0000-0000-0000-000000000000/intelligence')
-      .set('x-user-id', userId)
+      .set('Authorization', `Bearer test-token:${userId}`)
       .expect(404);
   });
 });

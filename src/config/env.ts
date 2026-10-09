@@ -127,6 +127,19 @@ export const envSchema = z.object({
   /** AI Missing-field enrichment API keys */
   GEMINI_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
+  /** Allotment encryption & hash secrets */
+  ALLOTMENT_ENCRYPTION_SECRET: z
+    .string()
+    .min(32, 'ALLOTMENT_ENCRYPTION_SECRET must be at least 32 characters')
+    .optional(),
+  ALLOTMENT_HASH_SECRET: z
+    .string()
+    .min(16, 'ALLOTMENT_HASH_SECRET must be at least 16 characters')
+    .optional(),
+  /** Firebase Admin Authentication */
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
 })
 .superRefine((val, ctx) => {
   if (val.NODE_ENV === 'production' && !val.CONSOLE_SESSION_SECRET) {
@@ -143,6 +156,24 @@ export const envSchema = z.object({
       message:
         'BROKER_TOKEN_ENCRYPTION_SECRET is required in production environment',
     });
+  }
+  if (val.NODE_ENV !== 'test') {
+    if (!val.ALLOTMENT_ENCRYPTION_SECRET || val.ALLOTMENT_ENCRYPTION_SECRET.length < 32) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ALLOTMENT_ENCRYPTION_SECRET'],
+        message:
+          'ALLOTMENT_ENCRYPTION_SECRET is required and must be at least 32 characters',
+      });
+    }
+    if (!val.ALLOTMENT_HASH_SECRET || val.ALLOTMENT_HASH_SECRET.length < 16) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ALLOTMENT_HASH_SECRET'],
+        message:
+          'ALLOTMENT_HASH_SECRET is required and must be at least 16 characters',
+      });
+    }
   }
 });
 

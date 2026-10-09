@@ -2,11 +2,11 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   HttpStatus,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { AllotmentService } from './allotment.service';
 import { AllotmentJobService } from './allotment-job.service';
@@ -18,8 +18,12 @@ import {
   CreateAllotmentJobBodyDto,
   createAllotmentJobBodySchema,
 } from './dto/allotment.dto';
+import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('allotment')
+@UseGuards(FirebaseAuthGuard)
 export class AllotmentController {
   constructor(
     private readonly allotmentService: AllotmentService,
@@ -28,24 +32,24 @@ export class AllotmentController {
   ) {}
 
   @Get('intelligence/summary')
-  async getUserSummaryIntelligence(@Headers('x-user-id') userId?: string) {
+  async getUserSummaryIntelligence(@CurrentUser('uid') userId: string) {
     return this.allotmentIntelligenceService.getUserSummaryIntelligence(userId);
   }
 
   @Get('intelligence/history')
-  async getUserAllotmentHistory(@Headers('x-user-id') userId?: string) {
+  async getUserAllotmentHistory(@CurrentUser('uid') userId: string) {
     return this.allotmentIntelligenceService.getUserAllotmentHistory(userId);
   }
 
   @Get('intelligence/pans')
-  async getUserPanIntelligence(@Headers('x-user-id') userId?: string) {
+  async getUserPanIntelligence(@CurrentUser('uid') userId: string) {
     return this.allotmentIntelligenceService.getUserPanIntelligence(userId);
   }
 
   @Get('jobs/:id/intelligence')
   async getJobIntelligence(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId: string,
   ) {
     return this.allotmentIntelligenceService.getJobIntelligence(id, userId);
   }
@@ -53,7 +57,7 @@ export class AllotmentController {
   @Get('ipos/:id/intelligence')
   async getIpoAllotmentIntelligence(
     @Param('id') id: string,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId: string,
   ) {
     return this.allotmentIntelligenceService.getIpoAllotmentIntelligence(
       id,
@@ -61,6 +65,11 @@ export class AllotmentController {
     );
   }
 
+  /**
+   * Public Single-Check: Performs direct live lookup on official registrar without authentication.
+   * Does not store or persist PAN in database.
+   */
+  @Public()
   @Post('check')
   @HttpCode(HttpStatus.OK)
   async checkAllotment(
@@ -92,11 +101,15 @@ export class AllotmentController {
     };
   }
 
+  /**
+   * Protected Job Creation: Enqueues bulk verification across user's saved PANs or explicit list.
+   * Requires verified Firebase ID token and binds job to verified UID.
+   */
   @Post('jobs')
   @HttpCode(HttpStatus.CREATED)
   async createJob(
     @Body() body: CreateAllotmentJobBodyDto,
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId: string,
   ) {
     const validated = createAllotmentJobBodySchema.parse(body);
     const job = await this.allotmentJobService.createJob(
@@ -111,25 +124,39 @@ export class AllotmentController {
     return this.allotmentJobService.getJob(job.id, userId);
   }
 
+  /**
+   * Protected Job Retrieval: Retrieves progress and results of a bulk allotment check job.
+   * Enforces strict user ownership verification against verified token UID.
+   */
   @Get('jobs/:id')
-  async getJob(@Param('id') id: string, @Headers('x-user-id') userId?: string) {
+  async getJob(
+    @Param('id') id: string,
+    @CurrentUser('uid') userId: string,
+  ) {
     return this.allotmentJobService.getJob(id, userId);
   }
 
+  /**
+   * Protected Job Retry: Retries failed checks in a job owned by verified token UID.
+   */
   @Post('jobs/:id/retry')
   @HttpCode(HttpStatus.OK)
   async retryJob(
     @Param('id') id: string,
     @Body() body?: { identifierValuesMap?: Record<string, string> },
-    @Headers('x-user-id') userId?: string,
+    @CurrentUser('uid') userId?: string,
   ) {
     return this.allotmentJobService.retryFailedItems(
       id,
-      userId,
+      userId!,
       body?.identifierValuesMap,
     );
   }
 
+  /**
+   * Public Supported Registrars Directory: Lists supported allotment source adapters.
+   */
+  @Public()
   @Get('sources')
   getSources() {
     return {

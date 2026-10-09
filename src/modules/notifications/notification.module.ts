@@ -15,8 +15,10 @@ import { NotificationController } from './notification.controller';
 import { NotificationRepository } from './notification.repository';
 import { NotificationService } from './notification.service';
 
+import { AuthModule } from '../auth/auth.module';
+
 @Module({
-  imports: [DatabaseModule, DiscoveryModule],
+  imports: [DatabaseModule, DiscoveryModule, AuthModule],
   controllers: [NotificationController],
   providers: [
     // Phase 29.4, 29.6 & 29.8 — Delivery Infrastructure, Automation & Operations

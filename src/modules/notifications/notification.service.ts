@@ -190,13 +190,13 @@ export class NotificationService {
   }
 
   /**
-   * Validates user identity header x-user-id.
+   * Validates authenticated user identity.
    */
   private validateUserId(userId: string | undefined): string {
     if (!userId || userId.trim() === '') {
       throw new AppException(
         ErrorCode.UNAUTHORIZED,
-        'Authentication identity required (x-user-id)',
+        'Authentication required',
         401,
       );
     }
