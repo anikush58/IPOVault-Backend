@@ -85,8 +85,11 @@ export class BrokerAccountService {
 
     const trimmedUserId = userId.trim();
     const trimmedProfileId = profileId.trim();
+    const trimmedClientId = clientId?.trim() || null;
+    const trimmedAccountName = accountName?.trim() || null;
 
-    // Check if account already exists for (userId, profileId, broker)
+    // Fast-path: check if account already exists for (userId, profileId, broker)
+    // and requires no updates (read optimization)
     const existing = await this.prisma.brokerAccount.findUnique({
       where: {
         userId_profileId_broker: {
@@ -102,21 +105,124 @@ export class BrokerAccountService {
       },
     });
 
-    if (existing) {
-      // If metadata like accountName or clientId changed, update it; otherwise return existing
-      const newAccountName = accountName?.trim() || null;
-      const newClientId = clientId?.trim() || null;
+    if (
+      existing &&
+      existing.isActive &&
+      (accountName === undefined || trimmedAccountName === existing.accountName) &&
+      (clientId === undefined || trimmedClientId === existing.clientId)
+    ) {
+      return existing;
+    }
 
-      const hasNameChange = accountName !== undefined && newAccountName !== existing.accountName;
-      const hasClientChange = clientId !== undefined && newClientId !== existing.clientId;
+    // Validate broker adapter exists and credentials are configured before entering transaction
+    if (this.brokerRegistry) {
+      const adapter = this.brokerRegistry.getAdapter(broker);
+      if (typeof adapter.validateConfiguration === 'function') {
+        adapter.validateConfiguration();
+      }
+    }
 
-      if (hasNameChange || hasClientChange) {
-        return this.prisma.brokerAccount.update({
-          where: { id: existing.id },
+    // Atomic transaction serialized via PostgreSQL transaction-level advisory lock:
+    // Ensures concurrent requests for the same (userId, broker) cannot race to create duplicates.
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Acquire transaction-scoped advisory lock for (userId, broker)
+        if (typeof (tx as any).$executeRaw === 'function') {
+          const lockKey = `${trimmedUserId}:${broker}`;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('broker_account'), hashtext(${lockKey}));`;
+        }
+
+        // Re-check by (userId, profileId, broker) inside the locked transaction
+        let targetAccount = await tx.brokerAccount.findUnique({
+          where: {
+            userId_profileId_broker: {
+              userId: trimmedUserId,
+              profileId: trimmedProfileId,
+              broker,
+            },
+          },
+          include: {
+            connection: {
+              select: CONNECTION_SELECT,
+            },
+          },
+        });
+
+        // If not found by (userId, profileId, broker), check if this user already has an account
+        // for this broker with the exact same clientId (e.g. re-linking after local profile migration/restore or sync)
+        if (!targetAccount && trimmedClientId) {
+          targetAccount = await tx.brokerAccount.findFirst({
+            where: {
+              userId: trimmedUserId,
+              broker,
+              clientId: trimmedClientId,
+            },
+            include: {
+              connection: {
+                select: CONNECTION_SELECT,
+              },
+            },
+          });
+        }
+
+        if (targetAccount) {
+          // If metadata like accountName, clientId, or profileId changed, update it; otherwise return targetAccount
+          const hasNameChange = accountName !== undefined && trimmedAccountName !== targetAccount.accountName;
+          const hasClientChange = clientId !== undefined && trimmedClientId !== targetAccount.clientId;
+          const hasProfileChange = targetAccount.profileId !== trimmedProfileId;
+
+          if (hasNameChange || hasClientChange || hasProfileChange || !targetAccount.isActive) {
+            return await tx.brokerAccount.update({
+              where: { id: targetAccount.id },
+              data: {
+                ...(hasProfileChange ? { profileId: trimmedProfileId } : {}),
+                accountName: hasNameChange ? trimmedAccountName : targetAccount.accountName,
+                clientId: hasClientChange ? trimmedClientId : targetAccount.clientId,
+                isActive: true,
+              },
+              include: {
+                connection: {
+                  select: CONNECTION_SELECT,
+                },
+              },
+            });
+          }
+
+          return targetAccount;
+        }
+
+        // Create new account and pending connection
+        return await tx.brokerAccount.create({
           data: {
-            accountName: hasNameChange ? newAccountName : existing.accountName,
-            clientId: hasClientChange ? newClientId : existing.clientId,
+            userId: trimmedUserId,
+            profileId: trimmedProfileId,
+            broker,
+            accountName: trimmedAccountName,
+            clientId: trimmedClientId,
             isActive: true,
+            connection: {
+              create: {
+                status: BrokerConnectionStatus.PENDING,
+              },
+            },
+          },
+          include: {
+            connection: {
+              select: CONNECTION_SELECT,
+            },
+          },
+        });
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        // Concurrently created by a parallel request -> return the existing record
+        return await this.prisma.brokerAccount.findUniqueOrThrow({
+          where: {
+            userId_profileId_broker: {
+              userId: trimmedUserId,
+              profileId: trimmedProfileId,
+              broker,
+            },
           },
           include: {
             connection: {
@@ -125,43 +231,8 @@ export class BrokerAccountService {
           },
         });
       }
-
-      return existing;
+      throw err;
     }
-
-    // Validate broker adapter exists and credentials are configured before inserting into DB
-    if (this.brokerRegistry) {
-      const adapter = this.brokerRegistry.getAdapter(broker);
-      if (typeof adapter.validateConfiguration === 'function') {
-        adapter.validateConfiguration();
-      }
-    }
-
-    // Atomic transaction: create account and pending connection
-    return this.prisma.$transaction(async (tx) => {
-      const account = await tx.brokerAccount.create({
-        data: {
-          userId: trimmedUserId,
-          profileId: trimmedProfileId,
-          broker,
-          accountName: accountName?.trim() || null,
-          clientId: clientId?.trim() || null,
-          isActive: true,
-          connection: {
-            create: {
-              status: BrokerConnectionStatus.PENDING,
-            },
-          },
-        },
-        include: {
-          connection: {
-            select: CONNECTION_SELECT,
-          },
-        },
-      });
-
-      return account;
-    });
   }
 
   /**
