@@ -266,6 +266,44 @@ export class BrokerAccountService {
   }
 
   /**
+   * Enriches an existing BrokerAccount with verified profile details (UCC/clientId, accountName)
+   * returned directly by the broker provider upon successful OAuth completion.
+   * Strictly preserves userId and profileId mapping (never relinks ownership or changes family member).
+   */
+  async updateVerifiedProfile(
+    userId: string,
+    accountId: string,
+    profile: { clientId?: string | null; accountName?: string | null },
+  ) {
+    const account = await this.verifyOwnership(userId, accountId);
+    const updateData: { clientId?: string; accountName?: string } = {};
+
+    const trimmedClientId = profile.clientId?.trim();
+    if (trimmedClientId && (!account.clientId || account.clientId !== trimmedClientId)) {
+      updateData.clientId = trimmedClientId;
+    }
+
+    const trimmedName = profile.accountName?.trim();
+    if (trimmedName && !account.accountName) {
+      updateData.accountName = trimmedName;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return account;
+    }
+
+    return this.prisma.brokerAccount.update({
+      where: { id: account.id },
+      data: updateData,
+      include: {
+        connection: {
+          select: CONNECTION_SELECT,
+        },
+      },
+    });
+  }
+
+  /**
    * Retrieves all BrokerAccounts for a specific profile, enforcing both userId and profileId.
    */
   async getProfileAccounts(userId: string, profileId: string) {

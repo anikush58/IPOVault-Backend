@@ -108,6 +108,7 @@ describe('BrokerAccountController', () => {
       getAccounts: jest.fn(),
       createAccount: jest.fn(),
       getAccount: jest.fn(),
+      updateVerifiedProfile: jest.fn().mockResolvedValue(sampleUpstoxAccountPrisma),
       deactivate: jest.fn(),
     };
 

@@ -375,7 +375,7 @@ export class BrokerAccountController {
       });
 
       // Verify profile using Upstox adapter
-      await adapter.getProfile(tokens, accountId);
+      const profile = await adapter.getProfile(tokens, accountId);
 
       // Persist tokens securely and mark status CONNECTED
       const connection = await this.brokerConnectionService.saveTokens(
@@ -383,6 +383,20 @@ export class BrokerAccountController {
         accountId,
         tokens,
       );
+
+      // Optionally enrich account with verified Upstox UCC and profile name
+      if (profile?.clientId || profile?.displayName) {
+        await this.brokerAccountService
+          .updateVerifiedProfile(authUserId, accountId, {
+            clientId: profile.clientId,
+            accountName: profile.displayName,
+          })
+          .catch((err) => {
+            this.logger.warn(
+              `Failed to update verified Upstox profile metadata: ${err?.message || err}`,
+            );
+          });
+      }
 
       this.triggerBackgroundInitialSync(authUserId, accountId);
 
@@ -399,6 +413,7 @@ export class BrokerAccountController {
         accountId,
         'Upstox',
         clientRedirectUri,
+        account.profileId,
       );
     } catch (err: unknown) {
       const errorMsg =
@@ -466,7 +481,7 @@ export class BrokerAccountController {
     });
 
     // Verify profile using Upstox adapter
-    await adapter.getProfile(tokens, id.trim());
+    const profile = await adapter.getProfile(tokens, id.trim());
 
     // Persist tokens securely and mark status CONNECTED
     const connection = await this.brokerConnectionService.saveTokens(
@@ -474,6 +489,20 @@ export class BrokerAccountController {
       id.trim(),
       tokens,
     );
+
+    // Optionally enrich account with verified Upstox UCC and profile name
+    if (profile?.clientId || profile?.displayName) {
+      await this.brokerAccountService
+        .updateVerifiedProfile(authUserId, id.trim(), {
+          clientId: profile.clientId,
+          accountName: profile.displayName,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `Failed to update verified Upstox profile metadata: ${err?.message || err}`,
+          );
+        });
+    }
 
     this.triggerBackgroundInitialSync(authUserId, id.trim());
 
@@ -1713,6 +1742,7 @@ export class BrokerAccountController {
     accountId?: string,
     brokerName = 'Zerodha',
     clientRedirectUri?: string,
+    profileId?: string,
   ): void {
     if (!res) return;
     const title = isSuccess ? `${brokerName} Connected` : 'Connection Failed';
@@ -1720,17 +1750,21 @@ export class BrokerAccountController {
     const color = isSuccess ? '#10B981' : '#EF4444';
     const statusParam = isSuccess ? 'success' : 'error';
     const extraParams = isSuccess
-      ? accountId
-        ? `&accountId=${encodeURIComponent(accountId)}`
-        : ''
-      : `&error=${encodeURIComponent(message)}`;
+      ? [
+          accountId ? `accountId=${encodeURIComponent(accountId)}` : '',
+          profileId ? `profileId=${encodeURIComponent(profileId)}` : '',
+          brokerName ? `broker=${encodeURIComponent(brokerName)}` : '',
+        ]
+          .filter(Boolean)
+          .join('&')
+      : `error=${encodeURIComponent(message)}`;
 
     let baseUri = 'ipovault://broker-callback';
     if (clientRedirectUri && isValidClientRedirectUri(clientRedirectUri)) {
       baseUri = clientRedirectUri.trim();
     }
     const separator = baseUri.includes('?') ? '&' : '?';
-    const deepLink = `${baseUri}${separator}status=${statusParam}${extraParams}`;
+    const deepLink = `${baseUri}${separator}status=${statusParam}${extraParams ? `&${extraParams}` : ''}`;
 
     this.logger.log(
       `[OAuth Render HTML] broker=${brokerName} status=${statusParam} finalRedirectDeepLink=${deepLink}`,
