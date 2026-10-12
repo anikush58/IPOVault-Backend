@@ -16,6 +16,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { Env } from '../../config/env';
+import { AdminValidationService } from '../admin/admin-validation.service';
 import { EnrichmentOrchestratorService } from '../enrichment/enrichment-orchestrator.service';
 import {
   IpoGuruFetchResult,
@@ -25,6 +26,8 @@ import {
   IpoGuruUsageState,
   IpoGuruV1Ipo,
   IpoGuruV1Response,
+  IpoGuruV2Ipo,
+  IpoGuruV2Response,
   IPOGURU_AUTO_DAILY_LIMIT,
   IPOGURU_MAX_MANUAL_LIMIT,
   IPOGURU_MIN_REQUEST_INTERVAL_MS,
@@ -56,13 +59,18 @@ import {
 export class IpoGuruService {
   private readonly logger = new Logger(IpoGuruService.name);
   private readonly BASE_URL = 'https://www.ipoguru.in/api/v2';
+  private readonly validationService: AdminValidationService;
 
   constructor(
     private readonly configService: ConfigService<Env, true>,
     private readonly prisma: PrismaService,
     @Optional()
     private readonly enrichmentOrchestrator?: EnrichmentOrchestratorService,
-  ) {}
+    @Optional()
+    adminValidationService?: AdminValidationService,
+  ) {
+    this.validationService = adminValidationService ?? new AdminValidationService();
+  }
 
   /**
    * Retrieves or initializes persistent daily usage state from PostgreSQL `sources.rate_limit_policy`.
@@ -270,10 +278,13 @@ export class IpoGuruService {
     if (httpStatus === 200) {
       state.lastSuccessAt = now.toISOString();
       state.lastFetchStatus = 'HTTP 200 (Success)';
+    } else if (errorMsg) {
+      state.lastFetchStatus =
+        httpStatus && httpStatus > 0
+          ? `HTTP ${httpStatus}: ${errorMsg.substring(0, 80)}`
+          : `ERROR: ${errorMsg.substring(0, 80)}`;
     } else if (httpStatus && httpStatus > 0) {
       state.lastFetchStatus = `HTTP ${httpStatus}`;
-    } else if (errorMsg) {
-      state.lastFetchStatus = `ERROR: ${errorMsg.substring(0, 50)}`;
     }
 
     await this.prisma.source.update({
@@ -297,6 +308,7 @@ export class IpoGuruService {
   async fetchIpos(
     mode: 'AUTO' | 'MANUAL' = 'MANUAL',
     slot?: string,
+    params?: { months?: number; status?: string; type?: string; limit?: number },
   ): Promise<IpoGuruFetchResult> {
     const apiKey = this.configService.get('IPOGURU_API_KEY' as keyof Env, {
       infer: true,
@@ -322,11 +334,39 @@ export class IpoGuruService {
       });
     }
 
-    const url = `${this.BASE_URL}/ipos`;
+    // Resolve base URL and ensure automatic migration away from retired /api/v1
+    const configuredBase = this.configService.get(
+      'IPOGURU_BASE_URL' as keyof Env,
+      { infer: true },
+    ) as string | undefined;
+    let base = configuredBase?.trim() || this.BASE_URL;
+    if (base.includes('/api/v1')) {
+      this.logger.warn(
+        `Configured IPOGURU_BASE_URL points to retired v1 (${base}). Automatically migrating to /api/v2.`,
+      );
+      base = base.replace(/\/api\/v1\/?$/, '/api/v2').replace('/api/v1', '/api/v2');
+    }
+
+    // Build URL with optional parameters (months, status, type, limit)
+    const queryParams = new URLSearchParams();
+    if (params?.months !== undefined) {
+      queryParams.set('months', String(params.months));
+    }
+    if (params?.status) {
+      queryParams.set('status', params.status);
+    }
+    if (params?.type) {
+      queryParams.set('type', params.type);
+    }
+    if (params?.limit !== undefined) {
+      queryParams.set('limit', String(params.limit));
+    }
+    const queryStr = queryParams.toString();
+    const url = queryStr ? `${base}/ipos?${queryStr}` : `${base}/ipos`;
     this.logger.log(`IPO Guru v2 ${mode} fetch: GET ${url}`);
 
     let httpStatus = 0;
-    let rawBody: IpoGuruV1Response = {};
+    let rawBody: IpoGuruV2Response = {};
     let fetchError: string | undefined;
 
     try {
@@ -344,10 +384,25 @@ export class IpoGuruService {
 
       if (!response.ok) {
         const errText = await response.text().catch(() => '');
-        fetchError = `HTTP ${httpStatus} — ${errText.substring(0, 200)}`;
+        let errJson: Record<string, unknown> | null = null;
+        try {
+          errJson = JSON.parse(errText) as Record<string, unknown>;
+        } catch {}
+
+        if (
+          httpStatus === 403 &&
+          (errJson?.error === 'v1_retired' ||
+            errText.includes('v1_retired') ||
+            errText.includes('API v1 was deprecated'))
+        ) {
+          fetchError =
+            'IPO Guru API v1 was retired on 30 September 2026. Calls must use API v2 (https://www.ipoguru.in/api/v2).';
+        } else {
+          fetchError = `HTTP ${httpStatus} — ${errText.substring(0, 200)}`;
+        }
         this.logger.error(`IPO Guru API error: ${fetchError}`);
       } else {
-        rawBody = (await response.json()) as IpoGuruV1Response;
+        rawBody = (await response.json()) as IpoGuruV2Response;
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -401,13 +456,24 @@ export class IpoGuruService {
   async syncIpos(
     mode: 'AUTO' | 'MANUAL' = 'MANUAL',
     slot?: string,
-    providedIpos?: IpoGuruV1Ipo[],
+    providedIpos?: IpoGuruV2Ipo[],
+    fetchParams?: { months?: number; status?: string; type?: string; limit?: number },
   ): Promise<IpoGuruSyncResult> {
-    let rawIpos: IpoGuruV1Ipo[];
+    let rawIpos: IpoGuruV2Ipo[];
     if (providedIpos && Array.isArray(providedIpos)) {
       rawIpos = providedIpos;
     } else {
-      const fetchResult = await this.fetchIpos(mode, slot);
+      const defaultMonths = Number(
+        this.configService.get('IPOGURU_DEFAULT_MONTHS' as keyof Env, {
+          infer: true,
+        }),
+      );
+      const effectiveMonths = !isNaN(defaultMonths) ? defaultMonths : 0;
+      const fetchResult = await this.fetchIpos(
+        mode,
+        slot,
+        fetchParams ?? { months: effectiveMonths },
+      );
       rawIpos = fetchResult.ipos;
     }
     const syncedAt = new Date().toISOString();
@@ -429,11 +495,25 @@ export class IpoGuruService {
     // Ensure IPOGURU source exists
     const sourceId = await this.ensureIpoGuruSource();
 
+    // Query ADMIN source ID if exists for review preservation
+    let adminSourceId: string | undefined;
+    try {
+      const adminSource = await this.prisma.source.findUnique({
+        where: { code: 'ADMIN' },
+        select: { id: true },
+      });
+      adminSourceId = adminSource?.id;
+    } catch {}
+
     // Load existing canonical IPOs with companies and source identities for matching
     const existingIpos = await this.prisma.ipo.findMany({
       include: {
         company: true,
-        sourceIdentities: true,
+        sourceIdentities: {
+          include: {
+            source: true,
+          },
+        },
       },
     });
 
@@ -450,7 +530,7 @@ export class IpoGuruService {
       }
 
       try {
-        const itemResult = await this.syncSingleIpo(rawItem, sourceId, existingIpos);
+        const itemResult = await this.syncSingleIpo(rawItem, sourceId, existingIpos, adminSourceId);
         summary.items.push(itemResult);
         if (itemResult.action === 'UPDATED') {
           summary.matchedUpdated++;
@@ -459,8 +539,25 @@ export class IpoGuruService {
           }
         } else if (itemResult.action === 'CREATED') {
           summary.newlyCreated++;
-          if (itemResult.ipoId && this.enrichmentOrchestrator) {
-            this.enrichmentOrchestrator.enqueueIpoEnrichment(itemResult.ipoId);
+          if (itemResult.ipoId) {
+            const extId = (rawItem.slug || (rawItem.id ? String(rawItem.id) : guruName)).trim();
+            const createdPubStatus =
+              (itemResult.publicationStatus as PublicationStatus) ||
+              PublicationStatus.DRAFT;
+            existingIpos.push({
+              id: itemResult.ipoId,
+              companyId: itemResult.ipoId,
+              marketSegment: MarketSegment.MAINBOARD,
+              exchange: ExchangeListing.BOTH,
+              status: IpoStatus.UPCOMING,
+              publicationStatus: createdPubStatus,
+              symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
+              company: { id: itemResult.ipoId, legalName: guruName, displayName: guruName } as any,
+              sourceIdentities: [{ sourceId, externalId: extId, symbol: rawItem.symbol || null }] as any,
+            } as any);
+            if (this.enrichmentOrchestrator) {
+              this.enrichmentOrchestrator.enqueueIpoEnrichment(itemResult.ipoId);
+            }
           }
         } else if (itemResult.action === 'SKIPPED') {
           summary.skipped++;
@@ -487,12 +584,104 @@ export class IpoGuruService {
   }
 
   /**
+   * Evaluates publication eligibility for an IPO based on canonical IPOVault quality criteria:
+   * 1. Reliable, verified company identity (non-empty, non-placeholder, >= 2 characters).
+   * 2. No contradictory timeline dates (open <= close <= listing, etc.).
+   * 3. Valid price bands (non-negative, low <= high).
+   * 4. Positive lot size if provided (> 0).
+   * 5. Non-negative issue sizes (issueSize >= 0, freshIssueSize >= 0, ofsSize >= 0).
+   *
+   * NOTE: Missing lifecycle dates (openDate, closeDate, etc.) alone DO NOT block publication.
+   * Newly announced IPOs without officially announced dates can be safely published as UPCOMING.
+   */
+  public evaluatePublicationEligibility(params: {
+    companyName: string;
+    priceBandLow?: number | null;
+    priceBandHigh?: number | null;
+    lotSize?: number | null;
+    issueSize?: number | null;
+    freshIssueSize?: number | null;
+    ofsSize?: number | null;
+    openDate?: Date | null;
+    closeDate?: Date | null;
+    allotmentDate?: Date | null;
+    listingDate?: Date | null;
+  }): { eligible: boolean; blockers: string[] } {
+    const blockers: string[] = [];
+    const trimmedName = (params.companyName || '').trim();
+
+    // 1. Reliable Company Identity Verification
+    const placeholders = ['TBD', 'TBA', 'N/A', 'NA', 'UNKNOWN', 'NULL', 'UNDEFINED', 'PENDING'];
+    if (!trimmedName || trimmedName.length < 2) {
+      blockers.push('Company identity is missing or too short (must be at least 2 characters)');
+    } else if (placeholders.includes(trimmedName.toUpperCase())) {
+      blockers.push(`Company identity "${trimmedName}" is an unverified placeholder`);
+    }
+
+    // 2. Timeline Chronology & Contradictory Dates
+    const { openDate, closeDate, allotmentDate, listingDate } = params;
+    if (openDate && closeDate && openDate > closeDate) {
+      blockers.push(
+        `Open date (${openDate.toISOString().slice(0, 10)}) cannot be after close date (${closeDate.toISOString().slice(0, 10)})`,
+      );
+    }
+    if (closeDate && listingDate && closeDate > listingDate) {
+      blockers.push(
+        `Close date (${closeDate.toISOString().slice(0, 10)}) cannot be after listing date (${listingDate.toISOString().slice(0, 10)})`,
+      );
+    }
+    if (openDate && listingDate && openDate > listingDate) {
+      blockers.push(
+        `Open date (${openDate.toISOString().slice(0, 10)}) cannot be after listing date (${listingDate.toISOString().slice(0, 10)})`,
+      );
+    }
+    if (openDate && allotmentDate && openDate > allotmentDate) {
+      blockers.push(
+        `Open date (${openDate.toISOString().slice(0, 10)}) cannot be after allotment date (${allotmentDate.toISOString().slice(0, 10)})`,
+      );
+    }
+    if (allotmentDate && listingDate && allotmentDate > listingDate) {
+      blockers.push(
+        `Allotment date (${allotmentDate.toISOString().slice(0, 10)}) cannot be after listing date (${listingDate.toISOString().slice(0, 10)})`,
+      );
+    }
+
+    // 3. Reused Canonical Validation Gate (Price Band, Lot Size, Issue Sizes)
+    const validationReport = this.validationService.validateIpo({
+      legalName: trimmedName || 'Placeholder',
+      displayName: trimmedName || 'Placeholder',
+      priceBandLow: params.priceBandLow,
+      priceBandHigh: params.priceBandHigh,
+      lotSize: params.lotSize,
+      issueSize: params.issueSize,
+      freshIssueSize: params.freshIssueSize,
+      ofsSize: params.ofsSize,
+      openDate: params.openDate,
+      closeDate: params.closeDate,
+      listingDate: params.listingDate,
+      allotmentDate: params.allotmentDate,
+    });
+
+    for (const err of validationReport.errors) {
+      if (err.code !== 'MISSING_LIFECYCLE_DATES' && err.code !== 'MISSING_LEGAL_NAME') {
+        blockers.push(err.message);
+      }
+    }
+
+    return {
+      eligible: blockers.length === 0,
+      blockers,
+    };
+  }
+
+  /**
    * Syncs a single IPO Guru item in an isolated database transaction.
    */
   private async syncSingleIpo(
     rawItem: IpoGuruV1Ipo,
     sourceId: string,
     existingIpos: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>>,
+    adminSourceId?: string,
   ): Promise<IpoGuruSyncItemDetail> {
     const guruName = (rawItem.name || rawItem.company_name || '').trim();
     const match = this.matchIpo(rawItem, existingIpos);
@@ -516,7 +705,10 @@ export class IpoGuruService {
 
       // Parsed fields
       const marketSegment = this.parseMarketSegment(rawItem.type || rawItem.sub_type || rawItem.ipo_type);
-      const status = this.parseStatus(rawItem.status);
+      const status = this.parseStatus(
+        rawItem.status,
+        (rawItem as Record<string, unknown>).is_listed as boolean | undefined,
+      );
       const exchange = this.parseExchange(rawItem.listing_on, rawItem.exchange);
       const priceBand = this.parsePriceBand(rawItem.price_band, rawItem.price_band_min, rawItem.price_band_max);
       const lotSize = this.parseInt(rawItem.lot_size);
@@ -526,9 +718,32 @@ export class IpoGuruService {
       const ofsSize = this.parseIssueSize(rawItem.ofs_size || rawItem.ofs_issue_size);
       const listingPrice = this.parseDecimal(rawItem.listing_price);
 
+      // Parsed dates
+      const openDate = this.parseDate(rawItem.open_date || rawItem.timeline?.open_date);
+      const closeDate = this.parseDate(rawItem.close_date || rawItem.timeline?.close_date);
+      const allotmentDate = this.parseDate(rawItem.allotment_date || rawItem.timeline?.allotment_date);
+      const refundDate = this.parseDate(rawItem.refund_date || rawItem.timeline?.refund_date);
+      const listingDate = this.parseDate(rawItem.listing_date || rawItem.timeline?.listing_date);
+
+      // Validate publication eligibility using canonical IPOVault quality criteria
+      const pubEligibility = this.evaluatePublicationEligibility({
+        companyName: guruName,
+        priceBandLow: priceBand.low ? Number(priceBand.low) : null,
+        priceBandHigh: priceBand.high ? Number(priceBand.high) : null,
+        lotSize: lotSize,
+        issueSize: issueSize ? Number(issueSize) : null,
+        freshIssueSize: freshIssueSize ? Number(freshIssueSize) : null,
+        ofsSize: ofsSize ? Number(ofsSize) : null,
+        openDate,
+        closeDate,
+        listingDate,
+        allotmentDate,
+      });
+
       let ipoId: string;
       let companyId: string;
       let action: 'UPDATED' | 'CREATED';
+      let publicationStatusResult: PublicationStatus;
 
       if (match.matchedIpo) {
         // --- 1. UPDATE EXISTING IPO ---
@@ -541,6 +756,76 @@ export class IpoGuruService {
         if (marketSegment && marketSegment !== existingIpo.marketSegment) {
           updateData.marketSegment = marketSegment;
           updatedFields.push('marketSegment');
+        }
+
+        // Check if existing record is under manual review or admin-managed
+        const isAwaitingManualReview = existingIpo.sourceIdentities?.some(
+          (si: any) =>
+            si.source?.code === 'ADMIN' ||
+            si.source?.code === 'MANUAL' ||
+            si.source?.name?.toLowerCase().includes('admin') ||
+            si.source?.name?.toLowerCase().includes('manual') ||
+            si.sourceId === 'ADMIN' ||
+            si.sourceId === 'MANUAL' ||
+            (adminSourceId && si.sourceId === adminSourceId),
+        );
+
+        publicationStatusResult = existingIpo.publicationStatus;
+
+        if (existingIpo.publicationStatus === PublicationStatus.DRAFT) {
+          const effectiveName = existingIpo.company?.legalName || guruName;
+          const effectivePubEligibility = this.evaluatePublicationEligibility({
+            companyName: effectiveName,
+            priceBandLow:
+              priceBand.low != null
+                ? Number(priceBand.low)
+                : existingIpo.priceBandLow
+                  ? Number(existingIpo.priceBandLow)
+                  : null,
+            priceBandHigh:
+              priceBand.high != null
+                ? Number(priceBand.high)
+                : existingIpo.priceBandHigh
+                  ? Number(existingIpo.priceBandHigh)
+                  : null,
+            lotSize: lotSize != null ? lotSize : existingIpo.lotSize,
+            issueSize:
+              issueSize != null
+                ? Number(issueSize)
+                : existingIpo.issueSize
+                  ? Number(existingIpo.issueSize)
+                  : null,
+            freshIssueSize:
+              freshIssueSize != null
+                ? Number(freshIssueSize)
+                : existingIpo.freshIssueSize
+                  ? Number(existingIpo.freshIssueSize)
+                  : null,
+            ofsSize:
+              ofsSize != null
+                ? Number(ofsSize)
+                : existingIpo.ofsSize
+                  ? Number(existingIpo.ofsSize)
+                  : null,
+            openDate,
+            closeDate,
+            listingDate,
+            allotmentDate,
+          });
+
+          if (isAwaitingManualReview) {
+            this.logger.debug(
+              `Preserving DRAFT status for IPO "${existingIpo.company?.displayName || ipoId}": awaiting manual review / admin-managed.`,
+            );
+          } else if (!effectivePubEligibility.eligible) {
+            this.logger.warn(
+              `Preserving DRAFT status for IPO "${existingIpo.company?.displayName || ipoId}": publication criteria not met (${effectivePubEligibility.blockers.join(', ')}).`,
+            );
+          } else {
+            updateData.publicationStatus = PublicationStatus.PUBLISHED;
+            updatedFields.push('publicationStatus');
+            publicationStatusResult = PublicationStatus.PUBLISHED;
+          }
         }
         // NOTE: Canonical IPO lifecycle status is authoritative and MUST NEVER be overwritten by IPO Guru.
         if (exchange && exchange !== existingIpo.exchange) {
@@ -606,13 +891,23 @@ export class IpoGuruService {
         companyId = company.id;
 
         const initialStatus = status || IpoStatus.UPCOMING;
+
+        if (!pubEligibility.eligible) {
+          this.logger.warn(
+            `IPO "${guruName}" created as DRAFT: publication criteria not met (${pubEligibility.blockers.join(', ')}).`,
+          );
+          publicationStatusResult = PublicationStatus.DRAFT;
+        } else {
+          publicationStatusResult = PublicationStatus.PUBLISHED;
+        }
+
         const newIpo = await tx.ipo.create({
           data: {
             companyId: company.id,
             marketSegment: marketSegment || MarketSegment.MAINBOARD,
             exchange: exchange || ExchangeListing.BOTH,
             status: initialStatus,
-            publicationStatus: PublicationStatus.DRAFT,
+            publicationStatus: publicationStatusResult,
             symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
             isin: rawItem.isin ? rawItem.isin.trim().toUpperCase() : null,
             priceBandLow: priceBand.low,
@@ -650,7 +945,6 @@ export class IpoGuruService {
         },
       });
 
-      const openDate = this.parseDate(rawItem.open_date || rawItem.timeline?.open_date);
       if (openDate) {
         await tx.ipoLifecycleEvent.upsert({
           where: { ipoId_eventType: { ipoId, eventType: 'OPEN' } },
@@ -660,7 +954,6 @@ export class IpoGuruService {
         updatedFields.push('openDate');
       }
 
-      const closeDate = this.parseDate(rawItem.close_date || rawItem.timeline?.close_date);
       if (closeDate) {
         await tx.ipoLifecycleEvent.upsert({
           where: { ipoId_eventType: { ipoId, eventType: 'CLOSE' } },
@@ -670,7 +963,6 @@ export class IpoGuruService {
         updatedFields.push('closeDate');
       }
 
-      const allotmentDate = this.parseDate(rawItem.allotment_date || rawItem.timeline?.allotment_date);
       if (allotmentDate) {
         await tx.ipoLifecycleEvent.upsert({
           where: { ipoId_eventType: { ipoId, eventType: 'BASIS_OF_ALLOTMENT' } },
@@ -680,7 +972,6 @@ export class IpoGuruService {
         updatedFields.push('allotmentDate');
       }
 
-      const refundDate = this.parseDate(rawItem.refund_date || rawItem.timeline?.refund_date);
       if (refundDate) {
         await tx.ipoLifecycleEvent.upsert({
           where: { ipoId_eventType: { ipoId, eventType: 'REFUND_INITIATION' } },
@@ -690,7 +981,6 @@ export class IpoGuruService {
         updatedFields.push('refundDate');
       }
 
-      const listingDate = this.parseDate(rawItem.listing_date || rawItem.timeline?.listing_date);
       if (listingDate) {
         await tx.ipoLifecycleEvent.upsert({
           where: { ipoId_eventType: { ipoId, eventType: 'LISTING' } },
@@ -853,6 +1143,7 @@ export class IpoGuruService {
         companyName: match.matchedIpo ? match.matchedIpo.company.displayName : guruName,
         matchedBy: match.matchedBy,
         updatedFields,
+        publicationStatus: publicationStatusResult,
       };
     });
   }
@@ -1088,10 +1379,11 @@ export class IpoGuruService {
     return ExchangeListing.BOTH;
   }
 
-  private parseStatus(statusStr?: string | null): IpoStatus | null {
+  private parseStatus(statusStr?: string | null, isListed?: boolean): IpoStatus | null {
+    if (isListed === true) return IpoStatus.LISTED;
     if (!statusStr) return null;
     const upper = statusStr.trim().toUpperCase();
-    if (upper === 'UPCOMING') return IpoStatus.UPCOMING;
+    if (upper === 'UPCOMING' || upper === 'ANNOUNCED') return IpoStatus.UPCOMING;
     if (upper === 'OPEN') return IpoStatus.OPEN;
     if (upper === 'CLOSED') return IpoStatus.CLOSED;
     if (upper === 'LISTED') return IpoStatus.LISTED;

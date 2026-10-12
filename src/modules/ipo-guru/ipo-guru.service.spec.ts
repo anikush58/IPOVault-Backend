@@ -264,6 +264,67 @@ describe('IpoGuruService', () => {
       expect(headers?.['Authorization']).toBeUndefined();
     });
 
+    it('should detect and classify retired v1 403 error with actionable migration guidance', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: jest.fn().mockResolvedValueOnce(
+          JSON.stringify({
+            success: false,
+            error: 'v1_retired',
+            message: 'API v1 was deprecated on 30 September 2026 and is no longer available for this key. Please use API v2 only.',
+          }),
+        ),
+      });
+
+      const result = await service.fetchIpos();
+
+      expect(result.httpStatus).toBe(403);
+      expect(result.ipos).toEqual([]);
+      expect(mockPrisma.source.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            rateLimitPolicy: expect.objectContaining({
+              lastFetchStatus: expect.stringContaining('v1 was retired on 30 September 2026'),
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should automatically migrate configured IPOGURU_BASE_URL pointing to /api/v1 to /api/v2', async () => {
+      configGet.mockImplementation((key: string) => {
+        if (key === 'IPOGURU_API_KEY') return 'test-api-key-secret';
+        if (key === 'IPOGURU_BASE_URL') return 'https://www.ipoguru.in/api/v1';
+        return undefined;
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({ data: [] }),
+      });
+
+      await service.fetchIpos();
+
+      const [calledUrl] = mockFetch.mock.calls[0] as [string, RequestInit];
+      expect(calledUrl).toBe('https://www.ipoguru.in/api/v2/ipos');
+      expect(calledUrl).not.toContain('/api/v1');
+    });
+
+    it('should append query parameters like months=0 and status to the v2 endpoint', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({ data: [] }),
+      });
+
+      await service.fetchIpos('MANUAL', undefined, { months: 0, status: 'upcoming' });
+
+      const [calledUrl] = mockFetch.mock.calls[0] as [string, RequestInit];
+      expect(calledUrl).toBe('https://www.ipoguru.in/api/v2/ipos?months=0&status=upcoming');
+    });
+
   // ── Test 4: Matching Logic (matchIpo) ───────────────────────────────────
 
   describe('matchIpo', () => {
@@ -690,12 +751,503 @@ describe('IpoGuruService', () => {
 
       const tx = mockPrisma._txMock;
       expect(tx.company.create).toHaveBeenCalled();
-      expect(tx.ipo.create).toHaveBeenCalled();
+      expect(tx.ipo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            publicationStatus: 'PUBLISHED',
+          }),
+        }),
+      );
       expect(tx.ipoSourceIdentity.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({ externalId: 'brand-new-startup' }),
         }),
       );
+    });
+
+    it('should update existing DRAFT publicationStatus to PUBLISHED upon syncing new data', async () => {
+      const existingDraftIpo = {
+        id: 'draft-ipo-1',
+        symbol: 'DRAFTCORP',
+        status: 'UPCOMING',
+        publicationStatus: 'DRAFT',
+        company: { id: 'comp-draft', legalName: 'Draft Corp Limited', displayName: 'Draft Corp' },
+        sourceIdentities: [{ externalId: 'draft-corp-ipo', symbol: 'DRAFTCORP' }],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingDraftIpo]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'draft-corp-ipo',
+              name: 'Draft Corp Limited',
+              symbol: 'DRAFTCORP',
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.matchedUpdated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'draft-ipo-1' },
+          data: expect.objectContaining({
+            publicationStatus: 'PUBLISHED',
+          }),
+        }),
+      );
+    });
+
+    it('should preserve DRAFT status when existing IPO is under manual review or admin-managed', async () => {
+      const existingDraftAdminIpo = {
+        id: 'draft-admin-ipo-1',
+        symbol: 'ADMINCORP',
+        status: 'UPCOMING',
+        publicationStatus: 'DRAFT',
+        company: { id: 'comp-admin', legalName: 'Admin Corp Limited', displayName: 'Admin Corp' },
+        sourceIdentities: [
+          { externalId: 'admin-corp-ipo', symbol: 'ADMINCORP', source: { code: 'ADMIN' } },
+        ],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingDraftAdminIpo]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'admin-corp-ipo',
+              name: 'Admin Corp Limited',
+              symbol: 'ADMINCORP',
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.matchedUpdated).toBe(1);
+      const tx = mockPrisma._txMock;
+      if (tx.ipo.update.mock.calls.length > 0) {
+        expect(tx.ipo.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              publicationStatus: 'PUBLISHED',
+            }),
+          }),
+        );
+      }
+      expect(result.items[0].publicationStatus).toBe('DRAFT');
+    });
+
+    it('should preserve DRAFT status when existing IPO receives data with validation errors', async () => {
+      const existingDraftIpo = {
+        id: 'draft-bad-ipo-1',
+        symbol: 'BADCORP',
+        status: 'UPCOMING',
+        publicationStatus: 'DRAFT',
+        company: { id: 'comp-bad', legalName: 'Bad Corp Limited', displayName: 'Bad Corp' },
+        sourceIdentities: [{ externalId: 'bad-corp-ipo', symbol: 'BADCORP' }],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingDraftIpo]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'bad-corp-ipo',
+              name: 'Bad Corp Limited',
+              symbol: 'BADCORP',
+              price_band_min: 500,
+              price_band_max: 400, // Invalid: low > high
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.matchedUpdated).toBe(1);
+      const tx = mockPrisma._txMock;
+      if (tx.ipo.update.mock.calls.length > 0) {
+        expect(tx.ipo.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              publicationStatus: 'PUBLISHED',
+            }),
+          }),
+        );
+      }
+      expect(result.items[0].publicationStatus).toBe('DRAFT');
+    });
+
+    it('should create new IPO as DRAFT when price band range is inverted (low > high)', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'bad-band-ipo',
+              name: 'Inverted Band Limited',
+              symbol: 'INVBAND',
+              price_band_min: 600,
+              price_band_max: 500, // Invalid: low > high
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.newlyCreated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            publicationStatus: 'DRAFT',
+          }),
+        }),
+      );
+      expect(result.items[0].publicationStatus).toBe('DRAFT');
+    });
+
+    it('should create new IPO as DRAFT when openDate is after closeDate', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'bad-date-ipo',
+              name: 'Inverted Dates Ltd',
+              symbol: 'INVDATE',
+              open_date: '2026-11-20',
+              close_date: '2026-11-15', // Invalid: open > close
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.newlyCreated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            publicationStatus: 'DRAFT',
+          }),
+        }),
+      );
+      expect(result.items[0].publicationStatus).toBe('DRAFT');
+    });
+
+    it('should create new IPO as DRAFT when lot size is invalid (<= 0)', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'bad-lot-ipo',
+              name: 'Bad Lot Size Ltd',
+              symbol: 'BADLOT',
+              lot_size: 0, // Invalid: lotSize <= 0
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.newlyCreated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            publicationStatus: 'DRAFT',
+          }),
+        }),
+      );
+      expect(result.items[0].publicationStatus).toBe('DRAFT');
+    });
+
+    it('should idempotently sync on repeated runs without creating duplicate IPOs or companies', async () => {
+      const existingIpo = {
+        id: 'canonical-ipo-1',
+        symbol: 'STEADY',
+        status: 'UPCOMING',
+        publicationStatus: 'PUBLISHED',
+        company: { id: 'comp-steady', legalName: 'Steady Corp Limited', displayName: 'Steady Corp' },
+        sourceIdentities: [{ externalId: 'steady-corp-ipo', symbol: 'STEADY' }],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingIpo]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'steady-corp-ipo',
+              name: 'Steady Corp Limited',
+              symbol: 'STEADY',
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.newlyCreated).toBe(0);
+      expect(result.matchedUpdated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.company.create).not.toHaveBeenCalled();
+      expect(tx.ipo.create).not.toHaveBeenCalled();
+    });
+
+    it('should publish a newly announced IPO with verified company identity and no opening or closing dates', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'nova-semi-ltd',
+              name: 'Nova Semiconductor Limited',
+              symbol: 'NOVASEMI',
+              type: 'Mainboard',
+              status: 'Announced',
+              // open_date and close_date intentionally omitted / null
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.newlyCreated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            publicationStatus: 'PUBLISHED',
+            status: 'UPCOMING',
+          }),
+        }),
+      );
+      // Ensure missing lifecycle dates remain null and are not fabricated
+      expect(tx.ipoLifecycleEvent.upsert).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ipoId_eventType: expect.objectContaining({ eventType: 'OPEN' }),
+          }),
+        }),
+      );
+      expect(tx.ipoLifecycleEvent.upsert).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ipoId_eventType: expect.objectContaining({ eventType: 'CLOSE' }),
+          }),
+        }),
+      );
+      expect(result.items[0].publicationStatus).toBe('PUBLISHED');
+    });
+
+    it('should create new IPO as DRAFT when company identity is an unverified placeholder', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'placeholder-ipo',
+              name: 'TBD', // Placeholder name
+              symbol: 'TBD',
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.newlyCreated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            publicationStatus: 'DRAFT',
+          }),
+        }),
+      );
+      expect(result.items[0].publicationStatus).toBe('DRAFT');
+    });
+
+    it('should create new IPO as DRAFT when openDate is after listingDate (contradictory dates)', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'contradictory-listing-ipo',
+              name: 'Contradictory Chronology Ltd',
+              symbol: 'CONTRADATE',
+              open_date: '2026-11-20',
+              listing_date: '2026-11-10', // Invalid: open > listing
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.newlyCreated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            publicationStatus: 'DRAFT',
+          }),
+        }),
+      );
+      expect(result.items[0].publicationStatus).toBe('DRAFT');
+    });
+
+    it('should preserve ADMIN/MANUAL drafts on repeated syncs and never override admin unpublish decisions', async () => {
+      const existingAdminDraft = {
+        id: 'admin-draft-ipo',
+        symbol: 'PROTECTED',
+        status: 'UPCOMING',
+        publicationStatus: 'DRAFT',
+        company: { id: 'comp-prot', legalName: 'Protected Holdings Limited', displayName: 'Protected Holdings' },
+        sourceIdentities: [
+          { externalId: 'protected-ipo', symbol: 'PROTECTED', source: { code: 'ADMIN' } },
+        ],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingAdminDraft]);
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({
+          data: [
+            {
+              slug: 'protected-ipo',
+              name: 'Protected Holdings Limited',
+              symbol: 'PROTECTED',
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      // First sync
+      const result1 = await service.syncIpos();
+      expect(result1.matchedUpdated).toBe(1);
+      expect(result1.newlyCreated).toBe(0);
+      expect(result1.items[0].publicationStatus).toBe('DRAFT');
+
+      // Second sync
+      const result2 = await service.syncIpos();
+      expect(result2.matchedUpdated).toBe(1);
+      expect(result2.newlyCreated).toBe(0);
+      expect(result2.items[0].publicationStatus).toBe('DRAFT');
+
+      const tx = mockPrisma._txMock;
+      expect(tx.company.create).not.toHaveBeenCalled();
+      expect(tx.ipo.create).not.toHaveBeenCalled();
+      if (tx.ipo.update.mock.calls.length > 0) {
+        expect(tx.ipo.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              publicationStatus: 'PUBLISHED',
+            }),
+          }),
+        );
+      }
+    });
+
+    it('should prevent in-batch duplicate IPO creation when duplicate items appear in single feed', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]); // No existing records initially
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'unique-new-ipo',
+              name: 'Unique New IPO Ltd',
+              symbol: 'UNIQ',
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+            {
+              slug: 'unique-new-ipo',
+              name: 'Unique New IPO Ltd',
+              symbol: 'UNIQ',
+              type: 'Mainboard',
+              status: 'Upcoming',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+
+      expect(result.totalFetched).toBe(2);
+      expect(result.newlyCreated).toBe(1);
+      expect(result.matchedUpdated).toBe(1);
+      const tx = mockPrisma._txMock;
+      expect(tx.company.create).toHaveBeenCalledTimes(1);
+      expect(tx.ipo.create).toHaveBeenCalledTimes(1);
     });
 
     it('should SKIP ambiguous matches without updating or creating records', async () => {

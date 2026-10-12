@@ -153,6 +153,7 @@ export interface IpoGuruSyncItemDetail {
   matchedBy?: 'SYMBOL' | 'NAME' | 'AMBIGUOUS' | 'NONE';
   reason?: string;
   updatedFields?: string[];
+  publicationStatus?: string;
   error?: string;
 }
 
