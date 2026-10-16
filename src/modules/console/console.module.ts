@@ -11,6 +11,7 @@ import { ConsoleEnabledGuard } from './console.guard';
 
 import { AdminModule } from '../admin/admin.module';
 import { IpoGuruModule } from '../ipo-guru/ipo-guru.module';
+import { UserModule } from '../user/user.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { IpoGuruModule } from '../ipo-guru/ipo-guru.module';
     AllotmentModule,
     AdminModule,
     IpoGuruModule,
+    UserModule,
   ],
   controllers: [ConsoleController],
   providers: [ConsoleService, ConsoleEnabledGuard],

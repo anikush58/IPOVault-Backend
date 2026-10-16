@@ -623,11 +623,13 @@ export type FieldReportStatus =
   | 'CONFLICT'
   | 'SKIPPED'
   | 'UNAVAILABLE'
-  | 'INVALID';
+  | 'INVALID'
+  | 'OVERWRITTEN';
 
 export interface FieldDiffToFill {
   field: string;
   section: string;
+  oldValue?: any;
   newValue: any;
   status?: FieldReportStatus;
 }
@@ -648,6 +650,7 @@ export interface FieldReportItem {
   existingValue?: any;
   incomingValue?: any;
   reason?: string;
+  hasManualProvenance?: boolean;
 }
 
 export interface JsonIpoPreviewItem {
@@ -662,6 +665,8 @@ export interface JsonIpoPreviewItem {
   fieldsToFill: FieldDiffToFill[];
   fieldsSkipped: FieldDiffSkipped[];
   fieldReport?: FieldReportItem[];
+  overwriteCount?: number;
+  conflictCount?: number;
   error?: string;
 }
 
@@ -671,6 +676,8 @@ export interface JsonImportPreviewResponse {
   unmatchedCount: number;
   ambiguousCount: number;
   fieldsToFillTotal: number;
+  fieldsToOverwriteTotal?: number;
+  mode?: 'FILL_MISSING' | 'AUTHORITATIVE_OVERWRITE';
   items: JsonIpoPreviewItem[];
 }
 
@@ -706,6 +713,7 @@ export class JsonImportCommitDto {
   items?: ImportAdminIpoJsonDto[];
   payload?: any;
   selectedIpoIds?: string[];
+  overwriteExisting?: boolean;
 }
 
 export class BulkAdminIpoActionDto {

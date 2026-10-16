@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -9,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { UserService } from './user.service';
+import { UserEntitlementService } from './user-entitlement.service';
 import { syncPansBodySchema } from './dto/sync-pans.dto';
 import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -16,7 +18,20 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @Controller('user')
 @UseGuards(FirebaseAuthGuard)
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly userEntitlementService: UserEntitlementService,
+  ) {}
+
+  /**
+   * Retrieves the canonical entitlement tier for the authenticated user.
+   * Client identity is strictly derived from the verified Firebase Auth token.
+   */
+  @Get('entitlement')
+  @HttpCode(HttpStatus.OK)
+  async getMyEntitlement(@CurrentUser('uid') userId: string) {
+    return this.userEntitlementService.getEntitlement(userId);
+  }
 
   @Post('pans/sync')
   @HttpCode(HttpStatus.OK)

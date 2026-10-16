@@ -10,6 +10,7 @@ import { ResponseEnvelopeInterceptor } from '../../common/interceptors/response-
 import { AdminIpoService } from '../admin/admin-ipo.service';
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { IpoTimelineSchedulerService } from '../ipos/ipo-timeline-scheduler.service';
+import { UserEntitlementService } from '../user/user-entitlement.service';
 
 describe('ConsoleController', () => {
   let controller: ConsoleController;
@@ -17,6 +18,7 @@ describe('ConsoleController', () => {
   let adminIpoService: Record<string, jest.Mock>;
   let ipoGuruService: Record<string, jest.Mock>;
   let timelineSchedulerService: Record<string, jest.Mock>;
+  let userEntitlementService: Record<string, jest.Mock>;
   let app: INestApplication;
 
   beforeEach(async () => {
@@ -83,6 +85,28 @@ describe('ConsoleController', () => {
       checkAllotmentForAwaitedIpos: jest.fn().mockResolvedValue({ totalChecked: 2, totalUpdated: 1, results: [] }),
     };
 
+    userEntitlementService = {
+      listUsers: jest.fn().mockResolvedValue({
+        users: [{ uid: 'u1', email: 'test@example.com', tier: 'NON_PRO' }],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+        counts: { total: 1, pro: 0, nonPro: 1 },
+      }),
+      getUserDetail: jest.fn().mockResolvedValue({
+        uid: 'u1',
+        email: 'test@example.com',
+        tier: 'NON_PRO',
+        auditLogs: [],
+      }),
+      updateUserEntitlement: jest.fn().mockResolvedValue({
+        success: true,
+        uid: 'u1',
+        tier: 'PRO',
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ConsoleController],
       providers: [
@@ -90,6 +114,7 @@ describe('ConsoleController', () => {
         { provide: AdminIpoService, useValue: adminIpoService },
         { provide: IpoGuruService, useValue: ipoGuruService },
         { provide: IpoTimelineSchedulerService, useValue: timelineSchedulerService },
+        { provide: UserEntitlementService, useValue: userEntitlementService },
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue(true) },
@@ -266,5 +291,107 @@ describe('ConsoleController', () => {
 
     expect(adminIpoService.enrichIpoWithAi).toHaveBeenCalledWith('a7a4e3af-f954-4d70-9adb-9a57e4a90637', true);
     expect(res).toEqual(mockEnrichResult);
+  });
+
+  describe('User Management Endpoints', () => {
+    it('should delegate listUsers to userEntitlementService.listUsers with parsed pagination and tier', async () => {
+      const res = await controller.listUsers('john', 'PRO', '2', '50');
+      expect(userEntitlementService.listUsers).toHaveBeenCalledWith({
+        q: 'john',
+        tier: 'PRO',
+        page: 2,
+        limit: 50,
+      });
+      expect(res).toBeDefined();
+    });
+
+    it('should fallback to safe default pagination and tier ALL if invalid params provided', async () => {
+      await controller.listUsers(undefined, 'INVALID_TIER', '-1', '999');
+      expect(userEntitlementService.listUsers).toHaveBeenCalledWith({
+        q: undefined,
+        tier: 'ALL',
+        page: 1,
+        limit: 100,
+      });
+    });
+
+    it('should delegate getUserDetail to userEntitlementService.getUserDetail', async () => {
+      const res = await controller.getUserDetail('u1');
+      expect(userEntitlementService.getUserDetail).toHaveBeenCalledWith('u1');
+      expect(res).toEqual({
+        uid: 'u1',
+        email: 'test@example.com',
+        tier: 'NON_PRO',
+        auditLogs: [],
+      });
+    });
+
+    it('should delegate updateUserEntitlement to userEntitlementService.updateUserEntitlement', async () => {
+      const mockReq = { ip: '127.0.0.1', user: { username: 'superadmin' } } as any;
+      const res = await controller.updateUserEntitlement(
+        'u1',
+        { tier: 'PRO', reason: 'Subscriber upgrade' },
+        mockReq,
+      );
+      expect(userEntitlementService.updateUserEntitlement).toHaveBeenCalledWith(
+        'u1',
+        'PRO',
+        'superadmin',
+        'Subscriber upgrade',
+        '127.0.0.1',
+      );
+      expect(res).toEqual({
+        success: true,
+        uid: 'u1',
+        tier: 'PRO',
+      });
+    });
+
+    it('should serve User Management navigation and content sections in HTML console UI', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/console')
+        .expect(200);
+
+      expect(response.text).toContain('id="nav-btn-users"');
+      expect(response.text).toContain("switchTab('users')");
+      expect(response.text).toContain('id="tab-users"');
+      expect(response.text).toContain('id="nav-users-pro-count"');
+      expect(response.text).toContain('id="user-entitlement-confirm-modal"');
+      expect(response.text).toContain('id="user-details-modal"');
+      expect(response.text).toContain('User &amp; Entitlement Management');
+    });
+
+    it('GET /api/v1/console/api/users should return 200 and paginated user list', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/console/api/users?page=1&limit=20&tier=ALL')
+        .expect(200);
+
+      expect(userEntitlementService.listUsers).toHaveBeenCalled();
+      expect(response.body.data.users).toBeDefined();
+      expect(response.body.data.users.length).toBe(1);
+    });
+
+    it('GET /api/v1/console/api/users/:uid should return 200 and user detail', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/console/api/users/u1')
+        .expect(200);
+
+      expect(userEntitlementService.getUserDetail).toHaveBeenCalledWith('u1');
+      expect(response.body.data.uid).toBe('u1');
+      expect(response.body.data.tier).toBe('NON_PRO');
+    });
+
+    it('POST /api/v1/console/api/users/:uid/entitlement should return 200/201 and update entitlement', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/console/api/users/u1/entitlement')
+        .send({ tier: 'PRO', reason: 'Admin upgraded' })
+        .expect((res) => {
+          expect([200, 201]).toContain(res.status);
+        });
+
+      expect(userEntitlementService.updateUserEntitlement).toHaveBeenCalled();
+      expect(response.body.data.success).toBe(true);
+      expect(response.body.data.tier).toBe('PRO');
+    });
   });
 });

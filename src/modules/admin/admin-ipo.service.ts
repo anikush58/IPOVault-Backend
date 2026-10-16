@@ -41,6 +41,7 @@ import { EnrichmentJobResult } from '../enrichment/enrichment.types';
 @Injectable()
 export class AdminIpoService {
   private readonly logger = new Logger(AdminIpoService.name);
+  private activeOverwriteMode = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1930,6 +1931,7 @@ export class AdminIpoService {
     dto: Record<string, any>,
     sourceId: string,
     reference: string,
+    filledFields?: string[],
   ) {
     const now = new Date();
     const records: Array<{
@@ -1939,116 +1941,189 @@ export class AdminIpoService {
       value: string;
     }> = [];
 
+    const norm = this.normalizeIncomingAddOnlyItem(dto);
+
     // Company fields
-    if (dto.legalName)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.legal_name', value: String(dto.legalName) });
-    if (dto.displayName)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.display_name', value: String(dto.displayName) });
-    if (dto.cin)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.cin', value: String(dto.cin) });
-    if (dto.industry)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.industry', value: String(dto.industry) });
-    if (dto.sector)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.sector', value: String(dto.sector) });
-    if (dto.aboutDescription)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.about_description', value: String(dto.aboutDescription) });
-    if (dto.website)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.website', value: String(dto.website) });
-    if (dto.phone)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.phone', value: String(dto.phone) });
-    if (dto.email)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.email', value: String(dto.email) });
-    if (dto.contactPerson)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.contact_person', value: String(dto.contactPerson) });
-    if (dto.logoUrl)
-      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.logo_url', value: String(dto.logoUrl) });
+    const legalNameVal = dto.legalName || norm.legalName;
+    if (legalNameVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.legal_name', value: String(legalNameVal) });
+    const displayNameVal = dto.displayName || norm.displayName;
+    if (displayNameVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.display_name', value: String(displayNameVal) });
+    const cinVal = dto.cin || norm.cin;
+    if (cinVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.cin', value: String(cinVal) });
+    const industryVal = dto.industry || norm.rawCompany?.industry;
+    if (industryVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.industry', value: String(industryVal) });
+    const sectorVal = dto.sector || norm.rawCompany?.sector;
+    if (sectorVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.sector', value: String(sectorVal) });
+    const aboutVal = dto.aboutDescription || norm.rawCompany?.aboutDescription || norm.rawIpo?.company?.aboutDescription;
+    if (aboutVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.about_description', value: String(aboutVal) });
+    const websiteVal = dto.website || norm.rawCompany?.website || norm.rawIpo?.company?.website;
+    if (websiteVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.website', value: String(websiteVal) });
+    const phoneVal = dto.phone || norm.rawCompany?.phone || norm.rawIpo?.company?.phone;
+    if (phoneVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.phone', value: String(phoneVal) });
+    const emailVal = dto.email || norm.rawCompany?.email || norm.rawIpo?.company?.email;
+    if (emailVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.email', value: String(emailVal) });
+    const contactVal = dto.contactPerson || norm.rawCompany?.contactPerson || norm.rawIpo?.company?.contactPerson;
+    if (contactVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.contact_person', value: String(contactVal) });
+    const logoVal = dto.logoUrl || norm.rawCompany?.logoUrl || norm.rawIpo?.company?.logoUrl;
+    if (logoVal)
+      records.push({ entityType: 'COMPANY', entityId: companyId, fieldName: 'company.logo_url', value: String(logoVal) });
 
     // IPO fields
-    if (dto.marketSegment)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'market_segment', value: String(dto.marketSegment) });
-    if (dto.exchange)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'exchange', value: String(dto.exchange) });
-    if (dto.status)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'status', value: String(dto.status) });
-    if (dto.publicationStatus)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'publication_status', value: String(dto.publicationStatus) });
-    if (dto.symbol)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'symbol', value: String(dto.symbol) });
-    if (dto.isin)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'isin', value: String(dto.isin) });
-    if (dto.priceBandLow !== undefined && dto.priceBandLow !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'price_band_low', value: String(dto.priceBandLow) });
-    if (dto.priceBandHigh !== undefined && dto.priceBandHigh !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'price_band_high', value: String(dto.priceBandHigh) });
-    if (dto.lotSize !== undefined && dto.lotSize !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'lot_size', value: String(dto.lotSize) });
-    if (dto.faceValue !== undefined && dto.faceValue !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'face_value', value: String(dto.faceValue) });
-    if (dto.issueSize !== undefined && dto.issueSize !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'issue_size', value: String(dto.issueSize) });
-    if (dto.freshIssueSize !== undefined && dto.freshIssueSize !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'fresh_issue_size', value: String(dto.freshIssueSize) });
-    if (dto.ofsSize !== undefined && dto.ofsSize !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'ofs_size', value: String(dto.ofsSize) });
-    if (dto.issueShareCount !== undefined && dto.issueShareCount !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'issue_share_count', value: String(dto.issueShareCount) });
-    if (dto.freshIssueShareCount !== undefined && dto.freshIssueShareCount !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'fresh_issue_share_count', value: String(dto.freshIssueShareCount) });
-    if (dto.ofsShareCount !== undefined && dto.ofsShareCount !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'ofs_share_count', value: String(dto.ofsShareCount) });
-    if (dto.listingPrice !== undefined && dto.listingPrice !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_price', value: String(dto.listingPrice) });
-    if (dto.listingGainPct !== undefined && dto.listingGainPct !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_gain_pct', value: String(dto.listingGainPct) });
-    if (dto.profitAmount !== undefined && dto.profitAmount !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'profit_amount', value: String(dto.profitAmount) });
-    if (dto.profitPercentage !== undefined && dto.profitPercentage !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'profit_percentage', value: String(dto.profitPercentage) });
-    if (dto.preIpoEps !== undefined && dto.preIpoEps !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_eps', value: String(dto.preIpoEps) });
-    if (dto.postIpoEps !== undefined && dto.postIpoEps !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_eps', value: String(dto.postIpoEps) });
-    if (dto.preIpoPe !== undefined && dto.preIpoPe !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_pe', value: String(dto.preIpoPe) });
-    if (dto.postIpoPe !== undefined && dto.postIpoPe !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_pe', value: String(dto.postIpoPe) });
-    if (dto.preIpoPromoterHolding !== undefined && dto.preIpoPromoterHolding !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_promoter_holding', value: String(dto.preIpoPromoterHolding) });
-    if (dto.postIpoPromoterHolding !== undefined && dto.postIpoPromoterHolding !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_promoter_holding', value: String(dto.postIpoPromoterHolding) });
-    if (dto.preIpoMarketCap !== undefined && dto.preIpoMarketCap !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_market_cap', value: String(dto.preIpoMarketCap) });
-    if (dto.postIpoMarketCap !== undefined && dto.postIpoMarketCap !== null)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_market_cap', value: String(dto.postIpoMarketCap) });
-    if (dto.openDate)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'open_date', value: String(dto.openDate) });
-    if (dto.closeDate)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'close_date', value: String(dto.closeDate) });
-    if (dto.allotmentDate)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'allotment_date', value: String(dto.allotmentDate) });
+    const mktSegVal = dto.marketSegment || norm.marketSegment;
+    if (mktSegVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'market_segment', value: String(mktSegVal) });
+    const exchVal = dto.exchange || norm.exchange;
+    if (exchVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'exchange', value: String(exchVal) });
+    const statusVal = dto.status || norm.rawCanonical?.lifecycleStatus || norm.rawIpo?.status;
+    if (statusVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'status', value: String(statusVal) });
+    const pubStatusVal = dto.publicationStatus || norm.publicationStatus;
+    if (pubStatusVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'publication_status', value: String(pubStatusVal) });
+    const symbolVal = dto.symbol || norm.symbol;
+    if (symbolVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'symbol', value: String(symbolVal) });
+    const isinVal = dto.isin || norm.isin;
+    if (isinVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'isin', value: String(isinVal) });
+
+    const priceBandLowVal = dto.priceBandLow ?? norm.rawCanonical?.priceBandLow ?? norm.rawIpo?.priceBandLow ?? norm.rawIpo?.floorPrice;
+    if (priceBandLowVal !== undefined && priceBandLowVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'price_band_low', value: String(priceBandLowVal) });
+    const priceBandHighVal = dto.priceBandHigh ?? norm.rawCanonical?.priceBandHigh ?? norm.rawIpo?.priceBandHigh ?? norm.rawIpo?.capPrice;
+    if (priceBandHighVal !== undefined && priceBandHighVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'price_band_high', value: String(priceBandHighVal) });
+    const lotSizeVal = dto.lotSize ?? norm.rawCanonical?.lotSize ?? norm.rawIpo?.lotSize ?? norm.rawIpo?.marketLot;
+    if (lotSizeVal !== undefined && lotSizeVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'lot_size', value: String(lotSizeVal) });
+    const faceValueVal = dto.faceValue ?? norm.rawCanonical?.faceValue ?? norm.rawIpo?.faceValue;
+    if (faceValueVal !== undefined && faceValueVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'face_value', value: String(faceValueVal) });
+    const issueSizeVal = dto.issueSize ?? norm.rawCanonical?.totalIssueSize ?? norm.rawCanonical?.issueSize ?? norm.rawIpo?.totalIssueSize ?? norm.rawIpo?.issueSize ?? dto.totalIssueSize;
+    if (issueSizeVal !== undefined && issueSizeVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'issue_size', value: String(issueSizeVal) });
+    const freshIssueSizeVal = dto.freshIssueSize ?? norm.rawCanonical?.freshIssueSize ?? norm.rawIpo?.freshIssueSize;
+    if (freshIssueSizeVal !== undefined && freshIssueSizeVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'fresh_issue_size', value: String(freshIssueSizeVal) });
+    const ofsSizeVal = dto.ofsSize ?? norm.rawCanonical?.offerForSaleSize ?? norm.rawCanonical?.ofsSize ?? norm.rawIpo?.offerForSaleSize ?? norm.rawIpo?.ofsSize ?? dto.offerForSaleSize;
+    if (ofsSizeVal !== undefined && ofsSizeVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'ofs_size', value: String(ofsSizeVal) });
+    const issueShareCountVal = dto.issueShareCount ?? norm.rawCanonical?.totalShares ?? norm.rawCanonical?.issueShareCount;
+    if (issueShareCountVal !== undefined && issueShareCountVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'issue_share_count', value: String(issueShareCountVal) });
+    const freshIssueShareCountVal = dto.freshIssueShareCount ?? norm.rawCanonical?.freshIssueShareCount;
+    if (freshIssueShareCountVal !== undefined && freshIssueShareCountVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'fresh_issue_share_count', value: String(freshIssueShareCountVal) });
+    const ofsShareCountVal = dto.ofsShareCount ?? norm.rawCanonical?.ofsShareCount;
+    if (ofsShareCountVal !== undefined && ofsShareCountVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'ofs_share_count', value: String(ofsShareCountVal) });
+    const listingPriceVal = dto.listingPrice ?? norm.rawCanonical?.listingPrice;
+    if (listingPriceVal !== undefined && listingPriceVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_price', value: String(listingPriceVal) });
+    const listingGainPctVal = dto.listingGainPct ?? norm.rawCanonical?.listingGainPct;
+    if (listingGainPctVal !== undefined && listingGainPctVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_gain_pct', value: String(listingGainPctVal) });
+    const profitAmountVal = dto.profitAmount ?? norm.rawIpo?.profitAmount;
+    if (profitAmountVal !== undefined && profitAmountVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'profit_amount', value: String(profitAmountVal) });
+    const profitPercentageVal = dto.profitPercentage ?? norm.rawIpo?.profitPercentage;
+    if (profitPercentageVal !== undefined && profitPercentageVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'profit_percentage', value: String(profitPercentageVal) });
+
+    const preIpoEpsVal = dto.preIpoEps ?? norm.rawValuation?.preIpoEps;
+    if (preIpoEpsVal !== undefined && preIpoEpsVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_eps', value: String(preIpoEpsVal) });
+    const postIpoEpsVal = dto.postIpoEps ?? norm.rawValuation?.postIpoEps;
+    if (postIpoEpsVal !== undefined && postIpoEpsVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_eps', value: String(postIpoEpsVal) });
+    const preIpoPeVal = dto.preIpoPe ?? norm.rawValuation?.preIpoPe;
+    if (preIpoPeVal !== undefined && preIpoPeVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_pe', value: String(preIpoPeVal) });
+    const postIpoPeVal = dto.postIpoPe ?? norm.rawValuation?.postIpoPe;
+    if (postIpoPeVal !== undefined && postIpoPeVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_pe', value: String(postIpoPeVal) });
+    const preIpoPromoterHoldingVal = dto.preIpoPromoterHolding ?? norm.rawValuation?.preIpoPromoterHolding;
+    if (preIpoPromoterHoldingVal !== undefined && preIpoPromoterHoldingVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_promoter_holding', value: String(preIpoPromoterHoldingVal) });
+    const postIpoPromoterHoldingVal = dto.postIpoPromoterHolding ?? norm.rawValuation?.postIpoPromoterHolding;
+    if (postIpoPromoterHoldingVal !== undefined && postIpoPromoterHoldingVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_promoter_holding', value: String(postIpoPromoterHoldingVal) });
+    const preIpoMarketCapVal = dto.preIpoMarketCap ?? norm.rawValuation?.preIpoMarketCap;
+    if (preIpoMarketCapVal !== undefined && preIpoMarketCapVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'pre_ipo_market_cap', value: String(preIpoMarketCapVal) });
+    const postIpoMarketCapVal = dto.postIpoMarketCap ?? norm.rawValuation?.postIpoMarketCap;
+    if (postIpoMarketCapVal !== undefined && postIpoMarketCapVal !== null)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'post_ipo_market_cap', value: String(postIpoMarketCapVal) });
+
+    const openDateVal = dto.openDate || norm.rawTimeline?.openDate || norm.rawTimeline?.issueOpenDate;
+    if (openDateVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'open_date', value: String(openDateVal) });
+    const closeDateVal = dto.closeDate || norm.rawTimeline?.closeDate || norm.rawTimeline?.issueCloseDate;
+    if (closeDateVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'close_date', value: String(closeDateVal) });
+    const allotmentDateVal = dto.allotmentDate || norm.rawTimeline?.allotmentDate || norm.rawTimeline?.basisOfAllotmentDate;
+    if (allotmentDateVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'allotment_date', value: String(allotmentDateVal) });
     const refundProv =
       dto.refundDate ||
       dto.refundInitiationDate ||
-      dto.ipo?.timeline?.refundInitiationDate ||
-      dto.timeline?.refundInitiationDate ||
-      dto.ipo?.lifecycle?.refundInitiationDate ||
-      dto.lifecycle?.refundInitiationDate ||
-      dto.ipo?.timeline?.refundDate ||
-      dto.timeline?.refundDate;
+      norm.rawTimeline?.refundInitiationDate ||
+      norm.rawTimeline?.refundDate;
     if (refundProv)
       records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'refund_date', value: String(refundProv) });
-    if (dto.listingDate)
-      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_date', value: String(dto.listingDate) });
+    const listingDateVal = dto.listingDate || norm.rawTimeline?.listingDate;
+    if (listingDateVal)
+      records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'listing_date', value: String(listingDateVal) });
     const regNameProv =
       dto.registrarName ||
-      dto.ipo?.participants?.registrarName ||
-      dto.participants?.registrarName ||
-      dto.allotmentConfig?.registrar ||
-      dto.ipo?.allotmentConfig?.registrar;
+      norm.rawParticipants?.registrarName ||
+      norm.rawParticipants?.name;
     if (regNameProv)
       records.push({ entityType: 'IPO', entityId: ipoId, fieldName: 'registrar_name', value: String(regNameProv) });
 
-    for (const r of records) {
+    let finalRecords = records;
+    if (filledFields && Array.isArray(filledFields) && filledFields.length > 0) {
+      const allowedSet = new Set<string>();
+      for (const f of filledFields) {
+        const lower = f.toLowerCase();
+        allowedSet.add(f);
+        allowedSet.add(lower);
+        if (lower.includes('freshissuesize')) allowedSet.add('fresh_issue_size');
+        if (lower.includes('ofssize')) allowedSet.add('ofs_size');
+        if (lower.includes('issuesize')) allowedSet.add('issue_size');
+        if (lower.includes('refund')) allowedSet.add('refund_date');
+        if (lower.includes('open')) allowedSet.add('open_date');
+        if (lower.includes('close')) allowedSet.add('close_date');
+        if (lower.includes('allotment')) allowedSet.add('allotment_date');
+        if (lower.includes('listingdate') || lower.includes('lifecycle.listing')) allowedSet.add('listing_date');
+        if (lower.includes('pricebandlow')) allowedSet.add('price_band_low');
+        if (lower.includes('pricebandhigh')) allowedSet.add('price_band_high');
+        if (lower.includes('lotsize')) allowedSet.add('lot_size');
+        if (lower.includes('facevalue')) allowedSet.add('face_value');
+        if (lower.includes('registrar')) allowedSet.add('registrar_name');
+        if (lower.startsWith('company.')) {
+          allowedSet.add(lower);
+          allowedSet.add(lower.replace('.', '_'));
+          allowedSet.add(lower.replace('company.', ''));
+        }
+      }
+      finalRecords = records.filter(
+        (r) => allowedSet.has(r.fieldName) || allowedSet.has(r.fieldName.toLowerCase()),
+      );
+    }
+
+    for (const r of finalRecords) {
       await this.prisma.fieldProvenance.create({
         data: {
           entityType: r.entityType,
@@ -2378,6 +2453,8 @@ export class AdminIpoService {
   private normalizeJsonPayloadItems(payload: any): any[] {
     if (!payload) return [];
     if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload.payload)) return payload.payload;
+    if (payload.payload && typeof payload.payload === 'object') return this.normalizeJsonPayloadItems(payload.payload);
     if (Array.isArray(payload.items)) return payload.items;
     if (Array.isArray(payload.ipos)) return payload.ipos;
     if (Array.isArray(payload.data)) return payload.data;
@@ -2473,6 +2550,7 @@ export class AdminIpoService {
     toFill: FieldDiffToFill[],
     skipped: FieldDiffSkipped[],
     fieldReport?: FieldReportItem[],
+    overwriteExisting: boolean = this.activeOverwriteMode,
   ) {
     if (inputVal === undefined || inputVal === null) {
       fieldReport?.push({
@@ -2532,37 +2610,57 @@ export class AdminIpoService {
           reason: 'Exact match (UNCHANGED)',
         });
       } else {
-        let reason =
-          'Conflict detected: existing value differs from incoming value (mutation prevented)';
-        if (
-          existingVal === 0 ||
-          existingVal === '0' ||
-          (typeof existingVal === 'object' &&
-            existingVal instanceof Prisma.Decimal &&
-            existingVal.isZero())
-        ) {
-          reason = 'Existing zero (0) preserved';
-        } else if (existingVal === false) {
-          reason = 'Existing boolean (false) preserved';
+        if (overwriteExisting) {
+          const oldValFormatted =
+            existingVal instanceof Prisma.Decimal ? existingVal.toNumber() : existingVal;
+          toFill.push({
+            section,
+            field,
+            oldValue: oldValFormatted,
+            newValue: inputVal,
+            status: 'OVERWRITTEN',
+          });
+          fieldReport?.push({
+            section,
+            field,
+            status: 'OVERWRITTEN',
+            existingValue: oldValFormatted,
+            incomingValue: inputVal,
+            reason: 'Authoritative overwrite of existing value',
+          });
+        } else {
+          let reason =
+            'Conflict detected: existing value differs from incoming value (mutation prevented)';
+          if (
+            existingVal === 0 ||
+            existingVal === '0' ||
+            (typeof existingVal === 'object' &&
+              existingVal instanceof Prisma.Decimal &&
+              existingVal.isZero())
+          ) {
+            reason = 'Existing zero (0) preserved';
+          } else if (existingVal === false) {
+            reason = 'Existing boolean (false) preserved';
+          }
+          skipped.push({
+            section,
+            field,
+            existingValue:
+              existingVal instanceof Prisma.Decimal ? existingVal.toNumber() : existingVal,
+            skippedValue: inputVal,
+            reason,
+            status: 'CONFLICT',
+          });
+          fieldReport?.push({
+            section,
+            field,
+            status: 'CONFLICT',
+            existingValue:
+              existingVal instanceof Prisma.Decimal ? existingVal.toNumber() : existingVal,
+            incomingValue: inputVal,
+            reason,
+          });
         }
-        skipped.push({
-          section,
-          field,
-          existingValue:
-            existingVal instanceof Prisma.Decimal ? existingVal.toNumber() : existingVal,
-          skippedValue: inputVal,
-          reason,
-          status: 'CONFLICT',
-        });
-        fieldReport?.push({
-          section,
-          field,
-          status: 'CONFLICT',
-          existingValue:
-            existingVal instanceof Prisma.Decimal ? existingVal.toNumber() : existingVal,
-          incomingValue: inputVal,
-          reason,
-        });
       }
     }
   }
@@ -2751,6 +2849,10 @@ export class AdminIpoService {
     const rawOffer = {
       ...(rawIpo.offer && typeof rawIpo.offer === 'object' ? rawIpo.offer : {}),
       ...(item?.offer && typeof item.offer === 'object' ? item.offer : {}),
+    };
+    const rawResearch = {
+      ...(rawIpo.research && typeof rawIpo.research === 'object' ? rawIpo.research : {}),
+      ...(item?.research && typeof item.research === 'object' ? item.research : {}),
     };
     const arrayParticipants = Array.isArray(rawIpo.participants)
       ? rawIpo.participants
@@ -2944,6 +3046,7 @@ export class AdminIpoService {
       marketSegment,
       publicationStatus,
       sourceSlug,
+      rawResearch,
     };
   }
 
@@ -3086,14 +3189,18 @@ export class AdminIpoService {
   private diffIpoForAddOnly(
     existingIpo: any,
     item: any,
+    overwriteExisting: boolean = false,
   ): {
     fieldsToFill: FieldDiffToFill[];
     fieldsSkipped: FieldDiffSkipped[];
     fieldReport: FieldReportItem[];
   } {
-    const toFill: FieldDiffToFill[] = [];
-    const skipped: FieldDiffSkipped[] = [];
-    const fieldReport: FieldReportItem[] = [];
+    const prevMode = this.activeOverwriteMode;
+    this.activeOverwriteMode = overwriteExisting;
+    try {
+      const toFill: FieldDiffToFill[] = [];
+      const skipped: FieldDiffSkipped[] = [];
+      const fieldReport: FieldReportItem[] = [];
 
     const norm = this.normalizeIncomingAddOnlyItem(item);
     const existingCompany = existingIpo.company || {};
@@ -3983,26 +4090,47 @@ export class AdminIpoService {
         });
       } else {
         const isMatch = this.areValuesEqual(existingGmp[0]?.gmpAmount, gmpAmountVal);
-        const status = isMatch ? 'UNCHANGED' : 'CONFLICT';
-        const reason = isMatch
-          ? 'Exact match (UNCHANGED)'
-          : 'Conflict detected: existing GMP observation differs from incoming value (mutation prevented)';
-        skipped.push({
-          section: 'gmp',
-          field: 'gmpAmount',
-          existingValue: existingGmp[0]?.gmpAmount,
-          skippedValue: gmpAmountVal,
-          reason,
-          status,
-        });
-        fieldReport.push({
-          section: 'gmp',
-          field: 'gmpAmount',
-          status,
-          existingValue: existingGmp[0]?.gmpAmount,
-          incomingValue: gmpAmountVal,
-          reason,
-        });
+        if (overwriteExisting && !isMatch) {
+          const oldGmpVal = existingGmp[0]?.gmpAmount instanceof Prisma.Decimal
+            ? existingGmp[0]?.gmpAmount.toNumber()
+            : existingGmp[0]?.gmpAmount;
+          toFill.push({
+            section: 'gmp',
+            field: 'gmpAmount',
+            oldValue: oldGmpVal,
+            newValue: gmpAmountVal,
+            status: 'OVERWRITTEN',
+          });
+          fieldReport.push({
+            section: 'gmp',
+            field: 'gmpAmount',
+            status: 'OVERWRITTEN',
+            existingValue: oldGmpVal,
+            incomingValue: gmpAmountVal,
+            reason: 'Authoritative overwrite of existing GMP observation',
+          });
+        } else {
+          const status = isMatch ? 'UNCHANGED' : 'CONFLICT';
+          const reason = isMatch
+            ? 'Exact match (UNCHANGED)'
+            : 'Conflict detected: existing GMP observation differs from incoming value (mutation prevented)';
+          skipped.push({
+            section: 'gmp',
+            field: 'gmpAmount',
+            existingValue: existingGmp[0]?.gmpAmount,
+            skippedValue: gmpAmountVal,
+            reason,
+            status,
+          });
+          fieldReport.push({
+            section: 'gmp',
+            field: 'gmpAmount',
+            status,
+            existingValue: existingGmp[0]?.gmpAmount,
+            incomingValue: gmpAmountVal,
+            reason,
+          });
+        }
       }
     }
 
@@ -4137,15 +4265,105 @@ export class AdminIpoService {
       }
     }
 
-    return { fieldsToFill: toFill, fieldsSkipped: skipped, fieldReport };
+    // 13. Research Sources Safe Ingestion check (Requirement 7)
+    const rawResearchSources = norm.rawResearch?.sources || item?.research?.sources;
+    if (Array.isArray(rawResearchSources) && rawResearchSources.length > 0) {
+      const cleanSources = rawResearchSources
+        .map((s: any) => {
+          if (typeof s === 'string' && s.trim()) return { url: s.trim() };
+          if (s && typeof s === 'object') {
+            const url = (s.url || s.link || s.sourceUrl || '').trim();
+            const title = (s.title || s.name || '').trim();
+            if (url || title) {
+              return {
+                title: title || undefined,
+                url: url || undefined,
+                notes: s.notes || s.description || undefined,
+              };
+            }
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      if (cleanSources.length > 0) {
+        const existingResearchDoc = (existingIpo.documents || []).find(
+          (d: any) => d.documentType === DocumentType.OTHER && (d.fileName === 'Research Sources' || d.fileName === 'research_sources'),
+        );
+        if (!existingResearchDoc) {
+          toFill.push({
+            section: 'research',
+            field: 'sources',
+            newValue: cleanSources,
+            status: 'FILLED',
+          });
+          fieldReport.push({
+            section: 'research',
+            field: 'sources',
+            status: 'FILLED',
+            existingValue: null,
+            incomingValue: `${cleanSources.length} source(s)`,
+            reason: 'Research sources document to be created',
+          });
+        } else if (overwriteExisting) {
+          toFill.push({
+            section: 'research',
+            field: 'sources',
+            oldValue: existingResearchDoc.extractionData,
+            newValue: cleanSources,
+            status: 'OVERWRITTEN',
+          });
+          fieldReport.push({
+            section: 'research',
+            field: 'sources',
+            status: 'OVERWRITTEN',
+            existingValue: 'Existing research sources',
+            incomingValue: `${cleanSources.length} source(s)`,
+            reason: 'Research sources document to be updated',
+          });
+        } else {
+          skipped.push({
+            section: 'research',
+            field: 'sources',
+            existingValue: 'Existing research sources',
+            skippedValue: `${cleanSources.length} source(s)`,
+            reason: 'Research sources document already exists',
+            status: 'CONFLICT',
+          });
+          fieldReport.push({
+            section: 'research',
+            field: 'sources',
+            status: 'CONFLICT',
+            existingValue: 'Existing research sources',
+            incomingValue: `${cleanSources.length} source(s)`,
+            reason: 'Research sources document already exists',
+          });
+        }
+      }
+    }
+
+      return { fieldsToFill: toFill, fieldsSkipped: skipped, fieldReport };
+    } finally {
+      this.activeOverwriteMode = prevMode;
+    }
   }
 
   /**
-   * Generates a safe, non-destructive preview of which fields will be filled or preserved.
+   * Generates a safe preview of which fields will be filled, overwritten, or preserved.
    */
   async previewAddOnlyJsonImport(
     rawPayload: any,
+    overwriteExistingParam?: boolean,
   ): Promise<JsonImportPreviewResponse> {
+    let overwriteExisting = false;
+    if (typeof overwriteExistingParam === 'boolean') {
+      overwriteExisting = overwriteExistingParam;
+    } else if (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)) {
+      if (typeof rawPayload.overwriteExisting === 'boolean') {
+        overwriteExisting = rawPayload.overwriteExisting;
+      }
+    }
+
     const rawItems = this.normalizeJsonPayloadItems(rawPayload);
     if (rawItems.length === 0) {
       throw new BadRequestException('No IPO records found in JSON payload');
@@ -4175,6 +4393,7 @@ export class AdminIpoService {
     let unmatchedCount = 0;
     let ambiguousCount = 0;
     let fieldsToFillTotal = 0;
+    let fieldsToOverwriteTotal = 0;
 
     for (let idx = 0; idx < rawItems.length; idx++) {
       const item = rawItems[idx];
@@ -4189,8 +4408,13 @@ export class AdminIpoService {
         const { fieldsToFill, fieldsSkipped, fieldReport } = this.diffIpoForAddOnly(
           matchResult.matchedIpo,
           item,
+          overwriteExisting,
         );
-        fieldsToFillTotal += fieldsToFill.length;
+        const overwritesInItem = fieldsToFill.filter((f) => f.status === 'OVERWRITTEN').length;
+        const conflictsInItem = fieldsSkipped.filter((f) => f.status === 'CONFLICT').length;
+        const fillsInItem = fieldsToFill.filter((f) => f.status === 'FILLED').length;
+        fieldsToFillTotal += fillsInItem;
+        fieldsToOverwriteTotal += overwritesInItem;
 
         previewItems.push({
           index: idx,
@@ -4204,6 +4428,8 @@ export class AdminIpoService {
           fieldsToFill,
           fieldsSkipped,
           fieldReport,
+          overwriteCount: overwritesInItem,
+          conflictCount: conflictsInItem,
         });
       } else if (matchResult.status === 'AMBIGUOUS') {
         ambiguousCount++;
@@ -4216,6 +4442,8 @@ export class AdminIpoService {
           fieldsToFill: [],
           fieldsSkipped: [],
           fieldReport: [],
+          overwriteCount: 0,
+          conflictCount: 0,
         });
       } else {
         unmatchedCount++;
@@ -4228,6 +4456,8 @@ export class AdminIpoService {
           fieldsToFill: [],
           fieldsSkipped: [],
           fieldReport: [],
+          overwriteCount: 0,
+          conflictCount: 0,
         });
       }
     }
@@ -4238,6 +4468,8 @@ export class AdminIpoService {
       unmatchedCount,
       ambiguousCount,
       fieldsToFillTotal,
+      fieldsToOverwriteTotal,
+      mode: overwriteExisting ? 'AUTHORITATIVE_OVERWRITE' : 'FILL_MISSING',
       items: previewItems,
     };
   }
@@ -4255,12 +4487,23 @@ export class AdminIpoService {
   }
 
   /**
-   * Performs an atomic ADD-ONLY update per matched IPO record.
-   * Existing values are NEVER overwritten. 0 and false are strictly preserved.
+   * Performs an atomic update per matched IPO record.
+   * In default Fill Missing Data mode, existing values are NEVER overwritten. 0 and false are strictly preserved.
+   * In Authoritative Overwrite mode, explicitly supplied non-null values update the database, while preserving 0.
    */
   async commitAddOnlyJsonImport(
     dto: JsonImportCommitDto | any,
+    overwriteExistingParam?: boolean,
   ): Promise<JsonImportCommitResponse> {
+    let overwriteExisting = false;
+    if (typeof overwriteExistingParam === 'boolean') {
+      overwriteExisting = overwriteExistingParam;
+    } else if (dto && typeof dto === 'object') {
+      if (typeof dto.overwriteExisting === 'boolean') {
+        overwriteExisting = dto.overwriteExisting;
+      }
+    }
+
     const rawPayload = dto?.payload || dto?.items || dto;
     const rawItems = this.normalizeJsonPayloadItems(rawPayload);
     if (rawItems.length === 0) {
@@ -4343,7 +4586,7 @@ export class AdminIpoService {
         continue;
       }
 
-      const { fieldsToFill, fieldReport } = this.diffIpoForAddOnly(targetIpo, item);
+      const { fieldsToFill, fieldReport } = this.diffIpoForAddOnly(targetIpo, item, overwriteExisting);
       if (fieldsToFill.length === 0) {
         skippedCount++;
         commitResults.push({
@@ -4370,6 +4613,7 @@ export class AdminIpoService {
             targetIpo.id,
             item,
             adminSourceId,
+            overwriteExisting,
           );
         });
 
@@ -4425,6 +4669,7 @@ export class AdminIpoService {
     ipoId: string,
     item: any,
     adminSourceId: string,
+    overwriteExisting: boolean = false,
   ): Promise<string[]> {
     const currentIpo = (
       typeof (tx.ipo as any).findUniqueOrThrow === 'function'
@@ -4504,7 +4749,10 @@ export class AdminIpoService {
 
     for (const [key, val] of companyFields) {
       if (val !== undefined && val !== null && !this.isPlaceholderOrNil(val)) {
-        if (this.isFieldEmpty((currentIpo.company as any)?.[key])) {
+        const existingVal = (currentIpo.company as any)?.[key];
+        const isEmpty = this.isFieldEmpty(existingVal);
+        const shouldUpdate = isEmpty || (overwriteExisting && !this.areValuesEqual(existingVal, val));
+        if (shouldUpdate) {
           (companyUpdates as any)[key] = val;
           filledFields.push(`company.${key}`);
         }
@@ -4546,7 +4794,10 @@ export class AdminIpoService {
 
     for (const [key, val] of ipoFields) {
       if (val !== undefined && val !== null && !this.isPlaceholderOrNil(val)) {
-        if (this.isFieldEmpty((currentIpo as any)[key])) {
+        const existingVal = (currentIpo as any)[key];
+        const isEmpty = this.isFieldEmpty(existingVal);
+        const shouldUpdate = isEmpty || (overwriteExisting && !this.areValuesEqual(existingVal, val));
+        if (shouldUpdate) {
           (ipoUpdates as any)[key] = val;
           filledFields.push(`ipo.${key}`);
         }
@@ -4585,9 +4836,16 @@ export class AdminIpoService {
         const existingEv = (currentIpo.lifecycleEvents || []).find(
           (e: any) => e.eventType === evType,
         );
-        if (!existingEv || !existingEv.eventDate) {
-          const parsed = new Date(dateStr);
-          if (!isNaN(parsed.getTime())) {
+        const existingDateStr = existingEv?.eventDate
+          ? new Date(existingEv.eventDate).toISOString().slice(0, 10)
+          : null;
+        const parsed = new Date(dateStr);
+        if (!isNaN(parsed.getTime())) {
+          const inputDateIso = parsed.toISOString().slice(0, 10);
+          const isEmpty = !existingEv || !existingEv.eventDate;
+          const shouldUpdate = isEmpty || (overwriteExisting && existingDateStr !== inputDateIso);
+
+          if (shouldUpdate) {
             await tx.ipoLifecycleEvent.upsert({
               where: {
                 ipoId_eventType: {
@@ -4643,17 +4901,26 @@ export class AdminIpoService {
         filledFields.push('allotmentConfig');
       } else {
         const allotUpdates: Prisma.IpoAllotmentConfigUpdateInput = {};
-        if (regName && !this.isPlaceholderOrNil(regName) && this.isFieldEmpty(existingAllot.registrar)) {
-          allotUpdates.registrar = regName;
-          filledFields.push('allotmentConfig.registrar');
+        if (regName && !this.isPlaceholderOrNil(regName)) {
+          const isEmpty = this.isFieldEmpty(existingAllot.registrar);
+          if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingAllot.registrar, regName))) {
+            allotUpdates.registrar = regName;
+            filledFields.push('allotmentConfig.registrar');
+          }
         }
-        if (regCode && !this.isPlaceholderOrNil(regCode) && this.isFieldEmpty(existingAllot.registrarIpoCode)) {
-          allotUpdates.registrarIpoCode = regCode;
-          filledFields.push('allotmentConfig.registrarIpoCode');
+        if (regCode && !this.isPlaceholderOrNil(regCode)) {
+          const isEmpty = this.isFieldEmpty(existingAllot.registrarIpoCode);
+          if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingAllot.registrarIpoCode, regCode))) {
+            allotUpdates.registrarIpoCode = regCode;
+            filledFields.push('allotmentConfig.registrarIpoCode');
+          }
         }
-        if (regUrl && !this.isPlaceholderOrNil(regUrl) && this.isFieldEmpty(existingAllot.allotmentSourceUrl)) {
-          allotUpdates.allotmentSourceUrl = regUrl;
-          filledFields.push('allotmentConfig.allotmentSourceUrl');
+        if (regUrl && !this.isPlaceholderOrNil(regUrl)) {
+          const isEmpty = this.isFieldEmpty(existingAllot.allotmentSourceUrl);
+          if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingAllot.allotmentSourceUrl, regUrl))) {
+            allotUpdates.allotmentSourceUrl = regUrl;
+            filledFields.push('allotmentConfig.allotmentSourceUrl');
+          }
         }
         if (Object.keys(allotUpdates).length > 0) {
           await tx.ipoAllotmentConfig.update({
@@ -5071,21 +5338,33 @@ export class AdminIpoService {
       }
     } else {
       const regUpdates: any = {};
-      if (participantRegName && !this.isPlaceholderOrNil(participantRegName) && this.isFieldEmpty(existingReg.name)) {
-        regUpdates.name = participantRegName;
-        filledFields.push('participants.REGISTRAR.name');
+      if (participantRegName && !this.isPlaceholderOrNil(participantRegName)) {
+        const isEmpty = this.isFieldEmpty(existingReg.name);
+        if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingReg.name, participantRegName))) {
+          regUpdates.name = participantRegName;
+          filledFields.push('participants.REGISTRAR.name');
+        }
       }
-      if (participantRegPhone && !this.isPlaceholderOrNil(participantRegPhone) && this.isFieldEmpty(existingReg.phone)) {
-        regUpdates.phone = participantRegPhone;
-        filledFields.push('participants.REGISTRAR.phone');
+      if (participantRegPhone && !this.isPlaceholderOrNil(participantRegPhone)) {
+        const isEmpty = this.isFieldEmpty(existingReg.phone);
+        if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingReg.phone, participantRegPhone))) {
+          regUpdates.phone = participantRegPhone;
+          filledFields.push('participants.REGISTRAR.phone');
+        }
       }
-      if (participantRegEmail && !this.isPlaceholderOrNil(participantRegEmail) && this.isFieldEmpty(existingReg.email)) {
-        regUpdates.email = participantRegEmail;
-        filledFields.push('participants.REGISTRAR.email');
+      if (participantRegEmail && !this.isPlaceholderOrNil(participantRegEmail)) {
+        const isEmpty = this.isFieldEmpty(existingReg.email);
+        if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingReg.email, participantRegEmail))) {
+          regUpdates.email = participantRegEmail;
+          filledFields.push('participants.REGISTRAR.email');
+        }
       }
-      if (participantRegWebsite && !this.isPlaceholderOrNil(participantRegWebsite) && this.isFieldEmpty(existingReg.website)) {
-        regUpdates.website = participantRegWebsite;
-        filledFields.push('participants.REGISTRAR.website');
+      if (participantRegWebsite && !this.isPlaceholderOrNil(participantRegWebsite)) {
+        const isEmpty = this.isFieldEmpty(existingReg.website);
+        if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingReg.website, participantRegWebsite))) {
+          regUpdates.website = participantRegWebsite;
+          filledFields.push('participants.REGISTRAR.website');
+        }
       }
       if (Object.keys(regUpdates).length > 0) {
         await tx.ipoParticipant.update({
@@ -5261,20 +5540,33 @@ export class AdminIpoService {
     if (
       gmpAmountVal !== undefined &&
       gmpAmountVal !== null &&
-      !this.isPlaceholderOrNil(gmpAmountVal) &&
-      currentIpo.gmpObservations.length === 0
+      !this.isPlaceholderOrNil(gmpAmountVal)
     ) {
-      await tx.gmpObservation.create({
-        data: {
-          ipoId: currentIpo.id,
-          gmpAmount: new Prisma.Decimal(gmpAmountVal),
-          gmpPercentage: gmpPercentVal !== undefined && gmpPercentVal !== null ? new Prisma.Decimal(gmpPercentVal) : null,
-          estProfitPerLot: estProfitVal !== undefined && estProfitVal !== null ? new Prisma.Decimal(estProfitVal) : null,
-          observedAt: gmpData.observedAt ? new Date(gmpData.observedAt) : new Date(),
-          sourceId: adminSourceId,
-        },
-      });
-      filledFields.push('gmp.gmpAmount');
+      if (currentIpo.gmpObservations.length === 0) {
+        await tx.gmpObservation.create({
+          data: {
+            ipoId: currentIpo.id,
+            gmpAmount: new Prisma.Decimal(gmpAmountVal),
+            gmpPercentage: gmpPercentVal !== undefined && gmpPercentVal !== null ? new Prisma.Decimal(gmpPercentVal) : null,
+            estProfitPerLot: estProfitVal !== undefined && estProfitVal !== null ? new Prisma.Decimal(estProfitVal) : null,
+            observedAt: gmpData.observedAt ? new Date(gmpData.observedAt) : new Date(),
+            sourceId: adminSourceId,
+          },
+        });
+        filledFields.push('gmp.gmpAmount');
+      } else if (overwriteExisting && !this.areValuesEqual(currentIpo.gmpObservations[0]?.gmpAmount, gmpAmountVal)) {
+        await tx.gmpObservation.create({
+          data: {
+            ipoId: currentIpo.id,
+            gmpAmount: new Prisma.Decimal(gmpAmountVal),
+            gmpPercentage: gmpPercentVal !== undefined && gmpPercentVal !== null ? new Prisma.Decimal(gmpPercentVal) : null,
+            estProfitPerLot: estProfitVal !== undefined && estProfitVal !== null ? new Prisma.Decimal(estProfitVal) : null,
+            observedAt: gmpData.observedAt ? new Date(gmpData.observedAt) : new Date(),
+            sourceId: adminSourceId,
+          },
+        });
+        filledFields.push('gmp.gmpAmount');
+      }
     }
 
     // 11. IPOGuru / Source Identity Link
@@ -5299,14 +5591,64 @@ export class AdminIpoService {
       });
     }
 
-    // Record Field Provenance for filled fields
+    // 12. Research Sources Safe Ingestion (Requirement 7)
+    const rawResearchSources = norm.rawResearch?.sources || item?.research?.sources;
+    if (Array.isArray(rawResearchSources) && rawResearchSources.length > 0) {
+      const existingResearchDoc = (currentIpo.documents || []).find(
+        (d: any) => d.documentType === DocumentType.OTHER && (d.fileName === 'Research Sources' || d.fileName === 'research_sources'),
+      );
+      const cleanSources = rawResearchSources
+        .map((s: any) => {
+          if (typeof s === 'string' && s.trim()) return { url: s.trim() };
+          if (s && typeof s === 'object') {
+            const url = (s.url || s.link || s.sourceUrl || '').trim();
+            const title = (s.title || s.name || '').trim();
+            if (url || title) {
+              return {
+                title: title || undefined,
+                url: url || undefined,
+                notes: s.notes || s.description || undefined,
+              };
+            }
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      if (cleanSources.length > 0) {
+        if (!existingResearchDoc) {
+          await tx.ipoDocument.create({
+            data: {
+              ipoId: currentIpo.id,
+              documentType: DocumentType.OTHER,
+              fileName: 'Research Sources',
+              source: 'MASTER_JSON_IMPORT',
+              parsingStatus: 'PARSED',
+              extractionData: { sources: cleanSources, importedAt: new Date().toISOString() },
+            },
+          });
+          filledFields.push('research.sources');
+        } else if (overwriteExisting) {
+          await tx.ipoDocument.update({
+            where: { id: existingResearchDoc.id },
+            data: {
+              extractionData: { sources: cleanSources, updatedAt: new Date().toISOString() },
+            },
+          });
+          filledFields.push('research.sources');
+        }
+      }
+    }
+
+    // Record Field Provenance for filled / overwritten fields
     if (filledFields.length > 0) {
       await this.recordFieldProvenance(
         currentIpo.id,
         currentIpo.companyId,
         item,
         adminSourceId,
-        'MASTER_JSON_ADD_ONLY_IMPORT',
+        overwriteExisting ? 'MASTER_JSON_OVERWRITE_IMPORT' : 'MASTER_JSON_ADD_ONLY_IMPORT',
+        filledFields,
       );
     }
 

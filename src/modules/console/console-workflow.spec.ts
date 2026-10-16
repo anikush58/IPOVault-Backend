@@ -5,6 +5,7 @@ import { ConsoleService } from './console.service';
 import { AdminIpoService } from '../admin/admin-ipo.service';
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { IpoTimelineSchedulerService } from '../ipos/ipo-timeline-scheduler.service';
+import { UserEntitlementService } from '../user/user-entitlement.service';
 import { ConsoleEnabledGuard } from './console.guard';
 import { renderConsoleHtml } from './console.ui';
 import { ExchangeListing, MarketSegment, PublicationStatus } from '@prisma/client';
@@ -106,6 +107,14 @@ describe('Phase 34.3A — Manual IPO Console Workflow & Reset Safety', () => {
           provide: IpoTimelineSchedulerService,
           useValue: {
             checkAllotmentAwaitedIposNow: jest.fn().mockResolvedValue({ checkedCount: 0, outCount: 0, remainingAwaitedCount: 0, details: [] }),
+          },
+        },
+        {
+          provide: UserEntitlementService,
+          useValue: {
+            listUsers: jest.fn().mockResolvedValue({ users: [], total: 0 }),
+            getUserDetail: jest.fn().mockResolvedValue({ uid: 'u1' }),
+            updateUserEntitlement: jest.fn().mockResolvedValue({ success: true }),
           },
         },
         { provide: ConfigService, useValue: { get: () => true } },

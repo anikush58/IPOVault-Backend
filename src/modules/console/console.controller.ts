@@ -51,6 +51,7 @@ import {
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { IpoGuruV1Ipo } from '../ipo-guru/ipo-guru.types';
 import { IpoTimelineSchedulerService } from '../ipos/ipo-timeline-scheduler.service';
+import { UserEntitlementService } from '../user/user-entitlement.service';
 
 @Controller('console')
 @UseGuards(ConsoleEnabledGuard)
@@ -62,6 +63,7 @@ export class ConsoleController {
     private readonly adminIpoService: AdminIpoService,
     private readonly ipoGuruService: IpoGuruService,
     private readonly ipoTimelineSchedulerService: IpoTimelineSchedulerService,
+    private readonly userEntitlementService: UserEntitlementService,
     private readonly configService: ConfigService<Env, true>,
   ) {}
 
@@ -602,5 +604,76 @@ export class ConsoleController {
         details: msg,
       });
     }
+  }
+
+  // ==========================================
+  // USER MANAGEMENT & PRO ENTITLEMENT ENDPOINTS
+  // ==========================================
+
+  /**
+   * Searchable/paginated registered users for console User Management.
+   * SECURITY: Never returns sensitive fields (no PANs, passwords, tokens, broker credentials).
+   */
+  @Get('api/users')
+  async listUsers(
+    @Query('q') q?: string,
+    @Query('tier') tier?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedPage = parseInt(page || '', 10);
+    const parsedLimit = parseInt(limit || '', 10);
+
+    const safePage = isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+    const safeLimit =
+      isNaN(parsedLimit) || parsedLimit < 1 ? 20 : Math.min(100, parsedLimit);
+    const safeTier =
+      tier === 'PRO' || tier === 'NON_PRO' ? tier : 'ALL';
+
+    return this.userEntitlementService.listUsers({
+      q,
+      tier: safeTier,
+      page: safePage,
+      limit: safeLimit,
+    });
+  }
+
+  /**
+   * User detail with full access tier history and audit log.
+   */
+  @Get('api/users/:uid')
+  async getUserDetail(@Param('uid') uid: string) {
+    if (!uid || !uid.trim()) {
+      throw new BadRequestException('User ID is required');
+    }
+    return this.userEntitlementService.getUserDetail(uid);
+  }
+
+  /**
+   * Grant or revoke Pro access for an individual user.
+   * Server-authoritative: updates persistent entitlement and writes audit log.
+   */
+  @Post('api/users/:uid/entitlement')
+  async updateUserEntitlement(
+    @Param('uid') uid: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request,
+  ) {
+    const newTier = body?.tier;
+    if (newTier !== 'PRO' && newTier !== 'NON_PRO') {
+      throw new BadRequestException("Tier must be either 'PRO' or 'NON_PRO'");
+    }
+    const reason =
+      typeof body?.reason === 'string' ? body.reason.trim() : undefined;
+    const adminUser = (req as any)?.user?.username || 'admin';
+    const ip = req.ip || (req.headers?.['x-forwarded-for'] as string) || '';
+
+    return this.userEntitlementService.updateUserEntitlement(
+      uid,
+      newTier,
+      adminUser,
+      reason,
+      ip,
+    );
   }
 }

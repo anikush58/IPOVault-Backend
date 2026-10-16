@@ -883,3 +883,44 @@ model IpoInvestment {
   @@index([brokerAccountId])
   @@map("ipo_investments")
 }
+
+enum UserAccessTier {
+  NON_PRO
+  PRO
+}
+
+model UserEntitlement {
+  id        String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String         @unique @map("user_id")
+  tier      UserAccessTier @default(NON_PRO)
+  grantedBy String?        @map("granted_by")
+  grantedAt DateTime?      @map("granted_at") @db.Timestamptz(6)
+  revokedAt DateTime?      @map("revoked_at") @db.Timestamptz(6)
+  notes     String?        @db.Text
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  auditLogs UserEntitlementAuditLog[]
+
+  @@index([userId])
+  @@index([tier])
+  @@map("user_entitlements")
+}
+
+model UserEntitlementAuditLog {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entitlementId String?         @map("entitlement_id") @db.Uuid
+  userId        String          @map("user_id")
+  previousTier  UserAccessTier  @map("previous_tier")
+  newTier       UserAccessTier  @map("new_tier")
+  changedBy     String          @map("changed_by")
+  reason        String?         @db.Text
+  ipAddress     String?         @map("ip_address")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  entitlement   UserEntitlement? @relation(fields: [entitlementId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("user_entitlement_audit_logs")
+}

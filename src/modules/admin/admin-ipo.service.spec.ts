@@ -2744,4 +2744,356 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(response.result.error).toBe('No official SEBI or SME document found for this IPO');
     });
   });
+
+  describe('Confirmed IPO JSON Import & Provenance Fixes (Regression Suite)', () => {
+    // 1. Tonbo Imaging India: freshIssueSize=0 and offerForSaleSize=852.18
+    it('handles Tonbo issue sizes: conflict in fill-only mode, authoritative overwrite in overwrite mode', async () => {
+      const tonboExistingIpo: any = {
+        id: 'ipo-tonbo-id',
+        companyId: 'company-tonbo-id',
+        symbol: 'TONBO',
+        freshIssueSize: 852.18,
+        ofsSize: 0,
+        company: {
+          id: 'company-tonbo-id',
+          legalName: 'Tonbo Imaging India Limited',
+          displayName: 'Tonbo Imaging India',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      const tonboIncoming = {
+        company: {
+          legalName: 'Tonbo Imaging India Limited',
+          displayName: 'Tonbo Imaging India',
+        },
+        canonical: {
+          freshIssueSize: 0,
+          offerForSaleSize: 852.18,
+        },
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([tonboExistingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(tonboExistingIpo);
+
+      // A. Default Fill-Only Mode Preview: both differ, so marked as CONFLICT and preserved
+      const previewFill = await adminIpoService.previewAddOnlyJsonImport(tonboIncoming, false);
+      expect(previewFill.mode).toBe('FILL_MISSING');
+      expect(previewFill.fieldsToFillTotal).toBe(0);
+      expect(previewFill.fieldsToOverwriteTotal).toBe(0);
+      expect(previewFill.items[0].fieldsSkipped.some((s) => s.field === 'freshIssueSize' && s.status === 'CONFLICT')).toBe(true);
+      expect(previewFill.items[0].fieldsSkipped.some((s) => s.field === 'ofsSize' && s.status === 'CONFLICT')).toBe(true);
+
+      // B. Authoritative Overwrite Mode Preview: marked as OVERWRITTEN with before & after values
+      const previewOvr = await adminIpoService.previewAddOnlyJsonImport(tonboIncoming, true);
+      expect(previewOvr.mode).toBe('AUTHORITATIVE_OVERWRITE');
+      expect(previewOvr.fieldsToOverwriteTotal).toBe(2);
+      const freshDiff = previewOvr.items[0].fieldsToFill.find((f) => f.field === 'freshIssueSize');
+      expect(freshDiff).toBeDefined();
+      expect(freshDiff?.status).toBe('OVERWRITTEN');
+      expect(freshDiff?.oldValue).toBe(852.18);
+      expect(freshDiff?.newValue).toBe(0);
+
+      const ofsDiff = previewOvr.items[0].fieldsToFill.find((f) => f.field === 'ofsSize');
+      expect(ofsDiff).toBeDefined();
+      expect(ofsDiff?.status).toBe('OVERWRITTEN');
+      expect(ofsDiff?.oldValue).toBe(0);
+      expect(ofsDiff?.newValue).toBe(852.18);
+
+      // C. Commit in Authoritative Overwrite Mode
+      mockPrisma.ipo.update.mockClear();
+      const commitRes = await adminIpoService.commitAddOnlyJsonImport(
+        { payload: tonboIncoming, overwriteExisting: true },
+      );
+      expect(commitRes.updatedCount).toBe(1);
+      expect(mockPrisma.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ipo-tonbo-id' },
+          data: expect.objectContaining({
+            freshIssueSize: 0,
+            ofsSize: 852.18,
+          }),
+        }),
+      );
+    });
+
+    // 2. Ravita refund date: 2026-10-19 -> 2026-10-20
+    it('handles Ravita refund date: conflict in fill mode, update in overwrite mode', async () => {
+      const ravitaExistingIpo: any = {
+        id: 'ipo-ravita-id',
+        companyId: 'company-ravita-id',
+        symbol: 'RAVITA',
+        company: {
+          id: 'company-ravita-id',
+          legalName: 'Ravita Engineering Services Limited',
+          displayName: 'Ravita Engineering Services',
+          financials: [],
+        },
+        lifecycleEvents: [
+          {
+            eventType: 'REFUND_INITIATION',
+            eventDate: new Date('2026-10-19T00:00:00.000Z'),
+          },
+        ],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      const ravitaIncoming = {
+        company: {
+          legalName: 'Ravita Engineering Services Limited',
+          displayName: 'Ravita Engineering Services',
+        },
+        timeline: {
+          refundInitiationDate: '2026-10-20',
+        },
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([ravitaExistingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(ravitaExistingIpo);
+
+      // Default fill mode: conflict
+      const fillPreview = await adminIpoService.previewAddOnlyJsonImport(ravitaIncoming, false);
+      expect(fillPreview.items[0].fieldsSkipped.some((s) => s.field === 'REFUND_INITIATION' && s.status === 'CONFLICT')).toBe(true);
+
+      // Overwrite mode: overwritten
+      const ovrPreview = await adminIpoService.previewAddOnlyJsonImport(ravitaIncoming, true);
+      const refundDiff = ovrPreview.items[0].fieldsToFill.find((f) => f.field === 'REFUND_INITIATION');
+      expect(refundDiff).toBeDefined();
+      expect(refundDiff?.status).toBe('OVERWRITTEN');
+      expect(refundDiff?.oldValue).toBe('2026-10-19');
+      expect(refundDiff?.newValue).toBe('2026-10-20');
+
+      // Commit in overwrite mode: updates lifecycle event date
+      mockPrisma.ipoLifecycleEvent.upsert.mockClear();
+      await adminIpoService.commitAddOnlyJsonImport({ payload: ravitaIncoming, overwriteExisting: true });
+      expect(mockPrisma.ipoLifecycleEvent.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            ipoId_eventType: {
+              ipoId: 'ipo-ravita-id',
+              eventType: 'REFUND_INITIATION',
+            },
+          },
+          update: expect.objectContaining({
+            eventDate: new Date('2026-10-20'),
+          }),
+        }),
+      );
+    });
+
+    // 3. Nested field provenance creation
+    it('creates field-level provenance records for nested Master JSON fields', async () => {
+      const existingIpoForProv: any = {
+        id: 'ipo-prov-id',
+        companyId: 'company-prov-id',
+        company: {
+          id: 'company-prov-id',
+          legalName: 'Prov Test Corp Limited',
+          displayName: 'Prov Test Corp',
+          cin: null,
+          financials: [],
+        },
+        freshIssueSize: null,
+        ofsSize: null,
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      const incomingMasterJson = {
+        company: {
+          legalName: 'Prov Test Corp Limited',
+          displayName: 'Prov Test Corp',
+          cin: 'U72900KA2020PTC134567',
+        },
+        canonical: {
+          freshIssueSize: 50.5,
+          offerForSaleSize: 20.0,
+        },
+        valuation: {
+          preIpoEps: 4.25,
+        },
+        timeline: {
+          refundInitiationDate: '2026-11-05',
+        },
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpoForProv]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpoForProv);
+      mockPrisma.fieldProvenance.create.mockClear();
+
+      const commitRes = await adminIpoService.commitAddOnlyJsonImport(incomingMasterJson);
+      expect(commitRes.updatedCount).toBe(1);
+
+      // Check that fieldProvenance.create was called with the canonical field names
+      const provenanceCalls = mockPrisma.fieldProvenance.create.mock.calls.map((c) => c[0].data);
+      expect(provenanceCalls.some((p) => p.fieldName === 'fresh_issue_size' && p.value === '50.5')).toBe(true);
+      expect(provenanceCalls.some((p) => p.fieldName === 'ofs_size' && p.value === '20')).toBe(true);
+      expect(provenanceCalls.some((p) => (p.fieldName === 'cin' || p.fieldName === 'company.cin') && p.value === 'U72900KA2020PTC134567')).toBe(true);
+      expect(provenanceCalls.some((p) => p.fieldName === 'refund_date' && p.value === '2026-11-05')).toBe(true);
+    });
+
+    // 4. Research sources ingestion
+    it('safely ingests research.sources into IpoDocument without marking fields verified falsely', async () => {
+      const existingIpoForResearch: any = {
+        id: 'ipo-research-id',
+        companyId: 'company-research-id',
+        company: {
+          id: 'company-research-id',
+          legalName: 'Research Sources Corp Limited',
+          displayName: 'Research Sources Corp',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      const incomingWithResearch = {
+        company: {
+          legalName: 'Research Sources Corp Limited',
+        },
+        research: {
+          sources: [
+            { title: 'NSE India Official Filing', url: 'https://www.nseindia.com/ipo/test' },
+            { title: 'Chittorgarh Review', url: 'https://www.chittorgarh.com/ipo/test' },
+          ],
+        },
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpoForResearch]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpoForResearch);
+      mockPrisma.ipoDocument.create.mockClear();
+
+      await adminIpoService.commitAddOnlyJsonImport({
+        payload: incomingWithResearch,
+        overwriteExisting: false,
+      });
+
+      expect(mockPrisma.ipoDocument.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ipoId: 'ipo-research-id',
+            documentType: 'OTHER',
+            fileName: 'Research Sources',
+            source: 'MASTER_JSON_IMPORT',
+            extractionData: expect.objectContaining({
+              sources: expect.arrayContaining([
+                expect.objectContaining({ title: 'NSE India Official Filing', url: 'https://www.nseindia.com/ipo/test' }),
+              ]),
+            }),
+          }),
+        }),
+      );
+    });
+
+    // 5. Zero preservation in import
+    it('preserves 0 as a valid numeric value rather than null/undefined', async () => {
+      const existingIpoWithNullFresh: any = {
+        id: 'ipo-zero-id',
+        companyId: 'company-zero-id',
+        freshIssueSize: null,
+        company: {
+          id: 'company-zero-id',
+          legalName: 'Zero Preserved Corp Limited',
+          displayName: 'Zero Preserved Corp',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      const incomingZero = {
+        company: {
+          legalName: 'Zero Preserved Corp Limited',
+        },
+        canonical: {
+          freshIssueSize: 0,
+        },
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpoWithNullFresh]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpoWithNullFresh);
+
+      // In fill mode, freshIssueSize=null should be filled with 0
+      const preview = await adminIpoService.previewAddOnlyJsonImport(incomingZero, false);
+      const fillItem = preview.items[0].fieldsToFill.find((f) => f.field === 'freshIssueSize');
+      expect(fillItem).toBeDefined();
+      expect(fillItem?.newValue).toBe(0);
+
+      mockPrisma.ipo.update.mockClear();
+      await adminIpoService.commitAddOnlyJsonImport({ payload: incomingZero, overwriteExisting: false });
+      expect(mockPrisma.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ipo-zero-id' },
+          data: expect.objectContaining({
+            freshIssueSize: 0,
+          }),
+        }),
+      );
+    });
+
+    // 6. Default fill-only behavior remaining unchanged
+    it('does not overwrite existing values in default fill-only mode', async () => {
+      const existingIpoUnchanged: any = {
+        id: 'ipo-unchanged-id',
+        companyId: 'comp-unchanged-id',
+        symbol: 'EXISTING_SYMBOL',
+        priceBandLow: 100,
+        company: {
+          id: 'comp-unchanged-id',
+          legalName: 'Unchanged Corp Limited',
+          displayName: 'Unchanged Corp',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      const incomingConflicting = {
+        company: {
+          legalName: 'Unchanged Corp Limited',
+          displayName: 'Unchanged Corp',
+        },
+        symbol: 'NEW_SYMBOL',
+        priceBandLow: 150,
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpoUnchanged]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpoUnchanged);
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(incomingConflicting);
+      expect(preview.fieldsToFillTotal).toBe(0);
+      expect(preview.items[0].fieldsSkipped.filter((s) => s.status === 'CONFLICT').length).toBe(2);
+
+      mockPrisma.ipo.update.mockClear();
+      const commitRes = await adminIpoService.commitAddOnlyJsonImport(incomingConflicting);
+      expect(commitRes.skippedCount).toBe(1);
+      expect(mockPrisma.ipo.update).not.toHaveBeenCalled();
+    });
+  });
 });

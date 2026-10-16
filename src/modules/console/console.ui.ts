@@ -1450,6 +1450,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <i data-feather="database"></i>
           <span>IPO Guru</span>
         </button>
+        <button class="nav-item" id="nav-btn-users" title="User Management" onclick="switchTab('users')">
+          <i data-feather="users"></i>
+          <span>User Management</span>
+          <span class="nav-badge" id="nav-users-pro-count" style="margin-left:auto; font-size:11px; padding:2px 7px; border-radius:10px; background:rgba(16,185,129,0.15); color:#10B981; font-weight:700;"></span>
+        </button>
       </nav>
 
       <!-- Sidebar User Profile Footer -->
@@ -2552,25 +2557,143 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           </div>
         </div>
 
-        <!-- ADD-ONLY JSON IMPORT PREVIEW & COMMIT MODAL -->
+        <!-- 10. USER MANAGEMENT & PRO ACCESS TAB -->
+        <div id="tab-users" class="section-view">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+            <div>
+              <div style="font-weight:700; font-size:18px; color:var(--text-main); margin-bottom:4px;">User &amp; Entitlement Management</div>
+              <div style="font-size:12px; color:var(--text-muted);">
+                Search registered users, inspect access tier details, and grant or revoke Pro access with server-side audit logs. Non-Pro is default.
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+              <button class="btn-secondary" onclick="loadUsers(usersCurrentPage)">
+                <i data-feather="refresh-cw"></i>
+                <span>Refresh Users</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Stats KPI Grid -->
+          <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:20px;">
+            <div class="stat-card" style="padding:14px 16px;">
+              <div class="stat-title">Registered Users</div>
+              <div class="stat-value" id="stat-users-total" style="font-size:24px; font-weight:700; color:var(--text-main);">0</div>
+            </div>
+            <div class="stat-card" style="padding:14px 16px;">
+              <div class="stat-title">Pro Tier Subscribers</div>
+              <div class="stat-value" id="stat-users-pro" style="font-size:24px; font-weight:700; color:#10B981;">0</div>
+            </div>
+            <div class="stat-card" style="padding:14px 16px;">
+              <div class="stat-title">Non-Pro Users (Default)</div>
+              <div class="stat-value" id="stat-users-non-pro" style="font-size:24px; font-weight:700; color:#3B82F6;">0</div>
+            </div>
+          </div>
+
+          <!-- Filter & Search Toolbar -->
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:10px; padding:12px 16px;">
+            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:260px;">
+              <div style="position:relative; flex:1;">
+                <i data-feather="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px; color:var(--text-muted);"></i>
+                <input
+                  type="text"
+                  id="users-search-input"
+                  placeholder="Search by email, name, or UID..."
+                  oninput="debounceUserSearch()"
+                  style="width:100%; padding:8px 12px 8px 36px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px; outline:none;"
+                />
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:12px; color:var(--text-muted); font-weight:600;">Tier:</span>
+                <select id="users-tier-filter" onchange="loadUsers(1)" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:12px; font-weight:600; cursor:pointer;">
+                  <option value="ALL">All Tiers</option>
+                  <option value="PRO">Pro Tier Only</option>
+                  <option value="NON_PRO">Non-Pro Only</option>
+                </select>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:12px; color:var(--text-muted); font-weight:600;">Per Page:</span>
+                <select id="users-limit-filter" onchange="loadUsers(1)" style="padding:6px 10px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:12px; font-weight:600; cursor:pointer;">
+                  <option value="10">10</option>
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:10px; overflow:hidden;">
+            <div class="table-responsive" style="overflow-x:auto;">
+              <table class="data-table" style="width:100%; margin-bottom:0;">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>User ID (UID)</th>
+                    <th>Registered Date</th>
+                    <th>Current Access Tier</th>
+                    <th>Entitlement Details</th>
+                    <th style="text-align:right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-body">
+                  <tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted);">Loading users...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Empty State -->
+            <div id="users-empty-state" style="display:none; text-align:center; padding:48px 16px; color:var(--text-muted);">
+              <div style="font-size:32px; margin-bottom:8px;">&#128100;</div>
+              <div style="font-weight:600; margin-bottom:4px; color:var(--text-main);">No users found</div>
+              <div style="font-size:12px;">Try adjusting your search query or filter.</div>
+            </div>
+
+            <!-- Pagination Footer -->
+            <div id="users-pagination-bar" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-top:1px solid var(--border-color); background:var(--bg-hover);">
+              <div id="users-pagination-info" style="font-size:12px; color:var(--text-muted); font-weight:600;">Showing 0 users</div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <button id="users-prev-btn" class="btn-secondary" onclick="navigateUsersPage(-1)" style="padding:4px 10px; font-size:12px;" disabled>
+                  <i data-feather="chevron-left"></i> Previous
+                </button>
+                <span id="users-page-indicator" style="font-size:12px; font-weight:700; color:var(--text-main); padding:0 8px;">Page 1</span>
+                <button id="users-next-btn" class="btn-secondary" onclick="navigateUsersPage(1)" style="padding:4px 10px; font-size:12px;" disabled>
+                  Next <i data-feather="chevron-right"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ADD-ONLY & AUTHORITATIVE OVERWRITE JSON IMPORT PREVIEW & COMMIT MODAL -->
         <div id="json-import-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
-          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:920px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:960px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
             <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-hover);">
               <div>
                 <div style="font-weight:700; font-size:16px; color:var(--text-main); display:flex; align-items:center; gap:8px;">
-                  <span>Add-Only JSON Import Preview</span>
-                  <span style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10B981; font-weight:600;">Add-Only Protection</span>
+                  <span>Master JSON Import Preview</span>
+                  <span id="json-mode-badge" style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10B981; font-weight:600;">Fill Missing Data Mode</span>
                 </div>
-                <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">
-                  Only empty or missing fields will be populated. Existing non-empty values (including <strong>0</strong> and <strong>false</strong>) are strictly preserved and never overwritten.
+                <div id="json-mode-desc" style="font-size:12px; color:var(--text-muted); margin-top:3px;">
+                  Default non-destructive mode: Only empty or missing fields will be populated. Existing values (including <strong>0</strong> and <strong>false</strong>) are strictly preserved and never overwritten.
                 </div>
               </div>
-              <button onclick="closeJsonImportModal()" style="background:none; border:none; font-size:22px; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
+              <div style="display:flex; align-items:center; gap:12px;">
+                <!-- Mode Toggle Segmented Control -->
+                <div style="display:inline-flex; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:8px; padding:2px;">
+                  <button id="btn-mode-fill" type="button" onclick="setJsonImportMode(false)" style="padding:4px 12px; font-size:12px; font-weight:600; border-radius:6px; border:none; cursor:pointer; background:#10B981; color:#fff;">Fill Missing Only</button>
+                  <button id="btn-mode-overwrite" type="button" onclick="setJsonImportMode(true)" style="padding:4px 12px; font-size:12px; font-weight:600; border-radius:6px; border:none; cursor:pointer; background:transparent; color:var(--text-muted);">Authoritative Overwrite</button>
+                </div>
+                <button onclick="closeJsonImportModal()" style="background:none; border:none; font-size:22px; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
+              </div>
             </div>
 
             <!-- Summary Metrics -->
             <div style="padding:14px 20px; border-bottom:1px solid var(--border-color); background:var(--bg-surface);">
-              <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">
+              <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:10px;">
                 <div class="stat-card" style="padding:10px;">
                   <div class="stat-title">Total Records</div>
                   <div class="stat-value" id="json-preview-total" style="font-size:18px;">0</div>
@@ -2583,13 +2706,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <div class="stat-title">Fields to Fill</div>
                   <div class="stat-value" id="json-preview-fields-count" style="font-size:18px; color:#3B82F6;">0</div>
                 </div>
+                <div class="stat-card" id="json-stat-card-overwrites" style="padding:10px;">
+                  <div class="stat-title">Overwrites</div>
+                  <div class="stat-value" id="json-preview-overwrites-count" style="font-size:18px; color:#EC4899;">0</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                  <div class="stat-title">Conflicts</div>
+                  <div class="stat-value" id="json-preview-conflicts-count" style="font-size:18px; color:#F59E0B;">0</div>
+                </div>
                 <div class="stat-card" style="padding:10px;">
                   <div class="stat-title">Unmatched</div>
                   <div class="stat-value" id="json-preview-unmatched" style="font-size:18px; color:#F59E0B;">0</div>
-                </div>
-                <div class="stat-card" style="padding:10px;">
-                  <div class="stat-title">Ambiguous</div>
-                  <div class="stat-value" id="json-preview-ambiguous" style="font-size:18px; color:#EF4444;">0</div>
                 </div>
               </div>
             </div>
@@ -2600,10 +2727,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             </div>
 
             <!-- Modal Footer Actions -->
-            <div style="padding:14px 20px; border-top:1px solid var(--border-color); background:var(--bg-hover); display:flex; justify-content:space-between; align-items:center;">
-              <button class="btn-secondary" onclick="closeJsonImportModal()">Cancel</button>
+            <div style="padding:14px 20px; border-top:1px solid var(--border-color); background:var(--bg-hover); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <button class="btn-secondary" onclick="closeJsonImportModal()">Cancel</button>
+                <label id="json-overwrite-confirm-container" style="display:none; align-items:center; gap:8px; font-size:12px; color:#EF4444; font-weight:600; cursor:pointer;">
+                  <input type="checkbox" id="json-overwrite-confirm-checkbox" onchange="handleOverwriteCheckboxChange(this)" style="cursor:pointer;" />
+                  <span>I confirm and authorize overwriting existing values with incoming non-null JSON data</span>
+                </label>
+              </div>
               <button class="btn-primary" id="btn-confirm-json-import" onclick="commitAddOnlyJsonImport()" style="display:flex; align-items:center; gap:8px;">
-                <span id="btn-confirm-json-text">Confirm & Apply Add-Only Import</span>
+                <span id="btn-confirm-json-text">Confirm & Apply Import</span>
               </button>
             </div>
           </div>
@@ -2765,6 +2898,148 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             <!-- Footer Actions -->
             <div style="padding:14px 20px; border-top:1px solid var(--border-color); background:var(--bg-hover); display:flex; justify-content:flex-end; align-items:center; gap:10px;">
               <button class="btn-primary" onclick="closeAiEnrichmentModal()" style="background:#4F46E5; border-color:#4338CA; color:#FFFFFF; padding:8px 20px; font-weight:600; border-radius:8px;">Done</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- USER ENTITLEMENT GRANT / REVOKE CONFIRMATION MODAL -->
+        <div id="user-entitlement-confirm-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:540px; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-hover);">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <div id="entitlement-modal-icon-badge" style="width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:rgba(16,185,129,0.15); color:#10B981;">
+                  <i id="entitlement-modal-icon" data-feather="star"></i>
+                </div>
+                <div>
+                  <div id="entitlement-modal-title" style="font-weight:700; font-size:16px; color:var(--text-main);">Confirm Entitlement Change</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Server-side authorization and persistent audit logging</div>
+                </div>
+              </div>
+              <button onclick="closeEntitlementModal()" style="background:none; border:none; font-size:22px; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
+            </div>
+
+            <div style="padding:20px; display:flex; flex-direction:column; gap:14px;">
+              <div style="padding:12px 14px; background:var(--bg-main); border:1px solid var(--border-color); border-radius:8px;">
+                <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing:0.5px; margin-bottom:4px;">Target User</div>
+                <div id="entitlement-modal-user-display" style="font-size:14px; font-weight:700; color:var(--text-main); word-break:break-all;">user@ipovault.in</div>
+                <div id="entitlement-modal-uid-display" style="font-size:11px; font-family:monospace; color:var(--text-muted); margin-top:2px;">UID: &mdash;</div>
+              </div>
+
+              <div id="entitlement-modal-alert-box" style="padding:12px 14px; border-radius:8px; font-size:13px; line-height:1.5;">
+                <!-- Filled dynamically with grant or revoke explanation -->
+              </div>
+
+              <div>
+                <label style="display:block; font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:6px;">Reason / Notes for Audit Log (Optional):</label>
+                <input
+                  type="text"
+                  id="entitlement-modal-reason-input"
+                  placeholder="e.g., Annual subscriber upgrade, promotion ended, customer support request"
+                  style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px; outline:none;"
+                />
+              </div>
+            </div>
+
+            <div style="padding:14px 20px; border-top:1px solid var(--border-color); background:var(--bg-hover); display:flex; justify-content:flex-end; align-items:center; gap:10px;">
+              <button class="btn-secondary" onclick="closeEntitlementModal()">Cancel</button>
+              <button id="entitlement-modal-confirm-btn" class="btn-primary" onclick="executeEntitlementChange()" style="padding:8px 18px; font-weight:700;">
+                <span id="entitlement-modal-confirm-text">Confirm &amp; Apply</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- USER DETAILS & ENTITLEMENT AUDIT LOG MODAL -->
+        <div id="user-details-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:800px; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
+            <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-hover);">
+              <div>
+                <div style="font-weight:700; font-size:16px; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+                  <span>User Details &amp; Access Lineage</span>
+                  <span id="user-details-tier-badge" style="font-size:11px; padding:2px 8px; border-radius:12px; font-weight:700;"></span>
+                </div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">
+                  Complete profile view, entitlement history, and immutable audit logs.
+                </div>
+              </div>
+              <button onclick="closeUserDetailsModal()" style="background:none; border:none; font-size:22px; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
+            </div>
+
+            <div style="padding:20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;">
+              <!-- User Profile Header Grid -->
+              <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; background:var(--bg-hover); padding:14px; border-radius:10px; border:1px solid var(--border-color);">
+                <div>
+                  <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Name / Display Name</div>
+                  <div id="ud-name" style="font-size:13px; font-weight:600; color:var(--text-main); margin-top:2px;">&mdash;</div>
+                </div>
+                <div>
+                  <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Email Address</div>
+                  <div id="ud-email" style="font-size:13px; font-weight:600; color:var(--text-main); margin-top:2px; word-break:break-all;">&mdash;</div>
+                </div>
+                <div>
+                  <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Registered Date</div>
+                  <div id="ud-created-at" style="font-size:13px; font-weight:600; color:var(--text-main); margin-top:2px;">&mdash;</div>
+                </div>
+                <div>
+                  <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Last Sign-In</div>
+                  <div id="ud-last-sign-in" style="font-size:13px; font-weight:600; color:var(--text-main); margin-top:2px;">&mdash;</div>
+                </div>
+                <div style="grid-column: 1 / -1;">
+                  <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Canonical User ID (UID)</div>
+                  <div id="ud-uid" style="font-size:12px; font-family:monospace; color:var(--text-main); margin-top:2px; word-break:break-all;">&mdash;</div>
+                </div>
+              </div>
+
+              <!-- Entitlement Metadata -->
+              <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:10px; padding:14px;">
+                <div style="font-weight:700; font-size:13px; color:var(--text-main); margin-bottom:8px;">Current Entitlement Status</div>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
+                  <div>
+                    <div style="font-size:11px; color:var(--text-muted);">Access Tier:</div>
+                    <div id="ud-tier-desc" style="font-size:13px; font-weight:700;">&mdash;</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px; color:var(--text-muted);">Granted By:</div>
+                    <div id="ud-granted-by" style="font-size:13px; font-weight:600; color:var(--text-main);">&mdash;</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px; color:var(--text-muted);">Granted Date:</div>
+                    <div id="ud-granted-at" style="font-size:13px; font-weight:600; color:var(--text-main);">&mdash;</div>
+                  </div>
+                  <div>
+                    <div style="font-size:11px; color:var(--text-muted);">Revoked Date:</div>
+                    <div id="ud-revoked-at" style="font-size:13px; font-weight:600; color:var(--text-main);">&mdash;</div>
+                  </div>
+                </div>
+                <div id="ud-notes-box" style="margin-top:10px; font-size:12px; color:var(--text-muted); padding:8px 10px; background:var(--bg-main); border-radius:6px; display:none;">
+                  <strong>Notes:</strong> <span id="ud-notes-text"></span>
+                </div>
+              </div>
+
+              <!-- Audit Log History -->
+              <div>
+                <div style="font-weight:700; font-size:14px; color:var(--text-main); margin-bottom:8px;">Entitlement Audit History</div>
+                <div style="border:1px solid var(--border-color); border-radius:8px; overflow:hidden;">
+                  <table class="data-table" style="width:100%; margin-bottom:0; font-size:12px;">
+                    <thead>
+                      <tr>
+                        <th>Date &amp; Time</th>
+                        <th>Transition</th>
+                        <th>Changed By</th>
+                        <th>Reason / Notes</th>
+                        <th>IP Address</th>
+                      </tr>
+                    </thead>
+                    <tbody id="ud-audit-table-body">
+                      <tr><td colspan="5" style="text-align:center; padding:16px; color:var(--text-muted);">No entitlement changes recorded yet.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div style="padding:14px 20px; border-top:1px solid var(--border-color); background:var(--bg-hover); display:flex; justify-content:flex-end;">
+              <button class="btn-secondary" onclick="closeUserDetailsModal()">Close</button>
             </div>
           </div>
         </div>
@@ -3042,7 +3317,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         'sources': 'Upstream Source Health',
         'notifications': 'Notification Delivery Ops',
         'allotment': 'Allotment Check Ops',
-        'ipo-guru': 'IPO Guru v2 Inspector'
+        'ipo-guru': 'IPO Guru v2 Inspector',
+        'users': 'User Management'
       };
       const breadcrumbEl = document.getElementById('active-breadcrumb-title');
       if (breadcrumbEl) breadcrumbEl.textContent = titleMap[tabId] || 'Dashboard';
@@ -3055,8 +3331,381 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (tabId === 'notifications') loadNotifications();
       if (tabId === 'allotment') loadAllotment();
       if (tabId === 'ipo-guru') fetchIpoGuruStatus();
+      if (tabId === 'users') loadUsers(1);
 
       if (window.feather) feather.replace();
+    }
+
+    // ==========================================
+    // USER MANAGEMENT & PRO ENTITLEMENT SCRIPT
+    // ==========================================
+    let usersCurrentPage = 1;
+    let usersSearchQuery = '';
+    let usersTierFilter = 'ALL';
+    let usersLimit = 20;
+    let userSearchTimer = null;
+    let pendingEntitlementChange = null;
+
+    function debounceUserSearch() {
+      if (userSearchTimer) clearTimeout(userSearchTimer);
+      userSearchTimer = setTimeout(() => {
+        const input = document.getElementById('users-search-input');
+        usersSearchQuery = input ? input.value.trim() : '';
+        loadUsers(1);
+      }, 300);
+    }
+
+    async function loadUsers(page = 1) {
+      usersCurrentPage = page;
+      const tierSelect = document.getElementById('users-tier-filter');
+      usersTierFilter = tierSelect ? tierSelect.value : 'ALL';
+      const limitSelect = document.getElementById('users-limit-filter');
+      usersLimit = limitSelect ? parseInt(limitSelect.value, 10) || 20 : 20;
+      const searchInput = document.getElementById('users-search-input');
+      usersSearchQuery = searchInput ? searchInput.value.trim() : '';
+
+      const tableBody = document.getElementById('users-table-body');
+      const emptyState = document.getElementById('users-empty-state');
+      if (tableBody) {
+        tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted);"><i data-feather="loader" class="spin"></i> Loading registered users...</td></tr>';
+        if (window.feather) feather.replace();
+      }
+
+      try {
+        const url = API_BASE + '/users?page=' + page + '&limit=' + usersLimit + '&q=' + encodeURIComponent(usersSearchQuery) + '&tier=' + usersTierFilter;
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error('Failed to load users: HTTP ' + res.status);
+        }
+        const data = await res.json();
+        const users = data.users || [];
+        const total = data.total || 0;
+        const totalPages = data.totalPages || 1;
+        const counts = data.counts || { total: 0, pro: 0, nonPro: 0 };
+
+        // Update metric badges
+        const statTotal = document.getElementById('stat-users-total');
+        if (statTotal) statTotal.textContent = counts.total.toLocaleString();
+        const statPro = document.getElementById('stat-users-pro');
+        if (statPro) statPro.textContent = counts.pro.toLocaleString();
+        const statNonPro = document.getElementById('stat-users-non-pro');
+        if (statNonPro) statNonPro.textContent = counts.nonPro.toLocaleString();
+        const navProBadge = document.getElementById('nav-users-pro-count');
+        if (navProBadge) navProBadge.textContent = counts.pro > 0 ? (counts.pro + ' Pro') : '';
+
+        // Update pagination bar
+        const startItem = total === 0 ? 0 : (page - 1) * usersLimit + 1;
+        const endItem = Math.min(page * usersLimit, total);
+        const pagInfo = document.getElementById('users-pagination-info');
+        if (pagInfo) pagInfo.textContent = 'Showing ' + startItem + '-' + endItem + ' of ' + total + ' registered users';
+
+        const prevBtn = document.getElementById('users-prev-btn');
+        if (prevBtn) prevBtn.disabled = page <= 1;
+        const nextBtn = document.getElementById('users-next-btn');
+        if (nextBtn) nextBtn.disabled = page >= totalPages;
+        const pageInd = document.getElementById('users-page-indicator');
+        if (pageInd) pageInd.textContent = 'Page ' + page + ' of ' + totalPages;
+
+        if (!tableBody) return;
+
+        if (users.length === 0) {
+          tableBody.innerHTML = '';
+          if (emptyState) emptyState.style.display = 'block';
+          return;
+        }
+
+        if (emptyState) emptyState.style.display = 'none';
+
+        let html = '';
+        window._usersCache = {};
+        for (const u of users) {
+          window._usersCache[u.uid] = u;
+          const isPro = u.tier === 'PRO';
+          const tierBadge = isPro
+            ? '<span style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:700; background:rgba(16,185,129,0.15); color:#10B981; border:1px solid rgba(16,185,129,0.3);"><i data-feather="star" style="width:12px; height:12px;"></i> Pro</span>'
+            : '<span style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:700; background:var(--bg-hover); color:var(--text-muted); border:1px solid var(--border-color);">Non-Pro (Default)</span>';
+
+          const initial = ((u.displayName || u.email || 'U').charAt(0)).toUpperCase();
+          const avatarBg = isPro ? 'rgba(16,185,129,0.15)' : 'var(--bg-hover)';
+          const avatarColor = isPro ? '#10B981' : 'var(--primary)';
+
+          const regDateStr = u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '&mdash;';
+
+          let entDetails = '<span style="color:var(--text-muted); font-size:12px;">Standard tier</span>';
+          if (isPro) {
+            const grantedDate = u.grantedAt ? new Date(u.grantedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+            entDetails = '<div style="font-size:12px; color:#10B981; font-weight:600;">Granted by ' + escapeHtml(u.grantedBy || 'admin') + '</div><div style="font-size:11px; color:var(--text-muted);">' + grantedDate + '</div>';
+          } else if (u.revokedAt) {
+            const revokedDate = new Date(u.revokedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+            entDetails = '<div style="font-size:12px; color:#EF4444; font-weight:600;">Revoked</div><div style="font-size:11px; color:var(--text-muted);">' + revokedDate + '</div>';
+          }
+
+          const actionBtn = isPro
+            ? '<button class="btn-secondary" style="font-size:11px; padding:4px 9px; border-color:#EF4444; color:#EF4444;" onclick="openEntitlementModal(this.dataset.uid, this.dataset.tier)" data-uid="' + escapeHtml(u.uid) + '" data-tier="NON_PRO">'
+                + '<i data-feather="slash" style="width:12px; height:12px;"></i> Revoke Pro'
+              + '</button>'
+            : '<button class="btn-primary" style="font-size:11px; padding:4px 9px; background:#10B981; border-color:#059669; color:#FFF;" onclick="openEntitlementModal(this.dataset.uid, this.dataset.tier)" data-uid="' + escapeHtml(u.uid) + '" data-tier="PRO">'
+                + '<i data-feather="star" style="width:12px; height:12px;"></i> Grant Pro'
+              + '</button>';
+
+          const shortUid = u.uid.length > 20 ? (u.uid.slice(0, 10) + '...' + u.uid.slice(-6)) : u.uid;
+
+          html += '<tr style="border-bottom:1px solid var(--border-color);">'
+            + '<td style="padding:12px 14px;">'
+              + '<div style="display:flex; align-items:center; gap:10px;">'
+                + '<div style="width:34px; height:34px; border-radius:50%; background:' + avatarBg + '; color:' + avatarColor + '; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0;">'
+                  + initial
+                + '</div>'
+                + '<div>'
+                  + '<div style="font-weight:700; font-size:13px; color:var(--text-main);">' + escapeHtml(u.displayName || 'IPOVault User') + '</div>'
+                  + '<div style="font-size:12px; color:var(--text-muted);">' + escapeHtml(u.email || 'No email') + '</div>'
+                + '</div>'
+              + '</div>'
+            + '</td>'
+            + '<td style="padding:12px 14px; font-family:monospace; font-size:12px; color:var(--text-muted);">'
+              + '<div style="display:flex; align-items:center; gap:6px;">'
+                + '<span>' + shortUid + '</span>'
+                + '<button type="button" onclick="copyText(this.dataset.copy)" data-copy="' + escapeHtml(u.uid) + '" style="background:none; border:none; cursor:pointer; color:var(--text-muted); padding:2px;" title="Copy full UID">'
+                  + '<i data-feather="copy" style="width:12px; height:12px;"></i>'
+                + '</button>'
+              + '</div>'
+            + '</td>'
+            + '<td style="padding:12px 14px; font-size:12px; color:var(--text-main);">' + regDateStr + '</td>'
+            + '<td style="padding:12px 14px;">' + tierBadge + '</td>'
+            + '<td style="padding:12px 14px;">' + entDetails + '</td>'
+            + '<td style="padding:12px 14px; text-align:right;">'
+              + '<div style="display:inline-flex; align-items:center; gap:6px;">'
+                + actionBtn
+                + '<button class="btn-secondary" style="font-size:11px; padding:4px 9px;" onclick="openUserDetailsModal(this.dataset.uid)" data-uid="' + escapeHtml(u.uid) + '">'
+                  + '<i data-feather="eye" style="width:12px; height:12px;"></i> Details'
+                + '</button>'
+              + '</div>'
+            + '</td>'
+          + '</tr>';
+        }
+
+        tableBody.innerHTML = html;
+        if (window.feather) feather.replace();
+      } catch (err) {
+        console.error('loadUsers error:', err);
+        if (tableBody) {
+          tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:24px; color:#EF4444;">Failed to load users: ' + escapeHtml(err.message) + '</td></tr>';
+        }
+      }
+    }
+
+    function navigateUsersPage(delta) {
+      loadUsers(usersCurrentPage + delta);
+    }
+
+    function openEntitlementModal(uid, targetTier, userDisplay) {
+      const u = (window._usersCache && window._usersCache[uid]) || {};
+      const display = userDisplay || u.displayName || u.email || uid;
+      pendingEntitlementChange = { uid, targetTier, userDisplay: display };
+
+      const modal = document.getElementById('user-entitlement-confirm-modal');
+      const titleEl = document.getElementById('entitlement-modal-title');
+      const userEl = document.getElementById('entitlement-modal-user-display');
+      const uidEl = document.getElementById('entitlement-modal-uid-display');
+      const alertBox = document.getElementById('entitlement-modal-alert-box');
+      const iconBadge = document.getElementById('entitlement-modal-icon-badge');
+      const confirmBtn = document.getElementById('entitlement-modal-confirm-btn');
+      const confirmText = document.getElementById('entitlement-modal-confirm-text');
+      const reasonInput = document.getElementById('entitlement-modal-reason-input');
+
+      if (reasonInput) reasonInput.value = '';
+      if (userEl) userEl.textContent = display;
+      if (uidEl) uidEl.textContent = 'UID: ' + uid;
+
+      if (targetTier === 'PRO') {
+        if (titleEl) titleEl.textContent = 'Grant Pro Access';
+        if (iconBadge) {
+          iconBadge.style.background = 'rgba(16,185,129,0.15)';
+          iconBadge.style.color = '#10B981';
+          iconBadge.innerHTML = '<i data-feather="star"></i>';
+        }
+        if (alertBox) {
+          alertBox.style.background = 'rgba(16,185,129,0.1)';
+          alertBox.style.border = '1px solid rgba(16,185,129,0.3)';
+          alertBox.style.color = '#065F46';
+          alertBox.innerHTML = '<strong>Grant Pro Tier:</strong> The user will immediately unlock full investor suite access, live portfolio tracking, multi-profile bidding engine, and ad-free benefits across all devices.';
+        }
+        if (confirmBtn) {
+          confirmBtn.style.background = '#10B981';
+          confirmBtn.style.borderColor = '#059669';
+          confirmBtn.style.color = '#FFFFFF';
+        }
+        if (confirmText) confirmText.textContent = 'Confirm & Grant Pro';
+      } else {
+        if (titleEl) titleEl.textContent = 'Revoke Pro Access';
+        if (iconBadge) {
+          iconBadge.style.background = 'rgba(239,68,68,0.15)';
+          iconBadge.style.color = '#EF4444';
+          iconBadge.innerHTML = '<i data-feather="slash"></i>';
+        }
+        if (alertBox) {
+          alertBox.style.background = 'rgba(239,68,68,0.1)';
+          alertBox.style.border = '1px solid rgba(239,68,68,0.3)';
+          alertBox.style.color = '#991B1B';
+          alertBox.innerHTML = '<strong>Revoke Pro Tier:</strong> The user will safely revert to Non-Pro access (4 primary navigation items: IPO Hub, Allotment Checker, Users, Settings).<br><br><span style="font-size:12px; font-weight:600;">Safety Guarantee:</span> All user-created data (applications, bids, bank accounts, saved PANs) remains 100% intact. No financial operation in progress will be disrupted.';
+        }
+        if (confirmBtn) {
+          confirmBtn.style.background = '#EF4444';
+          confirmBtn.style.borderColor = '#DC2626';
+          confirmBtn.style.color = '#FFFFFF';
+        }
+        if (confirmText) confirmText.textContent = 'Confirm & Revoke Pro';
+      }
+
+      if (modal) modal.style.display = 'flex';
+      if (window.feather) feather.replace();
+    }
+
+    function closeEntitlementModal() {
+      const modal = document.getElementById('user-entitlement-confirm-modal');
+      if (modal) modal.style.display = 'none';
+      pendingEntitlementChange = null;
+    }
+
+    async function executeEntitlementChange() {
+      if (!pendingEntitlementChange) return;
+      const { uid, targetTier } = pendingEntitlementChange;
+      const reasonInput = document.getElementById('entitlement-modal-reason-input');
+      const reason = reasonInput ? reasonInput.value.trim() : '';
+
+      const confirmBtn = document.getElementById('entitlement-modal-confirm-btn');
+      const confirmText = document.getElementById('entitlement-modal-confirm-text');
+      if (confirmBtn) confirmBtn.disabled = true;
+      if (confirmText) confirmText.textContent = 'Updating...';
+
+      try {
+        const res = await fetch(API_BASE + '/users/' + encodeURIComponent(uid) + '/entitlement', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tier: targetTier, reason: reason || undefined }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || ('Server returned HTTP ' + res.status));
+        }
+
+        closeEntitlementModal();
+        showToast(
+          targetTier === 'PRO'
+            ? 'Pro entitlement successfully granted.'
+            : 'Pro entitlement revoked. User safely reverted to Non-Pro.',
+          'success'
+        );
+        loadUsers(usersCurrentPage);
+      } catch (err) {
+        alert('Failed to update user entitlement: ' + err.message);
+      } finally {
+        if (confirmBtn) confirmBtn.disabled = false;
+        if (confirmText) confirmText.textContent = 'Confirm & Apply';
+      }
+    }
+
+    async function openUserDetailsModal(uid) {
+      const modal = document.getElementById('user-details-modal');
+      if (modal) modal.style.display = 'flex';
+
+      const tierBadge = document.getElementById('user-details-tier-badge');
+      const nameEl = document.getElementById('ud-name');
+      const emailEl = document.getElementById('ud-email');
+      const uidEl = document.getElementById('ud-uid');
+      const createdEl = document.getElementById('ud-created-at');
+      const lastSignEl = document.getElementById('ud-last-sign-in');
+      const tierDesc = document.getElementById('ud-tier-desc');
+      const grantedByEl = document.getElementById('ud-granted-by');
+      const grantedAtEl = document.getElementById('ud-granted-at');
+      const revokedAtEl = document.getElementById('ud-revoked-at');
+      const notesBox = document.getElementById('ud-notes-box');
+      const notesText = document.getElementById('ud-notes-text');
+      const auditTbody = document.getElementById('ud-audit-table-body');
+
+      if (auditTbody) auditTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px; color:var(--text-muted);"><i data-feather="loader" class="spin"></i> Loading user details...</td></tr>';
+      if (window.feather) feather.replace();
+
+      try {
+        const res = await fetch(API_BASE + '/users/' + encodeURIComponent(uid));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const user = await res.json();
+
+        const isPro = user.tier === 'PRO';
+        if (tierBadge) {
+          tierBadge.textContent = isPro ? 'PRO TIER' : 'NON-PRO TIER';
+          tierBadge.style.background = isPro ? 'rgba(16,185,129,0.15)' : 'var(--bg-hover)';
+          tierBadge.style.color = isPro ? '#10B981' : 'var(--text-muted)';
+        }
+
+        if (nameEl) nameEl.textContent = user.displayName || 'IPOVault User';
+        if (emailEl) emailEl.textContent = user.email || 'No email registered';
+        if (uidEl) uidEl.textContent = user.uid;
+        if (createdEl) createdEl.textContent = user.createdAt ? new Date(user.createdAt).toLocaleString('en-IN') : 'Unknown';
+        if (lastSignEl) lastSignEl.textContent = user.lastSignInAt ? new Date(user.lastSignInAt).toLocaleString('en-IN') : 'None recorded';
+
+        if (tierDesc) {
+          tierDesc.textContent = isPro ? 'Pro (Full Access & Ad-Free)' : 'Non-Pro (Essential 4 Tabs)';
+          tierDesc.style.color = isPro ? '#10B981' : 'var(--text-main)';
+        }
+        if (grantedByEl) grantedByEl.textContent = user.grantedBy || (isPro ? 'System' : '&mdash;');
+        if (grantedAtEl) grantedAtEl.textContent = user.grantedAt ? new Date(user.grantedAt).toLocaleString('en-IN') : '&mdash;';
+        if (revokedAtEl) revokedAtEl.textContent = user.revokedAt ? new Date(user.revokedAt).toLocaleString('en-IN') : '&mdash;';
+
+        if (notesBox && notesText) {
+          if (user.notes) {
+            notesText.textContent = user.notes;
+            notesBox.style.display = 'block';
+          } else {
+            notesBox.style.display = 'none';
+          }
+        }
+
+        if (auditTbody) {
+          const logs = user.auditLogs || [];
+          if (logs.length === 0) {
+            auditTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px; color:var(--text-muted);">No audit log changes recorded.</td></tr>';
+          } else {
+            let logHtml = '';
+            for (const l of logs) {
+              const transColor = l.newTier === 'PRO' ? '#10B981' : '#EF4444';
+              const dt = new Date(l.createdAt).toLocaleString('en-IN');
+              logHtml += '<tr style="border-bottom:1px solid var(--border-color);">'
+                + '<td style="padding:8px 10px; font-size:11px; color:var(--text-muted);">' + dt + '</td>'
+                + '<td style="padding:8px 10px; font-weight:700; color:' + transColor + '; font-size:11px;">'
+                  + l.previousTier + ' &rarr; ' + l.newTier
+                + '</td>'
+                + '<td style="padding:8px 10px; font-size:11px;">' + escapeHtml(l.changedBy) + '</td>'
+                + '<td style="padding:8px 10px; font-size:11px; color:var(--text-muted);">' + escapeHtml(l.reason || '&mdash;') + '</td>'
+                + '<td style="padding:8px 10px; font-size:11px; font-family:monospace; color:var(--text-muted);">' + escapeHtml(l.ipAddress || '&mdash;') + '</td>'
+              + '</tr>';
+            }
+            auditTbody.innerHTML = logHtml;
+          }
+        }
+
+        if (window.feather) feather.replace();
+      } catch (err) {
+        if (auditTbody) {
+          auditTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px; color:#EF4444;">Error: ' + escapeHtml(err.message) + '</td></tr>';
+        }
+      }
+    }
+
+    function closeUserDetailsModal() {
+      const modal = document.getElementById('user-details-modal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    function copyText(str) {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(str).then(() => {
+          showToast('Copied to clipboard: ' + str);
+        });
+      } else {
+        showToast('UID: ' + str);
+      }
     }
 
     async function loadDashboard() {
@@ -3079,6 +3728,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (elPub) elPub.textContent = pubVal;
         if (elOpen) elOpen.textContent = openVal;
         if (elDrafts) elDrafts.textContent = draftVal;
+
+        try {
+          const userRes = await fetch(API_BASE + '/users?limit=1');
+          if (userRes.ok) {
+            const userData = await userRes.json();
+            const proCount = userData.counts?.pro || 0;
+            const navProBadge = document.getElementById('nav-users-pro-count');
+            if (navProBadge) navProBadge.textContent = proCount > 0 ? (proCount + ' Pro') : '';
+          }
+        } catch (e) {}
 
         await fetchRecentDashboardIpos();
       } catch (err) {
@@ -4847,6 +5506,22 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    function parseOptionalFloat(val) {
+      if (val === null || val === undefined) return undefined;
+      const trimmed = String(val).trim();
+      if (trimmed === '') return undefined;
+      const num = parseFloat(trimmed);
+      return isNaN(num) ? undefined : num;
+    }
+
+    function parseOptionalInt(val) {
+      if (val === null || val === undefined) return undefined;
+      const trimmed = String(val).trim();
+      if (trimmed === '') return undefined;
+      const num = parseInt(trimmed, 10);
+      return isNaN(num) ? undefined : num;
+    }
+
     async function saveManualIpo() {
       const id = document.getElementById('form-ipo-id').value;
       const payload = {
@@ -4858,24 +5533,24 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         exchange: document.getElementById('form-exchange').value,
         status: document.getElementById('form-status').value,
         publicationStatus: document.getElementById('form-publicationStatus').value,
-        priceBandLow: parseFloat(document.getElementById('form-priceBandLow').value) || undefined,
-        priceBandHigh: parseFloat(document.getElementById('form-priceBandHigh').value) || undefined,
-        lotSize: parseInt(document.getElementById('form-lotSize').value, 10) || undefined,
-        listingPrice: parseFloat(document.getElementById('form-listingPrice').value) || undefined,
-        listingGainPct: parseFloat(document.getElementById('form-listingGainPct').value) || undefined,
-        profitAmount: parseFloat(document.getElementById('form-profitAmount').value) || undefined,
-        profitPercentage: parseFloat(document.getElementById('form-profitPercentage').value) || undefined,
-        preIpoEps: parseFloat(document.getElementById('form-preIpoEps').value) || undefined,
-        postIpoEps: parseFloat(document.getElementById('form-postIpoEps').value) || undefined,
-        preIpoPe: parseFloat(document.getElementById('form-preIpoPe').value) || undefined,
-        postIpoPe: parseFloat(document.getElementById('form-postIpoPe').value) || undefined,
-        preIpoPromoterHolding: parseFloat(document.getElementById('form-preIpoPromoterHolding').value) || undefined,
-        postIpoPromoterHolding: parseFloat(document.getElementById('form-postIpoPromoterHolding').value) || undefined,
-        preIpoMarketCap: parseFloat(document.getElementById('form-preIpoMarketCap').value) || undefined,
-        postIpoMarketCap: parseFloat(document.getElementById('form-postIpoMarketCap').value) || undefined,
-        issueSize: parseFloat(document.getElementById('form-issueSize').value) || undefined,
-        freshIssueSize: parseFloat(document.getElementById('form-freshIssueSize').value) || undefined,
-        ofsSize: parseFloat(document.getElementById('form-ofsSize').value) || undefined,
+        priceBandLow: parseOptionalFloat(document.getElementById('form-priceBandLow').value),
+        priceBandHigh: parseOptionalFloat(document.getElementById('form-priceBandHigh').value),
+        lotSize: parseOptionalInt(document.getElementById('form-lotSize').value),
+        listingPrice: parseOptionalFloat(document.getElementById('form-listingPrice').value),
+        listingGainPct: parseOptionalFloat(document.getElementById('form-listingGainPct').value),
+        profitAmount: parseOptionalFloat(document.getElementById('form-profitAmount').value),
+        profitPercentage: parseOptionalFloat(document.getElementById('form-profitPercentage').value),
+        preIpoEps: parseOptionalFloat(document.getElementById('form-preIpoEps').value),
+        postIpoEps: parseOptionalFloat(document.getElementById('form-postIpoEps').value),
+        preIpoPe: parseOptionalFloat(document.getElementById('form-preIpoPe').value),
+        postIpoPe: parseOptionalFloat(document.getElementById('form-postIpoPe').value),
+        preIpoPromoterHolding: parseOptionalFloat(document.getElementById('form-preIpoPromoterHolding').value),
+        postIpoPromoterHolding: parseOptionalFloat(document.getElementById('form-postIpoPromoterHolding').value),
+        preIpoMarketCap: parseOptionalFloat(document.getElementById('form-preIpoMarketCap').value),
+        postIpoMarketCap: parseOptionalFloat(document.getElementById('form-postIpoMarketCap').value),
+        issueSize: parseOptionalFloat(document.getElementById('form-issueSize').value),
+        freshIssueSize: parseOptionalFloat(document.getElementById('form-freshIssueSize').value),
+        ofsSize: parseOptionalFloat(document.getElementById('form-ofsSize').value),
         openDate: document.getElementById('form-openDate').value || undefined,
         closeDate: document.getElementById('form-closeDate').value || undefined,
         allotmentDate: document.getElementById('form-allotmentDate').value || undefined,
@@ -5141,12 +5816,95 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (input) input.click();
     }
 
+    window._isOverwriteMode = false;
+
     function closeJsonImportModal() {
       const modal = document.getElementById('json-import-modal-overlay');
       if (modal) modal.style.display = 'none';
       window._pendingJsonPayload = null;
       window._pendingPreviewData = null;
       window._pendingDetailIpoId = null;
+      window._isOverwriteMode = false;
+      const cb = document.getElementById('json-overwrite-confirm-checkbox');
+      if (cb) cb.checked = false;
+      const container = document.getElementById('json-overwrite-confirm-container');
+      if (container) container.style.display = 'none';
+      setJsonImportModeUi(false);
+    }
+
+    function setJsonImportModeUi(isOverwrite) {
+      window._isOverwriteMode = isOverwrite;
+      const btnFill = document.getElementById('btn-mode-fill');
+      const btnOvr = document.getElementById('btn-mode-overwrite');
+      const badge = document.getElementById('json-mode-badge');
+      const desc = document.getElementById('json-mode-desc');
+
+      if (isOverwrite) {
+        if (btnFill) { btnFill.style.background = 'transparent'; btnFill.style.color = 'var(--text-muted)'; }
+        if (btnOvr) { btnOvr.style.background = '#EC4899'; btnOvr.style.color = '#fff'; }
+        if (badge) {
+          badge.textContent = 'Authoritative Overwrite Mode';
+          badge.style.background = 'rgba(236,72,153,0.15)';
+          badge.style.color = '#EC4899';
+        }
+        if (desc) {
+          desc.innerHTML = 'Opt-in authoritative mode: Explicitly supplied non-null values (including <strong>0</strong>) will overwrite existing database records upon confirmation. Omitted and null values will never clear fields.';
+        }
+      } else {
+        if (btnFill) { btnFill.style.background = '#10B981'; btnFill.style.color = '#fff'; }
+        if (btnOvr) { btnOvr.style.background = 'transparent'; btnOvr.style.color = 'var(--text-muted)'; }
+        if (badge) {
+          badge.textContent = 'Fill Missing Data Mode';
+          badge.style.background = 'rgba(16,185,129,0.15)';
+          badge.style.color = '#10B981';
+        }
+        if (desc) {
+          desc.innerHTML = 'Default non-destructive mode: Only empty or missing fields will be populated. Existing values (including <strong>0</strong> and <strong>false</strong>) are strictly preserved and never overwritten.';
+        }
+      }
+    }
+
+    async function setJsonImportMode(isOverwrite) {
+      setJsonImportModeUi(isOverwrite);
+      await reloadJsonImportPreview();
+    }
+
+    function handleOverwriteCheckboxChange(checkbox) {
+      const btnConfirm = document.getElementById('btn-confirm-json-import');
+      if (btnConfirm) {
+        btnConfirm.disabled = !checkbox.checked;
+      }
+    }
+
+    async function reloadJsonImportPreview() {
+      if (!window._pendingJsonPayload) return;
+      const btnConfirm = document.getElementById('btn-confirm-json-import');
+      const btnText = document.getElementById('btn-confirm-json-text');
+      if (btnConfirm) btnConfirm.disabled = true;
+      if (btnText) btnText.textContent = 'Calculating Preview...';
+
+      try {
+        const response = await fetch(API_BASE + '/manual-ipos/import-json/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            payload: window._pendingJsonPayload,
+            overwriteExisting: window._isOverwriteMode === true,
+          })
+        });
+
+        const rawText = await response.text();
+        const body = rawText ? JSON.parse(rawText) : null;
+        if (!response.ok) {
+          throw body || { statusCode: response.status, message: response.statusText };
+        }
+
+        const previewData = body.data || body;
+        window._pendingPreviewData = previewData;
+        renderJsonImportPreview(previewData);
+      } catch (err) {
+        alert('Failed to update import preview:\\n' + formatApiError(err));
+      }
     }
 
     function escapeHtml(str) {
@@ -5191,11 +5949,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           }
 
           window._pendingJsonPayload = jsonPayload;
+          window._isOverwriteMode = false;
+          setJsonImportModeUi(false);
 
           const response = await fetch(API_BASE + '/manual-ipos/import-json/preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(jsonPayload)
+            body: JSON.stringify({
+              payload: jsonPayload,
+              overwriteExisting: false,
+            })
           });
           const rawText = await response.text();
           let body;
@@ -5235,18 +5998,43 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       document.getElementById('json-preview-total').textContent = data.totalRecords || 0;
       document.getElementById('json-preview-matched').textContent = data.matchedCount || 0;
       document.getElementById('json-preview-fields-count').textContent = data.fieldsToFillTotal || 0;
+      document.getElementById('json-preview-overwrites-count').textContent = data.fieldsToOverwriteTotal || 0;
       document.getElementById('json-preview-unmatched').textContent = data.unmatchedCount || 0;
-      document.getElementById('json-preview-ambiguous').textContent = data.ambiguousCount || 0;
+
+      let totalConflicts = 0;
+      if (Array.isArray(data.items)) {
+        totalConflicts = data.items.reduce((acc, it) => acc + (it.conflictCount || 0), 0);
+      }
+      const conflictsEl = document.getElementById('json-preview-conflicts-count');
+      if (conflictsEl) conflictsEl.textContent = totalConflicts;
 
       const btnConfirm = document.getElementById('btn-confirm-json-import');
       const btnText = document.getElementById('btn-confirm-json-text');
+      const confirmContainer = document.getElementById('json-overwrite-confirm-container');
+      const confirmCheckbox = document.getElementById('json-overwrite-confirm-checkbox');
 
-      if (!data.fieldsToFillTotal || data.fieldsToFillTotal === 0) {
+      const isOverwrite = window._isOverwriteMode === true;
+      const overwritesTotal = data.fieldsToOverwriteTotal || 0;
+      const fillsTotal = data.fieldsToFillTotal || 0;
+      const totalChanges = overwritesTotal + fillsTotal;
+
+      if (isOverwrite && overwritesTotal > 0) {
+        if (confirmContainer) confirmContainer.style.display = 'inline-flex';
+        if (confirmCheckbox) confirmCheckbox.checked = false;
         if (btnConfirm) btnConfirm.disabled = true;
-        if (btnText) btnText.textContent = 'No Empty Fields to Populate';
+        if (btnText) btnText.textContent = 'Confirm & Overwrite ' + overwritesTotal + ' Field(s)' + (fillsTotal > 0 ? ' & Fill ' + fillsTotal + ' Field(s)' : '');
       } else {
-        if (btnConfirm) btnConfirm.disabled = false;
-        if (btnText) btnText.textContent = 'Confirm & Populate ' + data.fieldsToFillTotal + ' Empty Fields';
+        if (confirmContainer) confirmContainer.style.display = 'none';
+        if (confirmCheckbox) confirmCheckbox.checked = false;
+        if (totalChanges === 0) {
+          if (btnConfirm) btnConfirm.disabled = true;
+          if (btnText) btnText.textContent = 'No Changes to Apply';
+        } else {
+          if (btnConfirm) btnConfirm.disabled = false;
+          if (btnText) btnText.textContent = isOverwrite
+            ? 'Confirm & Apply ' + totalChanges + ' Change(s)'
+            : 'Confirm & Populate ' + fillsTotal + ' Empty Field(s)';
+        }
       }
 
       const listContainer = document.getElementById('json-preview-list');
@@ -5275,19 +6063,34 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (item.fieldsToFill && item.fieldsToFill.length > 0) {
           const chips = item.fieldsToFill.map(function(f) {
             const valStr = typeof f.newValue === 'object' ? JSON.stringify(f.newValue) : escapeHtml(f.newValue);
+            if (f.status === 'OVERWRITTEN') {
+              const oldStr = typeof f.oldValue === 'object' ? JSON.stringify(f.oldValue) : escapeHtml(f.oldValue);
+              return '<span style="font-size:11px; padding:3px 8px; border-radius:6px; background:rgba(236,72,153,0.1); border:1px solid rgba(236,72,153,0.3); color:var(--text-main);"><strong>' + escapeHtml(f.field) + '</strong>: <span style="text-decoration:line-through; color:#EF4444;">' + oldStr + '</span> &rarr; <span style="color:#10B981; font-weight:700;">' + valStr + '</span></span>';
+            }
             return '<span style="font-size:11px; padding:3px 8px; border-radius:6px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.25); color:var(--text-main);"><strong>' + escapeHtml(f.field) + '</strong>: <span style="color:#10B981;">' + valStr + '</span></span>';
           }).join('');
-          toFillHtml = '<div style="margin-top:8px;"><div style="font-size:11px; font-weight:700; color:#10B981; margin-bottom:4px;">FIELDS TO BE POPULATED (' + item.fieldsToFill.length + '):</div><div style="display:flex; flex-wrap:wrap; gap:6px;">' + chips + '</div></div>';
+          const fillTitle = isOverwrite
+            ? 'FIELDS TO UPDATE (' + item.fieldsToFill.length + '):'
+            : 'FIELDS TO BE POPULATED (' + item.fieldsToFill.length + '):';
+          toFillHtml = '<div style="margin-top:8px;"><div style="font-size:11px; font-weight:700; color:#10B981; margin-bottom:4px;">' + fillTitle + '</div><div style="display:flex; flex-wrap:wrap; gap:6px;">' + chips + '</div></div>';
         } else if (item.matchStatus === 'MATCHED') {
-          toFillHtml = '<div style="margin-top:6px; font-size:12px; color:var(--text-muted); font-style:italic;">No empty fields to populate (all target fields already populated).</div>';
+          toFillHtml = '<div style="margin-top:6px; font-size:12px; color:var(--text-muted); font-style:italic;">No changes to apply for this IPO.</div>';
         }
 
         let skippedHtml = '';
         if (item.fieldsSkipped && item.fieldsSkipped.length > 0) {
           const skipChips = item.fieldsSkipped.map(function(s) {
-            return '<span style="font-size:11px; padding:3px 8px; border-radius:6px; background:var(--bg-hover); border:1px solid var(--border-color); color:var(--text-muted);"><strong>' + escapeHtml(s.field) + '</strong> (preserved: ' + escapeHtml(s.existingValue) + ')</span>';
+            const isConflict = s.status === 'CONFLICT';
+            const chipBg = isConflict ? 'rgba(245,158,11,0.12)' : 'var(--bg-hover)';
+            const chipBorder = isConflict ? 'rgba(245,158,11,0.35)' : 'var(--border-color)';
+            const conflictNote = isConflict ? ' <span style="color:#EF4444; font-weight:700;">(CONFLICT - kept: ' + escapeHtml(s.existingValue) + ')</span>' : ' (preserved: ' + escapeHtml(s.existingValue) + ')';
+            return '<span style="font-size:11px; padding:3px 8px; border-radius:6px; background:' + chipBg + '; border:1px solid ' + chipBorder + '; color:var(--text-main);"><strong>' + escapeHtml(s.field) + '</strong>' + conflictNote + '</span>';
           }).join('');
-          skippedHtml = '<details style="margin-top:8px; font-size:12px;"><summary style="cursor:pointer; color:var(--text-muted); font-size:11px; font-weight:600;">Existing fields preserved (' + item.fieldsSkipped.length + ')</summary><div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">' + skipChips + '</div></details>';
+          const conflictCount = item.fieldsSkipped.filter(s => s.status === 'CONFLICT').length;
+          const summaryText = conflictCount > 0
+            ? 'Preserved fields (' + item.fieldsSkipped.length + ', including ' + conflictCount + ' conflicts prevented)'
+            : 'Existing fields preserved (' + item.fieldsSkipped.length + ')';
+          skippedHtml = '<details style="margin-top:8px; font-size:12px;"><summary style="cursor:pointer; color:var(--text-muted); font-size:11px; font-weight:600;">' + summaryText + '</summary><div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">' + skipChips + '</div></details>';
         }
 
         const symbolPart = item.inputSymbol ? ' <span style="font-size:11px; color:var(--text-muted); margin-left:6px;">(' + escapeHtml(item.inputSymbol) + ')</span>' : '';
@@ -5311,10 +6114,20 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         return;
       }
 
+      const isOverwrite = window._isOverwriteMode === true;
+      const overwritesTotal = window._pendingPreviewData?.fieldsToOverwriteTotal || 0;
+      if (isOverwrite && overwritesTotal > 0) {
+        const checkbox = document.getElementById('json-overwrite-confirm-checkbox');
+        if (!checkbox || !checkbox.checked) {
+          alert('Explicit confirmation required: Please check the box confirming you authorize overwriting existing values before proceeding.');
+          return;
+        }
+      }
+
       const btnConfirm = document.getElementById('btn-confirm-json-import');
       const btnText = document.getElementById('btn-confirm-json-text');
       if (btnConfirm) btnConfirm.disabled = true;
-      if (btnText) btnText.textContent = 'Applying Add-Only Updates...';
+      if (btnText) btnText.textContent = isOverwrite ? 'Applying Overwrite Import...' : 'Applying Add-Only Updates...';
 
       const targetDetailIpoId = window._pendingDetailIpoId;
 
@@ -5322,7 +6135,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const response = await fetch(API_BASE + '/manual-ipos/import-json/commit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ payload: window._pendingJsonPayload })
+          body: JSON.stringify({
+            payload: window._pendingJsonPayload,
+            overwriteExisting: isOverwrite,
+          })
         });
 
         const rawText = await response.text();
@@ -5341,17 +6157,18 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
 
         const result = body.data || body;
-        alert('Add-Only Import Complete!\\n\\nUpdated: ' + (result.updatedCount || 0) + ' IPOs\\nSkipped (No changes / Unmatched): ' + (result.skippedCount || 0) + '\\nFailed: ' + (result.failedCount || 0));
+        const modeTitle = isOverwrite ? 'Authoritative Overwrite Import' : 'Add-Only Import';
+        alert(modeTitle + ' Complete!\\n\\nUpdated: ' + (result.updatedCount || 0) + ' IPOs\\nSkipped (No changes / Unmatched): ' + (result.skippedCount || 0) + '\\nFailed: ' + (result.failedCount || 0));
         closeJsonImportModal();
         if (targetDetailIpoId) {
           await editManualIpo(targetDetailIpoId);
         }
         fetchManualIpos();
       } catch (err) {
-        alert('Add-only import commit failed:\\n' + formatApiError(err));
+        alert('Import failed:\\n' + formatApiError(err));
       } finally {
         if (btnConfirm) btnConfirm.disabled = false;
-        if (btnText) btnText.textContent = 'Confirm & Apply Add-Only Import';
+        if (btnText) btnText.textContent = 'Confirm & Apply Import';
       }
     }
 
