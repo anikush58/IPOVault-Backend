@@ -317,6 +317,107 @@ describe('UserEntitlementService', () => {
       expect(result.users[0].uid).toBe('u1');
       expect(result.users[0].tier).toBe('PRO');
     });
+
+    it('should never create fake users or infer registrations from entitlement records alone', async () => {
+      // Firebase has only 1 registered user
+      firebaseAuthMock.listUsers.mockResolvedValue({
+        users: [{ uid: 'real-user', email: 'real@ipovault.in', creationTime: '2026-01-01' }],
+      });
+
+      // PostgreSQL has entitlement records for real-user and an orphaned/deleted user
+      prismaMock.userEntitlement.findMany.mockResolvedValue([
+        { userId: 'real-user', tier: UserAccessTier.PRO, createdAt: new Date('2026-01-01') },
+        { userId: 'orphaned-legacy-user', tier: UserAccessTier.PRO, createdAt: new Date('2025-01-01') },
+      ]);
+
+      const result = await service.listUsers({ page: 1, limit: 10, tier: 'ALL' });
+
+      // Must strictly list only the 1 registered Firebase user
+      expect(result.users).toHaveLength(1);
+      expect(result.users[0].uid).toBe('real-user');
+      expect(result.total).toBe(1);
+      expect(result.counts.total).toBe(1);
+      expect(result.counts.pro).toBe(1);
+      expect(result.counts.nonPro).toBe(0);
+      // Ensure no synthetic fake email was generated
+      expect(result.users.some((u) => u.uid === 'orphaned-legacy-user')).toBe(false);
+      expect(result.users.some((u) => u.email?.includes('registered.ipovault.in'))).toBe(false);
+    });
+
+    it('should support pagination beyond 1,000 users when listAllUsers is available', async () => {
+      // Simulate 1,050 registered Firebase users
+      const mock1050Users = Array.from({ length: 1050 }, (_, i) => ({
+        uid: `fb-user-${i + 1}`,
+        email: `user${i + 1}@example.com`,
+        displayName: `User ${i + 1}`,
+        creationTime: new Date(2026, 0, 1, 0, 0, i).toISOString(),
+      }));
+
+      firebaseAuthMock.listAllUsers = jest.fn().mockResolvedValue(mock1050Users);
+      prismaMock.userEntitlement.findMany.mockResolvedValue([
+        { userId: 'fb-user-1', tier: UserAccessTier.PRO, createdAt: new Date() },
+        { userId: 'fb-user-2', tier: UserAccessTier.PRO, createdAt: new Date() },
+      ]);
+
+      const page1 = await service.listUsers({ page: 1, limit: 20, tier: 'ALL' });
+      expect(page1.total).toBe(1050);
+      expect(page1.totalPages).toBe(53);
+      expect(page1.counts.total).toBe(1050);
+      expect(page1.counts.pro).toBe(2);
+      expect(page1.counts.nonPro).toBe(1048);
+      expect(page1.users).toHaveLength(20);
+
+      const page2 = await service.listUsers({ page: 2, limit: 20, tier: 'ALL' });
+      expect(page2.users).toHaveLength(20);
+      expect(page2.page).toBe(2);
+    });
+
+    it('should search users by email, displayName, and UID', async () => {
+      firebaseAuthMock.listUsers.mockResolvedValue({
+        users: [
+          { uid: 'alpha-uid-99', email: 'alice@investor.com', displayName: 'Alice Wonder' },
+          { uid: 'beta-uid-88', email: 'bob@trader.com', displayName: 'Bob Builder' },
+          { uid: 'gamma-uid-77', email: 'charlie@gmail.com', displayName: 'Charlie Brown' },
+        ],
+      });
+      prismaMock.userEntitlement.findMany.mockResolvedValue([]);
+
+      // Search by partial email
+      const resByEmail = await service.listUsers({ page: 1, limit: 10, q: 'investor.com', tier: 'ALL' });
+      expect(resByEmail.users).toHaveLength(1);
+      expect(resByEmail.users[0].uid).toBe('alpha-uid-99');
+
+      // Search by partial displayName
+      const resByName = await service.listUsers({ page: 1, limit: 10, q: 'Builder', tier: 'ALL' });
+      expect(resByName.users).toHaveLength(1);
+      expect(resByName.users[0].uid).toBe('beta-uid-88');
+
+      // Search by partial UID
+      const resByUid = await service.listUsers({ page: 1, limit: 10, q: 'gamma-uid', tier: 'ALL' });
+      expect(resByUid.users).toHaveLength(1);
+      expect(resByUid.users[0].uid).toBe('gamma-uid-77');
+    });
+
+    it('should filter by NON_PRO tier and maintain accurate global counts', async () => {
+      firebaseAuthMock.listUsers.mockResolvedValue({
+        users: [
+          { uid: 'u1', email: 'u1@test.com' },
+          { uid: 'u2', email: 'u2@test.com' },
+          { uid: 'u3', email: 'u3@test.com' },
+        ],
+      });
+      prismaMock.userEntitlement.findMany.mockResolvedValue([
+        { userId: 'u1', tier: UserAccessTier.PRO },
+      ]);
+
+      const res = await service.listUsers({ page: 1, limit: 10, tier: 'NON_PRO' });
+      expect(res.users).toHaveLength(2);
+      expect(res.users.map((u) => u.uid)).toEqual(expect.arrayContaining(['u2', 'u3']));
+      // Global counts must reflect unfiltered numbers
+      expect(res.counts.total).toBe(3);
+      expect(res.counts.pro).toBe(1);
+      expect(res.counts.nonPro).toBe(2);
+    });
   });
 
   describe('getUserDetail', () => {
@@ -357,6 +458,33 @@ describe('UserEntitlementService', () => {
       expect(detail.notes).toBe('Important account');
       expect(detail.auditLogs).toHaveLength(1);
       expect(detail.auditLogs[0].reason).toBe('Initial setup');
+    });
+
+    it('should return null for email and displayName if not in Firebase without fabricating fake emails', async () => {
+      firebaseAuthMock.getUser.mockResolvedValue({
+        uid: 'u-no-email',
+        email: undefined,
+        displayName: undefined,
+        creationTime: '2026-01-01',
+      });
+      prismaMock.userEntitlement.findUnique.mockResolvedValue({
+        userId: 'u-no-email',
+        tier: UserAccessTier.NON_PRO,
+        createdAt: new Date('2026-01-01'),
+      });
+      prismaMock.userEntitlementAuditLog.findMany.mockResolvedValue([]);
+
+      const detail = await service.getUserDetail('u-no-email');
+      expect(detail.uid).toBe('u-no-email');
+      expect(detail.email).toBeNull();
+      expect(detail.displayName).toBeNull();
+    });
+
+    it('should throw 404 NOT_FOUND if user does not exist in Firebase or database', async () => {
+      firebaseAuthMock.getUser.mockResolvedValue(null);
+      prismaMock.userEntitlement.findUnique.mockResolvedValue(null);
+
+      await expect(service.getUserDetail('unknown-uid')).rejects.toThrow('User unknown-uid not found');
     });
   });
 });

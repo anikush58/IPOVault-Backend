@@ -2625,6 +2625,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             </div>
           </div>
 
+          <!-- Error State Banner -->
+          <div id="users-error-banner" style="display:none; margin-bottom:16px; padding:14px 18px; border-radius:10px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); color:#EF4444;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <i data-feather="alert-circle" style="width:18px; height:18px; flex-shrink:0;"></i>
+                <span id="users-error-text" style="font-weight:600; font-size:13px;">Failed to load users</span>
+              </div>
+              <button class="btn-secondary" onclick="loadUsers(usersCurrentPage)" style="border-color:#EF4444; color:#EF4444; font-size:12px; padding:4px 12px; display:inline-flex; align-items:center; gap:4px;">
+                <i data-feather="refresh-cw" style="width:12px; height:12px;"></i> Retry
+              </button>
+            </div>
+          </div>
+
           <!-- Table Container -->
           <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:10px; overflow:hidden;">
             <div class="table-responsive" style="overflow-x:auto;">
@@ -3366,6 +3379,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
       const tableBody = document.getElementById('users-table-body');
       const emptyState = document.getElementById('users-empty-state');
+      const errorBanner = document.getElementById('users-error-banner');
+      const errorText = document.getElementById('users-error-text');
+
+      if (errorBanner) errorBanner.style.display = 'none';
+      if (emptyState) emptyState.style.display = 'none';
+
       if (tableBody) {
         tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted);"><i data-feather="loader" class="spin"></i> Loading registered users...</td></tr>';
         if (window.feather) feather.replace();
@@ -3375,13 +3394,20 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const url = API_BASE + '/users?page=' + page + '&limit=' + usersLimit + '&q=' + encodeURIComponent(usersSearchQuery) + '&tier=' + usersTierFilter;
         const res = await fetch(url);
         if (!res.ok) {
-          throw new Error('Failed to load users: HTTP ' + res.status);
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = (errData && (errData.message || (errData.error && errData.error.message))) || ('Failed to load users: HTTP ' + res.status);
+          throw new Error(errMsg);
         }
-        const data = await res.json();
+        const raw = await res.json();
+        const data = raw.data || raw;
         const users = data.users || [];
-        const total = data.total || 0;
+        const total = typeof data.total === 'number' ? data.total : users.length;
         const totalPages = data.totalPages || 1;
-        const counts = data.counts || { total: 0, pro: 0, nonPro: 0 };
+        const counts = data.counts || {
+          total: total,
+          pro: users.filter(u => u.tier === 'PRO').length,
+          nonPro: users.filter(u => u.tier === 'NON_PRO').length,
+        };
 
         // Update metric badges
         const statTotal = document.getElementById('stat-users-total');
@@ -3488,8 +3514,20 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         if (window.feather) feather.replace();
       } catch (err) {
         console.error('loadUsers error:', err);
+        if (emptyState) emptyState.style.display = 'none';
+        if (errorBanner) {
+          if (errorText) errorText.textContent = err.message || 'Failed to load users';
+          errorBanner.style.display = 'block';
+        }
         if (tableBody) {
-          tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:24px; color:#EF4444;">Failed to load users: ' + escapeHtml(err.message) + '</td></tr>';
+          tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:32px 16px; color:#EF4444;">'
+            + '<div style="font-weight:700; font-size:14px; margin-bottom:6px;">Unable to load registered users</div>'
+            + '<div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">' + escapeHtml(err.message) + '</div>'
+            + '<button class="btn-secondary" onclick="loadUsers(usersCurrentPage)" style="font-size:12px; padding:6px 14px; display:inline-flex; align-items:center; gap:6px; margin:0 auto;">'
+            + '<i data-feather="refresh-cw" style="width:13px; height:13px;"></i> Retry'
+            + '</button>'
+            + '</td></tr>';
+          if (window.feather) feather.replace();
         }
       }
     }
@@ -3629,8 +3667,13 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
       try {
         const res = await fetch(API_BASE + '/users/' + encodeURIComponent(uid));
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const user = await res.json();
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = (errData && (errData.message || (errData.error && errData.error.message))) || ('HTTP ' + res.status);
+          throw new Error(errMsg);
+        }
+        const raw = await res.json();
+        const user = raw.data || raw;
 
         const isPro = user.tier === 'PRO';
         if (tierBadge) {
@@ -3732,7 +3775,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         try {
           const userRes = await fetch(API_BASE + '/users?limit=1');
           if (userRes.ok) {
-            const userData = await userRes.json();
+            const rawUser = await userRes.json();
+            const userData = rawUser.data || rawUser;
             const proCount = userData.counts?.pro || 0;
             const navProBadge = document.getElementById('nav-users-pro-count');
             if (navProBadge) navProBadge.textContent = proCount > 0 ? (proCount + ' Pro') : '';

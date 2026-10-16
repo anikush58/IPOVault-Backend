@@ -188,6 +188,75 @@ export class FirebaseAuthService implements OnModuleInit {
   }
 
   /**
+   * Retrieves all registered users from Firebase Authentication by paginating through all pages.
+   * Handles pagination beyond the first 1,000 users using pageToken.
+   */
+  async listAllUsers(): Promise<
+    Array<{
+      uid: string;
+      email?: string;
+      displayName?: string;
+      emailVerified?: boolean;
+      disabled?: boolean;
+      creationTime?: string;
+      lastSignInTime?: string;
+    }>
+  > {
+    if (this.firebaseApp) {
+      try {
+        const { getAuth } = await import('firebase-admin/auth');
+        const auth = getAuth(this.firebaseApp);
+        const allUsers: Array<{
+          uid: string;
+          email?: string;
+          displayName?: string;
+          emailVerified?: boolean;
+          disabled?: boolean;
+          creationTime?: string;
+          lastSignInTime?: string;
+        }> = [];
+        let nextPageToken: string | undefined = undefined;
+
+        do {
+          const listResult = await auth.listUsers(1000, nextPageToken);
+          for (const u of listResult.users) {
+            allUsers.push({
+              uid: u.uid,
+              email: u.email,
+              displayName: u.displayName,
+              emailVerified: u.emailVerified,
+              disabled: u.disabled,
+              creationTime: u.metadata?.creationTime,
+              lastSignInTime: u.metadata?.lastSignInTime,
+            });
+          }
+          nextPageToken = listResult.pageToken;
+        } while (nextPageToken);
+
+        return allUsers;
+      } catch (err: any) {
+        this.logger.error(`Failed to list all users from Firebase: ${err.message}`);
+        throw new AppException(
+          ErrorCode.INTERNAL_ERROR,
+          `Failed to retrieve registered users from Firebase: ${err.message}`,
+          500,
+        );
+      }
+    }
+
+    if (this.isTestMode) {
+      const mockResult = await this.listUsers();
+      return mockResult.users;
+    }
+
+    throw new AppException(
+      ErrorCode.INTERNAL_ERROR,
+      'Firebase Admin authentication service is not configured on server',
+      500,
+    );
+  }
+
+  /**
    * Retrieves a list of users from Firebase Authentication.
    * In non-production test mode without Firebase configured, returns deterministic mock users.
    */
@@ -223,42 +292,57 @@ export class FirebaseAuthService implements OnModuleInit {
           pageToken: listResult.pageToken,
         };
       } catch (err: any) {
-        this.logger.warn(`Failed to list users from Firebase: ${err.message}`);
+        this.logger.error(`Failed to list users from Firebase: ${err.message}`);
+        if (!this.isTestMode) {
+          throw new AppException(
+            ErrorCode.INTERNAL_ERROR,
+            `Failed to list users from Firebase: ${err.message}`,
+            500,
+          );
+        }
       }
     }
 
     // Fallback in test / dev mode
-    return {
-      users: [
-        {
-          uid: 'user-default-1',
-          email: 'investor@ipovault.in',
-          displayName: 'Investor One',
-          emailVerified: true,
-          disabled: false,
-          creationTime: '2026-09-01T10:00:00.000Z',
-          lastSignInTime: '2026-10-15T18:30:00.000Z',
-        },
-        {
-          uid: 'user-default-2',
-          email: 'trader@ipovault.in',
-          displayName: 'Alpha Trader',
-          emailVerified: true,
-          disabled: false,
-          creationTime: '2026-09-15T12:00:00.000Z',
-          lastSignInTime: '2026-10-14T09:15:00.000Z',
-        },
-        {
-          uid: 'user-default-3',
-          email: 'retail@ipovault.in',
-          displayName: 'Retail Explorer',
-          emailVerified: false,
-          disabled: false,
-          creationTime: '2026-10-01T08:00:00.000Z',
-          lastSignInTime: '2026-10-12T14:20:00.000Z',
-        },
-      ],
-    };
+    if (this.isTestMode) {
+      return {
+        users: [
+          {
+            uid: 'user-default-1',
+            email: 'investor@ipovault.in',
+            displayName: 'Investor One',
+            emailVerified: true,
+            disabled: false,
+            creationTime: '2026-09-01T10:00:00.000Z',
+            lastSignInTime: '2026-10-15T18:30:00.000Z',
+          },
+          {
+            uid: 'user-default-2',
+            email: 'trader@ipovault.in',
+            displayName: 'Alpha Trader',
+            emailVerified: true,
+            disabled: false,
+            creationTime: '2026-09-15T12:00:00.000Z',
+            lastSignInTime: '2026-10-14T09:15:00.000Z',
+          },
+          {
+            uid: 'user-default-3',
+            email: 'retail@ipovault.in',
+            displayName: 'Retail Explorer',
+            emailVerified: false,
+            disabled: false,
+            creationTime: '2026-10-01T08:00:00.000Z',
+            lastSignInTime: '2026-10-12T14:20:00.000Z',
+          },
+        ],
+      };
+    }
+
+    throw new AppException(
+      ErrorCode.INTERNAL_ERROR,
+      'Firebase Admin authentication service is not configured on server',
+      500,
+    );
   }
 
   /**

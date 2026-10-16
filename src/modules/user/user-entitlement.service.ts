@@ -108,96 +108,36 @@ export class UserEntitlementService {
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
 
-    // 1. Fetch registered users from Firebase Auth
-    const { users: fbUsers } = await this.firebaseAuthService.listUsers();
+    // 1. Fetch registered users from Firebase Auth (supports pagination beyond 1,000)
+    const fbUsers =
+      typeof (this.firebaseAuthService as any).listAllUsers === 'function'
+        ? await (this.firebaseAuthService as any).listAllUsers()
+        : (await this.firebaseAuthService.listUsers()).users;
 
     // 2. Fetch all entitlement records from database
     const entitlements = await this.prisma.userEntitlement.findMany();
     const entitlementMap = new Map(entitlements.map((e) => [e.userId, e]));
 
-    // 3. Find any additional registered user IDs from database models
-    const [savedPanUsers, brokerUsers, notifPrefUsers] = await Promise.all([
-      this.prisma.userSavedPan.findMany({
-        select: { userId: true, createdAt: true },
-        distinct: ['userId'],
-      }),
-      this.prisma.brokerAccount.findMany({
-        select: { userId: true, createdAt: true },
-        distinct: ['userId'],
-      }),
-      this.prisma.notificationPreference.findMany({
-        select: { userId: true, createdAt: true },
-        distinct: ['userId'],
-      }),
-    ]);
-
-    // Build consolidated map of users
-    const userMap = new Map<
-      string,
-      {
-        uid: string;
-        email: string | null;
-        displayName: string | null;
-        createdAt: string;
-        lastSignInAt?: string | null;
-      }
-    >();
-
-    for (const u of fbUsers) {
-      userMap.set(u.uid, {
+    // 3. Map Firebase users, merging entitlement records (default to NON_PRO)
+    // Never synthesize fake users from DB models or entitlement records alone.
+    const enrichedList: UserSummaryItem[] = (fbUsers as any[]).map((u) => {
+      const ent = entitlementMap.get(u.uid);
+      const tier: UserAccessTierType =
+        (ent?.tier as UserAccessTierType) || 'NON_PRO';
+      return {
         uid: u.uid,
         email: u.email || null,
         displayName: u.displayName || null,
         createdAt: u.creationTime || new Date().toISOString(),
         lastSignInAt: u.lastSignInTime || null,
-      });
-    }
-
-    const mergeDbUser = (uid: string, createdAt: Date) => {
-      if (!userMap.has(uid)) {
-        userMap.set(uid, {
-          uid,
-          email: `${uid}@registered.ipovault.in`,
-          displayName: `User ${uid.slice(0, 8)}`,
-          createdAt: createdAt.toISOString(),
-          lastSignInAt: null,
-        });
-      }
-    };
-
-    for (const ent of entitlements) {
-      mergeDbUser(ent.userId, ent.createdAt);
-    }
-    for (const item of savedPanUsers) {
-      mergeDbUser(item.userId, item.createdAt);
-    }
-    for (const item of brokerUsers) {
-      mergeDbUser(item.userId, item.createdAt);
-    }
-    for (const item of notifPrefUsers) {
-      mergeDbUser(item.userId, item.createdAt);
-    }
-
-    // Convert map to enriched list
-    const enrichedList: UserSummaryItem[] = Array.from(userMap.values()).map(
-      (base) => {
-        const ent = entitlementMap.get(base.uid);
-        const tier: UserAccessTierType = (ent?.tier as UserAccessTierType) || 'NON_PRO';
-        return {
-          uid: base.uid,
-          email: base.email,
-          displayName: base.displayName,
-          createdAt: base.createdAt,
-          lastSignInAt: base.lastSignInAt,
-          tier,
-          isPro: tier === 'PRO',
-          grantedAt: ent?.grantedAt ? ent.grantedAt.toISOString() : null,
-          revokedAt: ent?.revokedAt ? ent.revokedAt.toISOString() : null,
-          grantedBy: ent?.grantedBy || null,
-          notes: ent?.notes || null,
-        };
-      },
-    );
+        tier,
+        isPro: tier === 'PRO',
+        grantedAt: ent?.grantedAt ? ent.grantedAt.toISOString() : null,
+        revokedAt: ent?.revokedAt ? ent.revokedAt.toISOString() : null,
+        grantedBy: ent?.grantedBy || null,
+        notes: ent?.notes || null,
+      };
+    });
 
     // Global counts before query filtering
     const globalCounts = {
@@ -275,12 +215,20 @@ export class UserEntitlementService {
       take: 50,
     });
 
+    if (!fbUser && !entitlement) {
+      throw new AppException(
+        ErrorCode.NOT_FOUND,
+        `User ${cleanUserId} not found`,
+        404,
+      );
+    }
+
     const tier: UserAccessTierType = (entitlement?.tier as UserAccessTierType) || 'NON_PRO';
 
     return {
       uid: cleanUserId,
-      email: fbUser?.email || (cleanUserId.includes('@') ? cleanUserId : `${cleanUserId}@registered.ipovault.in`),
-      displayName: fbUser?.displayName || `User ${cleanUserId.slice(0, 8)}`,
+      email: fbUser?.email || null,
+      displayName: fbUser?.displayName || null,
       createdAt: fbUser?.creationTime || (entitlement?.createdAt ? entitlement.createdAt.toISOString() : new Date().toISOString()),
       lastSignInAt: fbUser?.lastSignInTime || null,
       tier,
