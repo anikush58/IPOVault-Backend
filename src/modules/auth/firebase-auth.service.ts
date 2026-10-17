@@ -392,4 +392,73 @@ export class FirebaseAuthService implements OnModuleInit {
       }
     }
   }
+
+  /**
+   * Retrieves single user record from Firebase Authentication by email address.
+   */
+  async getUserByEmail(email: string): Promise<{
+    uid: string;
+    email?: string;
+    displayName?: string;
+  } | null> {
+    if (!email || !email.trim()) return null;
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (this.firebaseApp) {
+      try {
+        const { getAuth } = await import('firebase-admin/auth');
+        const u = await getAuth(this.firebaseApp).getUserByEmail(cleanEmail);
+        return {
+          uid: u.uid,
+          email: u.email,
+          displayName: u.displayName,
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    if (this.isTestMode) {
+      if (cleanEmail === 'investor@ipovault.in') {
+        return {
+          uid: 'user-default-1',
+          email: 'investor@ipovault.in',
+          displayName: 'Investor One',
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Deletes a user from Firebase Authentication by UID.
+   */
+  async deleteUser(uid: string): Promise<boolean> {
+    if (!uid || !uid.trim()) return false;
+    const cleanUid = uid.trim();
+
+    if (this.firebaseApp) {
+      try {
+        const { getAuth } = await import('firebase-admin/auth');
+        await getAuth(this.firebaseApp).deleteUser(cleanUid);
+        this.logger.log(`Successfully deleted Firebase user: ${cleanUid}`);
+        return true;
+      } catch (err: any) {
+        if (err?.code === 'auth/user-not-found') {
+          this.logger.log(`Firebase user ${cleanUid} was already deleted or not found.`);
+          return true;
+        }
+        this.logger.warn(`Failed to delete Firebase user ${cleanUid}: ${err.message}`);
+        return false;
+      }
+    }
+
+    if (this.isTestMode) {
+      return true;
+    }
+
+    return false;
+  }
 }
+

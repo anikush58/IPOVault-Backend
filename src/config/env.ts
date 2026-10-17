@@ -136,6 +136,20 @@ export const envSchema = z.object({
     .string()
     .min(16, 'ALLOTMENT_HASH_SECRET must be at least 16 characters')
     .optional(),
+  ACCOUNT_DELETION_TOKEN_SECRET: z
+    .string()
+    .min(32, 'ACCOUNT_DELETION_TOKEN_SECRET must be at least 32 characters')
+    .optional(),
+  /** Resend Email Delivery for Account Deletion & Notifications */
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z
+    .string()
+    .min(1)
+    .default('IPOVault Security <noreply@getipovault.in>'),
+  PUBLIC_APP_URL: z
+    .string()
+    .url()
+    .default('https://getipovault.in'),
   /** Firebase Admin Authentication */
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
@@ -172,6 +186,24 @@ export const envSchema = z.object({
         path: ['ALLOTMENT_HASH_SECRET'],
         message:
           'ALLOTMENT_HASH_SECRET is required and must be at least 16 characters',
+      });
+    }
+  }
+  if (val.NODE_ENV === 'production') {
+    if (!val.ACCOUNT_DELETION_TOKEN_SECRET || val.ACCOUNT_DELETION_TOKEN_SECRET.length < 32) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ACCOUNT_DELETION_TOKEN_SECRET'],
+        message:
+          'ACCOUNT_DELETION_TOKEN_SECRET is required and must be at least 32 characters in production environment',
+      });
+    }
+    if (!val.RESEND_API_KEY || val.RESEND_API_KEY.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['RESEND_API_KEY'],
+        message:
+          'RESEND_API_KEY is required in production environment for account deletion emails',
       });
     }
   }

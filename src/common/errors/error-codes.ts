@@ -6,6 +6,8 @@ export const ErrorCode = {
   IPO_NOT_FOUND: 'IPO_NOT_FOUND',
   REGISTRAR_UNSUPPORTED: 'REGISTRAR_UNSUPPORTED',
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
+  CONFLICT: 'CONFLICT',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

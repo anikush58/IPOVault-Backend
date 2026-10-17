@@ -156,16 +156,62 @@ describe('validateEnv', () => {
     ).toThrow(/BROKER_TOKEN_ENCRYPTION_SECRET is required in production environment/);
   });
 
-  it('accepts valid BROKER_TOKEN_ENCRYPTION_SECRET in production', () => {
+  it('rejects missing ACCOUNT_DELETION_TOKEN_SECRET in production', () => {
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL: validDatabaseUrl,
+        CONSOLE_SESSION_SECRET: 'production-secret-console',
+        BROKER_TOKEN_ENCRYPTION_SECRET: 'a'.repeat(32),
+        ALLOTMENT_ENCRYPTION_SECRET: validEncryptionSecret,
+        ALLOTMENT_HASH_SECRET: validHashSecret,
+      }),
+    ).toThrow(/ACCOUNT_DELETION_TOKEN_SECRET is required/);
+  });
+
+  it('rejects missing RESEND_API_KEY in production', () => {
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL: validDatabaseUrl,
+        CONSOLE_SESSION_SECRET: 'production-secret-console',
+        BROKER_TOKEN_ENCRYPTION_SECRET: 'a'.repeat(32),
+        ACCOUNT_DELETION_TOKEN_SECRET: 'b'.repeat(32),
+        ALLOTMENT_ENCRYPTION_SECRET: validEncryptionSecret,
+        ALLOTMENT_HASH_SECRET: validHashSecret,
+      }),
+    ).toThrow(/RESEND_API_KEY is required in production environment/);
+  });
+
+  it('accepts valid production configuration including account deletion and email secrets', () => {
     const env = validateEnv({
       NODE_ENV: 'production',
       DATABASE_URL: validDatabaseUrl,
       CONSOLE_SESSION_SECRET: 'production-secret-console',
       BROKER_TOKEN_ENCRYPTION_SECRET: 'a'.repeat(32),
+      ACCOUNT_DELETION_TOKEN_SECRET: 'b'.repeat(32),
+      RESEND_API_KEY: 're_production_test_key_123',
       ALLOTMENT_ENCRYPTION_SECRET: validEncryptionSecret,
       ALLOTMENT_HASH_SECRET: validHashSecret,
     });
 
     expect(env.BROKER_TOKEN_ENCRYPTION_SECRET).toBe('a'.repeat(32));
+    expect(env.ACCOUNT_DELETION_TOKEN_SECRET).toBe('b'.repeat(32));
+    expect(env.RESEND_API_KEY).toBe('re_production_test_key_123');
+    expect(env.EMAIL_FROM).toBe('IPOVault Security <noreply@getipovault.in>');
+    expect(env.PUBLIC_APP_URL).toBe('https://getipovault.in');
+  });
+
+  it('allows customizing EMAIL_FROM and PUBLIC_APP_URL', () => {
+    const env = validateEnv({
+      DATABASE_URL: validDatabaseUrl,
+      ALLOTMENT_ENCRYPTION_SECRET: validEncryptionSecret,
+      ALLOTMENT_HASH_SECRET: validHashSecret,
+      EMAIL_FROM: 'Support <support@getipovault.in>',
+      PUBLIC_APP_URL: 'https://staging.getipovault.in',
+    });
+
+    expect(env.EMAIL_FROM).toBe('Support <support@getipovault.in>');
+    expect(env.PUBLIC_APP_URL).toBe('https://staging.getipovault.in');
   });
 });

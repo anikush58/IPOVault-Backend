@@ -924,3 +924,22 @@ model UserEntitlementAuditLog {
   @@index([createdAt])
   @@map("user_entitlement_audit_logs")
 }
+
+model ConsumedDeletionToken {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  jtiHash     String    @unique @map("jti_hash")
+  status      String    @default("PENDING") // PENDING, COMPLETED, FAILED
+  userId      String?   @map("user_id")
+  attempts    Int       @default(1)
+  lastError   String?   @map("last_error")
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@index([status])
+  @@map("consumed_deletion_tokens")
+}
+
+

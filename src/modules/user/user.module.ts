@@ -3,9 +3,10 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { UserEntitlementService } from './user-entitlement.service';
 import { AuthModule } from '../auth/auth.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, EmailModule],
   controllers: [UserController],
   providers: [UserService, UserEntitlementService],
   exports: [UserService, UserEntitlementService],

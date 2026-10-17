@@ -18,7 +18,7 @@ This document defines the official production configuration, operational boundar
 
 ## 2. Production Environment Variables
 
-Configure environment variables in `/var/www/ipovault-backend/.env.production` (permissions `600`):
+Configure environment variables in `/home/ubuntu/IPOVault-Backend/.env` (permissions `600`):
 
 | Variable | Required in Prod? | Default in Dev | Recommended Production Setting | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -33,9 +33,34 @@ Configure environment variables in `/var/www/ipovault-backend/.env.production` (
 | `NOTIFICATION_WORKER_INTERVAL_MS` | No | `10000` | `10000` | Worker tick interval in milliseconds |
 | `NSE_IPO_ENDPOINT` | No | — | `https://www.nseindia.com/api/ipo-detail` | Production NSE API URL |
 | `SEBI_IPO_ENDPOINT` | No | — | `https://www.sebi.gov.in/sebiweb/ajax/docs/` | Production SEBI AJAX listing URL |
+| `ACCOUNT_DELETION_TOKEN_SECRET` | **YES** | — | Generated 32+ char hex | HMAC signing secret for account deletion confirmation tokens |
+| `RESEND_API_KEY` | **YES** | — | `re_...` | Resend API key for transactional email delivery |
+| `EMAIL_FROM` | No | `IPOVault Security <noreply@getipovault.in>` | `IPOVault Security <noreply@getipovault.in>` | Sender address for transactional emails |
+| `PUBLIC_APP_URL` | No | `https://getipovault.in` | `https://getipovault.in` | Canonical base URL for email confirmation links |
+
+### Resend Sender-Domain Verification & Titan Mail Preservation (Owner Action)
+
+> [!WARNING]
+> **CRITICAL: DO NOT OVERWRITE TITAN MAIL ROOT MX RECORDS!**  
+> `getipovault.in` uses Titan Mail for inbound business mailboxes (`support@getipovault.in`, `admin@getipovault.in`).  
+> **Root MX records (`mx1.titan.email`, `mx2.titan.email`) must remain untouched.** Overwriting root MX records with Resend will break your incoming business email.
+
+To configure Resend without impacting Titan Mail:
+1. Log in to the [Resend Dashboard](https://resend.com/domains) and add domain `getipovault.in`.
+2. In your DNS manager (e.g. GoDaddy), configure DNS records as follows:
+   - **Root MX Records (DO NOT TOUCH):** Retain existing Titan MX records on `@` (`mx1.titan.email`, `mx2.titan.email`).
+   - **DKIM (`TXT`):** Name `resend._domainkey.getipovault.in` $\rightarrow$ public key string provided by Resend. (Does not conflict with Titan).
+   - **SPF (`TXT` - MERGE, DO NOT DUPLICATE):** RFC 7208 forbids multiple SPF records. Merge Titan and Resend into a single `TXT` record on `@`:
+     ```text
+     v=spf1 include:spf.titan.email include:amazonses.com ~all
+     ```
+   - **DMARC (`TXT`):** Name `_dmarc.getipovault.in` $\rightarrow$ `v=DMARC1; p=none;`.
+   - **Return-Path Bounce MX (SUBDOMAIN ONLY):** Name `bounces.getipovault.in` $\rightarrow$ `feedback-smtp.us-east-1.amazonses.com` (priority 10). **Never put Resend MX on the root `@`.**
+   - *(Alternative Recommendation):* Add a dedicated sending subdomain in Resend (e.g. `mail.getipovault.in`). This fully isolates transactional email DNS from the root Titan mailbox.
+3. Click "Verify Domain" in Resend. Once status reports "Verified", email delivery is operational.
 
 > [!CAUTION]
-> **Secrets Safety**: `DATABASE_URL` and API credentials must NEVER be committed to Git or printed in application logs.
+> **Secrets Safety**: `DATABASE_URL`, `ACCOUNT_DELETION_TOKEN_SECRET`, `RESEND_API_KEY`, and API credentials must NEVER be committed to Git or printed in application logs.
 
 ---
 
@@ -48,7 +73,8 @@ Do **NOT** run `prisma db push` or automated migrations on application startup.
 Before launching or restarting the backend process, run standard Prisma migration deployment using standard POSIX environment export:
 
 ```bash
-export $(grep -v '^#' .env.production | xargs) && npx prisma migrate deploy
+cd /home/ubuntu/IPOVault-Backend
+export $(grep -v '^#' .env | xargs) && npx prisma migrate deploy
 ```
 
 This applies unapplied SQL migrations from `prisma/migrations/` safely without mutating existing canonical data.

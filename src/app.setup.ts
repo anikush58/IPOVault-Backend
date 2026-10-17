@@ -37,6 +37,12 @@ export function configureApp(app: INestApplication): void {
   // Serve static Web Admin Portal at /admin
   app.use('/admin', express.static(join(process.cwd(), 'public', 'admin')));
 
+  // Serve public Account Deletion Portal at /delete-account (Google Play Compliance)
+  app.use(
+    '/delete-account',
+    express.static(join(process.cwd(), 'public', 'delete-account')),
+  );
+
   // Redirect /console to /api/v1/console
   app.use('/console', (req: express.Request, res: express.Response) => {
     res.redirect(301, '/api/v1/console' + (req.url === '/' ? '' : req.url));
