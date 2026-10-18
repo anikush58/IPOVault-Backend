@@ -386,7 +386,22 @@ export class UserService {
       where: { userId: cleanUserId },
     });
 
-    // 6. Decouple and anonymize tier audit logs: uses a unique random surrogate UUID per event.
+    // 6. Delete allotment check jobs and their child items
+    // In PostgreSQL, foreign key allotment_check_job_items_job_id_fkey specifies ON DELETE CASCADE.
+    // Explicitly deleting child items first by job owner provides deterministic isolation across all engines,
+    // followed by purging the user's parent allotment check job records.
+    await tx.allotmentCheckJobItem.deleteMany({
+      where: {
+        job: {
+          userId: cleanUserId,
+        },
+      },
+    });
+    await tx.allotmentCheckJob.deleteMany({
+      where: { userId: cleanUserId },
+    });
+
+    // 7. Decouple and anonymize tier audit logs: uses a unique random surrogate UUID per event.
     // Direct identifiers (userId, ipAddress, entitlementId) are stripped to prevent linkability.
     const anonymousSurrogate = `anon-${randomUUID()}`;
     await tx.userEntitlementAuditLog.updateMany({
@@ -399,7 +414,7 @@ export class UserService {
       },
     });
 
-    // 7. Delete user entitlement tier record
+    // 8. Delete user entitlement tier record
     await tx.userEntitlement.deleteMany({
       where: { userId: cleanUserId },
     });
@@ -720,6 +735,7 @@ export class UserService {
                 status: UserService.DELETION_STATUS.COMPLETED,
                 completedAt: new Date(),
                 lastError: null,
+                userId: null,
               },
             }).catch((e) => this.logger.warn(`Failed to reconcile late Firebase completion: ${e.message}`));
 
@@ -738,6 +754,7 @@ export class UserService {
                 status: UserService.DELETION_STATUS.COMPLETED,
                 completedAt: new Date(),
                 lastError: null,
+                userId: null,
               },
             }).catch((e) => this.logger.warn(`Failed to reconcile late Firebase completion: ${e.message}`));
 
@@ -811,6 +828,7 @@ export class UserService {
           status: UserService.DELETION_STATUS.COMPLETED,
           completedAt: new Date(),
           lastError: null,
+          userId: null,
         },
       }).catch((e) => this.logger.warn(`Failed to update deletion status to COMPLETED: ${e.message}`));
     }

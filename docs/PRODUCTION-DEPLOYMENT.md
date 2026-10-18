@@ -509,3 +509,56 @@ sudo journalctl -u ipovault-backend --since "1 hour ago" --no-pager | grep Disco
 sudo systemctl restart ipovault-backend
 ```
 
+---
+
+## 13. Account Deletion Data-Retention Scope & Test-Account Verification
+
+### Multi-Table Purge & Cascade Inventory
+When an account deletion is confirmed (via authenticated mobile client `DELETE /api/v1/user/account` or verified web confirmation `POST /api/v1/user/confirm-deletion`), the backend executes an atomic PostgreSQL transaction in `UserService.executeUserTablesPurge`:
+
+| Data Domain | Target PostgreSQL Table | Prisma Model | Purge / Anonymization Mechanism |
+| :--- | :--- | :--- | :--- |
+| **Saved PANs** | `user_saved_pans` | `UserSavedPan` | Atomic `deleteMany` where `userId = cleanUserId` |
+| **Broker Accounts** | `broker_accounts` | `BrokerAccount` | Atomic `deleteMany` (cascades via DB foreign keys to `broker_connections`, `broker_tokens`, `broker_holdings`, `broker_trades`, `ipo_investments`) |
+| **Push Tokens** | `user_push_tokens` | `UserPushToken` | Atomic `deleteMany` where `userId = cleanUserId` |
+| **Notifications** | `notifications` | `Notification` | Atomic `deleteMany` (cascades via DB foreign key to `notification_deliveries`) |
+| **Notification Prefs** | `notification_preferences` | `NotificationPreference` | Atomic `deleteMany` where `userId = cleanUserId` |
+| **Allotment Jobs** | `allotment_check_jobs` | `AllotmentCheckJob` | Explicit `deleteMany` for `allotment_check_job_items` by job owner + `deleteMany` for `allotment_check_jobs` where `userId = cleanUserId` |
+| **Entitlements** | `user_entitlements` | `UserEntitlement` | Atomic `deleteMany` where `userId = cleanUserId` |
+| **Tier Audit Logs** | `user_entitlement_audit_logs` | `UserEntitlementAuditLog` | **Decoupled & Anonymized**: `userId = 'anon-' + randomUUID()`, `ipAddress = null`, `entitlementId = null`, `reason = 'Account deleted'`. Retained for billing dispute accounting. |
+| **Deletion Replay** | `consumed_deletion_tokens` | `ConsumedDeletionToken` | **Replay Protection & Zero Residual PII**: Hashed token JTI (`jti_hash`), `status = 'COMPLETED'`, `completed_at`, and `expires_at`. Direct identifier `user_id` is nullified (`userId = null`) upon completion to eliminate residual PII while preserving 100% replay immunity. |
+
+### Dedicated Test-Account Verification Checklist
+Before deploying or performing verification with a dedicated test account (`$TEST_UID`):
+
+#### Step 1: Pre-Deletion Inspection
+```bash
+sudo -u postgres psql -d ipovault -c "
+SELECT 
+  (SELECT count(*) FROM user_saved_pans WHERE user_id = '$TEST_UID') AS pans,
+  (SELECT count(*) FROM broker_accounts WHERE user_id = '$TEST_UID') AS broker_accounts,
+  (SELECT count(*) FROM user_push_tokens WHERE user_id = '$TEST_UID') AS push_tokens,
+  (SELECT count(*) FROM notifications WHERE user_id = '$TEST_UID') AS notifications,
+  (SELECT count(*) FROM notification_preferences WHERE user_id = '$TEST_UID') AS notif_prefs,
+  (SELECT count(*) FROM allotment_check_jobs WHERE user_id = '$TEST_UID') AS allotment_jobs,
+  (SELECT count(*) FROM allotment_check_job_items WHERE job_id IN (SELECT id FROM allotment_check_jobs WHERE user_id = '$TEST_UID')) AS allotment_job_items,
+  (SELECT count(*) FROM user_entitlements WHERE user_id = '$TEST_UID') AS entitlements,
+  (SELECT count(*) FROM user_entitlement_audit_logs WHERE user_id = '$TEST_UID') AS audit_logs_direct,
+  (SELECT count(*) FROM consumed_deletion_tokens WHERE user_id = '$TEST_UID') AS pending_deletion_tokens;
+"
+```
+
+#### Step 2: Post-Deletion Verification
+After confirming deletion, run the exact same inspection query. Expected results:
+- `pans`: **0**
+- `broker_accounts`: **0** (cascaded connections, tokens, holdings, trades, investments all **0**)
+- `push_tokens`: **0**
+- `notifications`: **0** (cascaded deliveries **0**)
+- `notif_prefs`: **0**
+- `allotment_jobs`: **0**
+- `allotment_job_items`: **0**
+- `entitlements`: **0**
+- `audit_logs_direct`: **0** (all logs transitioned to unlinked `anon-*` surrogates)
+- `pending_deletion_tokens`: **0** (`user_id` nullified upon completion; token record preserved via `jti_hash` with `status = 'COMPLETED'` and `user_id IS NULL`)
+- Firebase Authentication: User is deleted (`auth/user-not-found`)
+

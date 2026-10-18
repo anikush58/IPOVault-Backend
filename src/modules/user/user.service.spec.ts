@@ -45,6 +45,12 @@ describe('UserService', () => {
       notificationPreference: {
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      allotmentCheckJobItem: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      allotmentCheckJob: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       userEntitlementAuditLog: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
@@ -228,6 +234,16 @@ describe('UserService', () => {
       expect(prismaMock.notificationPreference.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'user-target-123' },
       });
+      expect(prismaMock.allotmentCheckJobItem.deleteMany).toHaveBeenCalledWith({
+        where: {
+          job: {
+            userId: 'user-target-123',
+          },
+        },
+      });
+      expect(prismaMock.allotmentCheckJob.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-target-123' },
+      });
       expect(prismaMock.userEntitlementAuditLog.updateMany).toHaveBeenCalledWith({
         where: { userId: 'user-target-123' },
         data: expect.objectContaining({
@@ -239,6 +255,70 @@ describe('UserService', () => {
       expect(prismaMock.userEntitlement.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'user-target-123' },
       });
+    });
+
+    it('should purge allotment check jobs and their child items for users with existing jobs', async () => {
+      prismaMock.allotmentCheckJobItem.deleteMany.mockResolvedValue({ count: 4 });
+      prismaMock.allotmentCheckJob.deleteMany.mockResolvedValue({ count: 2 });
+
+      const res = await service.deleteUserAccount('user-with-jobs');
+
+      expect(res.success).toBe(true);
+      expect(prismaMock.allotmentCheckJobItem.deleteMany).toHaveBeenCalledWith({
+        where: { job: { userId: 'user-with-jobs' } },
+      });
+      expect(prismaMock.allotmentCheckJob.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-with-jobs' },
+      });
+    });
+
+    it('should handle users with no allotment check jobs cleanly and idempotently', async () => {
+      prismaMock.allotmentCheckJobItem.deleteMany.mockResolvedValue({ count: 0 });
+      prismaMock.allotmentCheckJob.deleteMany.mockResolvedValue({ count: 0 });
+
+      const res = await service.deleteUserAccount('user-zero-jobs');
+
+      expect(res.success).toBe(true);
+      expect(prismaMock.allotmentCheckJobItem.deleteMany).toHaveBeenCalledWith({
+        where: { job: { userId: 'user-zero-jobs' } },
+      });
+      expect(prismaMock.allotmentCheckJob.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-zero-jobs' },
+      });
+    });
+
+    it('should preserve other users and anonymous allotment jobs by strictly scoping deletion to target user', async () => {
+      await service.deleteUserAccount('user-isolated-a');
+
+      // Verify filters specify exactly user-isolated-a and never null or wildcard
+      expect(prismaMock.allotmentCheckJobItem.deleteMany).toHaveBeenCalledWith({
+        where: { job: { userId: 'user-isolated-a' } },
+      });
+      expect(prismaMock.allotmentCheckJob.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-isolated-a' },
+      });
+
+      const jobItemFilter = prismaMock.allotmentCheckJobItem.deleteMany.mock.calls[0][0];
+      const jobFilter = prismaMock.allotmentCheckJob.deleteMany.mock.calls[0][0];
+      expect(jobItemFilter.where.job.userId).toBe('user-isolated-a');
+      expect(jobFilter.where.userId).toBe('user-isolated-a');
+      expect(jobFilter.where.userId).not.toBeNull();
+    });
+
+    it('should remain idempotent across retried deletion attempts when jobs were already purged', async () => {
+      // First attempt: purges jobs and items
+      prismaMock.allotmentCheckJobItem.deleteMany.mockResolvedValueOnce({ count: 3 });
+      prismaMock.allotmentCheckJob.deleteMany.mockResolvedValueOnce({ count: 1 });
+      const firstAttempt = await service.deleteUserAccount('user-retry-test');
+      expect(firstAttempt.success).toBe(true);
+
+      // Subsequent retry attempt (e.g. following external timeout or failure recovery):
+      prismaMock.allotmentCheckJobItem.deleteMany.mockResolvedValueOnce({ count: 0 });
+      prismaMock.allotmentCheckJob.deleteMany.mockResolvedValueOnce({ count: 0 });
+      const retryAttempt = await service.deleteUserAccount('user-retry-test');
+      expect(retryAttempt.success).toBe(true);
+      expect(prismaMock.allotmentCheckJobItem.deleteMany).toHaveBeenCalledTimes(2);
+      expect(prismaMock.allotmentCheckJob.deleteMany).toHaveBeenCalledTimes(2);
     });
 
     it('should assign distinct surrogate UUIDs to different deleted users (no shared constant identity)', async () => {
@@ -417,6 +497,60 @@ describe('UserService', () => {
           userId: 'uid-to-delete',
         }),
       });
+
+      // Verifies token was updated to COMPLETED with userId nullified for data minimization
+      expect(prismaMock.consumedDeletionToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'consumed-token-1',
+          status: { not: UserService.DELETION_STATUS.COMPLETED },
+        },
+        data: expect.objectContaining({
+          status: UserService.DELETION_STATUS.COMPLETED,
+          userId: null,
+          lastError: null,
+        }),
+      });
+    });
+
+    it('should nullify userId upon COMPLETED deletion for zero residual PII retention while preserving replay protection', async () => {
+      firebaseAuthMock.getUserByEmail.mockResolvedValue({
+        uid: 'uid-zero-pii',
+        email: 'zero-pii@example.com',
+      });
+
+      const requestRes = await service.requestAccountDeletionByEmail('zero-pii@example.com');
+      const token = requestRes.confirmationToken!;
+
+      await service.confirmAccountDeletion(token);
+
+      // Verify finalization update sets userId to null
+      expect(prismaMock.consumedDeletionToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'consumed-token-1',
+          status: { not: UserService.DELETION_STATUS.COMPLETED },
+        },
+        data: expect.objectContaining({
+          status: UserService.DELETION_STATUS.COMPLETED,
+          userId: null,
+          lastError: null,
+        }),
+      });
+
+      // Verify replay protection still rejects when persisted record has userId: null
+      prismaMock.consumedDeletionToken.findUnique.mockResolvedValueOnce({
+        id: 'consumed-token-1',
+        jtiHash: 'hash-zero-pii',
+        status: UserService.DELETION_STATUS.COMPLETED,
+        userId: null,
+        expiresAt: new Date(Date.now() + 60000),
+      });
+
+      await expect(service.confirmAccountDeletion(token)).rejects.toThrow(
+        expect.objectContaining({
+          httpStatus: 401,
+          message: expect.stringContaining('already been used to delete the account'),
+        }),
+      );
     });
 
     it('should reject replayed token after first successful confirmation (Single-Use Replay Protection)', async () => {
