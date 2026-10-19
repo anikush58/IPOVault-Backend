@@ -4294,19 +4294,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           + '<td>' + statusBadge + '</td>'
           + '<td style="text-align:right;">'
             + '<div style="display:inline-flex; align-items:center; gap:6px;">'
-              + '<button class="btn-secondary" onclick="openEditPlanModal(\'' + p.id + '\')" style="font-size:11px; padding:4px 8px;" title="Edit Plan">'
+              + '<button class="btn-secondary" onclick="openEditPlanModal(this.dataset.id)" data-id="' + escapeHtml(p.id) + '" style="font-size:11px; padding:4px 8px;" title="Edit Plan">'
                 + '<i data-feather="edit-2" style="width:12px; height:12px;"></i> Edit'
               + '</button>'
               + (isPublished
-                  ? '<button class="btn-secondary" onclick="unpublishProPlan(\'' + p.id + '\')" style="font-size:11px; padding:4px 8px; color:#F59E0B; border-color:rgba(245,158,11,0.4);" title="Unpublish from App">'
+                  ? '<button class="btn-secondary" onclick="unpublishProPlan(this.dataset.id)" data-id="' + escapeHtml(p.id) + '" style="font-size:11px; padding:4px 8px; color:#F59E0B; border-color:rgba(245,158,11,0.4);" title="Unpublish from App">'
                       + '<i data-feather="eye-off" style="width:12px; height:12px;"></i> Unpublish'
                     + '</button>'
-                  : '<button class="btn-secondary" onclick="publishProPlan(\'' + p.id + '\')" style="font-size:11px; padding:4px 8px; color:#10B981; border-color:rgba(16,185,129,0.4);" title="Publish to App">'
+                  : '<button class="btn-secondary" onclick="publishProPlan(this.dataset.id)" data-id="' + escapeHtml(p.id) + '" style="font-size:11px; padding:4px 8px; color:#10B981; border-color:rgba(16,185,129,0.4);" title="Publish to App">'
                       + '<i data-feather="check-circle" style="width:12px; height:12px;"></i> Publish'
                     + '</button>'
                 )
               + (!isArchived
-                  ? '<button class="btn-secondary" onclick="archiveProPlan(\'' + p.id + '\')" style="font-size:11px; padding:4px 8px; color:#EF4444; border-color:rgba(239,68,68,0.3);" title="Soft Archive">'
+                  ? '<button class="btn-secondary" onclick="archiveProPlan(this.dataset.id)" data-id="' + escapeHtml(p.id) + '" style="font-size:11px; padding:4px 8px; color:#EF4444; border-color:rgba(239,68,68,0.3);" title="Soft Archive">'
                       + '<i data-feather="archive" style="width:12px; height:12px;"></i> Archive'
                     + '</button>'
                   : ''

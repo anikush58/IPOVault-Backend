@@ -6,6 +6,7 @@ import { AdminIpoService } from '../admin/admin-ipo.service';
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { IpoTimelineSchedulerService } from '../ipos/ipo-timeline-scheduler.service';
 import { UserEntitlementService } from '../user/user-entitlement.service';
+import { ProPlanService } from '../pro-plan/pro-plan.service';
 import { ConsoleEnabledGuard } from './console.guard';
 import { renderConsoleHtml } from './console.ui';
 import { ExchangeListing, MarketSegment, PublicationStatus } from '@prisma/client';
@@ -118,6 +119,7 @@ describe('Phase 34.3A — Manual IPO Console Workflow & Reset Safety', () => {
           },
         },
         { provide: ConfigService, useValue: { get: () => true } },
+        { provide: ProPlanService, useValue: {} },
         ConsoleEnabledGuard,
       ],
     }).compile();

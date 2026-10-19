@@ -11,6 +11,8 @@ import { AdminIpoService } from '../admin/admin-ipo.service';
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { IpoTimelineSchedulerService } from '../ipos/ipo-timeline-scheduler.service';
 import { UserEntitlementService } from '../user/user-entitlement.service';
+import { ProPlanService } from '../pro-plan/pro-plan.service';
+import * as vm from 'vm';
 
 describe('ConsoleController', () => {
   let controller: ConsoleController;
@@ -19,6 +21,7 @@ describe('ConsoleController', () => {
   let ipoGuruService: Record<string, jest.Mock>;
   let timelineSchedulerService: Record<string, jest.Mock>;
   let userEntitlementService: Record<string, jest.Mock>;
+  let proPlanService: Record<string, jest.Mock>;
   let app: INestApplication;
 
   beforeEach(async () => {
@@ -107,6 +110,16 @@ describe('ConsoleController', () => {
       }),
     };
 
+    proPlanService = {
+      listAdminPlans: jest.fn().mockResolvedValue([]),
+      createPlan: jest.fn().mockResolvedValue({ id: 'plan-1' }),
+      getPlanById: jest.fn().mockResolvedValue({ id: 'plan-1' }),
+      updatePlan: jest.fn().mockResolvedValue({ id: 'plan-1' }),
+      publishPlan: jest.fn().mockResolvedValue({ id: 'plan-1', status: 'PUBLISHED' }),
+      unpublishPlan: jest.fn().mockResolvedValue({ id: 'plan-1', status: 'DRAFT' }),
+      archivePlan: jest.fn().mockResolvedValue({ id: 'plan-1', status: 'ARCHIVED' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ConsoleController],
       providers: [
@@ -115,6 +128,7 @@ describe('ConsoleController', () => {
         { provide: IpoGuruService, useValue: ipoGuruService },
         { provide: IpoTimelineSchedulerService, useValue: timelineSchedulerService },
         { provide: UserEntitlementService, useValue: userEntitlementService },
+        { provide: ProPlanService, useValue: proPlanService },
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue(true) },
@@ -150,6 +164,15 @@ describe('ConsoleController', () => {
     expect(html).toContain('IPOVault');
     expect(html).toContain('Manual IPO');
     expect(html).not.toMatch(/^\s*\{\s*"data"\s*:/);
+  });
+
+  it('should generate valid client-side JavaScript without syntax errors in the console HTML template', () => {
+    const html = controller.getConsoleUi();
+    expect(typeof html).toBe('string');
+    const scriptMatch = (html as string).match(/<script>([\s\S]*?)<\/script>/);
+    expect(scriptMatch).toBeTruthy();
+    const scriptContent = scriptMatch![1];
+    expect(() => new vm.Script(scriptContent)).not.toThrow();
   });
 
   it('should invoke res.setHeader and res.send when Express Response is passed', () => {
