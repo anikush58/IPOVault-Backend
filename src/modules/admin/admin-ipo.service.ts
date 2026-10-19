@@ -37,6 +37,8 @@ import { AdminValidationService } from './admin-validation.service';
 import { AdminProvenanceResolver } from './admin-provenance.resolver';
 import { EnrichmentOrchestratorService } from '../enrichment/enrichment-orchestrator.service';
 import { EnrichmentJobResult } from '../enrichment/enrichment.types';
+import { AiResearchOrchestratorService } from '../enrichment/research/ai-research-orchestrator.service';
+import { IpoReconciliationSummary, ResearchJob } from '../enrichment/research/research.types';
 
 @Injectable()
 export class AdminIpoService {
@@ -49,6 +51,8 @@ export class AdminIpoService {
     private readonly provenanceResolver: AdminProvenanceResolver,
     @Optional()
     private readonly enrichmentOrchestrator?: EnrichmentOrchestratorService,
+    @Optional()
+    private readonly aiResearchOrchestrator?: AiResearchOrchestratorService,
   ) {}
 
   /**
@@ -1233,6 +1237,7 @@ export class AdminIpoService {
     forceRefresh = false,
   ): Promise<{
     result: EnrichmentJobResult;
+    researchSummary?: IpoReconciliationSummary;
     updatedIpo?: any;
   }> {
     const existing = await this.prisma.ipo.findUnique({
@@ -1241,6 +1246,31 @@ export class AdminIpoService {
     });
     if (!existing) {
       throw new NotFoundException(`IPO with ID '${ipoId}' not found.`);
+    }
+
+    if (this.aiResearchOrchestrator) {
+      const researchSummary = await this.aiResearchOrchestrator.executeResearchNow(ipoId, {
+        forceRefresh,
+      });
+
+      const updatedIpo = await this.getIpoDetail(ipoId);
+
+      const result: EnrichmentJobResult = {
+        ipoId,
+        status: researchSummary.appliedCount > 0 ? 'COMPLETED' : 'SKIPPED',
+        missingFieldsDetected: researchSummary.decisions.map((d) => d.fieldKey as any),
+        enrichedFields: researchSummary.decisions.filter((d) => d.applied).map((d) => d.fieldKey),
+        skippedFields: researchSummary.decisions.filter((d) => !d.applied).map((d) => d.fieldKey),
+        startedAt: researchSummary.evaluatedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: 0,
+      };
+
+      return {
+        result,
+        researchSummary,
+        updatedIpo,
+      };
     }
 
     if (!this.enrichmentOrchestrator) {
@@ -1257,6 +1287,42 @@ export class AdminIpoService {
       result,
       updatedIpo,
     };
+  }
+
+  /**
+   * Starts an asynchronous background AI research & update job for an IPO.
+   */
+  async startResearchJob(
+    ipoId: string,
+    options?: { forceRefresh?: boolean },
+  ): Promise<ResearchJob> {
+    if (!this.aiResearchOrchestrator) {
+      throw new BadRequestException('AI Research orchestrator service is not available.');
+    }
+    return this.aiResearchOrchestrator.startResearchJob(ipoId, options);
+  }
+
+  /**
+   * Retrieves an in-flight or completed AI research job.
+   */
+  getResearchJob(jobId: string): ResearchJob | null {
+    if (!this.aiResearchOrchestrator) {
+      throw new BadRequestException('AI Research orchestrator service is not available.');
+    }
+    return this.aiResearchOrchestrator.getJob(jobId);
+  }
+
+  /**
+   * Batch enqueues AI research for multiple IPOs with bounded concurrency.
+   */
+  async batchResearchIpos(
+    ipoIds: string[],
+    options?: { forceRefresh?: boolean },
+  ): Promise<ResearchJob[]> {
+    if (!this.aiResearchOrchestrator) {
+      throw new BadRequestException('AI Research orchestrator service is not available.');
+    }
+    return this.aiResearchOrchestrator.batchResearchIpos(ipoIds, options);
   }
 
   /**

@@ -13,6 +13,7 @@ import { AdminModule } from '../admin/admin.module';
 import { IpoGuruModule } from '../ipo-guru/ipo-guru.module';
 import { UserModule } from '../user/user.module';
 import { ProPlanModule } from '../pro-plan/pro-plan.module';
+import { EnrichmentModule } from '../enrichment/enrichment.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ProPlanModule } from '../pro-plan/pro-plan.module';
     IpoGuruModule,
     UserModule,
     ProPlanModule,
+    EnrichmentModule,
   ],
 
   controllers: [ConsoleController],

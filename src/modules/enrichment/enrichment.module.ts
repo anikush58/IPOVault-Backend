@@ -8,6 +8,10 @@ import { EnrichmentOrchestratorService } from './enrichment-orchestrator.service
 import { EnrichmentValidatorService } from './enrichment-validator.service';
 import { MissingFieldDetectorService } from './missing-field-detector.service';
 
+import { AiResearchAgentService } from './research/ai-research-agent.service';
+import { AiResearchReconciliationService } from './research/ai-research-reconciliation.service';
+import { AiResearchOrchestratorService } from './research/ai-research-orchestrator.service';
+
 @Module({
   imports: [DatabaseModule, DiscoveryModule, ConfigModule],
   providers: [
@@ -15,12 +19,18 @@ import { MissingFieldDetectorService } from './missing-field-detector.service';
     AiStructuredExtractorService,
     EnrichmentValidatorService,
     EnrichmentOrchestratorService,
+    AiResearchAgentService,
+    AiResearchReconciliationService,
+    AiResearchOrchestratorService,
   ],
   exports: [
     MissingFieldDetectorService,
     AiStructuredExtractorService,
     EnrichmentValidatorService,
     EnrichmentOrchestratorService,
+    AiResearchAgentService,
+    AiResearchReconciliationService,
+    AiResearchOrchestratorService,
   ],
 })
 export class EnrichmentModule {}

@@ -1774,15 +1774,12 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 </svg>
                 <span>Backfill IPOGuru Provenance</span>
               </button>
-              <button type="button" class="btn-secondary" id="btn-enrich-ai" onclick="triggerAiEnrichmentForCurrentIpo()" style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; font-size:13px; font-weight:600; border-radius:8px; border-color:#818CF8; color:#4F46E5; background:rgba(99,102,241,0.08);" title="Extract and enrich missing fields using official DRHP/RHP filings and AI">
+              <button type="button" class="btn-secondary" id="btn-enrich-ai" onclick="triggerAiResearchForCurrentIpo()" style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; font-size:13px; font-weight:600; border-radius:8px; border-color:#818CF8; color:#4F46E5; background:rgba(99,102,241,0.08);" title="Research live official SEBI, NSE, BSE, & Registrar data and reconcile updates">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-                  <path d="M5 3v4"/>
-                  <path d="M19 17v4"/>
-                  <path d="M3 5h4"/>
-                  <path d="M17 19h4"/>
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                 </svg>
-                <span id="btn-enrich-ai-text">Enrich with AI</span>
+                <span id="btn-enrich-ai-text">AI Research & Update</span>
               </button>
               <input type="file" id="json-detail-file-input" accept=".json,application/json" onchange="handleJsonDetailFileSelect(event)" style="display:none;" />
               <div class="form-action-group">
@@ -3295,17 +3292,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           </div>
         </div>
 
-        <!-- AI Filing Enrichment Result Modal -->
+        <!-- AI Research & Update Result Modal -->
         <div id="ai-enrichment-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
-          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:680px; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:960px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
             <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-hover);">
               <div>
                 <div style="font-weight:700; font-size:16px; color:var(--text-main); display:flex; align-items:center; gap:8px;">
-                  <span id="ai-enrich-modal-title">AI Filing Enrichment Result</span>
+                  <span id="ai-enrich-modal-title">AI Research & Update (Reconciliation Report)</span>
                   <span id="ai-enrich-status-badge" style="font-size:11px; padding:2px 8px; border-radius:12px; font-weight:600;"></span>
                 </div>
                 <div style="font-size:12px; color:var(--text-muted); margin-top:3px;" id="ai-enrich-modal-subtitle">
-                  Statutory RHP/DRHP AI extraction from SEBI, NSE Emerge, or BSE SME.
+                  Live research & reconciliation prioritizing official SEBI, NSE, BSE, & Registrar records. Protected manual entries are never overwritten.
                 </div>
               </div>
               <button onclick="closeAiEnrichmentModal()" style="background:none; border:none; font-size:22px; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
@@ -8198,53 +8195,114 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
-    async function triggerAiEnrichmentForCurrentIpo(forceRefresh) {
+    var aiResearchPollingTimer = null;
+
+    async function triggerAiResearchForCurrentIpo(forceRefresh) {
       var id = document.getElementById('form-ipo-id') ? document.getElementById('form-ipo-id').value : '';
       if (!id) {
-        alert('Please select or save an IPO first before running AI enrichment.');
+        alert('Please select or save an IPO first before running AI research.');
         return;
       }
 
       var btn = document.getElementById('btn-enrich-ai');
       var btnText = document.getElementById('btn-enrich-ai-text');
-      var originalText = btnText ? btnText.textContent : 'Enrich with AI';
+      var originalText = btnText ? btnText.textContent : 'AI Research & Update';
 
       if (btn) {
         btn.disabled = true;
         btn.style.opacity = '0.6';
       }
       if (btnText) {
-        btnText.textContent = 'Enriching with AI...';
+        btnText.textContent = 'Starting AI Research...';
+      }
+
+      var modal = document.getElementById('ai-enrichment-modal-overlay');
+      var bodyEl = document.getElementById('ai-enrich-modal-body');
+      var statusBadge = document.getElementById('ai-enrich-status-badge');
+
+      if (modal && bodyEl) {
+        modal.style.display = 'flex';
+        if (statusBadge) {
+          statusBadge.textContent = 'RUNNING';
+          statusBadge.style.backgroundColor = '#EFF6FF';
+          statusBadge.style.color = '#2563EB';
+        }
+        bodyEl.innerHTML = '<div style="padding:28px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px;">'
+          + '<div style="width:40px; height:40px; border:3px solid #E2E8F0; border-top-color:#4F46E5; border-radius:50%; animation:spin 1s linear infinite;"></div>'
+          + '<div style="font-weight:700; font-size:15px; color:var(--text-main);" id="ai-research-progress-text">Launching background research worker...</div>'
+          + '<div style="width:100%; max-width:320px; height:8px; background:var(--bg-hover); border-radius:4px; overflow:hidden; border:1px solid var(--border-color);">'
+          + '<div id="ai-research-progress-bar" style="width:15%; height:100%; background:#4F46E5; transition:width 0.3s ease;"></div>'
+          + '</div>'
+          + '<div style="font-size:12px; color:var(--text-muted);">Researching live official filings across SEBI, NSE, BSE, & registrars. You may safely close this modal; jobs continue in background.</div>'
+          + '</div>';
       }
 
       try {
-        var res = await fetch(API_BASE + '/manual-ipos/' + id + '/enrich-ai', {
+        var startRes = await fetch(API_BASE + '/manual-ipos/' + id + '/research', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ forceRefresh: !!forceRefresh }),
         });
 
-        var json = await res.json();
-        var payload = json.data || json;
+        var startJson = await startRes.json();
+        var job = startJson.data || startJson;
 
-        if (!res.ok || json.error || (payload.error && typeof payload.error === 'object')) {
-          var errMsg = (json.error && json.error.message) || (payload.error && payload.error.message) || payload.message || ('HTTP ' + res.status);
-          alert('AI Enrichment Failed: ' + errMsg);
+        if (!startRes.ok || startJson.error || job.error) {
+          var errMsg = (startJson.error && startJson.error.message) || (job.error && job.error.message) || job.message || ('HTTP ' + startRes.status);
+          if (bodyEl) {
+            bodyEl.innerHTML = '<div style="padding:16px; background:#FEF2F2; border:1px solid #EF4444; border-radius:8px; color:#991B1B; font-size:13px;">\u26A0\uFE0F Failed to start research job: ' + escapeHtml(errMsg) + '</div>';
+          }
+          if (statusBadge) {
+            statusBadge.textContent = 'FAILED';
+            statusBadge.style.backgroundColor = '#FEE2E2';
+            statusBadge.style.color = '#DC2626';
+          }
           return;
         }
 
-        var result = payload.result || payload;
+        var jobId = job.jobId;
 
-        // Reload the form to populate newly enriched values and provenance indicators
-        if (typeof editManualIpo === 'function') {
-          await editManualIpo(id);
-        }
+        // Poll for completion
+        if (aiResearchPollingTimer) clearInterval(aiResearchPollingTimer);
 
-        // Display the detailed result modal
-        showAiEnrichmentResultModal(result);
+        aiResearchPollingTimer = setInterval(async function() {
+          try {
+            var pollRes = await fetch(API_BASE + '/research/jobs/' + jobId);
+            var pollJson = await pollRes.json();
+            var pollJob = pollJson.data || pollJson;
+
+            if (pollJob && pollJob.status) {
+              var progText = document.getElementById('ai-research-progress-text');
+              var progBar = document.getElementById('ai-research-progress-bar');
+              if (progText && pollJob.progressMessage) {
+                progText.textContent = pollJob.progressMessage;
+              }
+              if (progBar && typeof pollJob.progressPercent === 'number') {
+                progBar.style.width = pollJob.progressPercent + '%';
+              }
+
+              if (pollJob.status === 'COMPLETED' || pollJob.status === 'COMPLETED_WITH_ERRORS' || pollJob.status === 'FAILED') {
+                clearInterval(aiResearchPollingTimer);
+                aiResearchPollingTimer = null;
+
+                // Reload the manual IPO form to display newly applied data & updated provenance tags
+                if (typeof editManualIpo === 'function') {
+                  await editManualIpo(id);
+                }
+
+                showAiResearchResultModal(pollJob.summary, pollJob);
+              }
+            }
+          } catch (pollErr) {
+            console.error('Job polling error:', pollErr);
+          }
+        }, 1500);
+
       } catch (err) {
-        console.error('AI Enrichment Error:', err);
-        alert('AI Enrichment Network/Server Error: ' + (err.message || String(err)));
+        console.error('AI Research Error:', err);
+        if (bodyEl) {
+          bodyEl.innerHTML = '<div style="padding:16px; background:#FEF2F2; border:1px solid #EF4444; border-radius:8px; color:#991B1B; font-size:13px;">\u26A0\uFE0F Network Error: ' + escapeHtml(err.message || String(err)) + '</div>';
+        }
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -8256,24 +8314,27 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
-    function showAiEnrichmentResultModal(result) {
+    // Alias for existing callers
+    var triggerAiEnrichmentForCurrentIpo = triggerAiResearchForCurrentIpo;
+
+    function showAiResearchResultModal(summary, job) {
       var modal = document.getElementById('ai-enrichment-modal-overlay');
       if (!modal) return;
 
       var statusBadge = document.getElementById('ai-enrich-status-badge');
       var bodyEl = document.getElementById('ai-enrich-modal-body');
 
-      var status = result.status || 'UNKNOWN';
+      var status = (job && job.status) || (summary ? 'COMPLETED' : 'UNKNOWN');
       var badgeBg = '#EEF2FF';
       var badgeFg = '#4F46E5';
 
       if (status === 'COMPLETED') {
         badgeBg = '#DCFCE7';
         badgeFg = '#15803D';
-      } else if (status === 'SKIPPED') {
+      } else if (status === 'COMPLETED_WITH_ERRORS') {
         badgeBg = '#FEF3C7';
         badgeFg = '#D97706';
-      } else if (status === 'FAILED' || status === 'DOCUMENT_UNRESOLVED') {
+      } else if (status === 'FAILED') {
         badgeBg = '#FEE2E2';
         badgeFg = '#DC2626';
       }
@@ -8284,100 +8345,112 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         statusBadge.style.color = badgeFg;
       }
 
-      var enriched = Array.isArray(result.enrichedFields) ? result.enrichedFields : [];
-      var skipped = Array.isArray(result.skippedFields) ? result.skippedFields : [];
-      var detected = Array.isArray(result.missingFieldsDetected) ? result.missingFieldsDetected : [];
-      var isBlocked = status === 'DOCUMENT_UNRESOLVED' || status === 'FAILED';
-      var notEnriched = isBlocked
-        ? detected.filter(function(f) { return enriched.indexOf(f) === -1 && skipped.indexOf(f) === -1; })
-        : [];
-      var unavailable = !isBlocked
-        ? detected.filter(function(f) { return enriched.indexOf(f) === -1 && skipped.indexOf(f) === -1; })
-        : [];
-
-      var html = '';
-
-      if (status === 'COMPLETED') {
-        html += '<div style="background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.25); border-radius:8px; padding:12px 16px; display:flex; align-items:center; gap:10px;">'
-          + '<span style="font-size:18px; color:#15803D;">\u2713</span>'
-          + '<div>'
-          + '<div style="font-weight:600; color:#15803D; font-size:13px;">AI Enrichment Completed Successfully</div>'
-          + '<div style="font-size:12px; color:var(--text-muted);">Enriched ' + enriched.length + ' field(s) in ' + ((result.durationMs || 0) / 1000).toFixed(1) + 's from authoritative statutory filings.</div>'
-          + '</div>'
-          + '</div>';
-      } else if (status === 'SKIPPED') {
-        var reason = result.error || (detected.length === 0 ? 'All eligible fields are already verified or populated. No missing fields detected.' : 'Enrichment was skipped.');
-        html += '<div style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.25); border-radius:8px; padding:12px 16px;">'
-          + '<div style="font-weight:600; color:#D97706; font-size:13px;">Enrichment Skipped / Not Required</div>'
-          + '<div style="font-size:12px; color:var(--text-muted); margin-top:2px;">' + escapeHtml(reason) + '</div>'
-          + '</div>';
-      } else {
-        var errorMsg = result.error || (status === 'DOCUMENT_UNRESOLVED' ? 'No official SEBI / NSE Emerge / BSE SME or verified issuer filing found for this IPO.' : 'Enrichment pipeline encountered an error.');
-        html += '<div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:8px; padding:12px 16px;">'
-          + '<div style="font-weight:600; color:#DC2626; font-size:13px;">Enrichment Could Not Proceed</div>'
-          + '<div style="font-size:12px; color:var(--text-muted); margin-top:2px;"><strong>Blocking Reason:</strong> ' + escapeHtml(errorMsg) + '</div>'
-          + '</div>';
+      if (!summary) {
+        if (bodyEl) {
+          bodyEl.innerHTML = '<div style="padding:16px; background:#FEF2F2; border:1px solid #EF4444; border-radius:8px; color:#991B1B;">'
+            + '<strong>Research Job Encountered Error:</strong> ' + escapeHtml((job && job.error) || 'No summary returned.')
+            + '</div>';
+        }
+        return;
       }
 
-      if (enriched.length > 0) {
-        html += '<div>'
-          + '<div style="font-size:12px; font-weight:700; color:var(--text-main); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">'
-          + '\u2713 Fields Enriched (' + enriched.length + ')'
-          + '</div>'
-          + '<div style="display:flex; flex-wrap:wrap; gap:6px;">'
-          + enriched.map(function(f) {
-            return '<span style="background:rgba(34,197,94,0.12); color:#15803D; font-size:12px; font-weight:600; padding:3px 10px; border-radius:6px;">' + escapeHtml(f) + '</span>';
-          }).join('')
-          + '</div></div>';
+      var html = '<div style="display:flex; flex-direction:column; gap:16px;">';
+
+      // Summary Metric Cards
+      html += '<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">'
+        + '<div class="stat-card" style="padding:10px;">'
+        + '<div class="stat-title">Evaluated</div>'
+        + '<div class="stat-value" style="font-size:18px;">' + (summary.fieldsEvaluated || 0) + '</div>'
+        + '</div>'
+        + '<div class="stat-card" style="padding:10px;">'
+        + '<div class="stat-title">Verified Applied</div>'
+        + '<div class="stat-value" style="font-size:18px; color:#10B981;">+' + (summary.appliedCount || 0) + '</div>'
+        + '</div>'
+        + '<div class="stat-card" style="padding:10px;">'
+        + '<div class="stat-title">Unchanged</div>'
+        + '<div class="stat-value" style="font-size:18px; color:#64748B;">' + (summary.unchangedCount || 0) + '</div>'
+        + '</div>'
+        + '<div class="stat-card" style="padding:10px;">'
+        + '<div class="stat-title">Protected / Conflicts</div>'
+        + '<div class="stat-value" style="font-size:18px; color:#F59E0B;">' + (summary.conflictsCount || 0) + '</div>'
+        + '</div>'
+        + '<div class="stat-card" style="padding:10px;">'
+        + '<div class="stat-title">Unverifiable / Skipped</div>'
+        + '<div class="stat-value" style="font-size:18px; color:#94A3B8;">' + (summary.unverifiableCount + summary.missingCount || 0) + '</div>'
+        + '</div>'
+        + '</div>';
+
+      // Itemized Field-by-Field Reconciliation Table
+      var decisions = summary.decisions || [];
+      if (decisions.length > 0) {
+        html += '<div style="font-size:13px; font-weight:700; color:var(--text-main); margin-top:4px;">Field-Level Reconciliation Audit Report:</div>';
+        html += '<div class="grid-table-box" style="max-height:420px; overflow-y:auto;"><table style="min-width:780px;">'
+          + '<thead><tr>'
+          + '<th>Field</th>'
+          + '<th>Current DB</th>'
+          + '<th>Researched Candidate</th>'
+          + '<th>Source & Evidence</th>'
+          + '<th>Status</th>'
+          + '<th>Action</th>'
+          + '</tr></thead><tbody>';
+
+        decisions.forEach(function(d) {
+          var statusBadge = '';
+          var rowBg = '';
+
+          if (d.status === 'VERIFIED_UPDATE') {
+            statusBadge = '<span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#DCFCE7; color:#15803D; border:1px solid #86EFAC;">\u2713 VERIFIED UPDATE</span>';
+            rowBg = 'background:rgba(34,197,94,0.04);';
+          } else if (d.status === 'UNCHANGED') {
+            statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#F1F5F9; color:#64748B;">UNCHANGED</span>';
+          } else if (d.status === 'CONFLICTING_SOURCES') {
+            statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#FFEDD5; color:#C2410C;">\u26A0\uFE0F CONFLICT</span>';
+            rowBg = 'background:rgba(249,115,22,0.04);';
+          } else if (d.status === 'UNVERIFIABLE') {
+            statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:500; background:#FEF3C7; color:#B45309;">UNVERIFIABLE</span>';
+          } else {
+            statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; color:#94A3B8;">MISSING</span>';
+          }
+
+          var actionPill = d.applied
+            ? '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#10B981; color:#FFFFFF;">APPLIED</span>'
+            : '<span style="padding:2px 8px; border-radius:6px; font-size:11px; color:var(--text-subtle);">KEPT AS-IS</span>';
+
+          var srcInfo = d.sourceUrl
+            ? '<div style="font-size:11px;"><a href="' + escapeHtml(d.sourceUrl) + '" target="_blank" style="color:#2563EB; text-decoration:underline;">' + escapeHtml(d.sourceAuthority || 'Source') + '</a></div>'
+            : '<div style="font-size:11px; color:var(--text-subtle);">(None)</div>';
+
+          if (d.evidence) {
+            srcInfo += '<div style="font-size:10px; color:var(--text-muted); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + escapeHtml(d.evidence) + '">' + escapeHtml(d.evidence) + '</div>';
+          }
+
+          html += '<tr style="' + rowBg + '">'
+            + '<td style="font-weight:600; font-size:12px;">' + escapeHtml(d.fieldLabel || d.fieldKey) + '</td>'
+            + '<td style="font-size:12px; font-family:monospace; color:var(--text-main);">' + escapeHtml(d.currentValueDisplay || '-') + '</td>'
+            + '<td style="font-size:12px; font-family:monospace; font-weight:600; color:' + (d.applied ? '#10B981' : 'var(--text-main)') + ';">' + escapeHtml(d.candidateValueDisplay || '-') + '</td>'
+            + '<td>' + srcInfo + '</td>'
+            + '<td>' + statusBadge + '<div style="font-size:10px; color:var(--text-muted); margin-top:2px;">' + escapeHtml(d.statusReason) + '</div></td>'
+            + '<td>' + actionPill + '</td>'
+            + '</tr>';
+        });
+
+        html += '</tbody></table></div>';
       }
 
-      if (skipped.length > 0) {
-        html += '<div>'
-          + '<div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">'
-          + '\u2298 Protected Fields (Existing Verified Data Preserved) (' + skipped.length + ')'
-          + '</div>'
-          + '<div style="display:flex; flex-wrap:wrap; gap:6px;">'
-          + skipped.map(function(f) {
-            return '<span style="background:var(--bg-hover); color:var(--text-muted); font-size:12px; padding:3px 10px; border-radius:6px;">' + escapeHtml(f) + '</span>';
-          }).join('')
-          + '</div></div>';
-      }
-
-      if (notEnriched.length > 0) {
-        html += '<div>'
-          + '<div style="font-size:12px; font-weight:700; color:#DC2626; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">'
-          + '\u2717 Not Enriched (Document Discovery Blocked) (' + notEnriched.length + ')'
-          + '</div>'
-          + '<div style="display:flex; flex-wrap:wrap; gap:6px;">'
-          + notEnriched.map(function(f) {
-            return '<span style="background:rgba(239,68,68,0.12); color:#DC2626; font-size:12px; padding:3px 10px; border-radius:6px;">' + escapeHtml(f) + '</span>';
-          }).join('')
-          + '</div></div>';
-      }
-
-      if (unavailable.length > 0) {
-        html += '<div>'
-          + '<div style="font-size:12px; font-weight:700; color:var(--text-subtle); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">'
-          + '\u2014 Unavailable ([●] / NIL in Filing) (' + unavailable.length + ')'
-          + '</div>'
-          + '<div style="display:flex; flex-wrap:wrap; gap:6px;">'
-          + unavailable.map(function(f) {
-            return '<span style="background:var(--bg-hover); color:var(--text-subtle); font-size:12px; padding:3px 10px; border-radius:6px; font-style:italic;">' + escapeHtml(f) + '</span>';
-          }).join('')
-          + '</div></div>';
-      }
-
-      if (result.documentHash) {
-        html += '<div style="font-size:11px; color:var(--text-subtle); padding-top:8px; border-top:1px solid var(--border-color);">'
-          + '<strong>Document SHA-256:</strong> <code style="font-family:monospace;">' + escapeHtml(result.documentHash) + '</code>'
-          + '</div>';
-      }
+      html += '</div>';
 
       if (bodyEl) bodyEl.innerHTML = html;
       modal.style.display = 'flex';
     }
 
+    // Alias for backward compatibility
+    var showAiEnrichmentResultModal = showAiResearchResultModal;
+
     function closeAiEnrichmentModal() {
+      if (aiResearchPollingTimer) {
+        clearInterval(aiResearchPollingTimer);
+        aiResearchPollingTimer = null;
+      }
       var modal = document.getElementById('ai-enrichment-modal-overlay');
       if (modal) modal.style.display = 'none';
     }

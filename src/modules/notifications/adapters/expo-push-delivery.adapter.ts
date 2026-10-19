@@ -49,6 +49,8 @@ export class ExpoPushDeliveryAdapter extends NotificationDeliveryAdapter {
       const pushPayload = userTokens.map((t) => ({
         to: t.token,
         sound: 'default',
+        channelId: 'ipovault-alerts',
+        priority: 'high',
         title: notification.title,
         body: notification.message,
         data: {

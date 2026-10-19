@@ -7,6 +7,7 @@ import {
   Header,
   HttpException,
   Logger,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -593,7 +594,7 @@ export class ConsoleController {
 
   /**
    * Single IPO manual AI enrichment endpoint for Console UI.
-   * Reuses the single authoritative statutory AI enrichment pipeline.
+   * Reuses the single authoritative statutory AI research & update pipeline.
    */
   @Post('api/manual-ipos/:id/enrich-ai')
   async enrichManualIpoWithAi(
@@ -609,6 +610,74 @@ export class ConsoleController {
       const msg = err instanceof Error ? err.message : String(err);
       throw new BadRequestException({
         message: 'Manual AI enrichment failed',
+        details: msg,
+      });
+    }
+  }
+
+  /**
+   * Starts an asynchronous background AI Research & Update job for a single IPO.
+   * Enables client progress tracking without blocking UI or timing out.
+   */
+  @Post('api/manual-ipos/:id/research')
+  async startManualIpoResearch(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body?: { forceRefresh?: boolean },
+  ) {
+    try {
+      return await this.adminIpoService.startResearchJob(id, { forceRefresh: body?.forceRefresh });
+    } catch (err: unknown) {
+      if (err instanceof HttpException) {
+        throw err;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException({
+        message: 'Failed to start AI research job',
+        details: msg,
+      });
+    }
+  }
+
+  /**
+   * Polls the status, progress percentage, and reconciliation summary of a research job.
+   */
+  @Get('api/research/jobs/:jobId')
+  async getResearchJobStatus(@Param('jobId') jobId: string) {
+    try {
+      const job = this.adminIpoService.getResearchJob(jobId);
+      if (!job) {
+        throw new NotFoundException(`Research job '${jobId}' was not found.`);
+      }
+      return job;
+    } catch (err: unknown) {
+      if (err instanceof HttpException) {
+        throw err;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException({
+        message: 'Failed to fetch research job status',
+        details: msg,
+      });
+    }
+  }
+
+  /**
+   * Batch enqueues background AI Research & Update for multiple IPOs.
+   */
+  @Post('api/manual-ipos/research/batch')
+  async batchResearchIpos(@Body() body: { ipoIds: string[]; forceRefresh?: boolean }) {
+    try {
+      if (!Array.isArray(body?.ipoIds) || body.ipoIds.length === 0) {
+        throw new BadRequestException('ipoIds must be a non-empty array of UUIDs.');
+      }
+      return await this.adminIpoService.batchResearchIpos(body.ipoIds, { forceRefresh: body?.forceRefresh });
+    } catch (err: unknown) {
+      if (err instanceof HttpException) {
+        throw err;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException({
+        message: 'Batch AI research failed',
         details: msg,
       });
     }
