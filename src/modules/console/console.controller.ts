@@ -52,6 +52,12 @@ import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { IpoGuruV1Ipo } from '../ipo-guru/ipo-guru.types';
 import { IpoTimelineSchedulerService } from '../ipos/ipo-timeline-scheduler.service';
 import { UserEntitlementService } from '../user/user-entitlement.service';
+import { ProPlanService } from '../pro-plan/pro-plan.service';
+import {
+  createProPlanSchema,
+  proPlanQuerySchema,
+  updateProPlanSchema,
+} from '../pro-plan/dto/pro-plan.dto';
 
 @Controller('console')
 @UseGuards(ConsoleEnabledGuard)
@@ -64,8 +70,10 @@ export class ConsoleController {
     private readonly ipoGuruService: IpoGuruService,
     private readonly ipoTimelineSchedulerService: IpoTimelineSchedulerService,
     private readonly userEntitlementService: UserEntitlementService,
+    private readonly proPlanService: ProPlanService,
     private readonly configService: ConfigService<Env, true>,
   ) {}
+
 
   /**
    * Serves the self-contained, browser-accessible IPOVault Data Console HTML web UI.
@@ -676,4 +684,71 @@ export class ConsoleController {
       ip,
     );
   }
+
+  // ==========================================
+  // PRO PLAN MANAGEMENT ENDPOINTS
+  // ==========================================
+
+  /**
+   * List all Pro Plans with optional status filtering and search.
+   */
+  @Get('api/pro-plans')
+  async listProPlans(@Query() query: Record<string, unknown>) {
+    const validated = proPlanQuerySchema.parse(query);
+    return this.proPlanService.listAdminPlans(validated);
+  }
+
+  /**
+   * Create a new Pro Plan with ordered benefits.
+   */
+  @Post('api/pro-plans')
+  async createProPlan(@Body() body: Record<string, unknown>) {
+    const validated = createProPlanSchema.parse(body);
+    return this.proPlanService.createPlan(validated);
+  }
+
+  /**
+   * Get single Pro Plan details with ordered benefits.
+   */
+  @Get('api/pro-plans/:id')
+  async getProPlanDetail(@Param('id') id: string) {
+    return this.proPlanService.getPlanById(id);
+  }
+
+  /**
+   * Update an existing Pro Plan and its benefits.
+   */
+  @Patch('api/pro-plans/:id')
+  async updateProPlan(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const validated = updateProPlanSchema.parse(body);
+    return this.proPlanService.updatePlan(id, validated);
+  }
+
+  /**
+   * Publish a Pro Plan, making it visible to the mobile app.
+   */
+  @Post('api/pro-plans/:id/publish')
+  async publishProPlan(@Param('id') id: string) {
+    return this.proPlanService.publishPlan(id);
+  }
+
+  /**
+   * Unpublish a Pro Plan, removing it from mobile view to draft status.
+   */
+  @Post('api/pro-plans/:id/unpublish')
+  async unpublishProPlan(@Param('id') id: string) {
+    return this.proPlanService.unpublishPlan(id);
+  }
+
+  /**
+   * Soft-archive a Pro Plan without destructive deletion.
+   */
+  @Post('api/pro-plans/:id/archive')
+  async archiveProPlan(@Param('id') id: string) {
+    return this.proPlanService.archivePlan(id);
+  }
 }
+

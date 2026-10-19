@@ -936,10 +936,51 @@ model ConsumedDeletionToken {
   expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
   @@index([expiresAt])
   @@index([status])
   @@map("consumed_deletion_tokens")
 }
+
+model ProPlan {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code               String            @unique
+  name               String
+  description        String?           @db.Text
+  duration           String
+  durationDays       Int?              @map("duration_days")
+  priceInr           Decimal           @map("price_inr") @db.Decimal(10, 2)
+  comparisonPriceInr Decimal?          @map("comparison_price_inr") @db.Decimal(10, 2)
+  status             PublicationStatus @default(DRAFT)
+  displayOrder       Int               @default(0) @map("display_order")
+  isPopular          Boolean           @default(false) @map("is_popular")
+  badge              String?
+  features           String[]          @default([])
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt         DateTime?         @map("archived_at") @db.Timestamptz(6)
+
+  benefits           ProPlanBenefit[]
+
+  @@index([status])
+  @@index([displayOrder])
+  @@map("pro_plans")
+}
+
+model ProPlanBenefit {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId       String   @map("plan_id") @db.Uuid
+  title        String
+  description  String?  @db.Text
+  icon         String?
+  displayOrder Int      @default(0) @map("display_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  plan         ProPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, displayOrder])
+  @@map("pro_plan_benefits")
+}
+
 
 

@@ -24,6 +24,7 @@ import { BrokerModule } from './modules/broker/broker.module';
 import { IpoGuruModule } from './modules/ipo-guru/ipo-guru.module';
 import { EnrichmentModule } from './modules/enrichment/enrichment.module';
 import { EmailModule } from './modules/email/email.module';
+import { ProPlanModule } from './modules/pro-plan/pro-plan.module';
 
 @Module({
   imports: [
@@ -50,11 +51,13 @@ import { EmailModule } from './modules/email/email.module';
     AnalyticsModule,
     ConsoleModule,
     AdminModule,
+    ProPlanModule,
     BrokerModule,
     IpoGuruModule,
     EnrichmentModule,
     HealthModule,
   ],
+
   providers: [
     {
       provide: APP_FILTER,

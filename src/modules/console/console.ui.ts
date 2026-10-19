@@ -1455,7 +1455,13 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <span>User Management</span>
           <span class="nav-badge" id="nav-users-pro-count" style="margin-left:auto; font-size:11px; padding:2px 7px; border-radius:10px; background:rgba(16,185,129,0.15); color:#10B981; font-weight:700;"></span>
         </button>
+        <button class="nav-item" id="nav-btn-pro-plans" title="Pro Plan Management" onclick="switchTab('pro-plans')">
+          <i data-feather="package"></i>
+          <span>Pro Plans</span>
+          <span class="nav-badge" id="nav-pro-plans-count" style="margin-left:auto; font-size:11px; padding:2px 7px; border-radius:10px; background:rgba(99,102,241,0.15); color:#6366F1; font-weight:700;"></span>
+        </button>
       </nav>
+
 
       <!-- Sidebar User Profile Footer -->
       <div class="sidebar-footer">
@@ -2681,6 +2687,408 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           </div>
         </div>
 
+        <!-- 11. PRO PLAN MANAGEMENT TAB -->
+        <div id="tab-pro-plans" class="section-view">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+            <div>
+              <div style="font-weight:700; font-size:18px; color:var(--text-main); margin-bottom:4px;">Pro Plan Management</div>
+              <div style="font-size:12px; color:var(--text-muted);">
+                Create and manage mobile subscription tiers, INR pricing, billing periods, and ordered benefits. Published plans are visible in the mobile app.
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+              <button class="btn-secondary" onclick="loadProPlans()">
+                <i data-feather="refresh-cw"></i>
+                <span>Refresh</span>
+              </button>
+              <button class="btn-primary" onclick="openCreatePlanModal()" style="display:inline-flex; align-items:center; gap:6px; background:#4F46E5; color:#fff; border:none; padding:8px 16px; border-radius:8px; font-weight:600; cursor:pointer;">
+                <i data-feather="plus"></i>
+                <span>Create New Plan</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Stats KPI Grid -->
+          <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:20px;">
+            <div class="stat-card" style="padding:14px 16px;">
+              <div class="stat-title">Total Configured Plans</div>
+              <div class="stat-value" id="stat-plans-total" style="font-size:24px; font-weight:700; color:var(--text-main);">0</div>
+            </div>
+            <div class="stat-card" style="padding:14px 16px;">
+              <div class="stat-title">Published (Active in App)</div>
+              <div class="stat-value" id="stat-plans-published" style="font-size:24px; font-weight:700; color:#10B981;">0</div>
+            </div>
+            <div class="stat-card" style="padding:14px 16px;">
+              <div class="stat-title">Draft Plans</div>
+              <div class="stat-value" id="stat-plans-draft" style="font-size:24px; font-weight:700; color:#F59E0B;">0</div>
+            </div>
+            <div class="stat-card" style="padding:14px 16px;">
+              <div class="stat-title">Archived Plans</div>
+              <div class="stat-value" id="stat-plans-archived" style="font-size:24px; font-weight:700; color:#64748B;">0</div>
+            </div>
+          </div>
+
+          <!-- Filter & Search Toolbar -->
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:10px; padding:12px 16px;">
+            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:240px;">
+              <div style="position:relative; flex:1;">
+                <i data-feather="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px; color:var(--text-muted);"></i>
+                <input
+                  type="text"
+                  id="pro-plans-search-input"
+                  placeholder="Search plans by name, code, or description..."
+                  oninput="filterProPlans()"
+                  style="width:100%; padding:8px 12px 8px 36px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px; outline:none;"
+                />
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:12px; color:var(--text-muted); font-weight:600;">Status:</span>
+                <select id="pro-plans-status-filter" onchange="filterProPlans()" style="padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:12px; font-weight:600; cursor:pointer;">
+                  <option value="ALL">All Statuses</option>
+                  <option value="PUBLISHED">Published Only</option>
+                  <option value="DRAFT">Drafts Only</option>
+                  <option value="ARCHIVED">Archived Only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Error State Banner -->
+          <div id="pro-plans-error-banner" style="display:none; margin-bottom:16px; padding:14px 18px; border-radius:10px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); color:#EF4444;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <i data-feather="alert-circle" style="width:18px; height:18px; flex-shrink:0;"></i>
+                <span id="pro-plans-error-text" style="font-weight:600; font-size:13px;">Failed to load plans</span>
+              </div>
+              <button class="btn-secondary" onclick="loadProPlans()" style="border-color:#EF4444; color:#EF4444; font-size:12px; padding:4px 12px;">Retry</button>
+            </div>
+          </div>
+
+          <!-- Plans Table Container -->
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:10px; overflow:hidden;">
+            <div class="table-responsive" style="overflow-x:auto;">
+              <table class="data-table" style="width:100%; margin-bottom:0;">
+                <thead>
+                  <tr>
+                    <th>Plan / Code</th>
+                    <th>Duration</th>
+                    <th>Price (INR)</th>
+                    <th>Benefits</th>
+                    <th>Display Order</th>
+                    <th>Status</th>
+                    <th style="text-align:right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="pro-plans-table-body">
+                  <tr><td colspan="7" style="text-align:center; padding:32px; color:var(--text-muted);">Loading Pro Plans...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Empty State -->
+            <div id="pro-plans-empty-state" style="display:none; text-align:center; padding:48px 16px; color:var(--text-muted);">
+              <div style="font-size:32px; margin-bottom:8px;">📦</div>
+              <div style="font-weight:600; margin-bottom:4px; color:var(--text-main);">No Pro Plans Found</div>
+              <div style="font-size:12px; margin-bottom:16px;">Create your first subscription tier to publish it to the mobile app.</div>
+              <button class="btn-primary" onclick="openCreatePlanModal()" style="font-size:12px; padding:6px 14px;">+ Create Plan</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CREATE & EDIT PRO PLAN MODAL (WITH LIVE MOBILE PREVIEW) -->
+        <div id="modal-pro-plan" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:16px;">
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:16px; width:100%; max-width:1120px; max-height:92vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 40px rgba(0,0,0,0.3);">
+            <!-- Modal Header -->
+            <div style="padding:16px 24px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-hover);">
+              <div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <span id="modal-plan-heading" style="font-weight:700; font-size:17px; color:var(--text-main);">Create Pro Plan</span>
+                  <span id="modal-plan-status-pill" style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(100,116,139,0.15); color:var(--text-muted); font-weight:700;">DRAFT</span>
+                </div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
+                  Configure tier details, pricing in INR, and ordered benefits with real-time mobile app preview.
+                </div>
+              </div>
+              <button type="button" onclick="closePlanModal()" style="background:none; border:none; font-size:24px; color:var(--text-muted); cursor:pointer; line-height:1;">&times;</button>
+            </div>
+
+            <!-- Modal Content (2-Column: Left Form, Right Mobile Preview) -->
+            <div style="display:flex; flex:1; overflow-y:auto; max-height:calc(92vh - 130px);">
+              <!-- LEFT COLUMN: Form -->
+              <div style="flex:1.2; padding:24px; border-right:1px solid var(--border-color); overflow-y:auto;">
+                <!-- Validation Error Box -->
+                <div id="modal-plan-validation-error" style="display:none; margin-bottom:16px; padding:12px 16px; border-radius:8px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); color:#EF4444; font-size:12px; font-weight:600;">
+                  <!-- Error message inserted dynamically -->
+                </div>
+
+                <form id="pro-plan-form" onsubmit="event.preventDefault();" style="display:flex; flex-direction:column; gap:16px;">
+                  <input type="hidden" id="plan-form-id" value="" />
+
+                  <!-- Row: Plan Name & Unique Code -->
+                  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+                    <div>
+                      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:6px;">
+                        Plan Name <span style="color:#EF4444;">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="plan-form-name"
+                        placeholder="e.g. Monthly Pro, Annual Access"
+                        oninput="onPlanNameInput(this.value); updateMobilePreview();"
+                        style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px;"
+                      />
+                    </div>
+                    <div>
+                      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:6px;">
+                        Plan Code (Slug) <span style="color:#EF4444;">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="plan-form-code"
+                        placeholder="e.g. pro_monthly, pro_annual"
+                        oninput="updateMobilePreview()"
+                        style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px; font-family:monospace;"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Row: Duration Label & Duration Days -->
+                  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+                    <div>
+                      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:6px;">
+                        Duration Label <span style="color:#EF4444;">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="plan-form-duration"
+                        placeholder="e.g. Monthly, Annual, 3 Months"
+                        oninput="updateMobilePreview()"
+                        style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px;"
+                      />
+                    </div>
+                    <div>
+                      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:6px;">
+                        Duration (Days) <span style="color:var(--text-muted); font-size:11px;">(optional)</span>
+                      </label>
+                      <input
+                        type="number"
+                        id="plan-form-duration-days"
+                        placeholder="e.g. 30, 365"
+                        min="1"
+                        style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px;"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Row: Price in INR & Optional Comparison Price -->
+                  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">
+                    <div>
+                      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:6px;">
+                        Price in INR (₹) <span style="color:#EF4444;">*</span>
+                      </label>
+                      <div style="position:relative;">
+                        <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); font-weight:700; color:var(--text-muted);">₹</span>
+                        <input
+                          type="number"
+                          id="plan-form-price"
+                          placeholder="499"
+                          min="0"
+                          step="0.01"
+                          oninput="updateMobilePreview()"
+                          style="width:100%; padding:8px 12px 8px 28px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px;"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:6px;">
+                        Comparison Price in INR (₹) <span style="color:var(--text-muted); font-size:11px;">(strikethrough savings)</span>
+                      </label>
+                      <div style="position:relative;">
+                        <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); font-weight:700; color:var(--text-muted);">₹</span>
+                        <input
+                          type="number"
+                          id="plan-form-comparison-price"
+                          placeholder="699"
+                          min="0"
+                          step="0.01"
+                          oninput="updateMobilePreview()"
+                          style="width:100%; padding:8px 12px 8px 28px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px;"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Row: Display Order, Badge & Popular Toggle -->
+                  <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px; align-items:flex-end;">
+                    <div>
+                      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:6px;">
+                        Display Order
+                      </label>
+                      <input
+                        type="number"
+                        id="plan-form-display-order"
+                        value="1"
+                        min="0"
+                        style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px;"
+                      />
+                    </div>
+                    <div>
+                      <label style="display:block; font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:6px;">
+                        Badge Text <span style="color:var(--text-muted); font-size:11px;">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="plan-form-badge"
+                        placeholder="e.g. Save 33%, Most Popular"
+                        oninput="updateMobilePreview()"
+                        style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px;"
+                      />
+                    </div>
+                    <div style="padding-bottom:8px;">
+                      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; font-weight:600; color:var(--text-main);">
+                        <input type="checkbox" id="plan-form-is-popular" onchange="updateMobilePreview()" style="cursor:pointer; width:16px; height:16px;" />
+                        <span>Featured / Popular</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Plan Description -->
+                  <div>
+                    <label style="display:block; font-size:12px; font-weight:600; color:var(--text-main); margin-bottom:6px;">
+                      Plan Description
+                    </label>
+                    <textarea
+                      id="plan-form-description"
+                      rows="2"
+                      placeholder="Concise value proposition displayed on the mobile Pro Details page..."
+                      oninput="updateMobilePreview()"
+                      style="width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-main); color:var(--text-main); font-size:13px; resize:vertical;"
+                    ></textarea>
+                  </div>
+
+                  <!-- ORDERED BENEFITS BUILDER -->
+                  <div style="margin-top:6px; border-top:1px solid var(--border-color); padding-top:16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                      <div>
+                        <div style="font-weight:700; font-size:14px; color:var(--text-main);">Ordered Benefit Descriptions</div>
+                        <div style="font-size:11px; color:var(--text-muted);">Displayed sequentially in the mobile app. Use arrows to reorder.</div>
+                      </div>
+                      <button type="button" class="btn-secondary" onclick="addBenefitRow()" style="font-size:11px; padding:4px 10px; display:inline-flex; align-items:center; gap:4px;">
+                        <i data-feather="plus"></i> Add Benefit
+                      </button>
+                    </div>
+
+                    <div id="modal-plan-benefits-container" style="display:flex; flex-direction:column; gap:8px;">
+                      <!-- Populated dynamically via JS -->
+                    </div>
+                  </div>
+                </form>
+              </div>
+
+              <!-- RIGHT COLUMN: Live Mobile App Preview -->
+              <div style="flex:1; background:var(--bg-hover); padding:24px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; overflow-y:auto;">
+                <div style="width:100%; max-width:340px; display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                  <span style="font-size:12px; font-weight:700; color:var(--text-muted); letter-spacing:0.5px;">MOBILE APP PREVIEW</span>
+                  <button type="button" onclick="togglePreviewTheme()" style="background:none; border:1px solid var(--border-color); padding:3px 8px; border-radius:6px; font-size:11px; color:var(--text-muted); cursor:pointer; display:inline-flex; align-items:center; gap:4px;">
+                    <i data-feather="moon" style="width:12px; height:12px;"></i> Theme
+                  </button>
+                </div>
+
+                <!-- Phone Frame Mockup -->
+                <div id="mobile-preview-frame" style="width:100%; max-width:340px; border-radius:24px; border:2px solid var(--border-color); background:#090D16; color:#F8FAFC; padding:16px; box-shadow:0 12px 30px rgba(0,0,0,0.25); font-family:'Google Sans Flex', -apple-system, sans-serif;">
+                  <!-- Phone Screen Top Bar -->
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding:0 4px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <i data-feather="chevron-left" style="width:16px; height:16px; color:#94A3B8;"></i>
+                      <span style="font-size:10px; font-weight:700; color:#94A3B8; letter-spacing:0.8px;">SETTINGS</span>
+                    </div>
+                    <span style="font-size:12px; font-weight:700; color:#F8FAFC;">IPOVault Pro</span>
+                    <div style="width:16px;"></div>
+                  </div>
+
+                  <!-- Account Status Card -->
+                  <div style="background:#0F172A; border:1px solid #1E293B; border-radius:12px; padding:12px; margin-bottom:14px; display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <div style="width:28px; height:28px; border-radius:6px; background:rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center;">
+                        <i data-feather="award" style="width:14px; height:14px; color:#F8FAFC;"></i>
+                      </div>
+                      <div>
+                        <div style="font-size:11px; font-weight:700; color:#F8FAFC;">Standard Tier</div>
+                        <div style="font-size:9px; color:#94A3B8;">Account details</div>
+                      </div>
+                    </div>
+                    <span style="font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px; background:#10B981; color:#fff;">PRO ACTIVE</span>
+                  </div>
+
+                  <!-- Dynamic Plan Card Preview -->
+                  <div id="preview-plan-card" style="background:#0F172A; border:1.5px solid #4F46E5; border-radius:14px; padding:16px; margin-bottom:14px; position:relative; overflow:hidden;">
+                    <!-- Badge -->
+                    <div id="preview-badge-container" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                      <span id="preview-plan-badge" style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; background:rgba(99,102,241,0.2); color:#818CF8; border:1px solid rgba(99,102,241,0.4);">
+                        FEATURED
+                      </span>
+                      <span id="preview-plan-duration-pill" style="font-size:9px; font-weight:600; color:#94A3B8; text-transform:uppercase;">
+                        MONTHLY
+                      </span>
+                    </div>
+
+                    <div id="preview-plan-title" style="font-size:15px; font-weight:700; color:#F8FAFC; margin-bottom:4px;">
+                      Monthly Pro
+                    </div>
+                    <div id="preview-plan-desc" style="font-size:11px; color:#94A3B8; line-height:1.4; margin-bottom:12px;">
+                      Complete IPO tracking and multi-account recording
+                    </div>
+
+                    <!-- Price Row -->
+                    <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:14px;">
+                      <span id="preview-plan-price" style="font-size:22px; font-weight:800; color:#F8FAFC;">₹499</span>
+                      <span id="preview-plan-strikethrough" style="font-size:13px; color:#64748B; text-decoration:line-through;">₹699</span>
+                      <span id="preview-plan-duration-sub" style="font-size:11px; color:#94A3B8;">/ month</span>
+                    </div>
+
+                    <!-- Included Benefits List -->
+                    <div style="font-size:9px; font-weight:700; color:#818CF8; letter-spacing:0.8px; margin-bottom:8px;">INCLUDED IN PRO</div>
+                    <div id="preview-benefits-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+                      <!-- Populated live via JS -->
+                    </div>
+                  </div>
+
+                  <!-- Informational Purchase Notice -->
+                  <div style="background:rgba(255,255,255,0.04); border:1px solid #1E293B; border-radius:10px; padding:10px; margin-bottom:10px; text-align:center;">
+                    <div style="font-size:10px; color:#94A3B8; line-height:1.4;">
+                      ℹ️ In-app plan purchases are currently not active. Contact support or check back soon for availability.
+                    </div>
+                  </div>
+
+                  <!-- Disclaimer Card -->
+                  <div style="background:rgba(255,255,255,0.02); border:1px solid #1E293B; border-radius:10px; padding:10px;">
+                    <div style="font-size:9px; font-weight:600; color:#94A3B8; margin-bottom:3px;">Important Notice &amp; Disclaimer</div>
+                    <div style="font-size:8px; color:#64748B; line-height:1.3;">
+                      IPOVault helps users record, organize, and manage IPO applications locally. It does not place bids on any stock exchange or guarantee IPO allotment.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div style="padding:14px 24px; border-top:1px solid var(--border-color); background:var(--bg-hover); display:flex; justify-content:space-between; align-items:center;">
+              <button type="button" class="btn-secondary" onclick="closePlanModal()">Cancel</button>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <button type="button" id="btn-save-plan-draft" class="btn-secondary" onclick="savePlanSubmit('DRAFT')" style="font-weight:600;">
+                  Save as Draft
+                </button>
+                <button type="button" id="btn-save-plan-publish" class="btn-primary" onclick="savePlanSubmit('PUBLISHED')" style="background:#10B981; border:none; padding:8px 18px; border-radius:8px; color:#fff; font-weight:700; cursor:pointer;">
+                  Publish Plan to App
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
         <!-- ADD-ONLY & AUTHORITATIVE OVERWRITE JSON IMPORT PREVIEW & COMMIT MODAL -->
         <div id="json-import-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
           <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:960px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-card);">
@@ -3331,7 +3739,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         'notifications': 'Notification Delivery Ops',
         'allotment': 'Allotment Check Ops',
         'ipo-guru': 'IPO Guru v2 Inspector',
-        'users': 'User Management'
+        'users': 'User Management',
+        'pro-plans': 'Pro Plan Management'
       };
       const breadcrumbEl = document.getElementById('active-breadcrumb-title');
       if (breadcrumbEl) breadcrumbEl.textContent = titleMap[tabId] || 'Dashboard';
@@ -3345,8 +3754,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (tabId === 'allotment') loadAllotment();
       if (tabId === 'ipo-guru') fetchIpoGuruStatus();
       if (tabId === 'users') loadUsers(1);
+      if (tabId === 'pro-plans') loadProPlans();
 
       if (window.feather) feather.replace();
+
     }
 
     // ==========================================
@@ -3751,7 +4162,643 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    // ==========================================
+    // PRO PLAN MANAGEMENT SCRIPT & LIVE PREVIEW
+    // ==========================================
+    let cachedProPlans = [];
+    let currentEditingPlan = null;
+    let planBenefitsList = [];
+    let isPreviewDarkTheme = true;
+
+    async function loadProPlans() {
+      const tbody = document.getElementById('pro-plans-table-body');
+      const errorBanner = document.getElementById('pro-plans-error-banner');
+      const emptyState = document.getElementById('pro-plans-empty-state');
+      if (errorBanner) errorBanner.style.display = 'none';
+
+      try {
+        const res = await fetch(API_BASE + '/pro-plans');
+        if (!res.ok) {
+          throw new Error('Server returned HTTP ' + res.status);
+        }
+        const json = await res.json();
+        const plans = json.data || json || [];
+        cachedProPlans = Array.isArray(plans) ? plans : [];
+
+        // Update KPI counters
+        const totalCount = cachedProPlans.length;
+        const publishedCount = cachedProPlans.filter(p => p.status === 'PUBLISHED').length;
+        const draftCount = cachedProPlans.filter(p => p.status === 'DRAFT').length;
+        const archivedCount = cachedProPlans.filter(p => p.status === 'ARCHIVED').length;
+
+        const statTotal = document.getElementById('stat-plans-total');
+        const statPub = document.getElementById('stat-plans-published');
+        const statDraft = document.getElementById('stat-plans-draft');
+        const statArchived = document.getElementById('stat-plans-archived');
+        const navBadge = document.getElementById('nav-pro-plans-count');
+
+        if (statTotal) statTotal.textContent = totalCount;
+        if (statPub) statPub.textContent = publishedCount;
+        if (statDraft) statDraft.textContent = draftCount;
+        if (statArchived) statArchived.textContent = archivedCount;
+        if (navBadge) navBadge.textContent = publishedCount > 0 ? (publishedCount + ' LIVE') : '';
+
+        filterProPlans();
+      } catch (err) {
+        if (errorBanner) {
+          const errText = document.getElementById('pro-plans-error-text');
+          if (errText) errText.textContent = 'Failed to load Pro Plans: ' + err.message;
+          errorBanner.style.display = 'block';
+        }
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:32px; color:#EF4444;">Error loading plans: ' + escapeHtml(err.message) + '</td></tr>';
+        }
+      }
+    }
+
+    function filterProPlans() {
+      const searchInput = document.getElementById('pro-plans-search-input');
+      const statusFilter = document.getElementById('pro-plans-status-filter');
+      const tbody = document.getElementById('pro-plans-table-body');
+      const emptyState = document.getElementById('pro-plans-empty-state');
+
+      const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+      const filter = statusFilter ? statusFilter.value : 'ALL';
+
+      const filtered = cachedProPlans.filter(p => {
+        if (filter !== 'ALL' && p.status !== filter) return false;
+        if (query) {
+          const name = (p.name || '').toLowerCase();
+          const code = (p.code || '').toLowerCase();
+          const desc = (p.description || '').toLowerCase();
+          if (!name.includes(query) && !code.includes(query) && !desc.includes(query)) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      if (!tbody) return;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        if (emptyState) emptyState.style.display = 'block';
+        return;
+      }
+
+      if (emptyState) emptyState.style.display = 'none';
+
+      let html = '';
+      filtered.forEach(p => {
+        const isPublished = p.status === 'PUBLISHED';
+        const isDraft = p.status === 'DRAFT';
+        const isArchived = p.status === 'ARCHIVED';
+
+        let statusBadge = '';
+        if (isPublished) {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:12px; background:rgba(16,185,129,0.15); color:#10B981; border:1px solid rgba(16,185,129,0.3);">PUBLISHED</span>';
+        } else if (isDraft) {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:12px; background:rgba(245,158,11,0.15); color:#D97706; border:1px solid rgba(245,158,11,0.3);">DRAFT</span>';
+        } else {
+          statusBadge = '<span style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:12px; background:rgba(100,116,139,0.15); color:#64748B; border:1px solid rgba(100,116,139,0.3);">ARCHIVED</span>';
+        }
+
+        const priceDisplay = '₹' + Number(p.priceInr).toLocaleString('en-IN');
+        const compareDisplay = p.comparisonPriceInr ? (' <span style="font-size:11px; color:var(--text-muted); text-decoration:line-through;">₹' + Number(p.comparisonPriceInr).toLocaleString('en-IN') + '</span>') : '';
+        const badgeTag = p.badge ? (' <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(99,102,241,0.15); color:#6366F1; font-weight:700;">' + escapeHtml(p.badge) + '</span>') : '';
+
+        const benefitsCount = Array.isArray(p.benefits) ? p.benefits.length : 0;
+
+        html += '<tr>'
+          + '<td>'
+            + '<div style="font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:6px;">'
+              + escapeHtml(p.name)
+              + (p.isPopular ? ' <span style="font-size:10px; background:#FEF3C7; color:#D97706; padding:1px 6px; border-radius:4px; font-weight:700;">POPULAR</span>' : '')
+              + badgeTag
+            + '</div>'
+            + '<div style="font-size:11px; font-family:monospace; color:var(--text-muted); margin-top:2px;">' + escapeHtml(p.code) + '</div>'
+          + '</td>'
+          + '<td>'
+            + '<div style="font-weight:600; font-size:13px;">' + escapeHtml(p.duration) + '</div>'
+            + (p.durationDays ? ('<div style="font-size:11px; color:var(--text-muted);">' + p.durationDays + ' days</div>') : '')
+          + '</td>'
+          + '<td>'
+            + '<div style="font-weight:700; font-size:14px; color:var(--text-main);">' + priceDisplay + compareDisplay + '</div>'
+          + '</td>'
+          + '<td>'
+            + '<span style="font-size:12px; font-weight:600; color:var(--text-main);">' + benefitsCount + ' items</span>'
+          + '</td>'
+          + '<td>'
+            + '<span style="font-size:12px; font-weight:600; color:var(--text-muted);">' + (p.displayOrder ?? 0) + '</span>'
+          + '</td>'
+          + '<td>' + statusBadge + '</td>'
+          + '<td style="text-align:right;">'
+            + '<div style="display:inline-flex; align-items:center; gap:6px;">'
+              + '<button class="btn-secondary" onclick="openEditPlanModal(\'' + p.id + '\')" style="font-size:11px; padding:4px 8px;" title="Edit Plan">'
+                + '<i data-feather="edit-2" style="width:12px; height:12px;"></i> Edit'
+              + '</button>'
+              + (isPublished
+                  ? '<button class="btn-secondary" onclick="unpublishProPlan(\'' + p.id + '\')" style="font-size:11px; padding:4px 8px; color:#F59E0B; border-color:rgba(245,158,11,0.4);" title="Unpublish from App">'
+                      + '<i data-feather="eye-off" style="width:12px; height:12px;"></i> Unpublish'
+                    + '</button>'
+                  : '<button class="btn-secondary" onclick="publishProPlan(\'' + p.id + '\')" style="font-size:11px; padding:4px 8px; color:#10B981; border-color:rgba(16,185,129,0.4);" title="Publish to App">'
+                      + '<i data-feather="check-circle" style="width:12px; height:12px;"></i> Publish'
+                    + '</button>'
+                )
+              + (!isArchived
+                  ? '<button class="btn-secondary" onclick="archiveProPlan(\'' + p.id + '\')" style="font-size:11px; padding:4px 8px; color:#EF4444; border-color:rgba(239,68,68,0.3);" title="Soft Archive">'
+                      + '<i data-feather="archive" style="width:12px; height:12px;"></i> Archive'
+                    + '</button>'
+                  : ''
+                )
+            + '</div>'
+          + '</td>'
+        + '</tr>';
+      });
+
+      tbody.innerHTML = html;
+      if (window.feather) feather.replace();
+    }
+
+    function openCreatePlanModal() {
+      currentEditingPlan = null;
+      const modal = document.getElementById('modal-pro-plan');
+      const heading = document.getElementById('modal-plan-heading');
+      const pill = document.getElementById('modal-plan-status-pill');
+      const errBox = document.getElementById('modal-plan-validation-error');
+
+      if (heading) heading.textContent = 'Create Pro Plan';
+      if (pill) {
+        pill.textContent = 'NEW DRAFT';
+        pill.style.background = 'rgba(100,116,139,0.15)';
+        pill.style.color = 'var(--text-muted)';
+      }
+      if (errBox) errBox.style.display = 'none';
+
+      document.getElementById('plan-form-id').value = '';
+      document.getElementById('plan-form-name').value = '';
+      document.getElementById('plan-form-code').value = '';
+      document.getElementById('plan-form-duration').value = 'Monthly';
+      document.getElementById('plan-form-duration-days').value = '30';
+      document.getElementById('plan-form-price').value = '499';
+      document.getElementById('plan-form-comparison-price').value = '699';
+      document.getElementById('plan-form-display-order').value = (cachedProPlans.length + 1).toString();
+      document.getElementById('plan-form-badge').value = '';
+      document.getElementById('plan-form-is-popular').checked = false;
+      document.getElementById('plan-form-description').value = 'Unlock complete IPO recording, multi-profile management, and portfolio insights.';
+
+      planBenefitsList = [
+        { title: 'Record IPO Applications', description: 'Record IPO applications with family member linkages and lot sizes.', icon: 'layers' },
+        { title: 'Bulk Application Management', description: 'Organize applications across multiple family profiles.', icon: 'users' },
+        { title: 'Manage Applications', description: 'View portfolio summaries and track investment outcomes.', icon: 'pie-chart' },
+        { title: 'Track Application Status', description: 'Monitor allotment results and detailed portfolio insights.', icon: 'trending-up' },
+        { title: 'Bank Account Management', description: 'Manage bank details and UPI IDs for fast reference.', icon: 'credit-card' },
+        { title: 'Ad-Free Experience', description: 'Browse IPOVault without promotional advertisements.', icon: 'shield' }
+      ];
+
+      renderBenefitsBuilder();
+      updateMobilePreview();
+
+      if (modal) modal.style.display = 'flex';
+      if (window.feather) feather.replace();
+    }
+
+    async function openEditPlanModal(id) {
+      const modal = document.getElementById('modal-pro-plan');
+      const heading = document.getElementById('modal-plan-heading');
+      const pill = document.getElementById('modal-plan-status-pill');
+      const errBox = document.getElementById('modal-plan-validation-error');
+      if (errBox) errBox.style.display = 'none';
+
+      let plan = cachedProPlans.find(p => p.id === id);
+      if (!plan) {
+        try {
+          const res = await fetch(API_BASE + '/pro-plans/' + encodeURIComponent(id));
+          const json = await res.json();
+          plan = json.data || json;
+        } catch (err) {
+          alert('Failed to load plan details: ' + err.message);
+          return;
+        }
+      }
+
+      currentEditingPlan = plan;
+
+      if (heading) heading.textContent = 'Edit Pro Plan: ' + plan.name;
+      if (pill) {
+        pill.textContent = plan.status;
+        if (plan.status === 'PUBLISHED') {
+          pill.style.background = 'rgba(16,185,129,0.15)';
+          pill.style.color = '#10B981';
+        } else if (plan.status === 'DRAFT') {
+          pill.style.background = 'rgba(245,158,11,0.15)';
+          pill.style.color = '#D97706';
+        } else {
+          pill.style.background = 'rgba(100,116,139,0.15)';
+          pill.style.color = '#64748B';
+        }
+      }
+
+      document.getElementById('plan-form-id').value = plan.id;
+      document.getElementById('plan-form-name').value = plan.name || '';
+      document.getElementById('plan-form-code').value = plan.code || '';
+      document.getElementById('plan-form-duration').value = plan.duration || '';
+      document.getElementById('plan-form-duration-days').value = plan.durationDays ? plan.durationDays.toString() : '';
+      document.getElementById('plan-form-price').value = plan.priceInr !== undefined ? Number(plan.priceInr).toString() : '';
+      document.getElementById('plan-form-comparison-price').value = plan.comparisonPriceInr !== null && plan.comparisonPriceInr !== undefined ? Number(plan.comparisonPriceInr).toString() : '';
+      document.getElementById('plan-form-display-order').value = (plan.displayOrder ?? 0).toString();
+      document.getElementById('plan-form-badge').value = plan.badge || '';
+      document.getElementById('plan-form-is-popular').checked = Boolean(plan.isPopular);
+      document.getElementById('plan-form-description').value = plan.description || '';
+
+      planBenefitsList = Array.isArray(plan.benefits) && plan.benefits.length > 0
+        ? plan.benefits.map(b => ({
+            id: b.id,
+            title: b.title,
+            description: b.description || '',
+            icon: b.icon || 'check'
+          }))
+        : [];
+
+      renderBenefitsBuilder();
+      updateMobilePreview();
+
+      if (modal) modal.style.display = 'flex';
+      if (window.feather) feather.replace();
+    }
+
+    function closePlanModal() {
+      const modal = document.getElementById('modal-pro-plan');
+      if (modal) modal.style.display = 'none';
+    }
+
+    function onPlanNameInput(val) {
+      const codeInput = document.getElementById('plan-form-code');
+      if (!currentEditingPlan && codeInput) {
+        codeInput.value = val.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      }
+    }
+
+    function renderBenefitsBuilder() {
+      const container = document.getElementById('modal-plan-benefits-container');
+      if (!container) return;
+
+      if (planBenefitsList.length === 0) {
+        container.innerHTML = '<div style="padding:16px; text-align:center; font-size:12px; color:var(--text-muted); background:var(--bg-main); border:1px dashed var(--border-color); border-radius:8px;">No benefits added yet. Click &quot;Add Benefit&quot; above to add one.</div>';
+        return;
+      }
+
+      let html = '';
+      planBenefitsList.forEach((b, idx) => {
+        const isFirst = idx === 0;
+        const isLast = idx === planBenefitsList.length - 1;
+
+        html += '<div style="background:var(--bg-main); border:1px solid var(--border-color); border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px;">'
+          + '<div style="display:flex; flex-direction:column; gap:2px;">'
+            + '<button type="button" onclick="moveBenefitUp(' + idx + ')" ' + (isFirst ? 'disabled' : '') + ' style="border:none; background:none; cursor:' + (isFirst ? 'default' : 'pointer') + '; opacity:' + (isFirst ? '0.3' : '1') + '; padding:0; color:var(--text-muted); font-size:12px;">▲</button>'
+            + '<button type="button" onclick="moveBenefitDown(' + idx + ')" ' + (isLast ? 'disabled' : '') + ' style="border:none; background:none; cursor:' + (isLast ? 'default' : 'pointer') + '; opacity:' + (isLast ? '0.3' : '1') + '; padding:0; color:var(--text-muted); font-size:12px;">▼</button>'
+          + '</div>'
+          + '<div style="font-size:11px; font-weight:700; color:var(--text-muted); width:18px;">#' + (idx + 1) + '</div>'
+          + '<div style="flex:1; display:flex; flex-direction:column; gap:4px;">'
+            + '<input type="text" placeholder="Benefit Title (e.g. Record IPO Applications)" value="' + escapeHtml(b.title) + '" oninput="updateBenefitTitle(' + idx + ', this.value)" style="width:100%; padding:6px 10px; font-size:12px; font-weight:600; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-surface); color:var(--text-main);" />'
+            + '<input type="text" placeholder="Optional description or details..." value="' + escapeHtml(b.description || '') + '" oninput="updateBenefitDesc(' + idx + ', this.value)" style="width:100%; padding:4px 8px; font-size:11px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-surface); color:var(--text-muted);" />'
+          + '</div>'
+          + '<select onchange="updateBenefitIcon(' + idx + ', this.value)" style="padding:6px 8px; font-size:11px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-surface); color:var(--text-main);">'
+            + '<option value="layers"' + (b.icon === 'layers' ? ' selected' : '') + '>Layers (Apps)</option>'
+            + '<option value="users"' + (b.icon === 'users' ? ' selected' : '') + '>Users (Family)</option>'
+            + '<option value="pie-chart"' + (b.icon === 'pie-chart' ? ' selected' : '') + '>Pie Chart</option>'
+            + '<option value="trending-up"' + (b.icon === 'trending-up' ? ' selected' : '') + '>Trending Up</option>'
+            + '<option value="credit-card"' + (b.icon === 'credit-card' ? ' selected' : '') + '>Bank Card</option>'
+            + '<option value="shield"' + (b.icon === 'shield' ? ' selected' : '') + '>Shield</option>'
+            + '<option value="check"' + (b.icon === 'check' ? ' selected' : '') + '>Checkmark</option>'
+            + '<option value="award"' + (b.icon === 'award' ? ' selected' : '') + '>Award</option>'
+          + '</select>'
+          + '<button type="button" onclick="removeBenefitRow(' + idx + ')" style="background:none; border:none; color:#EF4444; cursor:pointer; padding:4px;" title="Remove Benefit">'
+            + '<i data-feather="trash-2" style="width:14px; height:14px;"></i>'
+          + '</button>'
+        + '</div>';
+      });
+
+      container.innerHTML = html;
+      if (window.feather) feather.replace();
+    }
+
+    function addBenefitRow() {
+      planBenefitsList.push({
+        title: '',
+        description: '',
+        icon: 'check'
+      });
+      renderBenefitsBuilder();
+      updateMobilePreview();
+    }
+
+    function removeBenefitRow(idx) {
+      planBenefitsList.splice(idx, 1);
+      renderBenefitsBuilder();
+      updateMobilePreview();
+    }
+
+    function moveBenefitUp(idx) {
+      if (idx <= 0) return;
+      const item = planBenefitsList.splice(idx, 1)[0];
+      planBenefitsList.splice(idx - 1, 0, item);
+      renderBenefitsBuilder();
+      updateMobilePreview();
+    }
+
+    function moveBenefitDown(idx) {
+      if (idx >= planBenefitsList.length - 1) return;
+      const item = planBenefitsList.splice(idx, 1)[0];
+      planBenefitsList.splice(idx + 1, 0, item);
+      renderBenefitsBuilder();
+      updateMobilePreview();
+    }
+
+    function updateBenefitTitle(idx, val) {
+      if (planBenefitsList[idx]) {
+        planBenefitsList[idx].title = val;
+        updateMobilePreview();
+      }
+    }
+
+    function updateBenefitDesc(idx, val) {
+      if (planBenefitsList[idx]) {
+        planBenefitsList[idx].description = val;
+        updateMobilePreview();
+      }
+    }
+
+    function updateBenefitIcon(idx, val) {
+      if (planBenefitsList[idx]) {
+        planBenefitsList[idx].icon = val;
+        updateMobilePreview();
+      }
+    }
+
+    function togglePreviewTheme() {
+      isPreviewDarkTheme = !isPreviewDarkTheme;
+      const frame = document.getElementById('mobile-preview-frame');
+      const card = document.getElementById('preview-plan-card');
+      if (!frame || !card) return;
+
+      if (isPreviewDarkTheme) {
+        frame.style.background = '#090D16';
+        frame.style.color = '#F8FAFC';
+        card.style.background = '#0F172A';
+        card.style.borderColor = '#4F46E5';
+      } else {
+        frame.style.background = '#F8FAFC';
+        frame.style.color = '#0F172A';
+        card.style.background = '#FFFFFF';
+        card.style.borderColor = '#6366F1';
+      }
+      updateMobilePreview();
+    }
+
+    function updateMobilePreview() {
+      const name = document.getElementById('plan-form-name')?.value || 'IPOVault Pro';
+      const duration = document.getElementById('plan-form-duration')?.value || 'Monthly';
+      const price = document.getElementById('plan-form-price')?.value || '0';
+      const compPrice = document.getElementById('plan-form-comparison-price')?.value;
+      const badge = document.getElementById('plan-form-badge')?.value || '';
+      const isPopular = document.getElementById('plan-form-is-popular')?.checked;
+      const desc = document.getElementById('plan-form-description')?.value || '';
+
+      const pTitle = document.getElementById('preview-plan-title');
+      const pDurationPill = document.getElementById('preview-plan-duration-pill');
+      const pPrice = document.getElementById('preview-plan-price');
+      const pStrikethrough = document.getElementById('preview-plan-strikethrough');
+      const pDurationSub = document.getElementById('preview-plan-duration-sub');
+      const pBadge = document.getElementById('preview-plan-badge');
+      const pDesc = document.getElementById('preview-plan-desc');
+      const pBenefitsList = document.getElementById('preview-benefits-list');
+
+      if (pTitle) pTitle.textContent = name;
+      if (pDurationPill) pDurationPill.textContent = duration.toUpperCase();
+      if (pPrice) pPrice.textContent = '₹' + Number(price || 0).toLocaleString('en-IN');
+      if (pDurationSub) pDurationSub.textContent = '/ ' + duration.toLowerCase();
+
+      if (pStrikethrough) {
+        if (compPrice && Number(compPrice) > Number(price)) {
+          pStrikethrough.style.display = 'inline';
+          pStrikethrough.textContent = '₹' + Number(compPrice).toLocaleString('en-IN');
+        } else {
+          pStrikethrough.style.display = 'none';
+        }
+      }
+
+      if (pBadge) {
+        if (badge) {
+          pBadge.style.display = 'inline-block';
+          pBadge.textContent = badge.toUpperCase();
+        } else if (isPopular) {
+          pBadge.style.display = 'inline-block';
+          pBadge.textContent = 'MOST POPULAR';
+        } else {
+          pBadge.style.display = 'none';
+        }
+      }
+
+      if (pDesc) {
+        pDesc.textContent = desc || 'Complete IPO recording tools, family applications, and portfolio insights.';
+      }
+
+      if (pBenefitsList) {
+        if (planBenefitsList.length === 0) {
+          pBenefitsList.innerHTML = '<div style="font-size:10px; color:#94A3B8;">No benefits added yet</div>';
+        } else {
+          let bHtml = '';
+          planBenefitsList.forEach(b => {
+            const title = b.title || 'Benefit title';
+            bHtml += '<div style="display:flex; align-items:flex-start; gap:8px;">'
+              + '<div style="width:14px; height:14px; border-radius:50%; background:rgba(16,185,129,0.2); display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:2px;">'
+                + '<span style="font-size:9px; color:#10B981; font-weight:800;">✓</span>'
+              + '</div>'
+              + '<div>'
+                + '<div style="font-size:11px; font-weight:600; color:' + (isPreviewDarkTheme ? '#F8FAFC' : '#0F172A') + ';">' + escapeHtml(title) + '</div>'
+                + (b.description ? ('<div style="font-size:9px; color:#94A3B8; line-height:1.3;">' + escapeHtml(b.description) + '</div>') : '')
+              + '</div>'
+            + '</div>';
+          });
+          pBenefitsList.innerHTML = bHtml;
+        }
+      }
+
+      if (window.feather) feather.replace();
+    }
+
+    async function savePlanSubmit(targetStatus) {
+      const errBox = document.getElementById('modal-plan-validation-error');
+      if (errBox) errBox.style.display = 'none';
+
+      const id = document.getElementById('plan-form-id').value;
+      const name = document.getElementById('plan-form-name').value.trim();
+      const code = document.getElementById('plan-form-code').value.trim().toLowerCase();
+      const duration = document.getElementById('plan-form-duration').value.trim();
+      const durationDaysRaw = document.getElementById('plan-form-duration-days').value.trim();
+      const priceRaw = document.getElementById('plan-form-price').value.trim();
+      const compPriceRaw = document.getElementById('plan-form-comparison-price').value.trim();
+      const displayOrderRaw = document.getElementById('plan-form-display-order').value.trim();
+      const badge = document.getElementById('plan-form-badge').value.trim();
+      const isPopular = document.getElementById('plan-form-is-popular').checked;
+      const description = document.getElementById('plan-form-description').value.trim();
+
+      if (!name) {
+        showPlanValidationError('Plan Name is required.');
+        return;
+      }
+      if (!code) {
+        showPlanValidationError('Plan Code (Slug) is required.');
+        return;
+      }
+      if (!/^[a-z0-9_-]+$/.test(code)) {
+        showPlanValidationError('Plan Code must contain only lowercase letters, numbers, hyphens, and underscores.');
+        return;
+      }
+      if (!duration) {
+        showPlanValidationError('Duration Label (e.g. Monthly, Annual) is required.');
+        return;
+      }
+      if (priceRaw === '' || isNaN(Number(priceRaw)) || Number(priceRaw) < 0) {
+        showPlanValidationError('Please enter a valid non-negative Price in INR.');
+        return;
+      }
+
+      const priceInr = Number(priceRaw);
+      const comparisonPriceInr = compPriceRaw !== '' ? Number(compPriceRaw) : null;
+      const durationDays = durationDaysRaw !== '' ? parseInt(durationDaysRaw, 10) : null;
+      const displayOrder = displayOrderRaw !== '' ? parseInt(displayOrderRaw, 10) : 0;
+
+      if (comparisonPriceInr !== null && comparisonPriceInr < 0) {
+        showPlanValidationError('Comparison price cannot be negative.');
+        return;
+      }
+
+      const benefits = planBenefitsList
+        .filter(b => b.title && b.title.trim())
+        .map((b, idx) => ({
+          title: b.title.trim(),
+          description: b.description ? b.description.trim() : null,
+          icon: b.icon || 'check',
+          displayOrder: idx + 1
+        }));
+
+      if (benefits.length === 0) {
+        showPlanValidationError('Please add at least one benefit description for this plan.');
+        return;
+      }
+
+      const payload = {
+        name,
+        code,
+        duration,
+        durationDays,
+        priceInr,
+        comparisonPriceInr,
+        status: targetStatus,
+        displayOrder,
+        isPopular,
+        badge: badge || null,
+        description: description || null,
+        features: benefits.map(b => b.title),
+        benefits
+      };
+
+      const btnDraft = document.getElementById('btn-save-plan-draft');
+      const btnPub = document.getElementById('btn-save-plan-publish');
+      if (btnDraft) btnDraft.disabled = true;
+      if (btnPub) btnPub.disabled = true;
+
+      try {
+        const url = id ? (API_BASE + '/pro-plans/' + encodeURIComponent(id)) : (API_BASE + '/pro-plans');
+        const method = id ? 'PATCH' : 'POST';
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || ('Server returned HTTP ' + res.status));
+        }
+
+        closePlanModal();
+        showToast(
+          targetStatus === 'PUBLISHED'
+            ? 'Pro Plan successfully published and live in mobile app!'
+            : 'Pro Plan successfully saved as draft.',
+          'success'
+        );
+        loadProPlans();
+      } catch (err) {
+        showPlanValidationError('Failed to save plan: ' + err.message);
+      } finally {
+        if (btnDraft) btnDraft.disabled = false;
+        if (btnPub) btnPub.disabled = false;
+      }
+    }
+
+    function showPlanValidationError(msg) {
+      const errBox = document.getElementById('modal-plan-validation-error');
+      if (errBox) {
+        errBox.textContent = msg;
+        errBox.style.display = 'block';
+        errBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        alert(msg);
+      }
+    }
+
+    async function publishProPlan(id) {
+      if (!confirm('Publish this plan to make it visible to all users in the mobile app?')) return;
+      try {
+        const res = await fetch(API_BASE + '/pro-plans/' + encodeURIComponent(id) + '/publish', { method: 'POST' });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || ('Server returned HTTP ' + res.status));
+        }
+        showToast('Plan published to mobile app live feed!', 'success');
+        loadProPlans();
+      } catch (err) {
+        alert('Failed to publish plan: ' + err.message);
+      }
+    }
+
+    async function unpublishProPlan(id) {
+      if (!confirm('Unpublish this plan? It will be reverted to draft status and hidden from the mobile app.')) return;
+      try {
+        const res = await fetch(API_BASE + '/pro-plans/' + encodeURIComponent(id) + '/unpublish', { method: 'POST' });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || ('Server returned HTTP ' + res.status));
+        }
+        showToast('Plan unpublished. Reverted to draft.', 'success');
+        loadProPlans();
+      } catch (err) {
+        alert('Failed to unpublish plan: ' + err.message);
+      }
+    }
+
+    async function archiveProPlan(id) {
+      if (!confirm('Archive this plan? It will be safely archived without deleting any data, and hidden from the mobile app.')) return;
+      try {
+        const res = await fetch(API_BASE + '/pro-plans/' + encodeURIComponent(id) + '/archive', { method: 'POST' });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || ('Server returned HTTP ' + res.status));
+        }
+        showToast('Plan safely archived.', 'success');
+        loadProPlans();
+      } catch (err) {
+        alert('Failed to archive plan: ' + err.message);
+      }
+    }
+
     async function loadDashboard() {
+
       try {
         const res = await fetch(API_BASE + '/dashboard');
         const json = await res.json();
