@@ -568,7 +568,8 @@ After confirming deletion, run the exact same inspection query. Expected results
 
 This section defines the official, fail-safe release procedure for deploying the permanent KFintech Registrar Reliability Solution to production.
 
-- **Release Commit:** `d8813dbd5ffd4521b29d9f528eb864f542234ed1` (`d8813db`)
+- **Approved Implementation Commit:** `d8813dbd5ffd4521b29d9f528eb864f542234ed1` (`d8813db`)
+- **Approved Release Commit Pinning:** Operator-supplied full 40-character SHA (validated against `origin/main`, ancestry chain from `d8813db`, and strict allowlist)
 - **Previous Verified Baseline Commit:** `d54c810f432cd8b1c94483213722b5d2bc28a401` (`d54c810`)
 - **Target Host:** Oracle Cloud Always Free VM (Ubuntu 24.04 ARM64 Ampere A1)
 - **Service Unit:** `ipovault-backend.service`
@@ -672,22 +673,112 @@ echo "==========================================================================
 ### 14.2. Fast-Forward Deployment Procedure
 
 > [!IMPORTANT]
-> **PREVENTING UNINTENDED REDEPLOYMENTS (EXPLICIT SHA PINNING):**
-> Blindly running `git pull` is strictly forbidden. The deployment script enforces explicit release selection by verifying that `origin/main` matches `$TARGET_RELEASE_SHA` exactly before merging.
+> **INDEPENDENT OPERATOR APPROVAL & DUAL-PINNED RELEASE GATE:**
+> Blindly running `git pull` is strictly forbidden. The deployment procedure enforces explicit release selection by verifying that `origin/main` matches `$APPROVED_RELEASE_SHA` exactly, that `$APPROVED_IMPLEMENTATION_SHA` is verified in its ancestry, and that the entire repository tree matches the approved implementation byte-for-byte outside the single allowlisted runbook file `docs/PRODUCTION-DEPLOYMENT.md`.
+> **CRITICAL SECURITY REQUIREMENT:** Format validation (`^[0-9a-fA-F]{40}$`) confirms only that the input is a 40-character hexadecimal string; it does NOT establish approval. The operator must independently verify that the release SHA has received authorized change-management approval before supplying it.
 
-#### Step 1: Push Release Commit from Local Workstation (Operator Action)
+#### Step 1: Push Release Commit from Local Workstation & Obtain Release SHA (Operator Action)
+
+> [!IMPORTANT]
+> **VERIFYING REMOTE PUSH SUCCESS (LIVE REMOTE QUERY REQUIRED):**
+> Merely inspecting or generating a local commit SHA does **not** prove that the release commit has reached the remote repository. The operator must verify that `git push origin main` completed with an exit code of `0` and that a live `git ls-remote --heads origin main` query confirms the remote repository's `main` branch points to the exact local `HEAD` before providing the SHA to the production VM.
+
+On the local development workstation:
 ```bash
-# Execute on local development workstation only:
-git push origin main
+# 1. Push release commit to remote main and confirm push succeeded
+git push origin main || {
+  echo "❌ CRITICAL ABORT: git push origin main failed! Do NOT proceed to server deployment."
+  exit 1
+}
+
+# 2. Query remote repository directly to obtain live remote SHA for origin/main
+LOCAL_HEAD=$(git rev-parse HEAD) || {
+  echo "❌ CRITICAL ABORT: Failed to resolve local HEAD commit SHA!"
+  exit 1
+}
+
+LS_REMOTE_OUT=$(git ls-remote --heads origin main) || {
+  echo "❌ CRITICAL ABORT: git ls-remote failed while querying remote origin/main!"
+  exit 1
+}
+
+if [ -z "$LS_REMOTE_OUT" ]; then
+  echo "❌ CRITICAL ABORT: git ls-remote returned empty output for refs/heads/main!"
+  exit 1
+fi
+
+# Extract the SHA from the first field of git ls-remote output
+REMOTE_LIVE_SHA=$(echo "$LS_REMOTE_OUT" | awk '{print $1}')
+if [ -z "$REMOTE_LIVE_SHA" ]; then
+  echo "❌ CRITICAL ABORT: Failed to parse commit SHA from git ls-remote output: '$LS_REMOTE_OUT'"
+  exit 1
+fi
+
+# Strictly validate that the parsed remote SHA is a 40-character hexadecimal string
+if ! echo "$REMOTE_LIVE_SHA" | grep -Eq '^[0-9a-fA-F]{40}$'; then
+  echo "❌ CRITICAL ABORT: Parsed remote SHA is not a valid 40-character hexadecimal SHA: '$REMOTE_LIVE_SHA'"
+  exit 1
+fi
+
+# Strictly require live remote SHA to match local HEAD
+if [ "$REMOTE_LIVE_SHA" != "$LOCAL_HEAD" ]; then
+  echo "❌ CRITICAL ABORT: Live remote origin/main ($REMOTE_LIVE_SHA) does NOT match local HEAD ($LOCAL_HEAD)!"
+  echo "Remote repository ref differs from local HEAD. Halting."
+  exit 1
+fi
+
+# 3. Assign verified release commit SHA to provide to the production VM:
+RELEASE_SHA="$REMOTE_LIVE_SHA"
+echo "================================================================================"
+echo "✓ Live remote release commit verified on origin/main: $RELEASE_SHA"
+echo "Supply this APPROVED_RELEASE_SHA to the production VM deployment script."
+echo "================================================================================"
 ```
 
 #### Step 2: Fetch, Verify Ancestry, Build, and Restart on Production Server
+Run on the production server (passing the approved release commit SHA as argument or environment variable):
 ```bash
 cd "$APP_DIR"
 
-# Target Release Commit Definition
-TARGET_RELEASE_SHA="d8813dbd5ffd4521b29d9f528eb864f542234ed1"
+# ------------------------------------------------------------------------------
+# Explicit Cryptographic Release Pinning & Input Validation
+# ------------------------------------------------------------------------------
 EXPECTED_BASELINE_SHA="d54c810f432cd8b1c94483213722b5d2bc28a401"
+APPROVED_IMPLEMENTATION_SHA="d8813dbd5ffd4521b29d9f528eb864f542234ed1"
+
+# The approved release commit SHA is supplied by the operator (or passed as $1).
+# This decouples release verification from self-referential commit hashing.
+# Safe parameter expansion: ${1:-${APPROVED_RELEASE_SHA:-}} prevents unbound variable aborts under 'set -u'.
+APPROVED_RELEASE_SHA="${1:-${APPROVED_RELEASE_SHA:-}}"
+
+if [ -z "$APPROVED_RELEASE_SHA" ]; then
+  if [ ! -t 0 ]; then
+    echo "❌ CRITICAL ABORT: APPROVED_RELEASE_SHA is unset in a non-interactive shell! Pass as \$1 or set the APPROVED_RELEASE_SHA environment variable."
+    exit 1
+  fi
+  read -r -p "Enter approved 40-character release commit SHA: " APPROVED_RELEASE_SHA
+fi
+
+# Reject missing value if operator pressed Enter on empty prompt
+if [ -z "$APPROVED_RELEASE_SHA" ]; then
+  echo "❌ CRITICAL ABORT: Missing release commit SHA! An approved 40-character commit SHA is required."
+  exit 1
+fi
+
+# Strictly validate 40-character hexadecimal format
+# CRITICAL DIRECTIVE: Format validation alone confirms only hexadecimal structure; it does NOT establish approval.
+# The operator must supply an explicitly verified, peer-reviewed commit SHA from authorized change management.
+if ! echo "$APPROVED_RELEASE_SHA" | grep -Eq '^[0-9a-fA-F]{40}$'; then
+  echo "❌ CRITICAL ABORT: Invalid APPROVED_RELEASE_SHA format ('$APPROVED_RELEASE_SHA')! Must be a full 40-character hexadecimal SHA."
+  exit 1
+fi
+
+echo "================================================================================"
+echo "STARTING VERIFIED RELEASE DEPLOYMENT"
+echo "Expected Baseline SHA:       $EXPECTED_BASELINE_SHA"
+echo "Approved Implementation SHA: $APPROVED_IMPLEMENTATION_SHA"
+echo "Approved Release SHA:        $APPROVED_RELEASE_SHA"
+echo "================================================================================"
 
 # 1. Fetch latest changes from remote main
 git fetch origin main || {
@@ -695,36 +786,124 @@ git fetch origin main || {
   exit 1
 }
 
-# 2. Strictly verify remote origin/main matches the approved release commit
-REMOTE_SHA=$(git rev-parse origin/main)
-if [ "$REMOTE_SHA" != "$TARGET_RELEASE_SHA" ]; then
-  echo "❌ CRITICAL ABORT: origin/main ($REMOTE_SHA) does NOT match approved release commit ($TARGET_RELEASE_SHA)!"
-  echo "Remote repository has advanced to an unintended commit. Halting."
+# 2. Require fetched origin/main to strictly match the approved release commit SHA
+REMOTE_SHA=$(git rev-parse origin/main) || {
+  echo "❌ CRITICAL ABORT: Failed to resolve origin/main commit SHA!"
+  exit 1
+}
+if [ "$REMOTE_SHA" != "$APPROVED_RELEASE_SHA" ]; then
+  echo "❌ CRITICAL ABORT: origin/main ($REMOTE_SHA) does NOT match approved release SHA ($APPROVED_RELEASE_SHA)!"
+  echo "Remote repository has advanced to an unapproved commit or has diverged. Halting."
   exit 1
 fi
-echo "✓ Verified origin/main matches approved release commit: $TARGET_RELEASE_SHA"
+echo "✓ Verified remote origin/main matches approved release commit: $APPROVED_RELEASE_SHA"
 
-# 3. Verify fast-forward ancestry from server HEAD to release commit
-git merge-base --is-ancestor HEAD "$TARGET_RELEASE_SHA" || {
-  echo "❌ CRITICAL ABORT: Fast-forward merge is impossible. Remote main has diverged from server HEAD!"
+# 3. Verify object existence in local Git database
+git cat-file -e "${EXPECTED_BASELINE_SHA}^{commit}" || {
+  echo "❌ CRITICAL ABORT: Expected baseline commit $EXPECTED_BASELINE_SHA missing from Git object store!"
+  exit 1
+}
+git cat-file -e "${APPROVED_IMPLEMENTATION_SHA}^{commit}" || {
+  echo "❌ CRITICAL ABORT: Approved implementation commit $APPROVED_IMPLEMENTATION_SHA missing from Git object store!"
+  exit 1
+}
+git cat-file -e "${APPROVED_RELEASE_SHA}^{commit}" || {
+  echo "❌ CRITICAL ABORT: Approved release commit $APPROVED_RELEASE_SHA missing from Git object store!"
   exit 1
 }
 
-# 4. Apply strict fast-forward merge to target commit
-git merge --ff-only "$TARGET_RELEASE_SHA" || {
+# 4. Strictly verify complete cryptographic ancestry chain
+git merge-base --is-ancestor "$EXPECTED_BASELINE_SHA" "$APPROVED_IMPLEMENTATION_SHA" || {
+  echo "❌ CRITICAL ABORT: Baseline $EXPECTED_BASELINE_SHA is not an ancestor of implementation $APPROVED_IMPLEMENTATION_SHA!"
+  exit 1
+}
+git merge-base --is-ancestor "$APPROVED_IMPLEMENTATION_SHA" "$APPROVED_RELEASE_SHA" || {
+  echo "❌ CRITICAL ABORT: Implementation $APPROVED_IMPLEMENTATION_SHA is not an ancestor of release $APPROVED_RELEASE_SHA!"
+  exit 1
+}
+git merge-base --is-ancestor HEAD "$APPROVED_RELEASE_SHA" || {
+  echo "❌ CRITICAL ABORT: Server HEAD is not an ancestor of approved release $APPROVED_RELEASE_SHA. Fast-forward merge is impossible!"
+  exit 1
+}
+echo "✓ Verified ancestry chain: $EXPECTED_BASELINE_SHA -> $APPROVED_IMPLEMENTATION_SHA -> $APPROVED_RELEASE_SHA"
+
+# 5. Verify the ONLY path modified between implementation and release is the approved runbook
+CHANGED_FILES=$(git diff --name-only "$APPROVED_IMPLEMENTATION_SHA" "$APPROVED_RELEASE_SHA") || {
+  echo "❌ CRITICAL ABORT: Failed to compute diff between implementation and release commit!"
+  exit 1
+}
+if [ -z "$CHANGED_FILES" ]; then
+  echo "❌ CRITICAL ABORT: No files modified between implementation and release commit!"
+  exit 1
+fi
+
+UNAPPROVED_FILES=""
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  if [ "$file" != "docs/PRODUCTION-DEPLOYMENT.md" ]; then
+    UNAPPROVED_FILES="${UNAPPROVED_FILES}${file} "
+  fi
+done <<< "$CHANGED_FILES"
+
+if [ -n "$UNAPPROVED_FILES" ]; then
+  echo "❌ CRITICAL ABORT: Unapproved files modified between implementation and release commit:"
+  echo "$UNAPPROVED_FILES"
+  echo "Only 'docs/PRODUCTION-DEPLOYMENT.md' is permitted in release delta. Halting."
+  exit 1
+fi
+
+git diff --quiet "$APPROVED_IMPLEMENTATION_SHA" "$APPROVED_RELEASE_SHA" -- ":(exclude)docs/PRODUCTION-DEPLOYMENT.md" || {
+  echo "❌ CRITICAL ABORT: Byte differences detected between implementation and release commit outside allowlisted runbook!"
+  exit 1
+}
+echo "✓ Verified release diff against strict allowlist: only 'docs/PRODUCTION-DEPLOYMENT.md' modified"
+
+# 6. Apply strict fast-forward merge to approved release commit
+git merge --ff-only "$APPROVED_RELEASE_SHA" || {
   echo "❌ CRITICAL ABORT: git merge --ff-only failed!"
   exit 1
 }
 
-# 5. Strictly verify active working tree HEAD
+# 7. Strictly verify active working tree HEAD matches approved release
 DEPLOYED_HEAD=$(git rev-parse HEAD)
-if [ "$DEPLOYED_HEAD" != "$TARGET_RELEASE_SHA" ]; then
-  echo "❌ CRITICAL ABORT: Deployed commit ($DEPLOYED_HEAD) does NOT match approved release ($TARGET_RELEASE_SHA)!"
+if [ "$DEPLOYED_HEAD" != "$APPROVED_RELEASE_SHA" ]; then
+  echo "❌ CRITICAL ABORT: Deployed HEAD ($DEPLOYED_HEAD) does NOT match approved release ($APPROVED_RELEASE_SHA)!"
   exit 1
 fi
-echo "✓ Source tree successfully updated to release commit: $DEPLOYED_HEAD"
+echo "✓ Source tree successfully fast-forwarded to release commit: $DEPLOYED_HEAD"
 
-# 6. Clean install dependencies
+# 8. Assert all build inputs, configurations, and source code match approved implementation byte-for-byte
+# Complete build-input identity check: audits the entire repository tree.
+# Permitted difference allowlist is strictly: docs/PRODUCTION-DEPLOYMENT.md.
+# Every file affecting dependency installation, compilation, runtime startup, Prisma generation/migrations,
+# and deployment (src/, prisma/, package*.json, tsconfig*.json, nest-cli.json, dotfiles, scripts) must be identical.
+TREE_DIFF=$(git diff --name-only "$APPROVED_IMPLEMENTATION_SHA" HEAD) || {
+  echo "❌ CRITICAL ABORT: Failed to compute tree diff between implementation ($APPROVED_IMPLEMENTATION_SHA) and HEAD!"
+  exit 1
+}
+
+UNAPPROVED_TREE_DIFF=""
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  if [ "$file" != "docs/PRODUCTION-DEPLOYMENT.md" ]; then
+    UNAPPROVED_TREE_DIFF="${UNAPPROVED_TREE_DIFF}${file} "
+  fi
+done <<< "$TREE_DIFF"
+
+if [ -n "$UNAPPROVED_TREE_DIFF" ]; then
+  echo "❌ CRITICAL ABORT: Unapproved differences detected between implementation ($APPROVED_IMPLEMENTATION_SHA) and HEAD:"
+  echo "$UNAPPROVED_TREE_DIFF"
+  echo "Every build input and source file must be 100% byte-for-byte identical to implementation commit."
+  exit 1
+fi
+
+git diff --quiet "$APPROVED_IMPLEMENTATION_SHA" HEAD -- ":(exclude)docs/PRODUCTION-DEPLOYMENT.md" || {
+  echo "❌ CRITICAL ABORT: Byte differences detected between implementation ($APPROVED_IMPLEMENTATION_SHA) and HEAD outside allowlisted runbook!"
+  exit 1
+}
+echo "✓ Verified all build inputs, configurations, and application source code are 100% byte-for-byte identical to $APPROVED_IMPLEMENTATION_SHA"
+
+# 9. Clean install dependencies
 # NOTE ON DEPENDENCY INTEGRITY:
 # `npm ci` alters `node_modules` by removing existing packages and installing exact lockfile packages.
 # If npm ci fails, node_modules may be in an inconsistent state.
@@ -736,7 +915,7 @@ npm ci || {
   exit 1
 }
 
-# 7. Build production bundle
+# 10. Build production bundle
 # CRITICAL SAFETY NOTE ON BUILD ARTIFACTS:
 # `npm run build` runs `nest build`, which empties/replaces `dist/` during compilation.
 # If build fails, `dist/` is NOT intact on disk.
@@ -754,11 +933,11 @@ test -f dist/src/main.js || {
 }
 echo "✓ Production bundle compiled successfully"
 
-# 8. Restart application service
+# 11. Restart application service
 sudo systemctl restart ipovault-backend
 sleep 3
 
-# 9. Confirm systemd unit is active
+# 12. Confirm systemd unit is active
 sudo systemctl is-active --quiet ipovault-backend || {
   echo "❌ CRITICAL ABORT: ipovault-backend service failed to start! Immediate rollback required."
   echo "Execute Post-Restart Fail-Safe Rollback (Section 14.4)."
@@ -1396,17 +1575,36 @@ git reset --hard "$TARGET_ROLLBACK_SHA" || {
 echo "✓ Branch 'main' safely reset to $TARGET_ROLLBACK_SHA"
 
 # Action 2: Clean install dependencies and re-build baseline bundle
-npm ci || { echo "❌ CRITICAL ABORT: npm ci failed during rollback!"; exit 1; }
-npm run build || { echo "❌ CRITICAL ABORT: npm run build failed during rollback!"; exit 1; }
-test -f dist/src/main.js || { echo "❌ CRITICAL ABORT: dist/src/main.js missing after rollback build!"; exit 1; }
+npm ci || {
+  echo "❌ CRITICAL ABORT: npm ci failed during rollback! node_modules in inconsistent state."
+  echo "Review npm-debug.log. Git HEAD remains at baseline $TARGET_ROLLBACK_SHA."
+  exit 1
+}
+npm run build || {
+  echo "❌ CRITICAL ABORT: npm run build failed during rollback! dist/ is invalid or missing."
+  echo "Review build output. Git HEAD remains at baseline $TARGET_ROLLBACK_SHA."
+  exit 1
+}
+test -f dist/src/main.js || {
+  echo "❌ CRITICAL ABORT: dist/src/main.js missing after rollback build! Build artifact incomplete."
+  exit 1
+}
 
 # Action 3: Restart application service
 sudo systemctl restart ipovault-backend
 sleep 3
 
 # Action 4: Confirm restoration health
-curl -fsS http://127.0.0.1:3000/api/v1/health > /dev/null || { echo "❌ ROLLBACK FAILED: Application unhealthy after reset!"; exit 1; }
-curl -fsS http://127.0.0.1:3000/api/v1/ready > /dev/null || { echo "❌ ROLLBACK FAILED: Database unavailable after reset!"; exit 1; }
+curl -fsS http://127.0.0.1:3000/api/v1/health > /dev/null || {
+  echo "❌ CRITICAL: ROLLBACK HEALTH CHECK FAILED! Application unhealthy after reset."
+  echo "Review service logs: sudo journalctl -u ipovault-backend -n 50 --no-pager"
+  exit 1
+}
+curl -fsS http://127.0.0.1:3000/api/v1/ready > /dev/null || {
+  echo "❌ CRITICAL: ROLLBACK DATABASE CHECK FAILED! Database unavailable after reset."
+  echo "Review database connectivity and logs: sudo journalctl -u ipovault-backend -n 50 --no-pager"
+  exit 1
+}
 
 echo "================================================================================"
 echo "✓ ROLLBACK COMPLETED SUCCESSFULLY. SERVICE RESTORED TO $TARGET_ROLLBACK_SHA."
@@ -1573,17 +1771,18 @@ fi
    *Consequences of Option A:* This permanently advances `origin/main` with a clean revert commit. All developers pulling `main` will receive the reverted code.
 
 2. **Option B — SHA-Pinned Deployment Gate (Runbook Safety Guarantee):**
-   The deployment procedure in Section 14.2 strictly pins `TARGET_RELEASE_SHA`. It will **never** execute a merge if `origin/main` does not match the exact expected SHA. Even if `origin/main` remains at `d8813db` during an active post-mortem, the server will reject any redeployment attempt unless an operator explicitly alters `TARGET_RELEASE_SHA`.
+   The deployment procedure in Section 14.2 strictly pins `APPROVED_IMPLEMENTATION_SHA` and requires an operator-supplied `APPROVED_RELEASE_SHA`. It will **never** execute a merge if `origin/main` does not match the exact approved release SHA. Even if `origin/main` remains at an unapproved commit during an active post-mortem, the server will reject any redeployment attempt unless an operator explicitly alters the approved cryptographic pinning.
 
 #### 14.5.3. Master Recovery Decision Matrix
 
 | Failure Stage | System State (RAM vs Disk vs Git) | Service Impact | Required Operator Action | Recovery Verification |
 | :--- | :--- | :--- | :--- | :--- |
 | **Preflight (Section 14.1)** | Server working tree dirty, branch invalid, or low disk space. Git HEAD at `d54c810`. | **Zero Impact**. Old application is serving traffic normally. | **DO NOT DEPLOY**. Resolve server dirty files or disk space manually. Never run `git clean`. | Re-run Section 14.1 preflight script until all checks output `✓`. |
-| **Fetch / Ancestry (Section 14.2)** | Remote `origin/main` does not match `TARGET_RELEASE_SHA` or has diverged. | **Zero Impact**. Server source tree and disk artifacts untouched. | **DO NOT MERGE**. Reconcile Git branch on workstation. Verify remote SHA. | Re-run Step 2 of Section 14.2. |
-| **npm ci / build Failure (Section 14.2)** | Git HEAD at `d8813db`. Process in RAM running old code. Disk `./dist` missing/invalid. | **Zero Immediate Outage**. Risk of outage if systemd restarts process. | **DO NOT RESTART SERVICE**. Execute Section 14.5.1 (Pre-Restart Recovery) to reset to `d54c810` and recompile `./dist`. | Verify `test -f dist/src/main.js` and `curl /health` passes. |
-| **Service Restart Crash (Section 14.2)** | Git HEAD at `d8813db`. Systemd unit inactive/failed. | **Production Outage**. Service cannot start new bundle. | **EXECUTE ROLLBACK (Section 14.4)** immediately to restore `d54c810`, rebuild, and restart. | Verify `systemctl is-active` and `curl /health` passes. |
-| **Smoke Test Failure (Section 14.3)** | Git HEAD at `d8813db`. Service running but allotment/catalog check failed. | **Degraded Feature**. Core API active, but KFintech allotment resolution broken. | **EXECUTE ROLLBACK (Section 14.4)** immediately to restore `d54c810`, rebuild, and restart. | Re-run Section 14.3 smoke tests against restored baseline. |
+| **Fetch / Ancestry (Section 14.2)** | Remote `origin/main` does not match `APPROVED_RELEASE_SHA` or has diverged. | **Zero Impact**. Server source tree and disk artifacts untouched. | **DO NOT MERGE**. Reconcile Git branch on workstation. Verify remote SHA. | Re-run Step 2 of Section 14.2. |
+| **npm ci / build Failure (Section 14.2)** | Git HEAD at `APPROVED_RELEASE_SHA` (code identical to `d8813db`). Process in RAM running old code. Disk `./dist` missing/invalid. | **Zero Immediate Outage**. Risk of outage if systemd restarts process. | **DO NOT RESTART SERVICE**. Execute Section 14.5.1 (Pre-Restart Recovery) to reset to `d54c810` and recompile `./dist`. | Verify `test -f dist/src/main.js` and `curl /health` passes. |
+| **Service Restart Crash (Section 14.2)** | Git HEAD at `APPROVED_RELEASE_SHA` (code identical to `d8813db`). Systemd unit inactive/failed. | **Production Outage**. Service cannot start new bundle. | **EXECUTE ROLLBACK (Section 14.4)** immediately to restore `d54c810`, rebuild, and restart. | Verify `systemctl is-active` and `curl /health` passes. |
+| **Smoke Test Failure (Section 14.3)** | Git HEAD at `APPROVED_RELEASE_SHA` (code identical to `d8813db`). Service running but allotment/catalog check failed. | **Degraded Feature**. Core API active, but KFintech allotment resolution broken. | **EXECUTE ROLLBACK (Section 14.4)** immediately to restore `d54c810`, rebuild, and restart. | Re-run Section 14.3 smoke tests against restored baseline. |
+| **Rollback Failure (Section 14.4)** | Git HEAD at `d54c810`. `recovery-pre-rollback-*` branch preserved. `./dist` invalid or service stopped. | **Production Outage**. Rollback build or restart failed. | **MANUAL INTERVENTION REQUIRED**. Inspect `npm-debug.log` and `journalctl -u ipovault-backend`. Recompile baseline bundle manually on `d54c810`. Do not switch branches. | Verify `test -f dist/src/main.js`, `systemctl is-active`, and `curl /health` and `/ready` pass. Never claim rollback succeeded unless confirmed by health checks. |
 
 ---
 
