@@ -38,8 +38,8 @@ export function levenshteinDistance(a: string, b: string): number {
       } else {
         matrix[i][j] = Math.min(
           matrix[i - 1][j - 1] + 1, // substitution
-          matrix[i][j - 1] + 1,     // insertion
-          matrix[i - 1][j] + 1,     // deletion
+          matrix[i][j - 1] + 1, // insertion
+          matrix[i - 1][j] + 1, // deletion
         );
       }
     }
@@ -175,7 +175,9 @@ export function isTokenMatchSafely(
 /**
  * Normalizes raw discovery items into structured CleanCompanyCandidate objects.
  */
-export function parseCompanyCandidates(items: unknown[]): CleanCompanyCandidate[] {
+export function parseCompanyCandidates(
+  items: unknown[],
+): CleanCompanyCandidate[] {
   const candidates: CleanCompanyCandidate[] = [];
 
   for (const item of items) {
@@ -291,6 +293,34 @@ export function matchRegistrarCompany(
         errorMessage: `Multiple ambiguous matches found by symbol '${targetSymbol}' in ${registrarName} live list`,
       };
     }
+
+    // If candidates lack explicit symbol metadata and no company names were provided,
+    // evaluate single candidate isolation by matching symbol against candidate lead token or cleanKey
+    if (
+      targetLegalKey.length === 0 &&
+      targetDisplayKey.length === 0 &&
+      targetSymbol.length >= 3
+    ) {
+      const symLower = targetSymbol.toLowerCase();
+      const symbolInNameMatches = candidates.filter(
+        (c) =>
+          c.cleanKey === symLower ||
+          (c.tokens.length > 0 && c.tokens[0] === symLower) ||
+          c.cleanKey.startsWith(symLower),
+      );
+
+      if (symbolInNameMatches.length === 1) {
+        return symbolInNameMatches[0].code;
+      }
+      if (symbolInNameMatches.length > 1) {
+        return {
+          status: AllotmentStatus.NEEDS_REVIEW,
+          sourceCode: registrarCode,
+          checkedAt,
+          errorMessage: `Multiple ambiguous matches found by symbol prefix '${targetSymbol}' in ${registrarName} live list`,
+        };
+      }
+    }
   }
 
   // ============================================================
@@ -374,8 +404,10 @@ export function matchRegistrarCompany(
     const dKey = targetDisplayKey;
     const lKey = targetLegalKey;
     return (
-      (dKey.length >= 4 && (c.cleanKey.startsWith(dKey) || dKey.startsWith(c.cleanKey))) ||
-      (lKey.length >= 4 && (c.cleanKey.startsWith(lKey) || lKey.startsWith(c.cleanKey)))
+      (dKey.length >= 4 &&
+        (c.cleanKey.startsWith(dKey) || dKey.startsWith(c.cleanKey))) ||
+      (lKey.length >= 4 &&
+        (c.cleanKey.startsWith(lKey) || lKey.startsWith(c.cleanKey)))
     );
   });
 

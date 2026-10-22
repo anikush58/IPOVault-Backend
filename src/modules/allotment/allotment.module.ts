@@ -14,6 +14,7 @@ import { AllotmentService } from './allotment.service';
 import { RegistrarResolver } from './registrar.resolver';
 
 import { KfinIdentityDiscoveryAdapter } from './discovery/kfin-identity-discovery.adapter';
+import { KfinRegistryStore } from './discovery/kfin-registry.store';
 import { MufgIdentityDiscoveryAdapter } from './discovery/mufg-identity-discovery.adapter';
 import { SourceIdentitySyncService } from './discovery/source-identity-sync.service';
 import { RegistrarIdentitySyncSchedulerService } from './discovery/registrar-identity-sync-scheduler.service';
@@ -30,6 +31,7 @@ import { AuthModule } from '../auth/auth.module';
     AllotmentRepository,
     RegistrarResolver,
     RegistrarAdapterRegistry,
+    KfinRegistryStore,
     KfinRegistrarAdapter,
     MufgIntimeRegistrarAdapter,
     MaashitlaRegistrarAdapter,
@@ -48,6 +50,7 @@ import { AuthModule } from '../auth/auth.module';
     AllotmentRepository,
     RegistrarResolver,
     RegistrarAdapterRegistry,
+    KfinRegistryStore,
     KfinIdentityDiscoveryAdapter,
     MufgIdentityDiscoveryAdapter,
     SourceIdentitySyncService,

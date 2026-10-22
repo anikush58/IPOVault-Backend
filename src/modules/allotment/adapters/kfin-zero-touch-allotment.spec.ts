@@ -1,6 +1,9 @@
 import { AllotmentIdentifierType, AllotmentStatus } from '../allotment.types';
 import { KfinRegistrarAdapter } from './kfin-registrar.adapter';
-import { KFIN_VERIFIED_FALLBACK_REGISTRY } from '../discovery/kfin-identity-discovery.adapter';
+import {
+  KFIN_VERIFIED_FALLBACK_REGISTRY,
+  KfinIdentityDiscoveryAdapter,
+} from '../discovery/kfin-identity-discovery.adapter';
 
 describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
   let adapter: KfinRegistrarAdapter;
@@ -18,25 +21,27 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
   });
 
   it('1. Existing IPO -> explicit/configured clientId -> existing allotment flow works directly', async () => {
-    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
-      const urlStr = String(url);
-      if (urlStr.includes('0uz601ms56.execute-api')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => [
-            {
-              All_Shares: 150,
-              App_Shares: 150,
-              Name: 'ANISH KUSHWAHA',
-              Appln_No: 'APP-9988',
-              Pan_No: 'XXXXXX1234F',
-            },
-          ],
-        } as unknown as Response);
-      }
-      return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
-    });
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (urlStr.includes('0uz601ms56.execute-api')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                All_Shares: 150,
+                App_Shares: 150,
+                Name: 'ANISH KUSHWAHA',
+                Appln_No: 'APP-9988',
+                Pan_No: 'XXXXXX1234F',
+              },
+            ],
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
 
     const req = {
       ipoId: 'dhoot-transmission-ipo-id',
@@ -67,42 +72,49 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
       var rf=JSON.parse('[{"clientId":"88887777666","name":"FUTURE QUANTUM ROBOTICS LIMITED"}]');
     `;
 
-    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
-      const urlStr = String(url);
-      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: async () => sampleLiveHtml,
-        } as unknown as Response);
-      }
-      if (urlStr.includes('main.30273529.js')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: async () => hypotheticalBundle,
-        } as unknown as Response);
-      }
-      if (urlStr.includes('0uz601ms56.execute-api')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => [
-            {
-              All_Shares: 75,
-              App_Shares: 150,
-              Name: 'QUANTUM APPLICANT',
-              Appln_No: 'APP-FQR-9900',
-            },
-          ],
-        } as unknown as Response);
-      }
-      return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
-    });
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (
+          urlStr.includes('ipostatus.kfintech.com') &&
+          !urlStr.includes('.js')
+        ) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => sampleLiveHtml,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.30273529.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => hypotheticalBundle,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('0uz601ms56.execute-api')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                All_Shares: 75,
+                App_Shares: 150,
+                Name: 'QUANTUM APPLICANT',
+                Appln_No: 'APP-FQR-9900',
+              },
+            ],
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
 
     // Verify hypothetical company is NOT in fallback registry
     const inFallback = KFIN_VERIFIED_FALLBACK_REGISTRY.some(
-      (entry) => entry.clientId === '88887777666' || entry.name.includes('FUTURE QUANTUM'),
+      (entry) =>
+        entry.clientId === '88887777666' ||
+        entry.name.includes('FUTURE QUANTUM'),
     );
     expect(inFallback).toBe(false);
 
@@ -137,7 +149,10 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
 
     jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
       const urlStr = String(url);
-      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+      if (
+        urlStr.includes('ipostatus.kfintech.com') &&
+        !urlStr.includes('.js')
+      ) {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -155,7 +170,9 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => [{ All_Shares: 100, App_Shares: 100, Name: 'SRIT USER' }],
+          json: async () => [
+            { All_Shares: 100, App_Shares: 100, Name: 'SRIT USER' },
+          ],
         } as unknown as Response);
       }
       return Promise.reject(new Error(`Unexpected ${urlStr}`));
@@ -173,7 +190,6 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
   });
 
   it('4. Temporary runtime discovery failure -> fallback registry safely resolves known company via discovery adapter', async () => {
-    const { KfinIdentityDiscoveryAdapter } = require('../discovery/kfin-identity-discovery.adapter');
     const discoveryAdapter = new KfinIdentityDiscoveryAdapter();
 
     // Primary and secondary network attempts fail
@@ -187,7 +203,9 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
 
     const issues = await discoveryAdapter.discoverIssues();
     expect(issues.length).toBe(KFIN_VERIFIED_FALLBACK_REGISTRY.length);
-    const sritFallback = issues.find((i: any) => i.externalName === 'SRIT INDIA LIMITED');
+    const sritFallback = issues.find(
+      (i: { externalName: string }) => i.externalName === 'SRIT INDIA LIMITED',
+    );
     expect(sritFallback).toBeDefined();
     expect(sritFallback?.externalId).toBe('37168935020');
 
@@ -206,7 +224,10 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
   it('5. Unknown IPO not in KFin live registry or fallback -> NOT_YET_AVAILABLE (no guessing)', async () => {
     jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
       const urlStr = String(url);
-      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+      if (
+        urlStr.includes('ipostatus.kfintech.com') &&
+        !urlStr.includes('.js')
+      ) {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -232,7 +253,9 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
 
     const result = await adapter.checkAllotment(unknownReq);
     expect(result.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
-    expect(result.errorMessage).toContain('IPO not found in KFin Technologies live active list');
+    expect(result.errorMessage).toContain(
+      'IPO not found in KFin Technologies live active list',
+    );
   });
 
   it('6. Ambiguous IPO match -> NEEDS_REVIEW safely without guessing', async () => {
@@ -242,7 +265,10 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
 
     jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
       const urlStr = String(url);
-      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+      if (
+        urlStr.includes('ipostatus.kfintech.com') &&
+        !urlStr.includes('.js')
+      ) {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -276,7 +302,9 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => [{ All_Shares: 200, App_Shares: 200, Name: 'APP USER' }],
+        json: async () => [
+          { All_Shares: 200, App_Shares: 200, Name: 'APP USER' },
+        ],
       } as Response);
     });
 
@@ -344,7 +372,10 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
     let bundleFetches = 0;
     jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
       const urlStr = String(url);
-      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
+      if (
+        urlStr.includes('ipostatus.kfintech.com') &&
+        !urlStr.includes('.js')
+      ) {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -363,7 +394,9 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: async () => [{ All_Shares: 100, App_Shares: 100, Name: 'USER' }],
+          json: async () => [
+            { All_Shares: 100, App_Shares: 100, Name: 'USER' },
+          ],
         } as unknown as Response);
       }
       return Promise.reject(new Error(`Unexpected ${urlStr}`));
@@ -394,38 +427,43 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
       var rf=JSON.parse('[{"clientId":"47651989560","name":"SOLLFEGE SMART ELECTRONICS LIMITED"}]');
     `;
 
-    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
-      const urlStr = String(url);
-      if (urlStr.includes('ipostatus.kfintech.com') && !urlStr.includes('.js')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: async () => sampleLiveHtml,
-        } as unknown as Response);
-      }
-      if (urlStr.includes('main.30273529.js')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          text: async () => sollfegeLiveBundle,
-        } as unknown as Response);
-      }
-      if (urlStr.includes('0uz601ms56.execute-api')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => [
-            {
-              All_Shares: 0,
-              App_Shares: 1200,
-              Name: 'SOLLFEGE APPLICANT',
-              Appln_No: 'APP-112233',
-            },
-          ],
-        } as unknown as Response);
-      }
-      return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
-    });
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (
+          urlStr.includes('ipostatus.kfintech.com') &&
+          !urlStr.includes('.js')
+        ) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => sampleLiveHtml,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.30273529.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => sollfegeLiveBundle,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('0uz601ms56.execute-api')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                All_Shares: 0,
+                App_Shares: 1200,
+                Name: 'SOLLFEGE APPLICANT',
+                Appln_No: 'APP-112233',
+              },
+            ],
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
 
     const sollfegeReq = {
       ipoId: 'sollfege-ipo-id',
@@ -514,5 +552,309 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
 
     const result = await adapter.checkAllotment(req);
     expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
+  });
+
+  it('15. Tonbo Imaging India: Successful live discovery from KFin SPA bundle resolves clientId 15211216041', async () => {
+    const liveBundleWithTonbo = `
+      var rf=JSON.parse('[{"clientId":"15211216041","name":"TONBO IMAGING INDIA LIMITED"},{"clientId":"29931891190","name":"ZETWERK MANUFACTURING BUSINESSES LIMITED"}]');
+    `;
+
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (
+          urlStr.includes('ipostatus.kfintech.com') &&
+          !urlStr.includes('.js')
+        ) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => sampleLiveHtml,
+          } as unknown as Response);
+        }
+        if (
+          urlStr.includes('main.30273529.js') ||
+          urlStr.includes('main.9f7d02b5.js') ||
+          urlStr.includes('.js')
+        ) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => liveBundleWithTonbo,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('0uz601ms56.execute-api')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                All_Shares: 21,
+                App_Shares: 21,
+                Name: 'TONBO APPLICANT',
+                Appln_No: 'APP-TONBO-001',
+              },
+            ],
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected ${urlStr}`));
+      });
+
+    // Test with exact name from the portal
+    const exactReq = {
+      ipoId: 'tonbo-imaging-ipo-id',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'TONBO IMAGING INDIA LIMITED',
+    };
+    const exactCode = await adapter.resolveRegistrarIpoCode(exactReq);
+    expect(exactCode).toBe('15211216041');
+
+    // Test with display name and legal name
+    const displayReq = {
+      ipoId: 'tonbo-imaging-ipo-id',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+      companyLegalName: 'Tonbo Imaging India Limited',
+      symbol: 'TONBO',
+    };
+    const displayCode = await adapter.resolveRegistrarIpoCode(displayReq);
+    expect(displayCode).toBe('15211216041');
+
+    // Verify end-to-end allotment query reaches API gateway with client_id 15211216041
+    const result = await adapter.checkAllotment(displayReq);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(result.sharesAllotted).toBe(21);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('type=pan'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          client_id: '15211216041',
+        }),
+      }),
+    );
+  });
+
+  it('16. Tonbo Imaging India: Fallback registry successfully resolves clientId 15211216041 when live bundle fetch fails', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com')) {
+        return Promise.reject(new Error('CloudFront CDN 403 Forbidden'));
+      }
+      if (urlStr.includes('0uz601ms56.execute-api')) {
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          json: async () => ({ error: 'Record Not Found' }),
+        } as unknown as Response);
+      }
+      return Promise.reject(new Error(`Unexpected ${urlStr}`));
+    });
+
+    const tonboReq = {
+      ipoId: 'tonbo-imaging-ipo-id',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+      companyLegalName: 'Tonbo Imaging India Limited',
+      symbol: 'TONBO',
+    };
+
+    const resolvedCode = await adapter.resolveRegistrarIpoCode(tonboReq);
+    expect(resolvedCode).toBe('15211216041');
+
+    const result = await adapter.checkAllotment(tonboReq);
+    expect(result.status).toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
+    expect(result.status).not.toBe(AllotmentStatus.NOT_ALLOTTED);
+    expect(result.status).not.toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+  });
+
+  it('17. Tonbo Imaging India: When allotment is awaited/not finalized from registrar API, checkAllotment returns NOT_YET_AVAILABLE and never invents NOT_ALLOTTED', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('0uz601ms56.execute-api')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            error: 'Allotment is under process. Please check later.',
+          }),
+        } as unknown as Response);
+      }
+      return Promise.reject(new Error(`Unexpected ${urlStr}`));
+    });
+
+    const tonboReq = {
+      ipoId: 'tonbo-imaging-ipo-id',
+      registrarIpoCode: '15211216041',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+    };
+
+    const result = await adapter.checkAllotment(tonboReq);
+    expect(result.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+    expect(result.status).not.toBe(AllotmentStatus.NOT_ALLOTTED);
+    expect(result.status).not.toBe(AllotmentStatus.ALLOTTED);
+    expect(result.status).not.toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
+    expect(result.errorMessage).toContain('under process');
+  });
+
+  it('18. Tonbo Imaging India: Genuine no-allotment response from KFin (applied=21, allotted=0) returns NOT_ALLOTTED strictly when supported by valid registrar data', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            All_Shares: 0,
+            App_Shares: 21,
+            Name: 'FAMILY MEMBER ONE',
+            Appln_No: 'APP-TONBO-001',
+          },
+        ],
+      } as unknown as Response);
+    });
+
+    const req = {
+      ipoId: 'tonbo-imaging-ipo-id',
+      registrarIpoCode: '15211216041',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.NOT_ALLOTTED);
+    expect(result.sharesApplied).toBe(21);
+    expect(result.sharesAllotted).toBe(0);
+    expect(result.applicantName).toBe('FAMILY MEMBER ONE');
+    expect(result.status).not.toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+  });
+
+  it('19. Tonbo Imaging India: Confirmed allotment response from KFin (applied=21, allotted=21) returns ALLOTTED', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            All_Shares: 21,
+            App_Shares: 21,
+            Name: 'FAMILY MEMBER TWO',
+            Appln_No: 'APP-TONBO-002',
+          },
+        ],
+      } as unknown as Response);
+    });
+
+    const req = {
+      ipoId: 'tonbo-imaging-ipo-id',
+      registrarIpoCode: '15211216041',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(result.sharesApplied).toBe(21);
+    expect(result.sharesAllotted).toBe(21);
+    expect(result.applicantName).toBe('FAMILY MEMBER TWO');
+    expect(result.status).not.toBe(AllotmentStatus.NOT_ALLOTTED);
+  });
+
+  it('20. Tonbo Imaging India: Technical failure HTTP 502 Bad Gateway maps to SOURCE_UNAVAILABLE', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.resolve({
+        ok: false,
+        status: 502,
+        statusText: 'Bad Gateway',
+      } as unknown as Response);
+    });
+
+    const req = {
+      ipoId: 'tonbo-imaging-ipo-id',
+      registrarIpoCode: '15211216041',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+    expect(result.errorMessage).toContain('502');
+  });
+
+  it('21. Tonbo Imaging India: Malformed HTML returned instead of JSON maps to SOURCE_RESPONSE_INVALID', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new Error('Unexpected token < in JSON');
+        },
+      } as unknown as Response);
+    });
+
+    const req = {
+      ipoId: 'tonbo-imaging-ipo-id',
+      registrarIpoCode: '15211216041',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
+  });
+
+  it('22. Fallback cache TTL: Fallback registry is cached for at most 30s so live portal recovery is not delayed for 1 hour', async () => {
+    let failDiscovery = true;
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('ipostatus.kfintech.com')) {
+        if (failDiscovery) {
+          // First attempt fails -> fallback used
+          return Promise.reject(new Error('CloudFront transient error'));
+        }
+        // Subsequent attempt after TTL expires succeeds
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () =>
+            urlStr.includes('.js')
+              ? `var rf=JSON.parse('[{"clientId":"15211216041","name":"TONBO IMAGING INDIA LIMITED"}]');`
+              : sampleLiveHtml,
+        } as unknown as Response);
+      }
+      return Promise.reject(new Error(`Unexpected ${urlStr}`));
+    });
+
+    // 1st fetch: fails, uses fallback (isFallback = true)
+    const list1 = await adapter.fetchActiveCompanyList();
+    expect(list1).toBe(KFIN_VERIFIED_FALLBACK_REGISTRY);
+
+    // Immediate second fetch: within 30s -> returns cached fallback
+    const list2 = await adapter.fetchActiveCompanyList();
+    expect(list2).toBe(KFIN_VERIFIED_FALLBACK_REGISTRY);
+
+    // Enable live portal recovery
+    failDiscovery = false;
+
+    // Fast-forward time past 31 seconds
+    const origNow = Date.now;
+    try {
+      Date.now = () => origNow() + 35 * 1000;
+      // 3rd fetch: fallback TTL expired -> retries live and succeeds!
+      const list3 = await adapter.fetchActiveCompanyList();
+      expect(list3).not.toBe(KFIN_VERIFIED_FALLBACK_REGISTRY);
+      expect(list3.length).toBe(1);
+      expect(list3[0].name).toBe('TONBO IMAGING INDIA LIMITED');
+    } finally {
+      Date.now = origNow;
+    }
   });
 });

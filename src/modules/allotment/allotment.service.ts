@@ -68,8 +68,13 @@ export class AllotmentService {
       );
     }
 
-    request.companyName = (ipo.company as { displayName?: string })?.displayName;
-    request.companyLegalName = (ipo.company as { legalName?: string })?.legalName;
+    request.companyName =
+      (ipo.company as { displayName?: string })?.displayName ||
+      (ipo.company as { legalName?: string })?.legalName ||
+      ipo.symbol ||
+      undefined;
+    request.companyLegalName =
+      (ipo.company as { legalName?: string })?.legalName || undefined;
     request.symbol = ipo.symbol || undefined;
 
     const resolved = await this.resolver.resolveAdapter(request.ipoId);

@@ -1,13 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   DiscoveredRegistrarIssue,
   IRegistrarIdentityDiscoveryAdapter,
 } from './registrar-identity-discovery.types';
+import { KfinRegistryStore } from './kfin-registry.store';
 
 export const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
   clientId: string;
   name: string;
 }> = [
+  { clientId: '15211216041', name: 'TONBO IMAGING INDIA LIMITED' },
+  { clientId: '29931891190', name: 'ZETWERK MANUFACTURING BUSINESSES LIMITED' },
+  { clientId: '32261845640', name: 'FUSION CX LIMITED' },
+  { clientId: '75524247020', name: 'VAIBHAV VYAPAAR LIMITED' },
   { clientId: '47651989560', name: 'SOLLFEGE SMART ELECTRONICS LIMITED' },
   { clientId: '37168935020', name: 'SRIT INDIA LIMITED' },
   { clientId: '93220762680', name: 'ORIENT CABLES (INDIA) LIMITED-IPO' },
@@ -27,7 +32,10 @@ export const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
   { clientId: '57236082750', name: 'VINOD TEXWORLD LIMITED' },
   { clientId: '46407184950', name: 'KOSAMATTAM FINANCE LTD NCD38 AUGUST 2026' },
   { clientId: '75003530500', name: 'PRASOL CHEMICALS LIMITED' },
-  { clientId: '95527153360', name: 'KLM AXIVA FINVEST LIMITED NCD14 AUGUST 2026' },
+  {
+    clientId: '95527153360',
+    name: 'KLM AXIVA FINVEST LIMITED NCD14 AUGUST 2026',
+  },
   { clientId: '58129803280', name: 'PRANAV CONSTRUCTIONS LIMITED' },
   { clientId: '33631182620', name: 'APANA LOGISTICS LIMITED' },
   { clientId: '40580036070', name: 'FLY HI MARITIME TRAVELS LIMITED' },
@@ -41,7 +49,10 @@ export const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
   { clientId: '61328680581', name: 'TEMPSENS INSTRUMENTS (INDIA) LIMITED' },
   { clientId: '54923077460', name: 'SHANKESH JEWELLERS LIMITED' },
   { clientId: '52457887480', name: 'HORIZON INDUSTRIAL PARKS LIMITED' },
-  { clientId: '58583640510', name: 'CHEMMANUR CREDITS AND INVESTMENTS LIMITED AUGUST2026' },
+  {
+    clientId: '58583640510',
+    name: 'CHEMMANUR CREDITS AND INVESTMENTS LIMITED AUGUST2026',
+  },
   { clientId: '12562536840', name: 'CREDENT CONNECT N CARE LIMITED' },
   { clientId: '86153103110', name: 'SHIPROCKET LIMITED' },
   { clientId: '29849673370', name: 'MILKY MIST DAIRY FOOD LIMITED' },
@@ -61,7 +72,10 @@ export const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
   { clientId: '89468061991', name: 'SBI FUNDS MANAGMENT LIMITED IPO' },
   { clientId: '41422222050', name: 'ALPINE TEXWORLD LIMITED IPO' },
   { clientId: '73206134640', name: 'KRATIKAL TECH LIMITED SME' },
-  { clientId: '17643901490', name: 'TEJA ENGINEERING INDUSTRIES LIMITED SME IPO' },
+  {
+    clientId: '17643901490',
+    name: 'TEJA ENGINEERING INDUSTRIES LIMITED SME IPO',
+  },
   { clientId: '65065971040', name: 'ADON AGRO COMMODITIES LIMITED SME IPO' },
   { clientId: '39751101520', name: 'CRAZY SNACKS LIMITED SME IPO' },
   { clientId: '89075375160', name: 'CSM TECHNOLOGIES LIMITED IPO' },
@@ -70,12 +84,18 @@ export const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
   { clientId: '41208427340', name: 'LIOTECH INDUSTRIES LIMITED SME IPO' },
   { clientId: '22809299660', name: 'PRACHAY CAPITAL LIMITED NCDS JUNE 2026' },
   { clientId: '34105687640', name: 'HORIZON RECLAIM INDIA LIMITED' },
-  { clientId: '89347697100', name: 'EDELWEISS FINANCIAL SERVICES LTD NCD18 JUNE 2026' },
+  {
+    clientId: '89347697100',
+    name: 'EDELWEISS FINANCIAL SERVICES LTD NCD18 JUNE 2026',
+  },
   { clientId: '68599915170', name: 'MUTHOOT MERCANTILE LIMITED - JUNE 2026' },
   { clientId: '70806992450', name: 'HEXAGON NUTRITION LIMITED' },
   { clientId: '28962929970', name: 'VAHH CHEMICALS LIMITED' },
   { clientId: '65310715440', name: 'CMR GREEN TECHNOLOGIES LIMITED' },
-  { clientId: '90318758440', name: 'KOSAMATTAM FINANCE LIMITED - NCDS - MAY-2026' },
+  {
+    clientId: '90318758440',
+    name: 'KOSAMATTAM FINANCE LIMITED - NCDS - MAY-2026',
+  },
   { clientId: '53483362510', name: 'TEAMTECH FORMWORK SOLUTIONS LIMITED' },
   { clientId: '26859517830', name: 'RFBL FLEXI PACK LIMITED' },
   { clientId: '28267215520', name: 'BAGMANE PRIME OFFICE REIT' },
@@ -85,19 +105,43 @@ export const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
   { clientId: '73146088770', name: 'CITIUS TRANSNET INVESTMENT TRUST' },
   { clientId: '80184898770', name: 'MEHUL TELECOM LIMITED' },
   { clientId: '51817446680', name: 'PROPSHARE CELESTIA SM REIT 2026' },
-  { clientId: '77980267280', name: 'AMIR CHAND JAGDISH KUMAR (EXPORTS) LIMITED' },
-  { clientId: '67638044790', name: 'CENTRAL MINE PLANNING AND DESIGN INSTITUTE LIMITED' },
+  {
+    clientId: '77980267280',
+    name: 'AMIR CHAND JAGDISH KUMAR (EXPORTS) LIMITED',
+  },
+  {
+    clientId: '67638044790',
+    name: 'CENTRAL MINE PLANNING AND DESIGN INSTITUTE LIMITED',
+  },
   { clientId: '26440316230', name: 'NOVUS LOYALTY LIMITED' },
-  { clientId: '91318037690', name: 'EDELWEISS FINANCIAL SERVICES LTD-NCDS-MARCH-2026' },
+  {
+    clientId: '91318037690',
+    name: 'EDELWEISS FINANCIAL SERVICES LTD-NCDS-MARCH-2026',
+  },
   { clientId: '35015605280', name: 'INNOVISION LIMITED-IPO' },
   { clientId: '94209528790', name: 'RAAJMARG INFRA INVESTMENT TRUST - INVIT' },
-  { clientId: '76300775270', name: 'CHEMMANUR CREDITS AND INVESTMENTS LIMITED - NCDS8 - MARCH2026' },
+  {
+    clientId: '76300775270',
+    name: 'CHEMMANUR CREDITS AND INVESTMENTS LIMITED - NCDS8 - MARCH2026',
+  },
   { clientId: '43990634450', name: 'RAJPUTANA STAINLESS LIMITED-IPO' },
-  { clientId: '62507743750', name: 'PRACHAY CAPITAL LIMITED-NCDS3-FEBRUARY-2026' },
-  { clientId: '51058840660', name: 'ACCORD TRANSFORMER AND SWITCHGEAR LIMITED' },
+  {
+    clientId: '62507743750',
+    name: 'PRACHAY CAPITAL LIMITED-NCDS3-FEBRUARY-2026',
+  },
+  {
+    clientId: '51058840660',
+    name: 'ACCORD TRANSFORMER AND SWITCHGEAR LIMITED',
+  },
   { clientId: '85658340220', name: 'FRACTAL INDUSTRIES LIMITED' },
-  { clientId: '20422755930', name: 'KOSAMATTAM FINANCE LIMITED - NCD36 - FEBRUARY 2026' },
-  { clientId: '64562521850', name: 'POWER FINANCE CORPORATION LIMITED - ZERO COUPON NCDS' },
+  {
+    clientId: '20422755930',
+    name: 'KOSAMATTAM FINANCE LIMITED - NCD36 - FEBRUARY 2026',
+  },
+  {
+    clientId: '64562521850',
+    name: 'POWER FINANCE CORPORATION LIMITED - ZERO COUPON NCDS',
+  },
   { clientId: '33209180890', name: 'POWER FINANCE CORPORATION LIMITED - NCDS' },
   { clientId: '62430336220', name: 'AYE FINANCE LIMITED' },
   { clientId: '18899853180', name: 'ACCRETION NUTRAVEDA LIMITED' },
@@ -110,123 +154,47 @@ export class KfinIdentityDiscoveryAdapter implements IRegistrarIdentityDiscovery
   readonly name = 'KFin Technologies Discovery Adapter';
 
   private readonly logger = new Logger(KfinIdentityDiscoveryAdapter.name);
+  private readonly store: KfinRegistryStore;
+
+  constructor(@Optional() registryStore?: KfinRegistryStore) {
+    this.store = registryStore ?? new KfinRegistryStore();
+  }
 
   /**
-   * Fetches the current live KFin company registry directly from the official portal SPA bundle.
-   * Uses normal portal discovery as primary path, asset-manifest/origin fallback as secondary,
-   * and static verified registry as final safety fallback.
+   * Discovers current KFin company identities via resilient KfinRegistryStore.
+   * Backed by persistent storage, single-flight locking, retry with jitter, and anti-corruption validation.
    */
   async discoverIssues(): Promise<DiscoveredRegistrarIssue[]> {
-    const portalUrl =
-      process.env.KFINTECH_PORTAL_URL || 'https://ipostatus.kfintech.com/';
-    this.logger.log(`Fetching KFin status page from ${portalUrl}...`);
-
-    const browserHeaders: Record<string, string> = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      Accept: '*/*',
-      Origin: 'https://ipostatus.kfintech.com',
-      Referer: 'https://ipostatus.kfintech.com/',
-    };
-
-    let jsUrl: string | null = null;
-
-    // 1. Primary path: Fetch portal HTML and extract script bundle
     try {
-      const pageRes = await fetch(portalUrl, { headers: browserHeaders });
-      if (pageRes.ok) {
-        const html = await pageRes.text();
-        const scriptMatch = html.match(/src=["']?(\.?\/static\/js\/[^"'\s>]+)/i);
-        if (scriptMatch && scriptMatch[1]) {
-          const cleanPath = scriptMatch[1].replace(/^\./, '');
-          jsUrl = new URL(cleanPath, portalUrl).toString();
-        }
-      }
-    } catch (err: unknown) {
-      this.logger.debug(`Initial KFin portal HTML fetch failed: ${err}`);
-    }
-
-    // Try primary bundle fetch if jsUrl was found
-    if (jsUrl) {
-      try {
-        this.logger.log(`Fetching live KFin SPA bundle from ${jsUrl}...`);
-        const jsRes = await fetch(jsUrl, { headers: browserHeaders });
-        if (jsRes.ok) {
-          const jsText = await jsRes.text();
-          if (!this.isHtmlPayload(jsText)) {
-            const issues = this.parseKfinRegistryBundle(jsText);
-            this.logger.log(
-              `Successfully discovered ${issues.length} KFin company identities via primary bundle`,
-            );
-            return issues;
-          }
-          this.logger.warn(
-            `Primary KFin bundle from ${jsUrl} returned HTML/CloudFront error; trying origin fallback...`,
-          );
-        }
-      } catch (err: unknown) {
-        this.logger.warn(`Primary KFin bundle fetch failed: ${err}`);
-      }
-    }
-
-    // 2. Secondary path: KFin origin fallback via asset-manifest / cache-busted bundle
-    try {
-      let originBundleUrl: string | null = null;
-
-      // Try discovering bundle path from asset-manifest.json
-      try {
-        const manifestUrl = new URL('/asset-manifest.json', portalUrl).toString();
-        this.logger.log(`Checking KFin asset-manifest at ${manifestUrl}...`);
-        const manifestRes = await fetch(manifestUrl, { headers: browserHeaders });
-        if (manifestRes.ok) {
-          const manifestJson = (await manifestRes.json()) as {
-            files?: Record<string, string>;
-          };
-          const mainPath =
-            manifestJson.files?.['main.js'] ||
-            (manifestJson.files?.['entrypoints'] as unknown as string[])?.[1];
-          if (mainPath && typeof mainPath === 'string') {
-            const cleanPath = mainPath.replace(/^\./, '');
-            originBundleUrl =
-              new URL(cleanPath, portalUrl).toString() + `?cb=${Date.now()}`;
-          }
-        }
-      } catch (manifestErr: unknown) {
-        this.logger.debug(
-          `Asset-manifest discovery failed (${manifestErr}); attempting direct origin query`,
-        );
-      }
-
-      if (!originBundleUrl) {
-        originBundleUrl = jsUrl
-          ? `${jsUrl}?cb=${Date.now()}`
-          : new URL('/static/js/main.30273529.js', portalUrl).toString() +
-            `?cb=${Date.now()}`;
-      }
+      this.logger.log(
+        'Discovering KFin company identities via KfinRegistryStore...',
+      );
+      const snapshot = await this.store.getActiveRegistry();
+      const discoveredAt = new Date(snapshot.metadata.fetchedAt);
 
       this.logger.log(
-        `Attempting KFin origin bundle fetch from ${originBundleUrl}...`,
+        `Discovered ${snapshot.items.length} KFin company identities (source: ${snapshot.metadata.sourceType}, isStale: ${snapshot.metadata.isStale})`,
       );
-      const originRes = await fetch(originBundleUrl, {
-        headers: browserHeaders,
-      });
 
-      if (originRes.ok) {
-        const originJs = await originRes.text();
-        if (!this.isHtmlPayload(originJs)) {
-          const issues = this.parseKfinRegistryBundle(originJs);
-          this.logger.log(
-            `Successfully recovered ${issues.length} KFin company identities from origin bundle`,
-          );
-          return issues;
-        }
-      }
-      throw new Error('Origin bundle returned HTML or empty response');
-    } catch (originErr: unknown) {
-      const msg =
-        originErr instanceof Error ? originErr.message : String(originErr);
-      this.logger.warn(
-        `Live KFin portal discovery failed (${msg}); falling back to static verified registry (${KFIN_VERIFIED_FALLBACK_REGISTRY.length} companies)`,
+      return snapshot.items.map((item) => ({
+        externalId: item.clientId,
+        externalName: item.name,
+        registrarCode: this.registrarCode,
+        discoveredAt,
+        rawPayload: {
+          clientId: item.clientId,
+          name: item.name,
+          sourceType: snapshot.metadata.sourceType,
+          sourceUrl: snapshot.metadata.sourceUrl,
+          isStale: snapshot.metadata.isStale,
+          validationStatus: snapshot.metadata.validationStatus,
+          contentHash: snapshot.metadata.contentHash,
+        },
+      }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `[REGISTRAR_ALERT:DISCOVERY_FAILURE] Discovery failed in KfinIdentityDiscoveryAdapter: ${msg}`,
       );
       return this.getFallbackIssues();
     }
