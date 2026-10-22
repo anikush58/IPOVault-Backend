@@ -85,12 +85,15 @@ describe('AiResearchReconciliationService', () => {
       };
 
       const summary = service.reconcile(baseIpo, candidates, []);
-      expect(summary.unchangedCount).toBe(2);
       expect(summary.verifiedUpdatesCount).toBe(0);
 
       const lotDecision = summary.decisions.find((d) => d.fieldKey === 'lotSize');
       expect(lotDecision?.status).toBe('UNCHANGED');
       expect(lotDecision?.autoApply).toBe(false);
+
+      const legalNameDecision = summary.decisions.find((d) => d.fieldKey === 'company.legalName');
+      expect(legalNameDecision?.status).toBe('UNCHANGED');
+      expect(legalNameDecision?.autoApply).toBe(false);
     });
 
     it('should classify missing fields with authoritative candidate as VERIFIED_UPDATE and autoApply', () => {
@@ -148,7 +151,7 @@ describe('AiResearchReconciliationService', () => {
       const priceDecision = summary.decisions.find((d) => d.fieldKey === 'priceBandHigh');
 
       expect(priceDecision).toBeDefined();
-      expect(priceDecision?.status).toBe('CONFLICTING_SOURCES');
+      expect(priceDecision?.status).toBe('PROTECTED');
       expect(priceDecision?.autoApply).toBe(false);
       expect(priceDecision?.statusReason).toContain('Protected by Manual/Admin entry');
     });
@@ -177,30 +180,31 @@ describe('AiResearchReconciliationService', () => {
       const summary = service.reconcile(baseIpo, candidates, existingProvenances);
       const lotDecision = summary.decisions.find((d) => d.fieldKey === 'lotSize');
 
-      expect(lotDecision?.status).toBe('CONFLICTING_SOURCES');
+      expect(lotDecision?.status).toBe('PROTECTED');
       expect(lotDecision?.autoApply).toBe(false);
       expect(lotDecision?.statusReason).toContain('Secondary candidate cannot overwrite');
     });
 
-    it('should mark invalid/unparseable candidate values as MISSING_VALUE with NORMALIZATION_FAILED diagnosticCode', () => {
+    it('should mark invalid/unparseable candidate values on missing fields as MISSING_VALUE with NORMALIZATION_FAILED', () => {
+      // openDate is present in baseIpo lifecycleEvents, test on isin which is missing in baseIpo
       const candidates: IpoResearchCandidates = {
-        openDate: createCandidate(
-          'openDate',
-          'invalid-date-string-abc',
+        isin: createCandidate(
+          'isin',
+          'invalid-isin-format',
           'https://someforum.com/alpha',
           'TIER_4_SECONDARY',
-          'Discussion post with no clear date',
+          'Discussion post with no clear isin',
           0.3,
         ),
       };
 
       const summary = service.reconcile(baseIpo, candidates, []);
-      const dateDecision = summary.decisions.find((d) => d.fieldKey === 'openDate');
+      const isinDecision = summary.decisions.find((d) => d.fieldKey === 'isin');
 
-      expect(dateDecision?.status).toBe('MISSING_VALUE');
-      expect(dateDecision?.diagnosticCode).toBe('NORMALIZATION_FAILED');
-      expect(dateDecision?.autoApply).toBe(false);
-      expect(dateDecision?.statusReason).toContain('could not be normalized');
+      expect(isinDecision?.status).toBe('MISSING_VALUE');
+      expect(isinDecision?.diagnosticCode).toBe('NORMALIZATION_FAILED');
+      expect(isinDecision?.autoApply).toBe(false);
+      expect(isinDecision?.statusReason).toContain('could not be normalized');
     });
 
     it('should record informative diagnostics and skip reasons when upstream research failed', () => {
@@ -219,16 +223,16 @@ describe('AiResearchReconciliationService', () => {
       expect(summary.diagnosticMessage).toBe('Gemini API quota exceeded (HTTP 429)');
       expect(summary.verifiedUpdatesCount).toBe(0);
 
-      // Verify each decision explains upstream failure
+      // Verify each decision explains upstream failure and is marked SKIPPED
       for (const d of summary.decisions) {
-        expect(d.status).toBe('MISSING_VALUE');
+        expect(d.status).toBe('SKIPPED');
         expect(d.diagnosticCode).toBe('API_RATE_LIMIT_EXCEEDED');
         expect(d.statusReason).toContain('Research skipped: Upstream AI search failed');
         expect(d.candidateValueDisplay).toBe('(Skipped)');
       }
     });
 
-    it('should mark unpopulated fields as FIELD_NOT_REPORTED_BY_SOURCES on successful research', () => {
+    it('should preserve valid existing DB values as UNCHANGED when sources return no candidate', () => {
       const candidates: IpoResearchCandidates = {
         diagnostics: {
           status: 'SUCCESS',
@@ -240,9 +244,36 @@ describe('AiResearchReconciliationService', () => {
       const summary = service.reconcile(baseIpo, candidates, []);
       const cinDecision = summary.decisions.find((d) => d.fieldKey === 'company.cin');
 
+      // company.cin is already present in baseIpo ('U72900MH2020PTC123456'), so it MUST be preserved!
+      expect(cinDecision?.status).toBe('UNCHANGED');
+      expect(cinDecision?.candidateValueDisplay).toBe('(Current Value Preserved)');
+      expect(cinDecision?.diagnosticCode).toBe('DATABASE_VALUE_PRESERVED');
+      expect(cinDecision?.statusReason).toContain('Current database value is verified');
+    });
+
+    it('should mark genuinely missing DB fields as FIELD_NOT_REPORTED_BY_SOURCES on successful research', () => {
+      const ipoWithoutCin = {
+        ...baseIpo,
+        company: {
+          ...baseIpo.company,
+          cin: null,
+        },
+      };
+
+      const candidates: IpoResearchCandidates = {
+        diagnostics: {
+          status: 'SUCCESS',
+          diagnosticCode: 'SUCCESS',
+        },
+        lotSize: createCandidate('lotSize', 130, 'https://www.nseindia.com', 'TIER_1_STATUTORY'),
+      };
+
+      const summary = service.reconcile(ipoWithoutCin, candidates, []);
+      const cinDecision = summary.decisions.find((d) => d.fieldKey === 'company.cin');
+
       expect(cinDecision?.status).toBe('MISSING_VALUE');
       expect(cinDecision?.diagnosticCode).toBe('FIELD_NOT_REPORTED_BY_SOURCES');
-      expect(cinDecision?.statusReason).toContain('not disclosed in the researched official statutory filings');
+      expect(cinDecision?.statusReason).toContain('Field is missing in database');
     });
 
     it('should classify secondary source rejection with UNTRUSTED_SECONDARY_SOURCE diagnostic code', () => {

@@ -237,23 +237,30 @@ export class AiResearchAgentService {
   /**
    * Constructs the live research prompt enforcing strict priority ranking and evidence citation.
    */
-  public buildResearchPrompt(ipo: any): string {
+  public buildResearchPrompt(ipo: any, missingFieldNames: string[] = []): string {
     const comp = ipo.company || {};
     const existingSummary = [
-      `Company Name: ${comp.legalName || comp.displayName || 'N/A'}`,
-      `Symbol: ${ipo.symbol || 'N/A'}`,
+      `Company Legal Name: ${comp.legalName || 'N/A'}`,
+      `Company Display Name: ${comp.displayName || 'N/A'}`,
+      `Corporate Identity Number (CIN): ${comp.cin || 'N/A'}`,
+      `Website: ${comp.website || 'N/A'}`,
+      `Symbol: ${ipo.symbol || ipo.nseSymbol || ipo.bseSymbol || 'N/A'}`,
       `Market Segment: ${ipo.marketSegment || 'N/A'}`,
       `Exchange: ${ipo.exchange || 'N/A'}`,
       `Price Band: ₹${ipo.priceBandLow ?? 'N/A'} - ₹${ipo.priceBandHigh ?? 'N/A'}`,
       `Lot Size: ${ipo.lotSize ?? 'N/A'}`,
       `Issue Size: ${ipo.issueSize ? `₹${ipo.issueSize} Cr` : 'N/A'}`,
-    ].join('\n');
+    ];
+
+    if (missingFieldNames && missingFieldNames.length > 0) {
+      existingSummary.push(`GENUINELY MISSING FIELDS REQUIRING DISCOVERY: ${missingFieldNames.join(', ')}`);
+    }
 
     return `
 You are an expert Indian Capital Markets Research Engine specializing in SEBI filings, NSE, BSE, and Registrar IPO disclosures.
 
 TARGET IPO:
-${existingSummary}
+${existingSummary.join('\n')}
 
 TASK:
 Research the latest official statutory data for this IPO using real-time search and official Indian market repositories.
@@ -406,9 +413,11 @@ RULES:
     // Prioritize configured model, then latest active models
     const models = configuredModel
       ? [configuredModel, 'gemini-3.8-flash', 'gemini-flash-latest']
-      : ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
+      : ['gemini-3.8-flash', 'gemini-flash-latest'];
 
     const effectiveDelay = retryDelayMs !== undefined ? retryDelayMs : 1500;
+    const sanitize = (msg: string) => (msg ? String(msg).replace(/key=[a-zA-Z0-9_\-\.]+/gi, 'key=***') : '');
+
     let lastError: { code: any; message: string } = {
       code: 'NO_DATA_RETURNED',
       message: 'No response returned from Gemini API',
@@ -462,10 +471,12 @@ RULES:
           }
           if (resp.status === 404) {
             this.logger.warn(`Gemini model '${model}' not found (HTTP 404).`);
-            lastError = {
-              code: 'MODEL_NOT_AVAILABLE',
-              message: `Gemini model '${model}' is unavailable or deprecated (HTTP 404)`,
-            };
+            if (lastError.code !== 'API_RATE_LIMIT_EXCEEDED' && lastError.code !== 'UPSTREAM_API_ERROR') {
+              lastError = {
+                code: 'MODEL_NOT_AVAILABLE',
+                message: `Gemini model '${model}' is unavailable or deprecated (HTTP 404)`,
+              };
+            }
             break; // Try next model in chain
           }
           if (!resp.ok) {
@@ -473,10 +484,10 @@ RULES:
             if (typeof resp.text === 'function') {
               errBody = await resp.text();
             }
-            this.logger.warn(`Gemini research call failed (HTTP ${resp.status}): ${errBody.slice(0, 150)}`);
+            this.logger.warn(`Gemini research call failed (HTTP ${resp.status}): ${sanitize(errBody.slice(0, 150))}`);
             lastError = {
               code: 'UPSTREAM_API_ERROR',
-              message: `Gemini API call failed with HTTP ${resp.status}: ${errBody.slice(0, 120)}`,
+              message: sanitize(`Gemini API call failed with HTTP ${resp.status}: ${errBody.slice(0, 120)}`),
             };
             break; // Try next model in chain
           }
@@ -545,10 +556,10 @@ RULES:
               },
             };
           }
-          this.logger.error(`Error invoking Gemini research (${model}, attempt ${attempt}): ${err.message}`);
+          this.logger.error(`Error invoking Gemini research (${model}, attempt ${attempt}): ${sanitize(err.message)}`);
           lastError = {
             code: 'UPSTREAM_API_ERROR',
-            message: err.message,
+            message: sanitize(err.message),
           };
         }
       }
@@ -559,7 +570,7 @@ RULES:
       diagnostics: {
         status: 'FAILED',
         diagnosticCode: lastError.code,
-        errorMessage: lastError.message,
+        errorMessage: sanitize(lastError.message),
       },
     };
   }

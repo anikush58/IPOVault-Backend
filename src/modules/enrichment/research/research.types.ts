@@ -8,10 +8,13 @@ export type SourceAuthorityTier =
 
 export type ReconciliationStatus =
   | 'VERIFIED_UPDATE'     // Authoritative, non-conflicting, verified candidate ready to update DB
-  | 'UNCHANGED'           // Candidate matches current DB value
+  | 'UNCHANGED'           // Candidate matches current DB value or existing valid DB value preserved
+  | 'PROTECTED'           // Protected by manual admin review or higher authority tier
   | 'CONFLICTING_SOURCES' // Candidate conflicts with verified/admin data or sources contradict
   | 'UNVERIFIABLE'        // Weak secondary source, low confidence, or speculative
-  | 'MISSING_VALUE';      // Could not be located in researched sources
+  | 'SKIPPED'             // Skipped due to provider failure or out-of-scope evaluation
+  | 'FAILED'              // Research candidate failed validation or normalization
+  | 'MISSING_VALUE';      // Field is genuinely missing from DB and not disclosed in sources
 
 export type ResearchDiagnosticCode =
   | 'SUCCESS'
@@ -29,7 +32,8 @@ export type ResearchDiagnosticCode =
   | 'BELOW_CONFIDENCE_THRESHOLD'
   | 'UNTRUSTED_SECONDARY_SOURCE'
   | 'CONFLICTS_WITH_ADMIN_LOCK'
-  | 'CONFLICTS_WITH_OFFICIAL_DATA';
+  | 'CONFLICTS_WITH_OFFICIAL_DATA'
+  | 'DATABASE_VALUE_PRESERVED';
 
 export interface ResearchAgentDiagnostics {
   status: 'SUCCESS' | 'FAILED' | 'PARTIAL';
@@ -170,13 +174,25 @@ export interface IpoReconciliationSummary {
   companyName: string;
   evaluatedAt: string;
   fieldsEvaluated: number;
+  recordsEvaluated?: number;
+  fieldsInspected?: number;
+  missingFieldsDetected?: number;
+  searchesAttempted?: number;
+  searchesCompleted?: number;
+  sourcesRetrievedCount?: number;
+  verifiedCandidatesCount?: number;
   verifiedUpdatesCount: number;
+  valuesAppliedCount?: number;
+  valuesUnchangedCount?: number;
   unchangedCount: number;
+  protectedCount?: number;
   conflictsCount: number;
   unverifiableCount: number;
   missingCount: number;
   appliedCount: number;
   skippedCount: number;
+  providerFailuresCount?: number;
+  persistenceFailuresCount?: number;
   diagnosticCode?: ResearchDiagnosticCode;
   diagnosticMessage?: string;
   decisions: FieldReconciliationDecision[];

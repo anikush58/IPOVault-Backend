@@ -247,20 +247,21 @@ export class AiResearchOrchestratorService {
       }
 
       summary.appliedCount = appliedDecisions.length;
+      summary.valuesAppliedCount = appliedDecisions.length;
       job.summary = summary;
 
       if (isUpstreamFailure) {
         job.status = 'FAILED';
         job.error = candidates?.diagnostics?.errorMessage || 'Upstream AI research failed';
         job.progressPercent = 100;
-        job.progressMessage = `Research failed upstream: ${job.error}`;
+        job.progressMessage = `Research failed upstream: ${job.error}. No database updates applied (${summary.unchangedCount} existing values preserved).`;
       } else {
         job.status = summary.conflictsCount > 0 ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED';
         job.progressPercent = 100;
         job.progressMessage =
           appliedDecisions.length > 0
-            ? `Research complete. Applied ${appliedDecisions.length} verified updates (${summary.conflictsCount} conflicts flagged).`
-            : `Research complete. 0 verified updates (${summary.conflictsCount} conflicts, ${summary.unverifiableCount} unverifiable, ${summary.missingCount} missing).`;
+            ? `Research complete. Applied ${appliedDecisions.length} verified updates (${summary.unchangedCount} unchanged, ${summary.protectedCount || 0} protected, ${summary.conflictsCount} conflicts flagged).`
+            : `Research complete. 0 updates applied (${summary.unchangedCount} unchanged, ${summary.protectedCount || 0} protected, ${summary.missingCount} missing, ${summary.unverifiableCount} unverifiable).`;
       }
 
       job.completedAt = new Date().toISOString();

@@ -8366,26 +8366,30 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
 
       // Summary Metric Cards
-      html += '<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">'
+      html += '<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:10px;">'
         + '<div class="stat-card" style="padding:10px;">'
         + '<div class="stat-title">Evaluated</div>'
-        + '<div class="stat-value" style="font-size:18px;">' + (summary.fieldsEvaluated || 0) + '</div>'
+        + '<div class="stat-value" style="font-size:18px;">' + (summary.fieldsInspected || summary.fieldsEvaluated || 0) + '</div>'
         + '</div>'
         + '<div class="stat-card" style="padding:10px;">'
         + '<div class="stat-title">Verified Applied</div>'
-        + '<div class="stat-value" style="font-size:18px; color:#10B981;">+' + (summary.appliedCount || 0) + '</div>'
+        + '<div class="stat-value" style="font-size:18px; color:#10B981;">+' + (summary.valuesAppliedCount ?? summary.appliedCount ?? 0) + '</div>'
         + '</div>'
         + '<div class="stat-card" style="padding:10px;">'
         + '<div class="stat-title">Unchanged</div>'
-        + '<div class="stat-value" style="font-size:18px; color:#64748B;">' + (summary.unchangedCount || 0) + '</div>'
+        + '<div class="stat-value" style="font-size:18px; color:#64748B;">' + (summary.valuesUnchangedCount ?? summary.unchangedCount ?? 0) + '</div>'
         + '</div>'
         + '<div class="stat-card" style="padding:10px;">'
-        + '<div class="stat-title">Protected / Conflicts</div>'
+        + '<div class="stat-title">Protected</div>'
+        + '<div class="stat-value" style="font-size:18px; color:#3B82F6;">' + (summary.protectedCount || 0) + '</div>'
+        + '</div>'
+        + '<div class="stat-card" style="padding:10px;">'
+        + '<div class="stat-title">Conflicts</div>'
         + '<div class="stat-value" style="font-size:18px; color:#F59E0B;">' + (summary.conflictsCount || 0) + '</div>'
         + '</div>'
         + '<div class="stat-card" style="padding:10px;">'
         + '<div class="stat-title">Unverifiable / Skipped</div>'
-        + '<div class="stat-value" style="font-size:18px; color:#94A3B8;">' + (summary.unverifiableCount + summary.missingCount || 0) + '</div>'
+        + '<div class="stat-value" style="font-size:18px; color:#94A3B8;">' + ((summary.unverifiableCount || 0) + (summary.skippedCount || 0) + (summary.missingCount || 0)) + '</div>'
         + '</div>'
         + '</div>';
 
@@ -8412,11 +8416,18 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             rowBg = 'background:rgba(34,197,94,0.04);';
           } else if (d.status === 'UNCHANGED') {
             statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:#F1F5F9; color:#64748B;">UNCHANGED</span>';
+          } else if (d.status === 'PROTECTED') {
+            statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#EFF6FF; color:#1D4ED8; border:1px solid #BFDBFE;">\uD83D\uDEE1\uFE0F PROTECTED</span>';
+            rowBg = 'background:rgba(59,130,246,0.04);';
           } else if (d.status === 'CONFLICTING_SOURCES') {
             statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#FFEDD5; color:#C2410C;">\u26A0\uFE0F CONFLICT</span>';
             rowBg = 'background:rgba(249,115,22,0.04);';
           } else if (d.status === 'UNVERIFIABLE') {
             statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:500; background:#FEF3C7; color:#B45309;">UNVERIFIABLE</span>';
+          } else if (d.status === 'SKIPPED') {
+            statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:500; background:#F8FAFC; color:#64748B; border:1px solid #E2E8F0;">SKIPPED</span>';
+          } else if (d.status === 'FAILED') {
+            statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#FEE2E2; color:#B91C1C;">FAILED</span>';
           } else {
             statusBadge = '<span style="padding:2px 8px; border-radius:6px; font-size:11px; color:#94A3B8;">MISSING</span>';
           }
@@ -8425,12 +8436,19 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             ? '<span style="padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; background:#10B981; color:#FFFFFF;">APPLIED</span>'
             : '<span style="padding:2px 8px; border-radius:6px; font-size:11px; color:var(--text-subtle);">KEPT AS-IS</span>';
 
-          var srcInfo = d.sourceUrl
-            ? '<div style="font-size:11px;"><a href="' + escapeHtml(d.sourceUrl) + '" target="_blank" style="color:#2563EB; text-decoration:underline;">' + escapeHtml(d.sourceAuthority || 'Source') + '</a></div>'
-            : '<div style="font-size:11px; color:var(--text-subtle);">(None)</div>';
+          var srcInfo = '';
+          if (d.sourceUrl) {
+            srcInfo = '<div style="font-size:11px;"><a href="' + escapeHtml(d.sourceUrl) + '" target="_blank" style="color:#2563EB; text-decoration:underline;">' + escapeHtml(d.sourceAuthority || 'Source') + '</a></div>';
+          } else if (d.existingProvenance) {
+            srcInfo = '<div style="font-size:11px; color:#475569; font-weight:500;">Existing: ' + escapeHtml(d.existingProvenance.sourceLabel || d.existingProvenance.sourceCode) + '</div>';
+          } else {
+            srcInfo = '<div style="font-size:11px; color:var(--text-subtle);">(None)</div>';
+          }
 
           if (d.evidence) {
             srcInfo += '<div style="font-size:10px; color:var(--text-muted); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + escapeHtml(d.evidence) + '">' + escapeHtml(d.evidence) + '</div>';
+          } else if (!d.sourceUrl && !d.existingProvenance) {
+            srcInfo += '<div style="font-size:10px; color:var(--text-subtle);">(No source evidence)</div>';
           }
 
           html += '<tr style="' + rowBg + '">'

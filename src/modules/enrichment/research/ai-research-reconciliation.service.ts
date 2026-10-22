@@ -437,11 +437,15 @@ export class AiResearchReconciliationService {
 
     const verifiedUpdatesCount = decisions.filter((d) => d.status === 'VERIFIED_UPDATE').length;
     const unchangedCount = decisions.filter((d) => d.status === 'UNCHANGED').length;
+    const protectedCount = decisions.filter((d) => d.status === 'PROTECTED').length;
     const conflictsCount = decisions.filter((d) => d.status === 'CONFLICTING_SOURCES').length;
     const unverifiableCount = decisions.filter((d) => d.status === 'UNVERIFIABLE').length;
+    const skippedCount = decisions.filter((d) => d.status === 'SKIPPED').length;
     const missingCount = decisions.filter((d) => d.status === 'MISSING_VALUE').length;
     const appliedCount = decisions.filter((d) => d.autoApply).length;
-    const skippedCount = decisions.filter((d) => !d.autoApply && d.status !== 'UNCHANGED').length;
+
+    const missingFieldsDetected = decisions.filter((d) => this.isPlaceholderOrEmpty(d.currentValue)).length;
+    const verifiedCandidatesCount = decisions.filter((d) => d.candidateValue !== null && d.status === 'VERIFIED_UPDATE').length;
 
     const diag = candidates?.diagnostics;
     const diagnosticCode = diag?.diagnosticCode || (diag?.status === 'SUCCESS' ? 'SUCCESS' : undefined);
@@ -451,14 +455,26 @@ export class AiResearchReconciliationService {
       ipoId: ipo.id,
       companyName: comp.displayName || comp.legalName || 'Unknown IPO',
       evaluatedAt: new Date().toISOString(),
+      recordsEvaluated: 1,
+      fieldsInspected: decisions.length,
       fieldsEvaluated: decisions.length,
+      missingFieldsDetected,
+      searchesAttempted: diag?.searchQueries?.length || 0,
+      searchesCompleted: diag?.status === 'SUCCESS' ? (diag?.searchQueries?.length || 0) : 0,
+      sourcesRetrievedCount: diag?.groundingSourcesCount || 0,
+      verifiedCandidatesCount,
       verifiedUpdatesCount,
+      valuesAppliedCount: appliedCount,
+      appliedCount,
+      valuesUnchangedCount: unchangedCount,
       unchangedCount,
+      protectedCount,
       conflictsCount,
       unverifiableCount,
-      missingCount,
-      appliedCount,
       skippedCount,
+      missingCount,
+      providerFailuresCount: diag?.status === 'FAILED' ? 1 : 0,
+      persistenceFailuresCount: 0,
       diagnosticCode,
       diagnosticMessage,
       decisions,
@@ -491,36 +507,72 @@ export class AiResearchReconciliationService {
       candidatesDiagnostics,
     } = params;
 
+    const normKey = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
     const normalizedCurrent = normalizer(currentValue);
-    const existingProv = provByField.get(fieldKey.toLowerCase());
+    const existingProv = provByField.get(normKey(fieldKey)) || provByField.get(fieldKey.toLowerCase());
+    const isCurrentPresent = !this.isPlaceholderOrEmpty(normalizedCurrent);
 
     const displayCurrent =
       normalizedCurrent !== null && normalizedCurrent !== undefined && String(normalizedCurrent).trim() !== ''
         ? String(normalizedCurrent)
         : '(None)';
 
+    // Source info fallback when no candidate is available
+    const existingSourceUrl = existingProv?.reference || '';
+    const existingSourceAuthority = existingProv?.tier || (existingProv?.priority === 1 ? 'TIER_1_STATUTORY' : existingProv?.priority === 2 ? 'TIER_1_STATUTORY' : undefined);
+    const existingEvidence = existingProv ? `Recorded in database via ${existingProv.sourceLabel}` : undefined;
+
     // Case 1: Research produced no candidate value
     if (!candidate || candidate.rawValue === null || candidate.rawValue === undefined) {
       const isUpstreamFailure = candidatesDiagnostics?.status === 'FAILED';
-      decisions.push({
-        fieldKey,
-        fieldLabel,
-        entityType,
-        currentValue: normalizedCurrent,
-        currentValueDisplay: displayCurrent,
-        existingProvenance: existingProv,
-        candidateValue: null,
-        candidateValueDisplay: isUpstreamFailure ? '(Skipped)' : '(Not Found)',
-        status: 'MISSING_VALUE',
-        diagnosticCode: isUpstreamFailure
-          ? (candidatesDiagnostics?.diagnosticCode || 'UPSTREAM_API_ERROR')
-          : 'FIELD_NOT_REPORTED_BY_SOURCES',
-        statusReason: isUpstreamFailure
-          ? `Research skipped: Upstream AI search failed (${candidatesDiagnostics?.errorMessage || candidatesDiagnostics?.diagnosticCode || 'API error'}). No live sources could be evaluated.`
-          : 'Field was not disclosed in the researched official statutory filings or registrar records.',
-        autoApply: false,
-        applied: false,
-      });
+
+      if (isCurrentPresent) {
+        decisions.push({
+          fieldKey,
+          fieldLabel,
+          entityType,
+          currentValue: normalizedCurrent,
+          currentValueDisplay: displayCurrent,
+          existingProvenance: existingProv,
+          candidateValue: null,
+          candidateValueDisplay: isUpstreamFailure ? '(Skipped)' : '(Current Value Preserved)',
+          status: isUpstreamFailure ? 'SKIPPED' : 'UNCHANGED',
+          diagnosticCode: isUpstreamFailure
+            ? (candidatesDiagnostics?.diagnosticCode || 'UPSTREAM_API_ERROR')
+            : 'DATABASE_VALUE_PRESERVED',
+          statusReason: isUpstreamFailure
+            ? `Research skipped: Upstream AI search failed (${candidatesDiagnostics?.errorMessage || candidatesDiagnostics?.diagnosticCode || 'API error'}). Current database value preserved.`
+            : 'Current database value is verified and was not modified by research.',
+          sourceUrl: existingSourceUrl,
+          sourceAuthority: existingSourceAuthority,
+          evidence: existingEvidence,
+          autoApply: false,
+          applied: false,
+        });
+      } else {
+        decisions.push({
+          fieldKey,
+          fieldLabel,
+          entityType,
+          currentValue: normalizedCurrent,
+          currentValueDisplay: displayCurrent,
+          existingProvenance: existingProv,
+          candidateValue: null,
+          candidateValueDisplay: isUpstreamFailure ? '(Skipped)' : '(Not Found)',
+          status: isUpstreamFailure ? 'SKIPPED' : 'MISSING_VALUE',
+          diagnosticCode: isUpstreamFailure
+            ? (candidatesDiagnostics?.diagnosticCode || 'UPSTREAM_API_ERROR')
+            : 'FIELD_NOT_REPORTED_BY_SOURCES',
+          statusReason: isUpstreamFailure
+            ? `Research skipped: Upstream AI search failed (${candidatesDiagnostics?.errorMessage || candidatesDiagnostics?.diagnosticCode || 'API error'}). Field remains missing.`
+            : 'Field is missing in database and was not disclosed in the researched official statutory filings or registrar records.',
+          sourceUrl: existingSourceUrl,
+          sourceAuthority: existingSourceAuthority,
+          evidence: existingEvidence,
+          autoApply: false,
+          applied: false,
+        });
+      }
       return;
     }
 
@@ -538,12 +590,14 @@ export class AiResearchReconciliationService {
         existingProvenance: existingProv,
         candidateValue: null,
         candidateValueDisplay: '(Invalid/Null)',
-        status: 'MISSING_VALUE',
+        status: isCurrentPresent ? 'UNVERIFIABLE' : 'MISSING_VALUE',
         diagnosticCode: 'NORMALIZATION_FAILED',
-        statusReason: `Candidate value '${String(candidate.rawValue)}' could not be normalized to valid schema format.`,
-        sourceUrl: candidate.sourceUrl,
-        sourceAuthority: candidate.sourceAuthority,
-        evidence: candidate.evidence,
+        statusReason: isCurrentPresent
+          ? `Candidate value '${String(candidate.rawValue)}' could not be normalized to valid schema format. Current database value preserved.`
+          : `Candidate value '${String(candidate.rawValue)}' could not be normalized to valid schema format. Field remains missing.`,
+        sourceUrl: candidate.sourceUrl || existingSourceUrl,
+        sourceAuthority: candidate.sourceAuthority || existingSourceAuthority,
+        evidence: candidate.evidence || existingEvidence,
         confidence: candidate.confidence,
         autoApply: false,
         applied: false,
@@ -552,7 +606,7 @@ export class AiResearchReconciliationService {
     }
 
     // Compare normalized values
-    const isEquivalent = this.isValuesEquivalent(normalizedCurrent, normalizedCandidate);
+    const isEquivalent = this.isValuesEquivalent(fieldKey, normalizedCurrent, normalizedCandidate);
 
     // Case 2: Values match
     if (isEquivalent) {
@@ -580,7 +634,12 @@ export class AiResearchReconciliationService {
 
     // Case 3: Values differ - analyze provenance and source authority
     const existingCode = (existingProv?.sourceCode || '').toUpperCase();
-    const isExistingManual = existingCode === 'ADMIN' || existingCode === 'MANUAL' || existingCode.includes('MANUAL');
+    const isExistingManual =
+      existingCode === 'ADMIN' ||
+      existingCode === 'MANUAL' ||
+      existingCode.includes('MANUAL') ||
+      existingProv?.priority === 1;
+
     const isExistingOfficial =
       existingCode === 'OFFICIAL' ||
       existingCode === 'NSE' ||
@@ -605,7 +664,7 @@ export class AiResearchReconciliationService {
         existingProvenance: existingProv,
         candidateValue: normalizedCandidate,
         candidateValueDisplay: displayCandidate,
-        status: 'CONFLICTING_SOURCES',
+        status: 'PROTECTED',
         diagnosticCode: 'CONFLICTS_WITH_ADMIN_LOCK',
         statusReason: 'Protected by Manual/Admin entry. Candidate differs from verified human review.',
         sourceUrl: candidate.sourceUrl,
@@ -629,7 +688,7 @@ export class AiResearchReconciliationService {
         existingProvenance: existingProv,
         candidateValue: normalizedCandidate,
         candidateValueDisplay: displayCandidate,
-        status: 'CONFLICTING_SOURCES',
+        status: 'PROTECTED',
         diagnosticCode: 'CONFLICTS_WITH_OFFICIAL_DATA',
         statusReason: `Secondary candidate cannot overwrite official statutory exchange/SEBI filing. Source (${candidate.sourceDomain || 'secondary'}) is not authoritative.`,
         sourceUrl: candidate.sourceUrl,
@@ -658,7 +717,7 @@ export class AiResearchReconciliationService {
         existingProvenance: existingProv,
         candidateValue: normalizedCandidate,
         candidateValueDisplay: displayCandidate,
-        status: 'UNVERIFIABLE',
+        status: isCurrentPresent ? 'CONFLICTING_SOURCES' : 'UNVERIFIABLE',
         diagnosticCode: diagCode,
         statusReason: reason,
         sourceUrl: candidate.sourceUrl,
@@ -685,7 +744,9 @@ export class AiResearchReconciliationService {
       candidateValueDisplay: displayCandidate,
       status: 'VERIFIED_UPDATE',
       diagnosticCode: 'SUCCESS',
-      statusReason: `Verified update supported by ${candidate.sourceAuthority} (${candidate.sourceName || candidate.sourceDomain}).`,
+      statusReason: isCurrentPresent
+        ? `Verified update supported by ${candidate.sourceAuthority} (${candidate.sourceName || candidate.sourceDomain || 'authoritative source'}).`
+        : `Verified candidate populates missing field via ${candidate.sourceAuthority} (${candidate.sourceName || candidate.sourceDomain || 'authoritative source'}).`,
       sourceUrl: candidate.sourceUrl,
       sourceAuthority: candidate.sourceAuthority,
       evidence: candidate.evidence,
@@ -695,20 +756,35 @@ export class AiResearchReconciliationService {
     });
   }
 
-  private isValuesEquivalent(a: any, b: any): boolean {
+  public isValuesEquivalent(fieldKey: string, a: any, b: any): boolean {
     if (a === b) return true;
     if (a === null || a === undefined || b === null || b === undefined) return false;
 
     if (typeof a === 'number' && typeof b === 'number') {
-      return Math.abs(a - b) < 0.0001;
+      return Math.abs(a - b) < 0.001;
     }
-    const sa = String(a).trim().toLowerCase();
-    const sb = String(b).trim().toLowerCase();
+
+    if (fieldKey.includes('legalName') || fieldKey.includes('displayName')) {
+      const normA = this.normalizeCompanyName(String(a));
+      const normB = this.normalizeCompanyName(String(b));
+      if (normA && normB && normA === normB) return true;
+    }
+
+    if (fieldKey.includes('cin')) {
+      const cinA = String(a).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      const cinB = String(b).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (cinA && cinB && cinA === cinB) return true;
+    }
+
+    const sa = String(a).trim().replace(/\s+/g, ' ').toLowerCase();
+    const sb = String(b).trim().replace(/\s+/g, ' ').toLowerCase();
     return sa === sb;
   }
 
   private mapExistingProvenances(existing: any[]): Map<string, any> {
     const map = new Map<string, any>();
+    const normKey = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
+
     for (const p of existing) {
       const code = (p.source?.code || '').toUpperCase();
       let priority = 4;
@@ -724,14 +800,20 @@ export class AiResearchReconciliationService {
         sourceLabel = 'IPOGuru Feed';
       }
 
-      map.set((p.fieldName || '').toLowerCase(), {
+      const item = {
         sourceCode: code,
         sourceType: p.source?.sourceType,
         sourceLabel,
         priority,
         reference: p.sourceReference,
+        tier: p.tier,
         value: p.value,
-      });
+      };
+
+      if (p.fieldName) {
+        map.set((p.fieldName || '').toLowerCase(), item);
+        map.set(normKey(p.fieldName), item);
+      }
     }
     return map;
   }
@@ -805,9 +887,47 @@ export class AiResearchReconciliationService {
 
   public normalizeCin = (val: any): string | null => {
     if (!val) return null;
-    const s = String(val).trim().toUpperCase();
-    return s.length >= 21 ? s : null;
+    const s = String(val).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    return s.length === 21 ? s : null;
   };
+
+  public normalizeCompanyName(name: string): string {
+    if (!name) return '';
+    return String(name)
+      .toLowerCase()
+      .replace(/\b(limited|ltd|pvt|private|sme|ipo|ncds?|ncd|invit|reit|trust)\b/gi, '')
+      .replace(/[^a-z0-9]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  public isPlaceholderOrEmpty(val: any): boolean {
+    if (val === null || val === undefined) return true;
+    const s = String(val).trim();
+    if (s.length === 0) return true;
+    const lower = s.toLowerCase();
+    const placeholders = [
+      'n/a',
+      'na',
+      '-',
+      '--',
+      '---',
+      'tbd',
+      'tba',
+      '[●]',
+      '[•]',
+      '●',
+      '•',
+      'null',
+      'undefined',
+      'to be announced',
+      'to be determined',
+      'not available',
+      'not applicable',
+      'none',
+    ];
+    return placeholders.includes(lower);
+  }
 
   public normalizeUrl = (val: any): string | null => {
     if (!val) return null;

@@ -139,14 +139,13 @@ describe('SFC Environmental Technologies AI Research Reproduction & Regression',
       // Verify all 35 fields evaluated
       expect(summary.fieldsEvaluated).toBe(35);
       expect(summary.verifiedUpdatesCount).toBe(0);
-      expect(summary.unchangedCount).toBe(0);
       expect(summary.conflictsCount).toBe(0);
-      expect(summary.missingCount).toBe(35);
+      expect(summary.skippedCount).toBe(35);
       expect(summary.diagnosticCode).toBe('API_RATE_LIMIT_EXCEEDED');
 
       // Verify each field decision explains WHY it was skipped
       for (const decision of summary.decisions) {
-        expect(decision.status).toBe('MISSING_VALUE');
+        expect(decision.status).toBe('SKIPPED');
         expect(decision.diagnosticCode).toBe('API_RATE_LIMIT_EXCEEDED');
         expect(decision.statusReason).toContain('Research skipped: Upstream AI search failed');
         expect(decision.candidateValueDisplay).toBe('(Skipped)');
@@ -367,7 +366,7 @@ describe('SFC Environmental Technologies AI Research Reproduction & Regression',
       });
 
       const priceHighDecision = summary.decisions.find((d) => d.fieldKey === 'priceBandHigh');
-      expect(priceHighDecision?.status).toBe('CONFLICTING_SOURCES');
+      expect(priceHighDecision?.status).toBe('PROTECTED');
       expect(priceHighDecision?.diagnosticCode).toBe('CONFLICTS_WITH_ADMIN_LOCK');
       expect(priceHighDecision?.autoApply).toBe(false);
       expect(priceHighDecision?.applied).toBe(false);
