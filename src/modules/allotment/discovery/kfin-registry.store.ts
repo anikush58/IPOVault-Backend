@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -60,7 +60,7 @@ export class KfinRegistryStore {
   // Single-flight refresh mutex
   private inFlightRefresh: Promise<KfinRegistrySnapshot> | null = null;
 
-  constructor(customConfig?: Partial<KfinRegistryStoreConfig>) {
+  constructor(@Optional() customConfig?: Partial<KfinRegistryStoreConfig>) {
     const isTest = process.env.NODE_ENV === 'test';
     let defaultStoragePath: string;
 

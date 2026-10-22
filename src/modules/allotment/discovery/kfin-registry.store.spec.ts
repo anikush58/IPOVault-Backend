@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { Test, TestingModule } from '@nestjs/testing';
 import { KfinRegistryStore, KfinRegistrySnapshot } from './kfin-registry.store';
 import { KFIN_VERIFIED_FALLBACK_REGISTRY } from './kfin-identity-discovery.adapter';
 
@@ -408,6 +409,25 @@ describe('KfinRegistryStore — Permanent Registrar Reliability & Anti-Corruptio
       } finally {
         Date.now = origNow;
       }
+    });
+  });
+
+  describe('8. NestJS Dependency Injection & Instantiation', () => {
+    it('instantiates cleanly with zero constructor arguments using default configuration', () => {
+      const defaultStore = new KfinRegistryStore();
+      expect(defaultStore).toBeInstanceOf(KfinRegistryStore);
+      expect(defaultStore.getActiveRegistry).toBeDefined();
+    });
+
+    it('resolves cleanly via NestJS DI container when registered as a standalone provider', async () => {
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [KfinRegistryStore],
+      }).compile();
+
+      const injectedStore = module.get<KfinRegistryStore>(KfinRegistryStore);
+      expect(injectedStore).toBeDefined();
+      expect(injectedStore).toBeInstanceOf(KfinRegistryStore);
+      expect(injectedStore.getActiveRegistry).toBeDefined();
     });
   });
 });
