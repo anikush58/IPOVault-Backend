@@ -4,6 +4,7 @@ import {
   FieldReconciliationDecision,
   IpoReconciliationSummary,
   IpoResearchCandidates,
+  ResearchAgentDiagnostics,
   ResearchedCandidateField,
 } from './research.types';
 
@@ -20,6 +21,7 @@ export class AiResearchReconciliationService {
   ): IpoReconciliationSummary {
     const decisions: FieldReconciliationDecision[] = [];
     const provByField = this.mapExistingProvenances(existingProvenances);
+    const candidatesDiagnostics = candidates?.diagnostics;
 
     const comp = ipo.company || {};
     const events = ipo.lifecycleEvents || [];
@@ -30,8 +32,19 @@ export class AiResearchReconciliationService {
     const listEvt = events.find((e: any) => e.eventType === 'LISTING');
     const allotCfg = ipo.allotmentConfig || {};
 
+    const rField = (params: {
+      fieldKey: string;
+      fieldLabel: string;
+      entityType: FieldReconciliationDecision['entityType'];
+      currentValue: any;
+      candidate?: ResearchedCandidateField;
+      provByField: Map<string, any>;
+      decisions: FieldReconciliationDecision[];
+      normalizer: (val: any) => any;
+    }) => this.reconcileField({ ...params, candidatesDiagnostics });
+
     // 1. Company Fields
-    this.reconcileField({
+    rField({
       fieldKey: 'company.legalName',
       fieldLabel: 'Company Legal Name',
       entityType: 'COMPANY',
@@ -42,7 +55,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeString,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'company.displayName',
       fieldLabel: 'Company Display Name',
       entityType: 'COMPANY',
@@ -53,7 +66,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeString,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'company.cin',
       fieldLabel: 'CIN',
       entityType: 'COMPANY',
@@ -64,7 +77,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeCin,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'company.website',
       fieldLabel: 'Company Website',
       entityType: 'COMPANY',
@@ -75,7 +88,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeUrl,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'company.aboutDescription',
       fieldLabel: 'About Company',
       entityType: 'COMPANY',
@@ -86,7 +99,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeString,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'company.sector',
       fieldLabel: 'Sector',
       entityType: 'COMPANY',
@@ -97,7 +110,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeString,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'company.industry',
       fieldLabel: 'Industry',
       entityType: 'COMPANY',
@@ -109,7 +122,7 @@ export class AiResearchReconciliationService {
     });
 
     // 2. Core IPO Parameters
-    this.reconcileField({
+    rField({
       fieldKey: 'marketSegment',
       fieldLabel: 'Market Segment',
       entityType: 'IPO',
@@ -120,7 +133,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeMarketSegment,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'exchange',
       fieldLabel: 'Exchange Listing',
       entityType: 'IPO',
@@ -131,7 +144,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeExchange,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'status',
       fieldLabel: 'IPO Status',
       entityType: 'IPO',
@@ -142,7 +155,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeIpoStatus,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'symbol',
       fieldLabel: 'Symbol',
       entityType: 'IPO',
@@ -153,7 +166,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeSymbol,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'isin',
       fieldLabel: 'ISIN',
       entityType: 'IPO',
@@ -165,7 +178,7 @@ export class AiResearchReconciliationService {
     });
 
     // 3. Issue Structure & Pricing
-    this.reconcileField({
+    rField({
       fieldKey: 'priceBandLow',
       fieldLabel: 'Price Band Low (₹)',
       entityType: 'IPO',
@@ -176,7 +189,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeNumber,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'priceBandHigh',
       fieldLabel: 'Price Band High (₹)',
       entityType: 'IPO',
@@ -187,7 +200,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeNumber,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'lotSize',
       fieldLabel: 'Lot Size (Shares)',
       entityType: 'IPO',
@@ -198,7 +211,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeInteger,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'faceValue',
       fieldLabel: 'Face Value (₹)',
       entityType: 'IPO',
@@ -209,7 +222,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeNumber,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'issueSize',
       fieldLabel: 'Issue Size (₹ Cr)',
       entityType: 'IPO',
@@ -220,7 +233,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeNumber,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'freshIssueSize',
       fieldLabel: 'Fresh Issue Size (₹ Cr)',
       entityType: 'IPO',
@@ -231,7 +244,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeNumber,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'ofsSize',
       fieldLabel: 'OFS Size (₹ Cr)',
       entityType: 'IPO',
@@ -242,7 +255,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeNumber,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'issueShareCount',
       fieldLabel: 'Total Issue Shares',
       entityType: 'IPO',
@@ -253,7 +266,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeInteger,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'freshIssueShareCount',
       fieldLabel: 'Fresh Issue Shares',
       entityType: 'IPO',
@@ -264,7 +277,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeInteger,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'ofsShareCount',
       fieldLabel: 'OFS Shares',
       entityType: 'IPO',
@@ -276,7 +289,7 @@ export class AiResearchReconciliationService {
     });
 
     // 4. Lifecycle Dates
-    this.reconcileField({
+    rField({
       fieldKey: 'openDate',
       fieldLabel: 'Issue Open Date',
       entityType: 'LIFECYCLE',
@@ -287,7 +300,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeDate,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'closeDate',
       fieldLabel: 'Issue Close Date',
       entityType: 'LIFECYCLE',
@@ -298,7 +311,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeDate,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'allotmentDate',
       fieldLabel: 'Basis of Allotment Date',
       entityType: 'LIFECYCLE',
@@ -309,7 +322,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeDate,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'refundDate',
       fieldLabel: 'Refund Initiation Date',
       entityType: 'LIFECYCLE',
@@ -320,7 +333,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeDate,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'listingDate',
       fieldLabel: 'Listing Date',
       entityType: 'LIFECYCLE',
@@ -332,7 +345,7 @@ export class AiResearchReconciliationService {
     });
 
     // 5. Registrar & Allotment
-    this.reconcileField({
+    rField({
       fieldKey: 'registrarName',
       fieldLabel: 'Registrar Name',
       entityType: 'ALLOTMENT_CONFIG',
@@ -343,7 +356,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeRegistrar,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'registrarIpoCode',
       fieldLabel: 'Registrar IPO Code',
       entityType: 'ALLOTMENT_CONFIG',
@@ -355,7 +368,7 @@ export class AiResearchReconciliationService {
     });
 
     // 6. Valuation & Shareholding
-    this.reconcileField({
+    rField({
       fieldKey: 'preIpoPe',
       fieldLabel: 'Pre-IPO P/E',
       entityType: 'IPO',
@@ -366,7 +379,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeNumber,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'postIpoPe',
       fieldLabel: 'Post-IPO P/E',
       entityType: 'IPO',
@@ -377,7 +390,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeNumber,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'preIpoPromoterHolding',
       fieldLabel: 'Pre-IPO Promoter Holding (%)',
       entityType: 'IPO',
@@ -388,7 +401,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizePercentage,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'postIpoPromoterHolding',
       fieldLabel: 'Post-IPO Promoter Holding (%)',
       entityType: 'IPO',
@@ -400,7 +413,7 @@ export class AiResearchReconciliationService {
     });
 
     // 7. Listing Performance
-    this.reconcileField({
+    rField({
       fieldKey: 'listingPrice',
       fieldLabel: 'Listing Price (₹)',
       entityType: 'IPO',
@@ -411,7 +424,7 @@ export class AiResearchReconciliationService {
       normalizer: this.normalizeNumber,
     });
 
-    this.reconcileField({
+    rField({
       fieldKey: 'listingGainPct',
       fieldLabel: 'Listing Gain (%)',
       entityType: 'IPO',
@@ -430,6 +443,10 @@ export class AiResearchReconciliationService {
     const appliedCount = decisions.filter((d) => d.autoApply).length;
     const skippedCount = decisions.filter((d) => !d.autoApply && d.status !== 'UNCHANGED').length;
 
+    const diag = candidates?.diagnostics;
+    const diagnosticCode = diag?.diagnosticCode || (diag?.status === 'SUCCESS' ? 'SUCCESS' : undefined);
+    const diagnosticMessage = diag?.errorMessage;
+
     return {
       ipoId: ipo.id,
       companyName: comp.displayName || comp.legalName || 'Unknown IPO',
@@ -442,6 +459,8 @@ export class AiResearchReconciliationService {
       missingCount,
       appliedCount,
       skippedCount,
+      diagnosticCode,
+      diagnosticMessage,
       decisions,
     };
   }
@@ -458,8 +477,19 @@ export class AiResearchReconciliationService {
     provByField: Map<string, any>;
     decisions: FieldReconciliationDecision[];
     normalizer: (val: any) => any;
+    candidatesDiagnostics?: ResearchAgentDiagnostics;
   }) {
-    const { fieldKey, fieldLabel, entityType, currentValue, candidate, provByField, decisions, normalizer } = params;
+    const {
+      fieldKey,
+      fieldLabel,
+      entityType,
+      currentValue,
+      candidate,
+      provByField,
+      decisions,
+      normalizer,
+      candidatesDiagnostics,
+    } = params;
 
     const normalizedCurrent = normalizer(currentValue);
     const existingProv = provByField.get(fieldKey.toLowerCase());
@@ -471,6 +501,7 @@ export class AiResearchReconciliationService {
 
     // Case 1: Research produced no candidate value
     if (!candidate || candidate.rawValue === null || candidate.rawValue === undefined) {
+      const isUpstreamFailure = candidatesDiagnostics?.status === 'FAILED';
       decisions.push({
         fieldKey,
         fieldLabel,
@@ -479,9 +510,14 @@ export class AiResearchReconciliationService {
         currentValueDisplay: displayCurrent,
         existingProvenance: existingProv,
         candidateValue: null,
-        candidateValueDisplay: '(Not Found)',
+        candidateValueDisplay: isUpstreamFailure ? '(Skipped)' : '(Not Found)',
         status: 'MISSING_VALUE',
-        statusReason: 'No candidate value found across researched official or secondary sources.',
+        diagnosticCode: isUpstreamFailure
+          ? (candidatesDiagnostics?.diagnosticCode || 'UPSTREAM_API_ERROR')
+          : 'FIELD_NOT_REPORTED_BY_SOURCES',
+        statusReason: isUpstreamFailure
+          ? `Research skipped: Upstream AI search failed (${candidatesDiagnostics?.errorMessage || candidatesDiagnostics?.diagnosticCode || 'API error'}). No live sources could be evaluated.`
+          : 'Field was not disclosed in the researched official statutory filings or registrar records.',
         autoApply: false,
         applied: false,
       });
@@ -503,7 +539,12 @@ export class AiResearchReconciliationService {
         candidateValue: null,
         candidateValueDisplay: '(Invalid/Null)',
         status: 'MISSING_VALUE',
-        statusReason: 'Candidate value could not be normalized to valid schema format.',
+        diagnosticCode: 'NORMALIZATION_FAILED',
+        statusReason: `Candidate value '${String(candidate.rawValue)}' could not be normalized to valid schema format.`,
+        sourceUrl: candidate.sourceUrl,
+        sourceAuthority: candidate.sourceAuthority,
+        evidence: candidate.evidence,
+        confidence: candidate.confidence,
         autoApply: false,
         applied: false,
       });
@@ -525,6 +566,7 @@ export class AiResearchReconciliationService {
         candidateValue: normalizedCandidate,
         candidateValueDisplay: displayCandidate,
         status: 'UNCHANGED',
+        diagnosticCode: 'SUCCESS',
         statusReason: 'Current database value matches researched candidate.',
         sourceUrl: candidate.sourceUrl,
         sourceAuthority: candidate.sourceAuthority,
@@ -564,6 +606,7 @@ export class AiResearchReconciliationService {
         candidateValue: normalizedCandidate,
         candidateValueDisplay: displayCandidate,
         status: 'CONFLICTING_SOURCES',
+        diagnosticCode: 'CONFLICTS_WITH_ADMIN_LOCK',
         statusReason: 'Protected by Manual/Admin entry. Candidate differs from verified human review.',
         sourceUrl: candidate.sourceUrl,
         sourceAuthority: candidate.sourceAuthority,
@@ -587,7 +630,8 @@ export class AiResearchReconciliationService {
         candidateValue: normalizedCandidate,
         candidateValueDisplay: displayCandidate,
         status: 'CONFLICTING_SOURCES',
-        statusReason: 'Secondary candidate cannot overwrite official statutory exchange/SEBI filing.',
+        diagnosticCode: 'CONFLICTS_WITH_OFFICIAL_DATA',
+        statusReason: `Secondary candidate cannot overwrite official statutory exchange/SEBI filing. Source (${candidate.sourceDomain || 'secondary'}) is not authoritative.`,
         sourceUrl: candidate.sourceUrl,
         sourceAuthority: candidate.sourceAuthority,
         evidence: candidate.evidence,
@@ -600,6 +644,11 @@ export class AiResearchReconciliationService {
 
     // Rule: If candidate is from low confidence/tier 4 secondary without official evidence
     if (!isCandidateAuthoritative || candidate.confidence < 0.75) {
+      const diagCode = !isCandidateAuthoritative ? 'UNTRUSTED_SECONDARY_SOURCE' : 'BELOW_CONFIDENCE_THRESHOLD';
+      const reason = !isCandidateAuthoritative
+        ? `Source (${candidate.sourceDomain || 'secondary'}) is secondary or unverified for official statutory parameters.`
+        : `Candidate confidence score (${candidate.confidence}) is below threshold (0.75).`;
+
       decisions.push({
         fieldKey,
         fieldLabel,
@@ -610,7 +659,8 @@ export class AiResearchReconciliationService {
         candidateValue: normalizedCandidate,
         candidateValueDisplay: displayCandidate,
         status: 'UNVERIFIABLE',
-        statusReason: 'Source is secondary/unverified or confidence score is below threshold (0.75).',
+        diagnosticCode: diagCode,
+        statusReason: reason,
         sourceUrl: candidate.sourceUrl,
         sourceAuthority: candidate.sourceAuthority,
         evidence: candidate.evidence,
@@ -634,6 +684,7 @@ export class AiResearchReconciliationService {
       candidateValue: normalizedCandidate,
       candidateValueDisplay: displayCandidate,
       status: 'VERIFIED_UPDATE',
+      diagnosticCode: 'SUCCESS',
       statusReason: `Verified update supported by ${candidate.sourceAuthority} (${candidate.sourceName || candidate.sourceDomain}).`,
       sourceUrl: candidate.sourceUrl,
       sourceAuthority: candidate.sourceAuthority,
@@ -692,7 +743,29 @@ export class AiResearchReconciliationService {
   public normalizeString = (val: any): string | null => {
     if (val === null || val === undefined) return null;
     const s = String(val).trim();
-    return s.length > 0 ? s : null;
+    if (s.length === 0) return null;
+    const lower = s.toLowerCase();
+    const placeholders = [
+      'n/a',
+      'na',
+      '-',
+      '--',
+      '---',
+      'tbd',
+      'tba',
+      '[●]',
+      '[•]',
+      '●',
+      '•',
+      'null',
+      'undefined',
+      'to be announced',
+      'to be determined',
+      'not available',
+      'not applicable',
+      'none',
+    ];
+    return placeholders.includes(lower) ? null : s;
   };
 
   public normalizeNumber = (val: any): number | null => {

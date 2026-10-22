@@ -175,4 +175,97 @@ describe('MissingFieldDetectorService', () => {
     expect(results).toHaveLength(1);
     expect(results[0]).toBe('ipo-backfill-1');
   });
+
+  it('should detect placeholder strings as missing fields', async () => {
+    const mockIpoWithPlaceholders = {
+      id: 'ipo-placeholders',
+      slug: 'placeholder-ipo',
+      marketSegment: MarketSegment.MAINBOARD,
+      status: IpoStatus.UPCOMING,
+      issueSize: new Prisma.Decimal('300.0'),
+      companyId: 'comp-ph',
+      preIpoPe: new Prisma.Decimal('25.5'),
+      postIpoPe: new Prisma.Decimal('28.2'),
+      preIpoPromoterHolding: new Prisma.Decimal('75.0'),
+      postIpoPromoterHolding: new Prisma.Decimal('60.0'),
+      freshIssueShareCount: BigInt(10000000),
+      ofsShareCount: BigInt(5000000),
+      freshIssueSize: new Prisma.Decimal('200.0'),
+      ofsSize: new Prisma.Decimal('100.0'),
+      company: {
+        id: 'comp-ph',
+        legalName: 'Placeholder Corp Ltd',
+        displayName: 'Placeholder Corp',
+        aboutDescription: 'N/A', // Placeholder!
+        industry: '-',          // Placeholder!
+        sector: 'TBD',          // Placeholder!
+        strengths: ['Growth'],
+        risks: ['Risk'],
+        financials: [
+          { fiscalPeriod: 'FY24', periodType: 'ANNUAL', totalRevenue: new Prisma.Decimal(100) },
+          { fiscalPeriod: 'FY23', periodType: 'ANNUAL', totalRevenue: new Prisma.Decimal(80) },
+        ],
+      },
+      participants: [{ role: 'BRLM', legalName: 'Lead Banker' }],
+      documents: [
+        { documentType: 'RHP', extractionData: { strengths: ['A'], risks: ['B'] } },
+        { documentType: 'ANCHOR_LIST', extractionData: { portion: 50 } },
+      ],
+    };
+
+    mockPrismaService.ipo.findUnique.mockResolvedValue(mockIpoWithPlaceholders);
+
+    const inspection = await service.detect('ipo-placeholders');
+    expect(inspection).not.toBeNull();
+    expect(inspection!.hasMissingFields).toBe(true);
+    expect(inspection!.missingFields).toContain('aboutDescription');
+    expect(inspection!.missingFields).toContain('industry');
+    expect(inspection!.missingFields).toContain('sector');
+  });
+
+  it('should independently detect decoupled preIpoPe / postIpoPe when only one is missing', async () => {
+    const mockIpoPartialPe = {
+      id: 'ipo-partial-pe',
+      slug: 'partial-pe',
+      marketSegment: MarketSegment.SME,
+      status: IpoStatus.UPCOMING,
+      issueSize: new Prisma.Decimal('50.0'),
+      companyId: 'comp-sme',
+      preIpoPe: new Prisma.Decimal('18.5'), // Populated
+      postIpoPe: null,                      // Missing!
+      preIpoPromoterHolding: new Prisma.Decimal('90.0'), // Populated
+      postIpoPromoterHolding: null,                      // Missing!
+      freshIssueShareCount: BigInt(5000000),
+      ofsShareCount: BigInt(0),
+      freshIssueSize: new Prisma.Decimal('50.0'),
+      ofsSize: new Prisma.Decimal('0.0'),
+      company: {
+        id: 'comp-sme',
+        legalName: 'SME Corp',
+        displayName: 'SME Corp',
+        aboutDescription: 'Valid description',
+        industry: 'Precision Engineering',
+        sector: 'Manufacturing',
+        financials: [
+          { fiscalPeriod: 'FY24', periodType: 'ANNUAL', totalRevenue: new Prisma.Decimal(40) },
+          { fiscalPeriod: 'FY23', periodType: 'ANNUAL', totalRevenue: new Prisma.Decimal(30) },
+        ],
+      },
+      participants: [{ role: 'BRLM', legalName: 'SME Merchant Banker' }],
+      documents: [
+        { documentType: 'RHP', extractionData: { strengths: ['A'], risks: ['B'] } },
+      ],
+    };
+
+    mockPrismaService.ipo.findUnique.mockResolvedValue(mockIpoPartialPe);
+
+    const inspection = await service.detect('ipo-partial-pe');
+    expect(inspection).not.toBeNull();
+    expect(inspection!.hasMissingFields).toBe(true);
+    // postIpoPe and postIpoPromoterHolding are detected as missing, while pre ones are not
+    expect(inspection!.missingFields).toContain('postIpoPe');
+    expect(inspection!.missingFields).not.toContain('preIpoPe');
+    expect(inspection!.missingFields).toContain('postIpoPromoterHolding');
+    expect(inspection!.missingFields).not.toContain('preIpoPromoterHolding');
+  });
 });

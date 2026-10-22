@@ -16,18 +16,22 @@ describe('AllotmentService & Resolver Integration', () => {
   let service: AllotmentService;
   let resolver: RegistrarResolver;
   let prismaMock: {
-    ipo: { findUnique: jest.Mock; findFirst: jest.Mock };
+    ipo: { findUnique: jest.Mock; findFirst: jest.Mock; updateMany: jest.Mock };
     ipoAllotmentConfig: { findUnique: jest.Mock };
-    ipoSourceIdentity: { findFirst: jest.Mock };
+    ipoSourceIdentity: { findFirst: jest.Mock; upsert?: jest.Mock };
     ipoParticipant: { findFirst: jest.Mock };
   };
   let repositoryMock: { logCheckAttempt: jest.Mock };
 
   beforeEach(async () => {
     prismaMock = {
-      ipo: { findUnique: jest.fn(), findFirst: jest.fn() },
+      ipo: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       ipoAllotmentConfig: { findUnique: jest.fn() },
-      ipoSourceIdentity: { findFirst: jest.fn() },
+      ipoSourceIdentity: { findFirst: jest.fn(), upsert: jest.fn().mockResolvedValue({}) },
       ipoParticipant: { findFirst: jest.fn() },
     };
 
@@ -144,5 +148,96 @@ describe('AllotmentService & Resolver Integration', () => {
     expect(resolved2).toBeDefined();
     expect(resolved2?.adapter.code).toBe('BIGSHARE');
     expect(resolved2?.adapter.name).toBe('Bigshare Services');
+  });
+
+  it('17. should transition IPO to ALLOTMENT_COMPLETED when an individual check confirms ALLOTTED', async () => {
+    prismaMock.ipo.findUnique.mockResolvedValue({
+      id: 'ipo-uuid-live',
+      status: 'ALLOTMENT_PENDING',
+      allotmentResultAvailableAt: null,
+    });
+    prismaMock.ipoSourceIdentity.findFirst.mockResolvedValue({
+      externalId: '40580036070',
+      source: { code: 'KFINTECH', sourceType: 'REGISTRAR' },
+    });
+
+    jest.spyOn(global, 'fetch').mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ All_Shares: 50, App_Shares: 50 }),
+      } as Response),
+    );
+
+    const result = await service.checkAllotment({
+      ipoId: 'ipo-uuid-live',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+    });
+
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'ipo-uuid-live',
+        status: { in: ['CLOSED', 'ALLOTMENT_PENDING'] },
+      },
+      data: expect.objectContaining({
+        status: 'ALLOTMENT_COMPLETED',
+      }),
+    });
+  });
+
+  it('18. should NOT alter IPO declaration status when check returns APPLICATION_NOT_FOUND', async () => {
+    prismaMock.ipo.findUnique.mockResolvedValue({
+      id: 'ipo-uuid-not-found',
+      status: 'ALLOTMENT_PENDING',
+      allotmentResultAvailableAt: null,
+    });
+    prismaMock.ipoSourceIdentity.findFirst.mockResolvedValue({
+      externalId: '40580036070',
+      source: { code: 'KFINTECH', sourceType: 'REGISTRAR' },
+    });
+
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ error: 'Record not found for given PAN' }),
+      } as Response),
+    );
+
+    const result = await service.checkAllotment({
+      ipoId: 'ipo-uuid-not-found',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ZZZZZ9999Z',
+    });
+
+    expect(result.status).toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
+    expect(prismaMock.ipo.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('19. should NOT alter IPO declaration status on registrar errors or malformed response', async () => {
+    prismaMock.ipo.findUnique.mockResolvedValue({
+      id: 'ipo-uuid-err',
+      status: 'ALLOTMENT_PENDING',
+      allotmentResultAvailableAt: null,
+    });
+    prismaMock.ipoSourceIdentity.findFirst.mockResolvedValue({
+      externalId: '40580036070',
+      source: { code: 'KFINTECH', sourceType: 'REGISTRAR' },
+    });
+
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.reject(new Error('ETIMEDOUT: Connection timed out to registrar')),
+    );
+
+    const result = await service.checkAllotment({
+      ipoId: 'ipo-uuid-err',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+    });
+
+    expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+    expect(prismaMock.ipo.updateMany).not.toHaveBeenCalled();
   });
 });

@@ -271,10 +271,102 @@ export class RegistrarResolver {
       }
     }
 
+    // 4. Dynamic Discovery Fallback: Probe active registrar adapters by company name and symbol
+    if (targetIpoId && typeof this.prisma.ipo?.findUnique === 'function') {
+      const targetIpo = await this.prisma.ipo.findUnique({
+        where: { id: targetIpoId },
+        include: { company: true },
+      });
+
+      if (targetIpo) {
+        const companyName = targetIpo.company?.displayName || targetIpo.company?.legalName;
+        const companyLegalName = targetIpo.company?.legalName || undefined;
+        const symbol = targetIpo.symbol || undefined;
+
+        if (companyName || symbol) {
+          const checkRequest = {
+            ipoId: targetIpo.id,
+            companyName,
+            companyLegalName,
+            symbol,
+            identifierType: 'PAN' as any,
+            identifierValue: '',
+          };
+
+          for (const candidateAdapter of this.registry.getAll()) {
+            if (typeof candidateAdapter.resolveRegistrarIpoCode === 'function') {
+              try {
+                const probeResult = await candidateAdapter.resolveRegistrarIpoCode(checkRequest);
+                if (
+                  typeof probeResult === 'string' &&
+                  probeResult.trim().length > 0 &&
+                  !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(probeResult.trim())
+                ) {
+                  const resolvedCode = probeResult.trim();
+                  this.logger.log(
+                    `Dynamically discovered registrar '${candidateAdapter.code}' with code '${resolvedCode}' for IPO ${targetIpoId} (${companyName})`,
+                  );
+
+                  // Best-effort non-blocking persistence of dynamic discovery
+                  this.persistDiscoveredRegistrarIdentity(targetIpoId, candidateAdapter.code, resolvedCode)
+                    .catch((persistErr: unknown) => {
+                      this.logger.debug(
+                        `Failed to persist dynamic registrar identity for IPO ${targetIpoId}: ${(persistErr as Error)?.message || persistErr}`,
+                      );
+                    });
+
+                  return {
+                    adapter: candidateAdapter,
+                    registrarIpoCode: resolvedCode,
+                  };
+                }
+              } catch (probeErr: unknown) {
+                // Contained: continue probing next candidate adapter
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Return undefined when no registrar source identity is mapped
     this.logger.warn(
       `No registered registrar source identity found for IPO ${ipoId}`,
     );
     return undefined;
+  }
+
+  private async persistDiscoveredRegistrarIdentity(
+    ipoId: string,
+    registrarCode: string,
+    externalId: string,
+  ): Promise<void> {
+    if (
+      typeof this.prisma.source?.findUnique !== 'function' ||
+      typeof this.prisma.ipoSourceIdentity?.upsert !== 'function'
+    ) {
+      return;
+    }
+    const source = await this.prisma.source.findUnique({
+      where: { code: registrarCode },
+    });
+    if (!source) return;
+
+    await this.prisma.ipoSourceIdentity.upsert({
+      where: {
+        ipoId_sourceId: {
+          ipoId,
+          sourceId: source.id,
+        },
+      },
+      create: {
+        ipoId,
+        sourceId: source.id,
+        externalId,
+      },
+      update: {
+        externalId,
+      },
+    });
   }
 }

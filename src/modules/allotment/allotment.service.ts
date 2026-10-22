@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { IpoStatus, Prisma } from '@prisma/client';
 import { AppException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { PrismaService } from '../../database/prisma.service';
@@ -127,6 +128,41 @@ export class AllotmentService {
         result,
         latencyMs,
       );
+
+      // If registrar explicitly confirms an allotment result (ALLOTTED, PARTIALLY_ALLOTTED, or NOT_ALLOTTED),
+      // this is authoritative proof that allotment has been declared for this IPO.
+      // Transition IPO from CLOSED or ALLOTMENT_PENDING to ALLOTMENT_COMPLETED.
+      // Notice: APPLICATION_NOT_FOUND, TEMPORARY_ERROR, or NOT_YET_AVAILABLE NEVER alter the IPO declaration status.
+      if (
+        result.status === AllotmentStatus.ALLOTTED ||
+        result.status === AllotmentStatus.PARTIALLY_ALLOTTED ||
+        result.status === AllotmentStatus.NOT_ALLOTTED
+      ) {
+        try {
+          const updatePayload: Prisma.IpoUpdateManyMutationInput = {
+            status: IpoStatus.ALLOTMENT_COMPLETED,
+          };
+          if (!ipo.allotmentResultAvailableAt) {
+            updatePayload.allotmentResultAvailableAt = new Date();
+          }
+          const updated = await this.prisma.ipo.updateMany({
+            where: {
+              id: request.ipoId,
+              status: { in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING] },
+            },
+            data: updatePayload,
+          });
+          if (updated.count > 0) {
+            this.logger.log(
+              `[Allotment] Confirmed allotment live via checkAllotment for IPO '${request.ipoId}'. Transitioned to ALLOTMENT_COMPLETED`,
+            );
+          }
+        } catch (transErr: unknown) {
+          this.logger.error(
+            `Failed to transition IPO ${request.ipoId} status on confirmed allotment: ${(transErr as Error)?.message}`,
+          );
+        }
+      }
 
       return result;
     } catch (err: unknown) {

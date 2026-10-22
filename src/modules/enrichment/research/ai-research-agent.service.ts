@@ -126,7 +126,7 @@ export class AiResearchAgentService {
     this.logger.log(`Starting live AI research for '${companyName}' (Symbol: '${symbol}')...`);
 
     const prompt = this.buildResearchPrompt(ipo);
-    const rawResult = await this.callGeminiWithSearch(
+    const { data: rawResult, diagnostics } = await this.callGeminiWithSearch(
       prompt,
       options?.customFetchImpl,
       options?.timeoutMs || 60000,
@@ -134,8 +134,8 @@ export class AiResearchAgentService {
     );
 
     if (!rawResult) {
-      this.logger.warn(`No valid research data returned for '${companyName}'`);
-      return {};
+      this.logger.warn(`No valid research data returned for '${companyName}': ${diagnostics.errorMessage || diagnostics.diagnosticCode}`);
+      return { diagnostics };
     }
 
     const parsed = researchResponseSchema.safeParse(rawResult);
@@ -146,13 +146,18 @@ export class AiResearchAgentService {
     }
 
     const data = parsed.success ? parsed.data : (rawResult as any);
-    return this.mapToCandidates(data, companyName);
+    const candidates = this.mapToCandidates(data, companyName, diagnostics.groundingUrls, ipo);
+    candidates.diagnostics = diagnostics;
+    return candidates;
   }
 
   /**
    * Classifies source URL into strict authority tiers.
    */
-  public classifySourceAuthority(url: string): {
+  public classifySourceAuthority(
+    url: string,
+    issuerDomain?: string,
+  ): {
     tier: SourceAuthorityTier;
     domain: string;
     sourceName: string;
@@ -163,10 +168,21 @@ export class AiResearchAgentService {
 
     try {
       const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
-      const host = parsed.hostname.toLowerCase();
+      let host = parsed.hostname.toLowerCase();
 
       if (!host.includes('.')) {
         return { tier: 'TIER_4_SECONDARY', domain: 'unknown', sourceName: 'Unknown Source' };
+      }
+
+      // Check Google search redirect domain
+      if (host.includes('vertexaisearch.cloud.google.com') || host.includes('google.com')) {
+        const targetUrl = parsed.searchParams.get('url') || parsed.searchParams.get('q');
+        if (targetUrl) {
+          try {
+            const innerParsed = new URL(targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`);
+            host = innerParsed.hostname.toLowerCase();
+          } catch {}
+        }
       }
 
       // Tier 1: Statutory & Stock Exchanges
@@ -178,6 +194,9 @@ export class AiResearchAgentService {
       }
       if (host.includes('bseindia.com')) {
         return { tier: 'TIER_1_STATUTORY', domain: host, sourceName: 'BSE Official' };
+      }
+      if (host.includes('mca.gov.in')) {
+        return { tier: 'TIER_1_STATUTORY', domain: host, sourceName: 'MCA Official' };
       }
 
       // Tier 2: Official Registrars
@@ -202,7 +221,8 @@ export class AiResearchAgentService {
         url.includes('/drhp') ||
         url.includes('/rhp') ||
         url.includes('/prospectus') ||
-        host.includes('investor')
+        host.includes('investor') ||
+        (issuerDomain && (host === issuerDomain || host.endsWith(`.${issuerDomain}`)))
       ) {
         return { tier: 'TIER_3_ISSUER', domain: host, sourceName: 'Issuer Filing' };
       }
@@ -314,14 +334,53 @@ RULES:
   }
 
   /**
+   * Helper to parse JSON from direct text, markdown code blocks, or outermost curly braces.
+   */
+  public extractJson(text: string): any {
+    if (!text || typeof text !== 'string') return null;
+    const trimmed = text.trim();
+    try {
+      return JSON.parse(trimmed);
+    } catch {}
+
+    const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (codeBlockMatch && codeBlockMatch[1]) {
+      try {
+        return JSON.parse(codeBlockMatch[1].trim());
+      } catch {}
+    }
+
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+      } catch {}
+    }
+
+    return null;
+  }
+
+  /**
    * Calls Gemini REST API with Google Search grounding tool enabled.
    */
-  private async callGeminiWithSearch(
+  public async callGeminiWithSearch(
     prompt: string,
     customFetchImpl?: typeof fetch,
     timeoutMs = 60000,
     retryDelayMs?: number,
-  ): Promise<Record<string, any> | null> {
+  ): Promise<{
+    data: Record<string, any> | null;
+    diagnostics: {
+      status: 'SUCCESS' | 'FAILED' | 'PARTIAL';
+      diagnosticCode?: any;
+      errorMessage?: string;
+      modelUsed?: string;
+      searchQueries?: string[];
+      groundingUrls?: string[];
+      groundingSourcesCount?: number;
+    };
+  }> {
     const fetchFn = customFetchImpl || fetch;
     const geminiKey =
       (this.configService as any)?.get?.('GEMINI_API_KEY') ||
@@ -330,18 +389,30 @@ RULES:
 
     if (!geminiKey || !geminiKey.trim()) {
       this.logger.warn('No GEMINI_API_KEY configured for live AI research');
-      return null;
+      return {
+        data: null,
+        diagnostics: {
+          status: 'FAILED',
+          diagnosticCode: 'API_KEY_MISSING',
+          errorMessage: 'No GEMINI_API_KEY configured for live AI research',
+        },
+      };
     }
 
-    const models = [
-      'gemini-2.5-flash',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash',
-      'gemini-flash-latest',
-      'gemini-3.8-flash',
-    ];
+    const configuredModel =
+      (this.configService as any)?.get?.('GEMINI_MODEL') ||
+      process.env.GEMINI_MODEL;
+
+    // Prioritize configured model, then latest active models
+    const models = configuredModel
+      ? [configuredModel, 'gemini-3.8-flash', 'gemini-flash-latest']
+      : ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
 
     const effectiveDelay = retryDelayMs !== undefined ? retryDelayMs : 1500;
+    let lastError: { code: any; message: string } = {
+      code: 'NO_DATA_RETURNED',
+      message: 'No response returned from Gemini API',
+    };
 
     for (const model of models) {
       for (let attempt = 1; attempt <= 3; attempt++) {
@@ -361,7 +432,6 @@ RULES:
               tools: [{ google_search: {} }], // Enable Google Search grounding
               generationConfig: {
                 temperature: 0.1,
-                responseMimeType: 'application/json',
               },
             }),
           });
@@ -369,7 +439,11 @@ RULES:
           if (timer) clearTimeout(timer);
 
           if (resp.status === 429) {
-            this.logger.warn(`Gemini (${model}) rate limited (429).`);
+            this.logger.warn(`Gemini (${model}) rate limited / quota exceeded (429).`);
+            lastError = {
+              code: 'API_RATE_LIMIT_EXCEEDED',
+              message: `Gemini API rate limit or quota exceeded (HTTP 429) on model ${model}`,
+            };
             if (effectiveDelay > 0) {
               await new Promise((r) => setTimeout(r, effectiveDelay * attempt));
             }
@@ -377,10 +451,22 @@ RULES:
           }
           if (resp.status === 503) {
             this.logger.warn(`Gemini (${model}) 503 temporary error. Retrying...`);
+            lastError = {
+              code: 'UPSTREAM_API_ERROR',
+              message: `Gemini service temporarily unavailable (HTTP 503) on model ${model}`,
+            };
             if (effectiveDelay > 0) {
               await new Promise((r) => setTimeout(r, effectiveDelay * attempt));
             }
             continue;
+          }
+          if (resp.status === 404) {
+            this.logger.warn(`Gemini model '${model}' not found (HTTP 404).`);
+            lastError = {
+              code: 'MODEL_NOT_AVAILABLE',
+              message: `Gemini model '${model}' is unavailable or deprecated (HTTP 404)`,
+            };
+            break; // Try next model in chain
           }
           if (!resp.ok) {
             let errBody = '';
@@ -388,6 +474,10 @@ RULES:
               errBody = await resp.text();
             }
             this.logger.warn(`Gemini research call failed (HTTP ${resp.status}): ${errBody.slice(0, 150)}`);
+            lastError = {
+              code: 'UPSTREAM_API_ERROR',
+              message: `Gemini API call failed with HTTP ${resp.status}: ${errBody.slice(0, 120)}`,
+            };
             break; // Try next model in chain
           }
 
@@ -398,36 +488,102 @@ RULES:
             data = JSON.parse(await resp.text());
           }
 
-          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            try {
-              return JSON.parse(text);
-            } catch {
-              // Extract JSON block if surrounded by markdown fences
-              const match = text.match(/\{[\s\S]*\}/);
-              if (match) return JSON.parse(match[0]);
+          const candidateObj = data?.candidates?.[0];
+          const groundingMeta = candidateObj?.groundingMetadata;
+          const searchQueries: string[] = groundingMeta?.webSearchQueries || [];
+          const groundingUrls: string[] = [];
+          if (Array.isArray(groundingMeta?.groundingChunks)) {
+            for (const chunk of groundingMeta.groundingChunks) {
+              if (chunk?.web?.uri) {
+                groundingUrls.push(chunk.web.uri);
+              }
             }
+          }
+
+          const text = candidateObj?.content?.parts?.[0]?.text;
+          if (text) {
+            const parsedJson = this.extractJson(text);
+            if (parsedJson) {
+              return {
+                data: parsedJson,
+                diagnostics: {
+                  status: 'SUCCESS',
+                  diagnosticCode: 'SUCCESS',
+                  modelUsed: model,
+                  searchQueries,
+                  groundingUrls,
+                  groundingSourcesCount: groundingUrls.length,
+                },
+              };
+            } else {
+              lastError = {
+                code: 'SCHEMA_PARSE_ERROR',
+                message: `Model response could not be parsed as valid JSON: ${text.slice(0, 100)}...`,
+              };
+            }
+          } else {
+            lastError = {
+              code: 'NO_DATA_RETURNED',
+              message: 'Gemini returned response without candidate text parts',
+            };
           }
         } catch (err: any) {
           if (timer) clearTimeout(timer);
           if (err.name === 'AbortError') {
             this.logger.error(`Gemini research timed out after ${timeoutMs}ms for model ${model}`);
-            return null;
+            lastError = {
+              code: 'NETWORK_TIMEOUT',
+              message: `Gemini research timed out after ${timeoutMs}ms for model ${model}`,
+            };
+            return {
+              data: null,
+              diagnostics: {
+                status: 'FAILED',
+                diagnosticCode: 'NETWORK_TIMEOUT',
+                errorMessage: lastError.message,
+                modelUsed: model,
+              },
+            };
           }
           this.logger.error(`Error invoking Gemini research (${model}, attempt ${attempt}): ${err.message}`);
+          lastError = {
+            code: 'UPSTREAM_API_ERROR',
+            message: err.message,
+          };
         }
       }
     }
 
-    return null;
+    return {
+      data: null,
+      diagnostics: {
+        status: 'FAILED',
+        diagnosticCode: lastError.code,
+        errorMessage: lastError.message,
+      },
+    };
   }
 
   /**
    * Transforms raw model response into ResearchedCandidateField dictionary.
    */
-  private mapToCandidates(data: any, companyName: string): IpoResearchCandidates {
+  private mapToCandidates(
+    data: any,
+    companyName: string,
+    groundingUrls: string[] = [],
+    ipo?: any,
+  ): IpoResearchCandidates {
     const candidates: IpoResearchCandidates = {};
     const nowIso = new Date().toISOString();
+
+    let issuerDomain = '';
+    const issuerWebsite = ipo?.company?.website || '';
+    if (issuerWebsite) {
+      try {
+        const u = new URL(issuerWebsite.startsWith('http') ? issuerWebsite : `https://${issuerWebsite}`);
+        issuerDomain = u.hostname.toLowerCase().replace(/^www\./, '');
+      } catch {}
+    }
 
     const addField = (
       key: keyof IpoResearchCandidates,
@@ -436,13 +592,22 @@ RULES:
       if (!rawItem || rawItem.value === null || rawItem.value === undefined) return;
       if (typeof rawItem.value === 'string' && rawItem.value.trim() === '') return;
 
-      const auth = this.classifySourceAuthority(rawItem.sourceUrl || '');
+      let sourceUrl = rawItem.sourceUrl || '';
+      // If model omitted sourceUrl but search grounding returned authoritative URLs, enrich
+      if (!sourceUrl && groundingUrls.length > 0) {
+        const authoritative = groundingUrls.find(
+          (u) => u.includes('bseindia.com') || u.includes('nseindia.com') || u.includes('sebi.gov.in'),
+        );
+        sourceUrl = authoritative || groundingUrls[0];
+      }
+
+      const auth = this.classifySourceAuthority(sourceUrl, issuerDomain);
 
       candidates[key] = {
         fieldKey: String(key),
         rawValue: rawItem.value,
         normalizedValue: rawItem.value,
-        sourceUrl: rawItem.sourceUrl || '',
+        sourceUrl,
         sourceDomain: auth.domain,
         sourceAuthority: auth.tier,
         sourceName: auth.sourceName,

@@ -8356,6 +8356,15 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
 
       var html = '<div style="display:flex; flex-direction:column; gap:16px;">';
 
+      if (summary.diagnosticCode && summary.diagnosticCode !== 'SUCCESS') {
+        html += '<div style="padding:12px 14px; background:#FEF3C7; border:1px solid #F59E0B; border-radius:8px; color:#92400E; font-size:12px; display:flex; flex-direction:column; gap:4px;">'
+          + '<div style="font-weight:700; display:flex; align-items:center; gap:6px;">'
+          + '<span>\u26A0\uFE0F Upstream Research Diagnostic: [' + escapeHtml(summary.diagnosticCode) + ']</span>'
+          + '</div>'
+          + '<div>' + escapeHtml(summary.diagnosticMessage || 'Live search encountered an upstream issue. Review itemized field statuses below.') + '</div>'
+          + '</div>';
+      }
+
       // Summary Metric Cards
       html += '<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;">'
         + '<div class="stat-card" style="padding:10px;">'

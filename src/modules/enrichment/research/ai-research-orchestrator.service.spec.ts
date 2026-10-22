@@ -234,5 +234,40 @@ describe('AiResearchOrchestratorService', () => {
       expect(mockPrisma.fieldProvenance.create).not.toHaveBeenCalled();
       expect(mockPrisma.ipoChangeEvent.create).not.toHaveBeenCalled();
     });
+
+    it('should mark job as FAILED and not apply updates when upstream AI research fails', async () => {
+      mockAgent.researchIpo.mockResolvedValueOnce({
+        diagnostics: {
+          status: 'FAILED',
+          diagnosticCode: 'API_RATE_LIMIT_EXCEEDED',
+          errorMessage: 'Gemini API quota exceeded (HTTP 429)',
+        },
+      } as IpoResearchCandidates);
+
+      mockReconciler.reconcile.mockReturnValueOnce({
+        ipoId: 'ipo-orch-1',
+        companyName: 'Beta Systems',
+        fieldsEvaluated: 35,
+        verifiedUpdatesCount: 0,
+        unchangedCount: 0,
+        conflictsCount: 0,
+        unverifiableCount: 0,
+        missingCount: 35,
+        appliedCount: 0,
+        skippedCount: 35,
+        diagnosticCode: 'API_RATE_LIMIT_EXCEEDED',
+        diagnosticMessage: 'Gemini API quota exceeded (HTTP 429)',
+        evaluatedAt: new Date().toISOString(),
+        decisions: [],
+      });
+
+      // executeResearchNow should throw because job.status === 'FAILED'
+      await expect(service.executeResearchNow('ipo-orch-1')).rejects.toThrow(
+        'Gemini API quota exceeded (HTTP 429)',
+      );
+
+      expect(mockPrisma.ipo.update).not.toHaveBeenCalled();
+      expect(mockPrisma.fieldProvenance.create).not.toHaveBeenCalled();
+    });
   });
 });

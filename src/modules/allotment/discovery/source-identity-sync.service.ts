@@ -362,6 +362,46 @@ export class SourceIdentitySyncService {
             reason: matches[1]!.reason,
           };
         }
+
+        // Prefer PUBLISHED over DRAFT
+        const isPub0 = (matches[0]!.ipo as any).publicationStatus === 'PUBLISHED';
+        const isPub1 = (matches[1]!.ipo as any).publicationStatus === 'PUBLISHED';
+        if (isPub0 && !isPub1) {
+          return {
+            status: SourceIdentitySyncStatus.DISCOVERED,
+            ipo: matches[0]!.ipo,
+            reason: `${matches[0]!.reason} (preferred: published status)`,
+          };
+        }
+        if (!isPub0 && isPub1) {
+          return {
+            status: SourceIdentitySyncStatus.DISCOVERED,
+            ipo: matches[1]!.ipo,
+            reason: `${matches[1]!.reason} (preferred: published status)`,
+          };
+        }
+
+        // Prefer record with matching non-empty symbol
+        if (matches[0]!.ipo.symbol && !matches[1]!.ipo.symbol) {
+          return {
+            status: SourceIdentitySyncStatus.DISCOVERED,
+            ipo: matches[0]!.ipo,
+            reason: `${matches[0]!.reason} (preferred: non-empty symbol)`,
+          };
+        }
+        if (!matches[0]!.ipo.symbol && matches[1]!.ipo.symbol) {
+          return {
+            status: SourceIdentitySyncStatus.DISCOVERED,
+            ipo: matches[1]!.ipo,
+            reason: `${matches[1]!.reason} (preferred: non-empty symbol)`,
+          };
+        }
+
+        // If neither has distinguishing criteria, remain unresolved without arbitrary selection
+        return {
+          status: SourceIdentitySyncStatus.UNRESOLVED,
+          reason: `Ambiguous match between multiple IPOs for company '${matches[0]!.ipo.company.displayName}'`,
+        };
       }
 
       return {

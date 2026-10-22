@@ -40,7 +40,11 @@ export class AiResearchOrchestratorService {
    */
   async startResearchJob(
     ipoId: string,
-    options?: { forceRefresh?: boolean; customFetchImpl?: typeof fetch },
+    options?: {
+      forceRefresh?: boolean;
+      customFetchImpl?: typeof fetch;
+      retryDelayMs?: number;
+    },
   ): Promise<ResearchJob> {
     const existingIpo = await this.prisma.ipo.findUnique({
       where: { id: ipoId },
@@ -97,7 +101,11 @@ export class AiResearchOrchestratorService {
    */
   async executeResearchNow(
     ipoId: string,
-    options?: { forceRefresh?: boolean; customFetchImpl?: typeof fetch },
+    options?: {
+      forceRefresh?: boolean;
+      customFetchImpl?: typeof fetch;
+      retryDelayMs?: number;
+    },
   ): Promise<IpoReconciliationSummary> {
     const job = await this.startResearchJob(ipoId, options);
 
@@ -158,7 +166,11 @@ export class AiResearchOrchestratorService {
    */
   private async runJobInternal(
     job: ResearchJob,
-    options?: { forceRefresh?: boolean; customFetchImpl?: typeof fetch },
+    options?: {
+      forceRefresh?: boolean;
+      customFetchImpl?: typeof fetch;
+      retryDelayMs?: number;
+    },
   ): Promise<void> {
     const startTime = Date.now();
     const { ipoId } = job;
@@ -209,6 +221,7 @@ export class AiResearchOrchestratorService {
 
       const candidates = await this.agent.researchIpo(ipo, {
         customFetchImpl: options?.customFetchImpl,
+        retryDelayMs: options?.retryDelayMs,
       });
 
       // 3. Field-by-field Reconciliation
@@ -216,6 +229,10 @@ export class AiResearchOrchestratorService {
       job.progressMessage = 'Reconciling candidate fields & checking source authority...';
 
       const summary = this.reconciler.reconcile(ipo, candidates, existingProvenances);
+
+      // Check for upstream agent failure
+      const isUpstreamFailure = candidates?.diagnostics?.status === 'FAILED';
+      job.diagnostics = candidates?.diagnostics;
 
       // 4. Safe Transactional Persistence
       job.progressPercent = 85;
@@ -231,14 +248,26 @@ export class AiResearchOrchestratorService {
 
       summary.appliedCount = appliedDecisions.length;
       job.summary = summary;
-      job.status = summary.conflictsCount > 0 ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED';
-      job.progressPercent = 100;
-      job.progressMessage = `Research complete. Applied ${appliedDecisions.length} verified updates (${summary.conflictsCount} conflicts flagged).`;
+
+      if (isUpstreamFailure) {
+        job.status = 'FAILED';
+        job.error = candidates?.diagnostics?.errorMessage || 'Upstream AI research failed';
+        job.progressPercent = 100;
+        job.progressMessage = `Research failed upstream: ${job.error}`;
+      } else {
+        job.status = summary.conflictsCount > 0 ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED';
+        job.progressPercent = 100;
+        job.progressMessage =
+          appliedDecisions.length > 0
+            ? `Research complete. Applied ${appliedDecisions.length} verified updates (${summary.conflictsCount} conflicts flagged).`
+            : `Research complete. 0 verified updates (${summary.conflictsCount} conflicts, ${summary.unverifiableCount} unverifiable, ${summary.missingCount} missing).`;
+      }
+
       job.completedAt = new Date().toISOString();
       job.durationMs = Date.now() - startTime;
 
       this.logger.log(
-        `AI Research job '${job.jobId}' finished for '${job.companyName}': ${appliedDecisions.length} updates applied, ${summary.conflictsCount} conflicts, duration ${job.durationMs}ms`,
+        `AI Research job '${job.jobId}' finished for '${job.companyName}': status=${job.status}, applied=${appliedDecisions.length}, conflicts=${summary.conflictsCount}, duration=${job.durationMs}ms`,
       );
     } catch (err: any) {
       this.logger.error(`AI Research job '${job.jobId}' failed: ${err.message}`, err.stack);

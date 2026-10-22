@@ -182,7 +182,7 @@ describe('AiResearchReconciliationService', () => {
       expect(lotDecision?.statusReason).toContain('Secondary candidate cannot overwrite');
     });
 
-    it('should mark invalid/unparseable candidate values as MISSING_VALUE with invalid statusReason', () => {
+    it('should mark invalid/unparseable candidate values as MISSING_VALUE with NORMALIZATION_FAILED diagnosticCode', () => {
       const candidates: IpoResearchCandidates = {
         openDate: createCandidate(
           'openDate',
@@ -198,8 +198,71 @@ describe('AiResearchReconciliationService', () => {
       const dateDecision = summary.decisions.find((d) => d.fieldKey === 'openDate');
 
       expect(dateDecision?.status).toBe('MISSING_VALUE');
+      expect(dateDecision?.diagnosticCode).toBe('NORMALIZATION_FAILED');
       expect(dateDecision?.autoApply).toBe(false);
       expect(dateDecision?.statusReason).toContain('could not be normalized');
+    });
+
+    it('should record informative diagnostics and skip reasons when upstream research failed', () => {
+      const candidates: IpoResearchCandidates = {
+        diagnostics: {
+          status: 'FAILED',
+          diagnosticCode: 'API_RATE_LIMIT_EXCEEDED',
+          errorMessage: 'Gemini API quota exceeded (HTTP 429)',
+        },
+      };
+
+      const summary = service.reconcile(baseIpo, candidates, []);
+
+      expect(summary.fieldsEvaluated).toBe(35);
+      expect(summary.diagnosticCode).toBe('API_RATE_LIMIT_EXCEEDED');
+      expect(summary.diagnosticMessage).toBe('Gemini API quota exceeded (HTTP 429)');
+      expect(summary.verifiedUpdatesCount).toBe(0);
+
+      // Verify each decision explains upstream failure
+      for (const d of summary.decisions) {
+        expect(d.status).toBe('MISSING_VALUE');
+        expect(d.diagnosticCode).toBe('API_RATE_LIMIT_EXCEEDED');
+        expect(d.statusReason).toContain('Research skipped: Upstream AI search failed');
+        expect(d.candidateValueDisplay).toBe('(Skipped)');
+      }
+    });
+
+    it('should mark unpopulated fields as FIELD_NOT_REPORTED_BY_SOURCES on successful research', () => {
+      const candidates: IpoResearchCandidates = {
+        diagnostics: {
+          status: 'SUCCESS',
+          diagnosticCode: 'SUCCESS',
+        },
+        lotSize: createCandidate('lotSize', 130, 'https://www.nseindia.com', 'TIER_1_STATUTORY'),
+      };
+
+      const summary = service.reconcile(baseIpo, candidates, []);
+      const cinDecision = summary.decisions.find((d) => d.fieldKey === 'company.cin');
+
+      expect(cinDecision?.status).toBe('MISSING_VALUE');
+      expect(cinDecision?.diagnosticCode).toBe('FIELD_NOT_REPORTED_BY_SOURCES');
+      expect(cinDecision?.statusReason).toContain('not disclosed in the researched official statutory filings');
+    });
+
+    it('should classify secondary source rejection with UNTRUSTED_SECONDARY_SOURCE diagnostic code', () => {
+      const candidates: IpoResearchCandidates = {
+        sector: createCandidate(
+          'company.sector',
+          'Technology',
+          'https://unverified-blog.com/ipo',
+          'TIER_4_SECONDARY',
+          'Random blog post',
+          0.8,
+        ),
+      };
+
+      const summary = service.reconcile(baseIpo, candidates, []);
+      const sectorDecision = summary.decisions.find((d) => d.fieldKey === 'company.sector');
+
+      expect(sectorDecision?.status).toBe('UNVERIFIABLE');
+      expect(sectorDecision?.diagnosticCode).toBe('UNTRUSTED_SECONDARY_SOURCE');
+      expect(sectorDecision?.statusReason).toContain('secondary or unverified');
     });
   });
 

@@ -13,6 +13,34 @@ export type ReconciliationStatus =
   | 'UNVERIFIABLE'        // Weak secondary source, low confidence, or speculative
   | 'MISSING_VALUE';      // Could not be located in researched sources
 
+export type ResearchDiagnosticCode =
+  | 'SUCCESS'
+  | 'API_KEY_MISSING'
+  | 'API_RATE_LIMIT_EXCEEDED'
+  | 'API_QUOTA_EXCEEDED'
+  | 'MODEL_NOT_AVAILABLE'
+  | 'UPSTREAM_API_ERROR'
+  | 'NETWORK_TIMEOUT'
+  | 'SEARCH_GROUNDING_FAILED'
+  | 'SCHEMA_PARSE_ERROR'
+  | 'NO_DATA_RETURNED'
+  | 'FIELD_NOT_REPORTED_BY_SOURCES'
+  | 'NORMALIZATION_FAILED'
+  | 'BELOW_CONFIDENCE_THRESHOLD'
+  | 'UNTRUSTED_SECONDARY_SOURCE'
+  | 'CONFLICTS_WITH_ADMIN_LOCK'
+  | 'CONFLICTS_WITH_OFFICIAL_DATA';
+
+export interface ResearchAgentDiagnostics {
+  status: 'SUCCESS' | 'FAILED' | 'PARTIAL';
+  diagnosticCode?: ResearchDiagnosticCode;
+  errorMessage?: string;
+  modelUsed?: string;
+  searchQueries?: string[];
+  groundingUrls?: string[];
+  groundingSourcesCount?: number;
+}
+
 export interface ResearchedCandidateField<T = any> {
   fieldKey: string;
   rawValue: any;
@@ -40,6 +68,8 @@ export interface ResearchedFinancialPeriod {
 }
 
 export interface IpoResearchCandidates {
+  diagnostics?: ResearchAgentDiagnostics;
+
   // Company Overview
   legalName?: ResearchedCandidateField<string>;
   displayName?: ResearchedCandidateField<string>;
@@ -126,6 +156,7 @@ export interface FieldReconciliationDecision {
   candidateValueDisplay: string;
   status: ReconciliationStatus;
   statusReason: string;
+  diagnosticCode?: ResearchDiagnosticCode;
   sourceUrl?: string;
   sourceAuthority?: SourceAuthorityTier;
   evidence?: string;
@@ -146,6 +177,8 @@ export interface IpoReconciliationSummary {
   missingCount: number;
   appliedCount: number;
   skippedCount: number;
+  diagnosticCode?: ResearchDiagnosticCode;
+  diagnosticMessage?: string;
   decisions: FieldReconciliationDecision[];
 }
 
@@ -168,5 +201,6 @@ export interface ResearchJob {
   completedAt?: string;
   durationMs?: number;
   error?: string;
+  diagnostics?: ResearchAgentDiagnostics;
   summary?: IpoReconciliationSummary;
 }

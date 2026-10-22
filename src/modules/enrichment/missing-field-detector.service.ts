@@ -35,16 +35,45 @@ export class MissingFieldDetectorService {
     const missingFields: EnrichableField[] = [];
     const company = ipo.company;
 
+    // Helper to identify placeholders or empty strings
+    const isPlaceholderOrEmpty = (val?: string | null): boolean => {
+      if (val === null || val === undefined) return true;
+      const trimmed = val.trim();
+      if (trimmed === '') return true;
+      const lower = trimmed.toLowerCase();
+      const placeholders = [
+        'n/a',
+        'na',
+        '-',
+        '--',
+        '---',
+        'tbd',
+        'tba',
+        '[●]',
+        '[•]',
+        '●',
+        '•',
+        'null',
+        'undefined',
+        'to be announced',
+        'to be determined',
+        'not available',
+        'not applicable',
+        'none',
+      ];
+      return placeholders.includes(lower);
+    };
+
     // 1. Company Overview
-    if (!company.aboutDescription || company.aboutDescription.trim() === '') {
+    if (isPlaceholderOrEmpty(company.aboutDescription)) {
       missingFields.push('aboutDescription');
     }
 
     // 2. Sector & Industry
-    if (!company.sector || company.sector.trim() === '') {
+    if (isPlaceholderOrEmpty(company.sector)) {
       missingFields.push('sector');
     }
-    if (!company.industry || company.industry.trim() === '') {
+    if (isPlaceholderOrEmpty(company.industry)) {
       missingFields.push('industry');
     }
 
@@ -70,39 +99,40 @@ export class MissingFieldDetectorService {
       missingFields.push('strengthsAndRisks');
     }
 
-    // 5. Valuation (Pre / Post IPO P/E)
-    if (ipo.preIpoPe === null && ipo.postIpoPe === null) {
+    // 5. Valuation (Pre / Post IPO P/E) - Decoupled check
+    if (ipo.preIpoPe === null || Number(ipo.preIpoPe) <= 0) {
       missingFields.push('preIpoPe');
+    }
+    if (ipo.postIpoPe === null || Number(ipo.postIpoPe) <= 0) {
       missingFields.push('postIpoPe');
     }
 
-    // 6. Promoter Shareholding
-    if (
-      ipo.preIpoPromoterHolding === null &&
-      ipo.postIpoPromoterHolding === null
-    ) {
+    // 6. Promoter Shareholding - Decoupled check
+    if (ipo.preIpoPromoterHolding === null) {
       missingFields.push('preIpoPromoterHolding');
+    }
+    if (ipo.postIpoPromoterHolding === null) {
       missingFields.push('postIpoPromoterHolding');
     }
 
     // 7. Issue Share Composition (Fresh vs OFS)
-    if (
-      ipo.issueSize !== null &&
-      ipo.freshIssueShareCount === null &&
-      ipo.ofsShareCount === null
-    ) {
-      missingFields.push('freshIssueShareCount');
-      missingFields.push('ofsShareCount');
+    if (ipo.issueSize !== null) {
+      if (ipo.freshIssueShareCount === null) {
+        missingFields.push('freshIssueShareCount');
+      }
+      if (ipo.ofsShareCount === null) {
+        missingFields.push('ofsShareCount');
+      }
     }
 
     // 8. Issue Size Composition (Fresh vs OFS INR)
-    if (
-      ipo.issueSize !== null &&
-      ipo.freshIssueSize === null &&
-      ipo.ofsSize === null
-    ) {
-      missingFields.push('freshIssueSize');
-      missingFields.push('ofsSize');
+    if (ipo.issueSize !== null) {
+      if (ipo.freshIssueSize === null) {
+        missingFields.push('freshIssueSize');
+      }
+      if (ipo.ofsSize === null) {
+        missingFields.push('ofsSize');
+      }
     }
 
     // 9. Lead Managers (BRLMs)

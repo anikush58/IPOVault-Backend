@@ -206,12 +206,66 @@ describe('AiResearchAgentService', () => {
       expect(result.lotSize?.sourceAuthority).toBe('TIER_2_REGISTRAR');
     });
 
-    it('should return empty candidate set gracefully if API returns error or empty', async () => {
+    it('should extract grounding metadata chunks and enrich missing candidate source URLs', async () => {
+      const mockGroundedResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    pricingAndIssue: {
+                      lotSize: {
+                        value: 75,
+                        sourceUrl: '', // Model did not output explicit URL
+                        evidence: 'Lot size 75',
+                      },
+                    },
+                  }),
+                },
+              ],
+            },
+            groundingMetadata: {
+              webSearchQueries: ['SFC Environmental Technologies IPO NSE BSE'],
+              groundingChunks: [
+                {
+                  web: {
+                    uri: 'https://www.bseindia.com/stock-share-price/sfc/500123/',
+                    title: 'BSE India - SFC Environmental Technologies',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: jest.fn().mockResolvedValue(JSON.stringify(mockGroundedResponse)),
+        json: jest.fn().mockResolvedValue(mockGroundedResponse),
+      });
+
+      const result = await service.researchIpo(
+        { id: 'ipo-sfc-grounded', company: { legalName: 'SFC Environmental Technologies' } },
+        { customFetchImpl: mockFetch as any, retryDelayMs: 0 },
+      );
+
+      expect(result.lotSize).toBeDefined();
+      expect(result.lotSize?.rawValue).toBe(75);
+      expect(result.lotSize?.sourceUrl).toBe('https://www.bseindia.com/stock-share-price/sfc/500123/');
+      expect(result.lotSize?.sourceAuthority).toBe('TIER_1_STATUTORY');
+      expect(result.diagnostics?.status).toBe('SUCCESS');
+      expect(result.diagnostics?.groundingSourcesCount).toBe(1);
+    });
+
+    it('should return diagnostics with API_RATE_LIMIT_EXCEEDED when API returns 429', async () => {
       const mockFetch = jest.fn().mockResolvedValue({
         ok: false,
         status: 429,
-        text: jest.fn().mockResolvedValue('Rate limit exceeded'),
-        json: jest.fn().mockResolvedValue({ error: 'Rate limit exceeded' }),
+        text: jest.fn().mockResolvedValue('Rate limit or quota exceeded'),
+        json: jest.fn().mockResolvedValue({ error: 'Rate limit or quota exceeded' }),
       });
 
       const result = await service.researchIpo(
@@ -219,7 +273,47 @@ describe('AiResearchAgentService', () => {
         { customFetchImpl: mockFetch as any, retryDelayMs: 0 },
       );
 
-      expect(result).toEqual({});
+      expect(result.lotSize).toBeUndefined();
+      expect(result.diagnostics?.status).toBe('FAILED');
+      expect(result.diagnostics?.diagnosticCode).toBe('API_RATE_LIMIT_EXCEEDED');
+      expect(result.diagnostics?.errorMessage).toContain('429');
+    });
+
+    it('should return diagnostics with SCHEMA_PARSE_ERROR when model returns malformed non-JSON', async () => {
+      const mockBadResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'Here is some general text about the IPO, but not JSON at all.' }],
+            },
+          },
+        ],
+      };
+
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: jest.fn().mockResolvedValue(JSON.stringify(mockBadResponse)),
+        json: jest.fn().mockResolvedValue(mockBadResponse),
+      });
+
+      const result = await service.researchIpo(
+        { id: 'ipo-bad-json', company: { legalName: 'Malformed Co' } },
+        { customFetchImpl: mockFetch as any, retryDelayMs: 0 },
+      );
+
+      expect(result.diagnostics?.status).toBe('FAILED');
+      expect(result.diagnostics?.diagnosticCode).toBe('SCHEMA_PARSE_ERROR');
+    });
+
+    it('should classify MCA as TIER_1_STATUTORY and issuer company domain as TIER_3_ISSUER', () => {
+      const mca = service.classifySourceAuthority('https://www.mca.gov.in/mcafoportal/companyLLPMasterData.do');
+      expect(mca.tier).toBe('TIER_1_STATUTORY');
+      expect(mca.sourceName).toBe('MCA Official');
+
+      const issuerDomainMatch = service.classifySourceAuthority('https://www.sfcenv.com/about-us', 'sfcenv.com');
+      expect(issuerDomainMatch.tier).toBe('TIER_3_ISSUER');
+      expect(issuerDomainMatch.sourceName).toBe('Issuer Filing');
     });
   });
 });
