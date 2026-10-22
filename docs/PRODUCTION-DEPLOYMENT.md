@@ -568,8 +568,8 @@ After confirming deletion, run the exact same inspection query. Expected results
 
 This section defines the official, fail-safe release procedure for deploying the permanent KFintech Registrar Reliability Solution to production.
 
-- **Approved Implementation Commit:** `d8813dbd5ffd4521b29d9f528eb864f542234ed1` (`d8813db`)
-- **Approved Release Commit Pinning:** Operator-supplied full 40-character SHA (validated against `origin/main`, ancestry chain from `d8813db`, and strict allowlist)
+- **Approved Implementation Commit:** `b8b3dc9d163fe5e583b6ec626e5733c2c4af07e0` (`b8b3dc9`)
+- **Approved Release Commit Pinning:** Operator-supplied full 40-character SHA (validated against `origin/main`, ancestry chain from `b8b3dc9`, and strict allowlist)
 - **Previous Verified Baseline Commit:** `d54c810f432cd8b1c94483213722b5d2bc28a401` (`d54c810`)
 - **Target Host:** Oracle Cloud Always Free VM (Ubuntu 24.04 ARM64 Ampere A1)
 - **Service Unit:** `ipovault-backend.service`
@@ -744,7 +744,7 @@ cd "$APP_DIR"
 # Explicit Cryptographic Release Pinning & Input Validation
 # ------------------------------------------------------------------------------
 EXPECTED_BASELINE_SHA="d54c810f432cd8b1c94483213722b5d2bc28a401"
-APPROVED_IMPLEMENTATION_SHA="d8813dbd5ffd4521b29d9f528eb864f542234ed1"
+APPROVED_IMPLEMENTATION_SHA="b8b3dc9d163fe5e583b6ec626e5733c2c4af07e0"
 
 # The approved release commit SHA is supplied by the operator (or passed as $1).
 # This decouples release verification from self-referential commit hashing.
@@ -1755,7 +1755,7 @@ fi
 > [!WARNING]
 > **SEPARATION OF PRODUCTION ROLLBACK AND REMOTE RECONCILIATION:**
 > Rolling back the local production server (Section 14.4) restores service health on the VM. It does **not** alter the remote repository `origin/main` on GitHub.
-> - **The Danger:** If `origin/main` still points to release commit `d8813db`, any subsequent unpinned `git pull` or automated CI runner would unintentionally re-deploy the failed release.
+> - **The Danger:** If `origin/main` still points to release commit `b8b3dc9`, any subsequent unpinned `git pull` or automated CI runner would unintentionally re-deploy the failed release.
 > - **Never Execute Remote Git Pushes from VM:** Never run `git push`, `git revert`, or destructive Git commands to remote repositories from the production server or automated scripts.
 > - **Engineering Governance:** All remote GitHub branch reconciliation must occur on an authorized developer workstation with human peer review.
 
@@ -1765,7 +1765,7 @@ fi
    ```bash
    git checkout main
    git pull origin main
-   git revert d8813dbd5ffd4521b29d9f528eb864f542234ed1 --no-edit
+   git revert b8b3dc9d163fe5e583b6ec626e5733c2c4af07e0 --no-edit
    git push origin main
    ```
    *Consequences of Option A:* This permanently advances `origin/main` with a clean revert commit. All developers pulling `main` will receive the reverted code.
@@ -1779,9 +1779,9 @@ fi
 | :--- | :--- | :--- | :--- | :--- |
 | **Preflight (Section 14.1)** | Server working tree dirty, branch invalid, or low disk space. Git HEAD at `d54c810`. | **Zero Impact**. Old application is serving traffic normally. | **DO NOT DEPLOY**. Resolve server dirty files or disk space manually. Never run `git clean`. | Re-run Section 14.1 preflight script until all checks output `✓`. |
 | **Fetch / Ancestry (Section 14.2)** | Remote `origin/main` does not match `APPROVED_RELEASE_SHA` or has diverged. | **Zero Impact**. Server source tree and disk artifacts untouched. | **DO NOT MERGE**. Reconcile Git branch on workstation. Verify remote SHA. | Re-run Step 2 of Section 14.2. |
-| **npm ci / build Failure (Section 14.2)** | Git HEAD at `APPROVED_RELEASE_SHA` (code identical to `d8813db`). Process in RAM running old code. Disk `./dist` missing/invalid. | **Zero Immediate Outage**. Risk of outage if systemd restarts process. | **DO NOT RESTART SERVICE**. Execute Section 14.5.1 (Pre-Restart Recovery) to reset to `d54c810` and recompile `./dist`. | Verify `test -f dist/src/main.js` and `curl /health` passes. |
-| **Service Restart Crash (Section 14.2)** | Git HEAD at `APPROVED_RELEASE_SHA` (code identical to `d8813db`). Systemd unit inactive/failed. | **Production Outage**. Service cannot start new bundle. | **EXECUTE ROLLBACK (Section 14.4)** immediately to restore `d54c810`, rebuild, and restart. | Verify `systemctl is-active` and `curl /health` passes. |
-| **Smoke Test Failure (Section 14.3)** | Git HEAD at `APPROVED_RELEASE_SHA` (code identical to `d8813db`). Service running but allotment/catalog check failed. | **Degraded Feature**. Core API active, but KFintech allotment resolution broken. | **EXECUTE ROLLBACK (Section 14.4)** immediately to restore `d54c810`, rebuild, and restart. | Re-run Section 14.3 smoke tests against restored baseline. |
+| **npm ci / build Failure (Section 14.2)** | Git HEAD at `APPROVED_RELEASE_SHA` (code identical to `b8b3dc9`). Process in RAM running old code. Disk `./dist` missing/invalid. | **Zero Immediate Outage**. Risk of outage if systemd restarts process. | **DO NOT RESTART SERVICE**. Execute Section 14.5.1 (Pre-Restart Recovery) to reset to `d54c810` and recompile `./dist`. | Verify `test -f dist/src/main.js` and `curl /health` passes. |
+| **Service Restart Crash (Section 14.2)** | Git HEAD at `APPROVED_RELEASE_SHA` (code identical to `b8b3dc9`). Systemd unit inactive/failed. | **Production Outage**. Service cannot start new bundle. | **EXECUTE ROLLBACK (Section 14.4)** immediately to restore `d54c810`, rebuild, and restart. | Verify `systemctl is-active` and `curl /health` passes. |
+| **Smoke Test Failure (Section 14.3)** | Git HEAD at `APPROVED_RELEASE_SHA` (code identical to `b8b3dc9`). Service running but allotment/catalog check failed. | **Degraded Feature**. Core API active, but KFintech allotment resolution broken. | **EXECUTE ROLLBACK (Section 14.4)** immediately to restore `d54c810`, rebuild, and restart. | Re-run Section 14.3 smoke tests against restored baseline. |
 | **Rollback Failure (Section 14.4)** | Git HEAD at `d54c810`. `recovery-pre-rollback-*` branch preserved. `./dist` invalid or service stopped. | **Production Outage**. Rollback build or restart failed. | **MANUAL INTERVENTION REQUIRED**. Inspect `npm-debug.log` and `journalctl -u ipovault-backend`. Recompile baseline bundle manually on `d54c810`. Do not switch branches. | Verify `test -f dist/src/main.js`, `systemctl is-active`, and `curl /health` and `/ready` pass. Never claim rollback succeeded unless confirmed by health checks. |
 
 ---
