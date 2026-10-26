@@ -6094,10 +6094,22 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (rows.length === 0) return [];
 
       const list = [];
+      const seenKeys = new Set();
+      let hasDuplicate = false;
+      let duplicatePeriodName = '';
+      let missingPeriodFound = false;
+
+      // Reset any previous input highlight borders
+      rows.forEach(r => {
+        const periodInp = r.querySelector('.fin-period-input');
+        if (periodInp) periodInp.style.borderColor = 'var(--border-color)';
+      });
+
       rows.forEach(r => {
         const id = r.getAttribute('data-id') || undefined;
-        const periodVal = r.querySelector('.fin-period-input')?.value?.trim();
-        const periodTypeVal = r.querySelector('.fin-period-type-select')?.value || 'ANNUAL';
+        const periodInp = r.querySelector('.fin-period-input');
+        const periodVal = periodInp?.value?.trim() || '';
+        const periodTypeVal = (r.querySelector('.fin-period-type-select')?.value || 'ANNUAL').trim().toUpperCase();
         const roeVal = parseFloat(r.querySelector('.fin-roe-input')?.value);
         const patMarginVal = parseFloat(r.querySelector('.fin-pat-margin-input')?.value);
         const ebitdaMarginVal = parseFloat(r.querySelector('.fin-ebitda-margin-input')?.value);
@@ -6110,10 +6122,25 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const netWorthVal = parseFloat(r.querySelector('.fin-networth-input')?.value);
 
         const hasAnyNum = [roeVal, patMarginVal, ebitdaMarginVal, epsVal, roceVal, assetsVal, revenueVal, patVal, ebitdaVal, netWorthVal].some(v => !isNaN(v));
-        if (periodVal || hasAnyNum) {
+
+        if (!periodVal && hasAnyNum) {
+          missingPeriodFound = true;
+          if (periodInp) periodInp.style.borderColor = 'var(--danger)';
+          return;
+        }
+
+        if (periodVal) {
+          const key = periodVal.toUpperCase() + '_' + periodTypeVal;
+          if (seenKeys.has(key)) {
+            hasDuplicate = true;
+            duplicatePeriodName = periodVal + ' (' + periodTypeVal + ')';
+            if (periodInp) periodInp.style.borderColor = 'var(--danger)';
+          }
+          seenKeys.add(key);
+
           list.push({
             id,
-            fiscalPeriod: periodVal || 'FY24',
+            fiscalPeriod: periodVal,
             periodType: periodTypeVal,
             roePercentage: !isNaN(roeVal) ? roeVal : undefined,
             patMarginPercent: !isNaN(patMarginVal) ? patMarginVal : undefined,
@@ -6128,6 +6155,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           });
         }
       });
+
+      if (missingPeriodFound) {
+        alert('Please specify a Fiscal Period (e.g. FY24) for every financial row that contains data.');
+        return null;
+      }
+
+      if (hasDuplicate) {
+        alert('Duplicate financial period detected: "' + duplicatePeriodName + '". Each fiscal period and period type combination must be unique.');
+        return null;
+      }
+
       return list;
     }
 
@@ -6622,6 +6660,9 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     }
 
     async function saveManualIpo() {
+      const finList = getFinancialsFromForm();
+      if (finList === null) return;
+
       const id = document.getElementById('form-ipo-id').value;
       const payload = {
         legalName: document.getElementById('form-legalName').value,
@@ -6657,7 +6698,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         listingDate: document.getElementById('form-listingDate').value || undefined,
         logoUrl: document.getElementById('form-logoUrl').value || undefined,
         anchorInvestors: getAnchorInvestorsFromForm(),
-        financials: getFinancialsFromForm(),
+        financials: finList,
       };
 
       const docsFromForm = getDocumentsFromForm();
@@ -6776,7 +6817,16 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           body: JSON.stringify(payload)
         });
 
-        if (!res.ok) throw new Error('Save failed with status ' + res.status);
+        if (!res.ok) {
+          let errMsg = 'Save failed with status ' + res.status;
+          try {
+            const errJson = await res.json();
+            if (errJson && errJson.message) {
+              errMsg = Array.isArray(errJson.message) ? errJson.message.join(', ') : errJson.message;
+            }
+          } catch {}
+          throw new Error(errMsg);
+        }
         alert('Manual IPO saved successfully!');
         switchTab('manual');
       } catch (err) {

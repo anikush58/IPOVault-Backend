@@ -1897,48 +1897,153 @@ export class AdminIpoService {
   }
 
   private async saveOfferCategories(ipoId: string, categories: any[]) {
-    await this.prisma.ipoOfferCategory.deleteMany({ where: { ipoId } });
+    if (!Array.isArray(categories)) return;
+
+    // Deduplicate categories by normalized category enum
+    const deduplicatedMap = new Map<string, any>();
     for (const cat of categories) {
-      if (!cat.category) continue;
-      await this.prisma.ipoOfferCategory.create({
-        data: {
-          ipoId,
-          category: cat.category,
-          allocationPct: cat.allocationPct !== undefined && cat.allocationPct !== null ? new Prisma.Decimal(cat.allocationPct) : null,
-          minLots: cat.minLots || null,
-          maxLots: cat.maxLots || null,
-          minShares: cat.minShares || null,
-          maxShares: cat.maxShares || null,
-          minAmount: cat.minAmount !== undefined && cat.minAmount !== null ? new Prisma.Decimal(cat.minAmount) : null,
-          maxAmount: cat.maxAmount !== undefined && cat.maxAmount !== null ? new Prisma.Decimal(cat.maxAmount) : null,
-          isUpiEligible: cat.isUpiEligible !== undefined ? !!cat.isUpiEligible : true,
-        },
-      });
+      if (!cat || !cat.category) continue;
+      const key = String(cat.category).trim().toUpperCase();
+      const existing = deduplicatedMap.get(key);
+      if (!existing) {
+        deduplicatedMap.set(key, { ...cat, category: cat.category });
+      } else {
+        deduplicatedMap.set(key, { ...existing, ...cat });
+      }
     }
+
+    const deduplicatedList = Array.from(deduplicatedMap.values());
+    await this.prisma.$transaction(async (tx) => {
+      await tx.ipoOfferCategory.deleteMany({ where: { ipoId } });
+      for (const cat of deduplicatedList) {
+        await tx.ipoOfferCategory.create({
+          data: {
+            ipoId,
+            category: cat.category,
+            allocationPct: cat.allocationPct !== undefined && cat.allocationPct !== null ? new Prisma.Decimal(cat.allocationPct) : null,
+            minLots: cat.minLots || null,
+            maxLots: cat.maxLots || null,
+            minShares: cat.minShares || null,
+            maxShares: cat.maxShares || null,
+            minAmount: cat.minAmount !== undefined && cat.minAmount !== null ? new Prisma.Decimal(cat.minAmount) : null,
+            maxAmount: cat.maxAmount !== undefined && cat.maxAmount !== null ? new Prisma.Decimal(cat.maxAmount) : null,
+            isUpiEligible: cat.isUpiEligible !== undefined ? !!cat.isUpiEligible : true,
+          },
+        });
+      }
+    });
   }
 
+  private readonly FINANCIAL_METRIC_FIELDS = [
+    'totalAssets',
+    'totalRevenue',
+    'pat',
+    'ebitda',
+    'netWorth',
+    'roePercentage',
+    'rocePercentage',
+    'eps',
+    'patMarginPercent',
+    'ebitdaMarginPercent',
+  ] as const;
+
   private async saveFinancials(companyId: string, financials: any[]) {
-    await this.prisma.companyFinancial.deleteMany({ where: { companyId } });
+    if (!Array.isArray(financials)) return;
+
+    // Deduplicate by normalized (fiscalPeriod, periodType) to respect @@unique([companyId, fiscalPeriod, periodType])
+    const deduplicatedMap = new Map<string, any>();
     for (const fin of financials) {
-      if (!fin.fiscalPeriod) continue;
-      await this.prisma.companyFinancial.create({
-        data: {
-          companyId,
-          fiscalPeriod: fin.fiscalPeriod,
-          periodType: fin.periodType || 'ANNUAL',
-          totalAssets: fin.totalAssets !== undefined && fin.totalAssets !== null ? new Prisma.Decimal(fin.totalAssets) : null,
-          totalRevenue: fin.totalRevenue !== undefined && fin.totalRevenue !== null ? new Prisma.Decimal(fin.totalRevenue) : null,
-          pat: fin.pat !== undefined && fin.pat !== null ? new Prisma.Decimal(fin.pat) : null,
-          ebitda: fin.ebitda !== undefined && fin.ebitda !== null ? new Prisma.Decimal(fin.ebitda) : null,
-          netWorth: fin.netWorth !== undefined && fin.netWorth !== null ? new Prisma.Decimal(fin.netWorth) : null,
-          roePercentage: fin.roePercentage !== undefined && fin.roePercentage !== null ? new Prisma.Decimal(fin.roePercentage) : null,
-          rocePercentage: fin.rocePercentage !== undefined && fin.rocePercentage !== null ? new Prisma.Decimal(fin.rocePercentage) : null,
-          eps: fin.eps !== undefined && fin.eps !== null ? new Prisma.Decimal(fin.eps) : null,
-          patMarginPercent: fin.patMarginPercent !== undefined && fin.patMarginPercent !== null ? new Prisma.Decimal(fin.patMarginPercent) : null,
-          ebitdaMarginPercent: fin.ebitdaMarginPercent !== undefined && fin.ebitdaMarginPercent !== null ? new Prisma.Decimal(fin.ebitdaMarginPercent) : null,
-        },
+      if (!fin || typeof fin !== 'object') continue;
+
+      const rawPeriod = fin.fiscalPeriod ? String(fin.fiscalPeriod).trim() : '';
+      const hasAnyMetric = this.FINANCIAL_METRIC_FIELDS.some((field) => {
+        const val = fin[field];
+        return val !== undefined && val !== null && val !== '' && !Number.isNaN(Number(val));
       });
+
+      if (!rawPeriod) {
+        if (hasAnyMetric) {
+          throw new BadRequestException('Fiscal period is required for all financial records containing data');
+        }
+        // Completely empty row without period or metrics is safely ignored
+        continue;
+      }
+
+      const periodType = (fin.periodType ? String(fin.periodType).trim() : 'ANNUAL').toUpperCase();
+      const key = `${rawPeriod.toUpperCase()}_${periodType}`;
+
+      const existingFin = deduplicatedMap.get(key);
+      if (!existingFin) {
+        deduplicatedMap.set(key, {
+          ...fin,
+          fiscalPeriod: rawPeriod,
+          periodType,
+        });
+      } else {
+        // Deterministic conflict resolution: merge fields, log warning on conflicting non-null metrics, taking latest
+        const merged = { ...existingFin, fiscalPeriod: rawPeriod, periodType };
+        for (const field of this.FINANCIAL_METRIC_FIELDS) {
+          const incomingVal = fin[field];
+          const prevVal = existingFin[field];
+          if (incomingVal !== undefined && incomingVal !== null) {
+            if (prevVal !== undefined && prevVal !== null && prevVal !== incomingVal && String(prevVal) !== String(incomingVal)) {
+              this.logger.warn(
+                `Conflicting financial metrics for company ${companyId} period ${key}.${field}: earlier='${prevVal}', incoming='${incomingVal}'. Deterministic policy: using latest non-null value '${incomingVal}'.`
+              );
+            }
+            merged[field] = incomingVal;
+          }
+        }
+        deduplicatedMap.set(key, merged);
+      }
     }
+
+    const deduplicatedList = Array.from(deduplicatedMap.values());
+
+    await this.prisma.$transaction(async (tx) => {
+      // Retrieve existing valid database records to preserve non-null values for fields omitted in incoming update
+      const existingDbRecords = await tx.companyFinancial.findMany({
+        where: { companyId },
+      });
+
+      for (const fin of deduplicatedList) {
+        const existingDb = existingDbRecords.find(
+          (dbRec) =>
+            dbRec.fiscalPeriod.trim().toUpperCase() === fin.fiscalPeriod.toUpperCase() &&
+            (dbRec.periodType || 'ANNUAL').trim().toUpperCase() === fin.periodType,
+        );
+
+        if (existingDb) {
+          for (const field of this.FINANCIAL_METRIC_FIELDS) {
+            // If incoming did not specify this metric (undefined), preserve existing valid DB value
+            if (fin[field] === undefined && (existingDb as any)[field] !== null && (existingDb as any)[field] !== undefined) {
+              fin[field] = (existingDb as any)[field];
+            }
+          }
+        }
+      }
+
+      await tx.companyFinancial.deleteMany({ where: { companyId } });
+      for (const fin of deduplicatedList) {
+        await tx.companyFinancial.create({
+          data: {
+            companyId,
+            fiscalPeriod: fin.fiscalPeriod,
+            periodType: fin.periodType,
+            totalAssets: fin.totalAssets !== undefined && fin.totalAssets !== null ? new Prisma.Decimal(fin.totalAssets) : null,
+            totalRevenue: fin.totalRevenue !== undefined && fin.totalRevenue !== null ? new Prisma.Decimal(fin.totalRevenue) : null,
+            pat: fin.pat !== undefined && fin.pat !== null ? new Prisma.Decimal(fin.pat) : null,
+            ebitda: fin.ebitda !== undefined && fin.ebitda !== null ? new Prisma.Decimal(fin.ebitda) : null,
+            netWorth: fin.netWorth !== undefined && fin.netWorth !== null ? new Prisma.Decimal(fin.netWorth) : null,
+            roePercentage: fin.roePercentage !== undefined && fin.roePercentage !== null ? new Prisma.Decimal(fin.roePercentage) : null,
+            rocePercentage: fin.rocePercentage !== undefined && fin.rocePercentage !== null ? new Prisma.Decimal(fin.rocePercentage) : null,
+            eps: fin.eps !== undefined && fin.eps !== null ? new Prisma.Decimal(fin.eps) : null,
+            patMarginPercent: fin.patMarginPercent !== undefined && fin.patMarginPercent !== null ? new Prisma.Decimal(fin.patMarginPercent) : null,
+            ebitdaMarginPercent: fin.ebitdaMarginPercent !== undefined && fin.ebitdaMarginPercent !== null ? new Prisma.Decimal(fin.ebitdaMarginPercent) : null,
+          },
+        });
+      }
+    });
   }
 
   private async saveParticipants(ipoId: string, participants: any[]) {
@@ -5400,7 +5505,7 @@ export class AdminIpoService {
         );
 
         if (!existingFin) {
-          await tx.companyFinancial.create({
+          const createdFin = await tx.companyFinancial.create({
             data: {
               companyId: currentIpo.companyId,
               fiscalPeriod: period,
@@ -5417,6 +5522,7 @@ export class AdminIpoService {
               ebitdaMarginPercent: finItem.ebitdaMarginPercent ?? null,
             },
           });
+          existingFinancials.push(createdFin);
           filledFields.push(`financials.${period}`);
         } else {
           const finUpdates: Prisma.CompanyFinancialUpdateInput = {};

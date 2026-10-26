@@ -97,6 +97,7 @@ describe('AdminIpoService & AdminValidationService', () => {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     companyFinancial: {
+      findMany: jest.fn().mockResolvedValue([]),
       upsert: jest.fn().mockResolvedValue({}),
       create: jest.fn().mockResolvedValue({}),
       update: jest.fn().mockResolvedValue({}),
@@ -3621,5 +3622,454 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(mockPrisma.ipo.update).not.toHaveBeenCalled();
     });
   });
+
+  describe('Manual IPO Save & Financial Period Deduplication Regression Suite', () => {
+    it('1. deduplicates identical (fiscalPeriod, periodType) entries and merges metrics on manual IPO update', async () => {
+      mockPrisma.companyFinancial.create.mockClear();
+      mockPrisma.companyFinancial.deleteMany.mockClear();
+      mockPrisma.$transaction.mockClear();
+
+      const existingIpo: any = {
+        id: 'ipo-eaaa-1',
+        companyId: 'comp-eaaa-1',
+        symbol: 'EAAA',
+        company: {
+          id: 'comp-eaaa-1',
+          legalName: 'EAAA India Alternatives Limited',
+          displayName: 'EAAA India Alternatives',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(existingIpo);
+
+      // Simulate a form payload that has duplicate FY24 rows (e.g. user added period or defaulted)
+      await adminIpoService.updateIpo('ipo-eaaa-1', {
+        financials: [
+          {
+            fiscalPeriod: 'FY24',
+            periodType: 'ANNUAL',
+            totalRevenue: 500,
+            pat: 50,
+          },
+          {
+            fiscalPeriod: 'FY24',
+            periodType: 'ANNUAL',
+            totalAssets: 1200,
+            pat: 60, // overrides/merges with earlier pat
+          },
+          {
+            fiscalPeriod: 'FY25',
+            periodType: 'ANNUAL',
+            totalRevenue: 800,
+          },
+        ],
+      });
+
+      // Verify transaction was used
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+
+      // Verify deleteMany ran
+      expect(mockPrisma.companyFinancial.deleteMany).toHaveBeenCalledWith({
+        where: { companyId: 'comp-eaaa-1' },
+      });
+
+      // Exactly 2 records created (FY24 and FY25), NOT 3
+      expect(mockPrisma.companyFinancial.create).toHaveBeenCalledTimes(2);
+
+      // FY24 should have merged values (totalRevenue from 1st, totalAssets from 2nd, pat from 2nd)
+      const fy24Call = mockPrisma.companyFinancial.create.mock.calls.find(
+        (c: any) => c[0].data.fiscalPeriod === 'FY24',
+      );
+      expect(fy24Call).toBeDefined();
+      expect(fy24Call[0].data.periodType).toBe('ANNUAL');
+      expect(Number(fy24Call[0].data.totalRevenue)).toBe(500);
+      expect(Number(fy24Call[0].data.totalAssets)).toBe(1200);
+      expect(Number(fy24Call[0].data.pat)).toBe(60);
+
+      // FY25 should be created intact
+      const fy25Call = mockPrisma.companyFinancial.create.mock.calls.find(
+        (c: any) => c[0].data.fiscalPeriod === 'FY25',
+      );
+      expect(fy25Call).toBeDefined();
+      expect(Number(fy25Call[0].data.totalRevenue)).toBe(800);
+    });
+
+    it('2. normalizes whitespace and casing when deduplicating fiscal periods', async () => {
+      mockPrisma.companyFinancial.create.mockClear();
+
+      const existingIpo: any = {
+        id: 'ipo-case-1',
+        companyId: 'comp-case-1',
+        symbol: 'CASECO',
+        company: {
+          id: 'comp-case-1',
+          legalName: 'Case Co Limited',
+          displayName: 'Case Co',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(existingIpo);
+
+      await adminIpoService.updateIpo('ipo-case-1', {
+        financials: [
+          { fiscalPeriod: '  fy2026  ', periodType: 'annual', totalRevenue: 100 },
+          { fiscalPeriod: 'FY2026', periodType: 'ANNUAL', totalRevenue: 200 },
+        ],
+      });
+
+      // Deduplicated to 1 call
+      expect(mockPrisma.companyFinancial.create).toHaveBeenCalledTimes(1);
+      const callData = mockPrisma.companyFinancial.create.mock.calls[0][0].data;
+      expect(callData.fiscalPeriod).toBe('FY2026');
+      expect(callData.periodType).toBe('ANNUAL');
+      expect(Number(callData.totalRevenue)).toBe(200);
+    });
+
+    it('3. deduplicates offerCategories by category enum on manual IPO update', async () => {
+      mockPrisma.ipoOfferCategory.create.mockClear();
+      mockPrisma.ipoOfferCategory.deleteMany.mockClear();
+
+      const existingIpo: any = {
+        id: 'ipo-cat-1',
+        companyId: 'comp-cat-1',
+        symbol: 'CATCO',
+        company: {
+          id: 'comp-cat-1',
+          legalName: 'Cat Co Limited',
+          displayName: 'Cat Co',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(existingIpo);
+
+      await adminIpoService.updateIpo('ipo-cat-1', {
+        offerCategories: [
+          { category: 'RETAIL' as any, allocationPct: 35, minLots: 1 },
+          { category: 'RETAIL' as any, allocationPct: 40, maxLots: 13 },
+          { category: 'QIB' as any, allocationPct: 50 },
+        ],
+      });
+
+      expect(mockPrisma.ipoOfferCategory.deleteMany).toHaveBeenCalledWith({
+        where: { ipoId: 'ipo-cat-1' },
+      });
+
+      // Exactly 2 categories created (RETAIL and QIB), not 3
+      expect(mockPrisma.ipoOfferCategory.create).toHaveBeenCalledTimes(2);
+      const retailCall = mockPrisma.ipoOfferCategory.create.mock.calls.find(
+        (c: any) => c[0].data.category === 'RETAIL',
+      );
+      expect(retailCall).toBeDefined();
+      expect(Number(retailCall[0].data.allocationPct)).toBe(40);
+      expect(retailCall[0].data.minLots).toBe(1);
+      expect(retailCall[0].data.maxLots).toBe(13);
+    });
+
+    it('4. JSON import safely handles duplicate financial period items in raw payload', async () => {
+      mockPrisma.companyFinancial.create.mockClear();
+      mockPrisma.companyFinancial.update.mockClear();
+
+      const targetIpo: any = {
+        id: 'ipo-raw-fin-1',
+        companyId: 'comp-raw-fin-1',
+        symbol: 'RAWFIN',
+        company: {
+          id: 'comp-raw-fin-1',
+          legalName: 'Raw Financials Limited',
+          displayName: 'Raw Financials',
+          financials: [], // Initially empty
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([targetIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(targetIpo);
+      mockPrisma.companyFinancial.create.mockImplementation((args: any) => ({
+        id: 'fin-created-uuid-1',
+        ...args.data,
+      }));
+
+      // Raw JSON contains two entries for FY26
+      const payload = {
+        companyName: 'Raw Financials Limited',
+        financials: [
+          { period: 'FY26', totalRevenue: 100, pat: 10 },
+          { period: 'FY26', totalAssets: 500, pat: 15 },
+        ],
+      };
+
+      const result = await adminIpoService.commitAddOnlyJsonImport({
+        payload,
+        overwriteExisting: false,
+      });
+
+      expect(result.updatedCount).toBe(1);
+      expect(result.failedCount).toBe(0);
+
+      // First entry is created
+      expect(mockPrisma.companyFinancial.create).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.companyFinancial.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            companyId: 'comp-raw-fin-1',
+            fiscalPeriod: 'FY26',
+            totalRevenue: 100,
+          }),
+        }),
+      );
+
+      // Second entry updates the in-memory created record rather than trying to create duplicate key
+      expect(mockPrisma.companyFinancial.update).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.companyFinancial.update).toHaveBeenCalledWith({
+        where: { id: 'fin-created-uuid-1' },
+        data: expect.objectContaining({
+          totalAssets: 500,
+        }),
+      });
+    });
+
+    it('5. preserves existing valid database values when incoming financial update omits a metric (undefined)', async () => {
+      mockPrisma.companyFinancial.create.mockClear();
+      mockPrisma.companyFinancial.deleteMany.mockClear();
+
+      const existingIpo: any = {
+        id: 'ipo-preserve-1',
+        companyId: 'comp-preserve-1',
+        symbol: 'PRESERVE',
+        company: {
+          id: 'comp-preserve-1',
+          legalName: 'Preserve Values Limited',
+          displayName: 'Preserve Values',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(existingIpo);
+
+      // Existing DB record has totalAssets=2101.84 and totalRevenue=336.13
+      mockPrisma.companyFinancial.findMany.mockResolvedValueOnce([
+        {
+          id: 'fin-existing-1',
+          companyId: 'comp-preserve-1',
+          fiscalPeriod: 'Jun 2026',
+          periodType: 'ANNUAL',
+          totalAssets: '2101.84',
+          totalRevenue: '336.13',
+          pat: '80.71',
+        },
+      ]);
+
+      // Incoming update for Jun 2026 only updates pat to 95.00 and leaves totalAssets/totalRevenue undefined
+      await adminIpoService.updateIpo('ipo-preserve-1', {
+        financials: [
+          {
+            fiscalPeriod: 'Jun 2026',
+            periodType: 'ANNUAL',
+            pat: 95.0,
+            // totalAssets and totalRevenue are omitted/undefined
+          },
+        ],
+      });
+
+      expect(mockPrisma.companyFinancial.create).toHaveBeenCalledTimes(1);
+      const createdData = mockPrisma.companyFinancial.create.mock.calls[0][0].data;
+
+      // pat is updated to 95
+      expect(Number(createdData.pat)).toBe(95);
+      // totalAssets and totalRevenue are preserved from existing DB record
+      expect(Number(createdData.totalAssets)).toBe(2101.84);
+      expect(Number(createdData.totalRevenue)).toBe(336.13);
+    });
+
+    it('6. safely ignores completely empty financial rows', async () => {
+      mockPrisma.companyFinancial.create.mockClear();
+      mockPrisma.companyFinancial.deleteMany.mockClear();
+
+      const existingIpo: any = {
+        id: 'ipo-empty-row-1',
+        companyId: 'comp-empty-row-1',
+        symbol: 'EMPTYROW',
+        company: {
+          id: 'comp-empty-row-1',
+          legalName: 'Empty Row Limited',
+          displayName: 'Empty Row',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(existingIpo);
+      mockPrisma.companyFinancial.findMany.mockResolvedValueOnce([]);
+
+      await adminIpoService.updateIpo('ipo-empty-row-1', {
+        financials: [
+          {} as any, // completely empty object
+          { fiscalPeriod: '   ', totalRevenue: undefined }, // blank period without metrics
+          { fiscalPeriod: 'FY24', periodType: 'ANNUAL', totalRevenue: 500 }, // valid row
+        ],
+      });
+
+      // Exactly 1 record created (FY24), the empty ones were safely skipped
+      expect(mockPrisma.companyFinancial.create).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.companyFinancial.create.mock.calls[0][0].data.fiscalPeriod).toBe('FY24');
+    });
+
+    it('7. rejects populated financial rows missing a fiscal period with BadRequestException', async () => {
+      const existingIpo: any = {
+        id: 'ipo-missing-period-1',
+        companyId: 'comp-missing-period-1',
+        symbol: 'MISSPERIOD',
+        company: {
+          id: 'comp-missing-period-1',
+          legalName: 'Missing Period Limited',
+          displayName: 'Missing Period',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(existingIpo);
+
+      // Financial row has numbers but missing or empty fiscalPeriod
+      await expect(
+        adminIpoService.updateIpo('ipo-missing-period-1', {
+          financials: [
+            { fiscalPeriod: '', totalRevenue: 500, pat: 50 },
+          ],
+        }),
+      ).rejects.toThrow('Fiscal period is required for all financial records containing data');
+    });
+
+    it('8. rolls back preceding deletion if a financial insert fails inside the Prisma transaction', async () => {
+      const existingIpo: any = {
+        id: 'ipo-tx-rollback-1',
+        companyId: 'comp-tx-rollback-1',
+        symbol: 'TXFAIL',
+        company: {
+          id: 'comp-tx-rollback-1',
+          legalName: 'Tx Fail Limited',
+          displayName: 'Tx Fail',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(existingIpo);
+      mockPrisma.companyFinancial.findMany.mockResolvedValueOnce([]);
+
+      // Make create throw an error inside the transaction
+      mockPrisma.companyFinancial.create.mockRejectedValueOnce(
+        new Error('Database write failure inside transaction'),
+      );
+
+      // Update should reject with the error
+      await expect(
+        adminIpoService.updateIpo('ipo-tx-rollback-1', {
+          financials: [
+            { fiscalPeriod: 'FY24', periodType: 'ANNUAL', totalRevenue: 100 },
+          ],
+        }),
+      ).rejects.toThrow('Database write failure inside transaction');
+
+      // The transaction was invoked
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+
+    it('9. logs warning and deterministically resolves conflicting duplicate metrics in payload', async () => {
+      mockPrisma.companyFinancial.create.mockClear();
+
+      const existingIpo: any = {
+        id: 'ipo-conflict-1',
+        companyId: 'comp-conflict-1',
+        symbol: 'CONFLICT',
+        company: {
+          id: 'comp-conflict-1',
+          legalName: 'Conflict Metrics Limited',
+          displayName: 'Conflict Metrics',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findUnique.mockResolvedValue(existingIpo);
+      mockPrisma.companyFinancial.findMany.mockResolvedValueOnce([]);
+
+      const warnSpy = jest.spyOn((adminIpoService as any).logger, 'warn');
+
+      await adminIpoService.updateIpo('ipo-conflict-1', {
+        financials: [
+          { fiscalPeriod: 'FY25', periodType: 'ANNUAL', totalRevenue: 100, pat: 10 },
+          { fiscalPeriod: 'FY25', periodType: 'ANNUAL', totalRevenue: 200, totalAssets: 500 }, // Conflicting totalRevenue
+        ],
+      });
+
+      // Warning logged about conflicting totalRevenue
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Conflicting financial metrics for company comp-conflict-1 period FY25_ANNUAL.totalRevenue'),
+      );
+
+      // Exactly 1 record created with latest totalRevenue (200), pat (10), totalAssets (500)
+      expect(mockPrisma.companyFinancial.create).toHaveBeenCalledTimes(1);
+      const created = mockPrisma.companyFinancial.create.mock.calls[0][0].data;
+      expect(Number(created.totalRevenue)).toBe(200);
+      expect(Number(created.pat)).toBe(10);
+      expect(Number(created.totalAssets)).toBe(500);
+
+      warnSpy.mockRestore();
+    });
+  });
 });
+
 
