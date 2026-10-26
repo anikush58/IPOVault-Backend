@@ -2559,6 +2559,13 @@ export class AdminIpoService {
     if (typeof val === 'string') {
       return this.isPlaceholderOrNil(val);
     }
+    if (Array.isArray(val)) {
+      return val.length === 0;
+    }
+    if (typeof val === 'object') {
+      if (val instanceof Date || val instanceof Prisma.Decimal) return false;
+      return Object.keys(val).length === 0;
+    }
     return false;
   }
 
@@ -2618,6 +2625,7 @@ export class AdminIpoService {
     fieldReport?: FieldReportItem[],
     overwriteExisting: boolean = this.activeOverwriteMode,
   ) {
+    const fieldKey = `${section}.${field}`;
     if (inputVal === undefined || inputVal === null) {
       fieldReport?.push({
         section,
@@ -2645,7 +2653,7 @@ export class AdminIpoService {
     }
 
     if (this.isFieldEmpty(existingVal)) {
-      toFill.push({ section, field, newValue: inputVal, status: 'FILLED' });
+      toFill.push({ section, field, key: fieldKey, newValue: inputVal, status: 'FILLED' });
       fieldReport?.push({
         section,
         field,
@@ -2682,6 +2690,7 @@ export class AdminIpoService {
           toFill.push({
             section,
             field,
+            key: fieldKey,
             oldValue: oldValFormatted,
             newValue: inputVal,
             status: 'OVERWRITTEN',
@@ -3738,11 +3747,18 @@ export class AdminIpoService {
     }
 
     for (const gDoc of gatheredDocs) {
-      const existingDoc = existingDocs.find((d: any) => d.documentType === gDoc.type);
+      const existingDoc = existingDocs.find(
+        (d: any) =>
+          d.documentType === gDoc.type &&
+          (gDoc.type !== DocumentType.OTHER ||
+            (gDoc.url && d.sourceUrl === gDoc.url) ||
+            (gDoc.title && d.fileName === gDoc.title)),
+      );
       if (!existingDoc) {
         toFill.push({
           section: 'documents',
           field: `${gDoc.type} (NEW DOCUMENT)`,
+          key: `documents.${gDoc.type}`,
           newValue: gDoc.url || gDoc.title || gDoc.type,
           status: 'FILLED',
         });
@@ -3840,7 +3856,8 @@ export class AdminIpoService {
         else if (catName.includes('BNII') || catName.includes('NII_BIG')) catName = 'NII_BIG';
         else if (catName.includes('NII') || catName.includes('NON_INSTITUTIONAL')) catName = 'NII';
         else if (catName.includes('QIB') || catName.includes('QUALIFIED')) catName = 'QIB';
-        if (!catName) continue;
+        if (!catName || !Object.values(OfferCategoryType).includes(catName as any))
+          continue;
 
         const existingCat = existingCategories.find(
           (c: any) => c.category === catName,
@@ -3849,6 +3866,7 @@ export class AdminIpoService {
           toFill.push({
             section: 'offerCategories',
             field: `${catName} (NEW CATEGORY)`,
+            key: `offerCategories.${catName}`,
             newValue: catItem,
             status: 'FILLED',
           });
@@ -3956,6 +3974,7 @@ export class AdminIpoService {
           toFill.push({
             section: 'financials',
             field: `${period} (${periodType}) (NEW PERIOD)`,
+            key: `financials.${period}`,
             newValue: finItem,
             status: 'FILLED',
           });
@@ -4083,6 +4102,7 @@ export class AdminIpoService {
           toFill.push({
             section: 'anchorInvestors',
             field: `${ancName} (NEW ANCHOR)`,
+            key: `anchorInvestors.${ancName}`,
             newValue: anc,
             status: 'FILLED',
           });
@@ -4143,6 +4163,7 @@ export class AdminIpoService {
         toFill.push({
           section: 'gmp',
           field: 'gmpAmount',
+          key: 'gmp.gmpAmount',
           newValue: gmpAmountVal,
           status: 'FILLED',
         });
@@ -4163,6 +4184,7 @@ export class AdminIpoService {
           toFill.push({
             section: 'gmp',
             field: 'gmpAmount',
+            key: 'gmp.gmpAmount',
             oldValue: oldGmpVal,
             newValue: gmpAmountVal,
             status: 'OVERWRITTEN',
@@ -4238,6 +4260,7 @@ export class AdminIpoService {
         toFill.push({
           section: 'participants',
           field: 'REGISTRAR (NEW PARTICIPANT)',
+          key: 'participants.REGISTRAR',
           newValue: { name: regName, phone: regPhone, email: regEmail, website: regWebsite },
           status: 'FILLED',
         });
@@ -4316,6 +4339,7 @@ export class AdminIpoService {
           toFill.push({
             section: 'participants',
             field: `BRLM.${lmName}`,
+            key: `participants.BRLM.${lmName}`,
             newValue: lmName,
             status: 'FILLED',
           });
@@ -4360,6 +4384,7 @@ export class AdminIpoService {
           toFill.push({
             section: 'research',
             field: 'sources',
+            key: 'research.sources',
             newValue: cleanSources,
             status: 'FILLED',
           });
@@ -4375,6 +4400,7 @@ export class AdminIpoService {
           toFill.push({
             section: 'research',
             field: 'sources',
+            key: 'research.sources',
             oldValue: existingResearchDoc.extractionData,
             newValue: cleanSources,
             status: 'OVERWRITTEN',
@@ -4394,12 +4420,12 @@ export class AdminIpoService {
             existingValue: 'Existing research sources',
             skippedValue: `${cleanSources.length} source(s)`,
             reason: 'Research sources document already exists',
-            status: 'CONFLICT',
+            status: 'UNCHANGED',
           });
           fieldReport.push({
             section: 'research',
             field: 'sources',
-            status: 'CONFLICT',
+            status: 'UNCHANGED',
             existingValue: 'Existing research sources',
             incomingValue: `${cleanSources.length} source(s)`,
             reason: 'Research sources document already exists',
@@ -4652,8 +4678,36 @@ export class AdminIpoService {
         continue;
       }
 
+      // Extract selected fields for this IPO if provided
+      let selectedFieldKeysSet: Set<string> | null = null;
+      if (dto?.selectedFields) {
+        if (Array.isArray(dto.selectedFields)) {
+          selectedFieldKeysSet = new Set(dto.selectedFields);
+        } else if (typeof dto.selectedFields === 'object') {
+          const list =
+            dto.selectedFields[targetIpo.id] ||
+            dto.selectedFields[String(idx)] ||
+            dto.selectedFields[inputName];
+          if (Array.isArray(list)) {
+            selectedFieldKeysSet = new Set(list);
+          }
+        }
+      }
+
       const { fieldsToFill, fieldReport } = this.diffIpoForAddOnly(targetIpo, item, overwriteExisting);
-      if (fieldsToFill.length === 0) {
+
+      const effectiveFieldsToFill = selectedFieldKeysSet
+        ? fieldsToFill.filter((f) => {
+            const k = f.key || `${f.section}.${f.field}`;
+            return (
+              selectedFieldKeysSet!.has(k) ||
+              selectedFieldKeysSet!.has(f.field) ||
+              selectedFieldKeysSet!.has(f.section)
+            );
+          })
+        : fieldsToFill;
+
+      if (effectiveFieldsToFill.length === 0) {
         skippedCount++;
         commitResults.push({
           index: idx,
@@ -4680,6 +4734,7 @@ export class AdminIpoService {
             item,
             adminSourceId,
             overwriteExisting,
+            selectedFieldKeysSet,
           );
         });
 
@@ -4736,7 +4791,17 @@ export class AdminIpoService {
     item: any,
     adminSourceId: string,
     overwriteExisting: boolean = false,
+    selectedFieldKeys?: Set<string> | null,
   ): Promise<string[]> {
+    const isSelected = (fieldKey: string, parentKey?: string): boolean => {
+      if (!selectedFieldKeys) return true;
+      if (selectedFieldKeys.has(fieldKey)) return true;
+      if (parentKey && selectedFieldKeys.has(parentKey)) return true;
+      const dotIdx = fieldKey.indexOf('.');
+      if (dotIdx > 0 && selectedFieldKeys.has(fieldKey.slice(dotIdx + 1))) return true;
+      return false;
+    };
+
     const currentIpo = (
       typeof (tx.ipo as any).findUniqueOrThrow === 'function'
         ? await (tx.ipo as any).findUniqueOrThrow({
@@ -4752,7 +4817,10 @@ export class AdminIpoService {
               offerCategories: true,
               documents: true,
               participants: true,
-              gmpObservations: true,
+              gmpObservations: {
+                orderBy: { observedAt: 'desc' },
+                take: 1,
+              },
             },
           })
         : await tx.ipo.findUnique({
@@ -4768,7 +4836,10 @@ export class AdminIpoService {
               offerCategories: true,
               documents: true,
               participants: true,
-              gmpObservations: true,
+              gmpObservations: {
+                orderBy: { observedAt: 'desc' },
+                take: 1,
+              },
             },
           })
     ) || {
@@ -4815,6 +4886,7 @@ export class AdminIpoService {
 
     for (const [key, val] of companyFields) {
       if (val !== undefined && val !== null && !this.isPlaceholderOrNil(val)) {
+        if (!isSelected(`company.${key}`, 'company')) continue;
         const existingVal = (currentIpo.company as any)?.[key];
         const isEmpty = this.isFieldEmpty(existingVal);
         const shouldUpdate = isEmpty || (overwriteExisting && !this.areValuesEqual(existingVal, val));
@@ -4833,6 +4905,7 @@ export class AdminIpoService {
       ['bseSymbol', norm.bseSymbol],
       ['exchange', norm.exchange],
       ['marketSegment', norm.marketSegment],
+      ['publicationStatus', norm.publicationStatus],
       ['priceBandLow', norm.rawCanonical.priceBandLow ?? norm.rawIpo.priceBandLow ?? norm.rawIpo.floorPrice ?? norm.rawIpo.priceBandMin ?? item.priceBandLow ?? item.priceBandMin ?? item.floorPrice],
       ['priceBandHigh', norm.rawCanonical.priceBandHigh ?? norm.rawIpo.priceBandHigh ?? norm.rawIpo.capPrice ?? norm.rawIpo.priceBandMax ?? item.priceBandHigh ?? item.priceBandMax ?? item.capPrice],
       ['faceValue', norm.rawCanonical.faceValue ?? norm.rawIpo.faceValue ?? item.faceValue],
@@ -4860,12 +4933,20 @@ export class AdminIpoService {
 
     for (const [key, val] of ipoFields) {
       if (val !== undefined && val !== null && !this.isPlaceholderOrNil(val)) {
+        if (!isSelected(`ipo.${key}`, 'ipo')) continue;
         const existingVal = (currentIpo as any)[key];
         const isEmpty = this.isFieldEmpty(existingVal);
         const shouldUpdate = isEmpty || (overwriteExisting && !this.areValuesEqual(existingVal, val));
         if (shouldUpdate) {
-          (ipoUpdates as any)[key] = val;
-          filledFields.push(`ipo.${key}`);
+          let parsedVal = val;
+          if (key === 'lotSize' || key === 'minimumLots') {
+            const parsedInt = typeof val === 'number' ? Math.round(val) : parseInt(String(val), 10);
+            parsedVal = isNaN(parsedInt) ? null : parsedInt;
+          }
+          if (parsedVal !== null && parsedVal !== undefined) {
+            (ipoUpdates as any)[key] = parsedVal;
+            filledFields.push(`ipo.${key}`);
+          }
         }
       }
     }
@@ -4899,6 +4980,7 @@ export class AdminIpoService {
 
     for (const [evType, dateStr] of Object.entries(eventTypeMap)) {
       if (dateStr && !this.isPlaceholderOrNil(dateStr)) {
+        if (!isSelected(`lifecycle.${evType}`, 'lifecycle')) continue;
         const existingEv = (currentIpo.lifecycleEvents || []).find(
           (e: any) => e.eventType === evType,
         );
@@ -4948,40 +5030,42 @@ export class AdminIpoService {
     ) {
       const existingAllot = currentIpo.allotmentConfig;
       if (!existingAllot) {
-        await tx.ipoAllotmentConfig.upsert({
-          where: { ipoId: currentIpo.id },
-          create: {
-            ipoId: currentIpo.id,
-            registrar: regName || 'UNKNOWN',
-            registrarIpoCode: regCode || null,
-            allotmentSourceUrl: regUrl || null,
-            enabled: isAllotEnabled,
-          },
-          update: {
-            registrar: regName || 'UNKNOWN',
-            registrarIpoCode: regCode || null,
-            allotmentSourceUrl: regUrl || null,
-            enabled: isAllotEnabled,
-          },
-        });
-        filledFields.push('allotmentConfig');
+        if (isSelected('allotmentConfig.registrar', 'allotmentConfig') || isSelected('allotmentConfig.registrarIpoCode', 'allotmentConfig') || isSelected('allotmentConfig.allotmentSourceUrl', 'allotmentConfig')) {
+          await tx.ipoAllotmentConfig.upsert({
+            where: { ipoId: currentIpo.id },
+            create: {
+              ipoId: currentIpo.id,
+              registrar: regName || 'UNKNOWN',
+              registrarIpoCode: regCode || null,
+              allotmentSourceUrl: regUrl || null,
+              enabled: isAllotEnabled,
+            },
+            update: {
+              registrar: regName || 'UNKNOWN',
+              registrarIpoCode: regCode || null,
+              allotmentSourceUrl: regUrl || null,
+              enabled: isAllotEnabled,
+            },
+          });
+          filledFields.push('allotmentConfig');
+        }
       } else {
         const allotUpdates: Prisma.IpoAllotmentConfigUpdateInput = {};
-        if (regName && !this.isPlaceholderOrNil(regName)) {
+        if (regName && !this.isPlaceholderOrNil(regName) && isSelected('allotmentConfig.registrar', 'allotmentConfig')) {
           const isEmpty = this.isFieldEmpty(existingAllot.registrar);
           if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingAllot.registrar, regName))) {
             allotUpdates.registrar = regName;
             filledFields.push('allotmentConfig.registrar');
           }
         }
-        if (regCode && !this.isPlaceholderOrNil(regCode)) {
+        if (regCode && !this.isPlaceholderOrNil(regCode) && isSelected('allotmentConfig.registrarIpoCode', 'allotmentConfig')) {
           const isEmpty = this.isFieldEmpty(existingAllot.registrarIpoCode);
           if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingAllot.registrarIpoCode, regCode))) {
             allotUpdates.registrarIpoCode = regCode;
             filledFields.push('allotmentConfig.registrarIpoCode');
           }
         }
-        if (regUrl && !this.isPlaceholderOrNil(regUrl)) {
+        if (regUrl && !this.isPlaceholderOrNil(regUrl) && isSelected('allotmentConfig.allotmentSourceUrl', 'allotmentConfig')) {
           const isEmpty = this.isFieldEmpty(existingAllot.allotmentSourceUrl);
           if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingAllot.allotmentSourceUrl, regUrl))) {
             allotUpdates.allotmentSourceUrl = regUrl;
@@ -5083,11 +5167,13 @@ export class AdminIpoService {
     }
 
     for (const gDoc of gatheredDocs) {
+      if (!isSelected(`documents.${gDoc.type}`, 'documents')) continue;
       const existingDoc = existingDocs.find(
         (d: any) =>
-          d.documentType === gDoc.type ||
-          (gDoc.url && d.sourceUrl === gDoc.url) ||
-          (gDoc.title && d.fileName === gDoc.title),
+          d.documentType === gDoc.type &&
+          (gDoc.type !== DocumentType.OTHER ||
+            (gDoc.url && d.sourceUrl === gDoc.url) ||
+            (gDoc.title && d.fileName === gDoc.title)),
       );
 
       const docExtraction = {
@@ -5155,6 +5241,17 @@ export class AdminIpoService {
       item.reservation ||
       ipoData.offerCategories ||
       [];
+
+    const parseNum = (v: any) => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]/g, ''));
+      return isNaN(n) ? null : n;
+    };
+    const parseIntVal = (v: any) => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = typeof v === 'number' ? Math.round(v) : parseInt(String(v).replace(/[^0-9-]/g, ''), 10);
+      return isNaN(n) ? null : n;
+    };
 
     const retailLimits: any = {};
     if (norm.rawOffer.retailMinLots !== undefined && !this.isPlaceholderOrNil(norm.rawOffer.retailMinLots)) retailLimits.minLots = norm.rawOffer.retailMinLots;
@@ -5229,6 +5326,8 @@ export class AdminIpoService {
         if (!catName || !Object.values(OfferCategoryType).includes(catName as any))
           continue;
 
+        if (!isSelected(`offerCategories.${catName}`, 'offerCategories')) continue;
+
         const existingCat = (currentIpo.offerCategories || []).find(
           (c: any) => c.category === catName,
         );
@@ -5238,13 +5337,13 @@ export class AdminIpoService {
             data: {
               ipoId: currentIpo.id,
               category: catName as any,
-              allocationPct: catItem.allocationPct ?? null,
-              minLots: catItem.minLots ?? null,
-              maxLots: catItem.maxLots ?? null,
-              minShares: catItem.minShares ?? null,
-              maxShares: catItem.maxShares ?? null,
-              minAmount: catItem.minAmount ?? null,
-              maxAmount: catItem.maxAmount ?? null,
+              allocationPct: parseNum(catItem.allocationPct),
+              minLots: parseIntVal(catItem.minLots),
+              maxLots: parseIntVal(catItem.maxLots),
+              minShares: parseIntVal(catItem.minShares),
+              maxShares: parseIntVal(catItem.maxShares),
+              minAmount: parseNum(catItem.minAmount),
+              maxAmount: parseNum(catItem.maxAmount),
               isUpiEligible: catItem.isUpiEligible ?? true,
             },
           });
@@ -5252,19 +5351,24 @@ export class AdminIpoService {
         } else {
           const catUpdates: Prisma.IpoOfferCategoryUpdateInput = {};
           const catFields: Array<[string, any]> = [
-            ['allocationPct', catItem.allocationPct ?? catItem.allocationPercentage ?? catItem.allocationPercent],
-            ['minLots', catItem.minLots],
-            ['maxLots', catItem.maxLots],
-            ['minShares', catItem.minShares],
-            ['maxShares', catItem.maxShares],
-            ['minAmount', catItem.minAmount],
-            ['maxAmount', catItem.maxAmount],
+            ['allocationPct', parseNum(catItem.allocationPct ?? catItem.allocationPercentage ?? catItem.allocationPercent)],
+            ['minLots', parseIntVal(catItem.minLots)],
+            ['maxLots', parseIntVal(catItem.maxLots)],
+            ['minShares', parseIntVal(catItem.minShares)],
+            ['maxShares', parseIntVal(catItem.maxShares)],
+            ['minAmount', parseNum(catItem.minAmount)],
+            ['maxAmount', parseNum(catItem.maxAmount)],
             ['isUpiEligible', catItem.isUpiEligible],
           ];
           for (const [k, v] of catFields) {
-            if (v !== undefined && v !== null && !this.isPlaceholderOrNil(v) && this.isFieldEmpty((existingCat as any)[k])) {
-              (catUpdates as any)[k] = v;
-              filledFields.push(`offerCategories.${catName}.${k}`);
+            if (v !== undefined && v !== null && !this.isPlaceholderOrNil(v) && isSelected(`offerCategories.${catName}.${k}`, `offerCategories.${catName}`)) {
+              const existingVal = (existingCat as any)[k];
+              const isEmpty = this.isFieldEmpty(existingVal);
+              const shouldUpdate = isEmpty || (overwriteExisting && !this.areValuesEqual(existingVal, v));
+              if (shouldUpdate) {
+                (catUpdates as any)[k] = v;
+                filledFields.push(`offerCategories.${catName}.${k}`);
+              }
             }
           }
           if (Object.keys(catUpdates).length > 0) {
@@ -5286,6 +5390,8 @@ export class AdminIpoService {
         if (!finItem) continue;
         const period = finItem.fiscalPeriod;
         const periodType = finItem.periodType;
+
+        if (!isSelected(`financials.${period}`, 'financials')) continue;
 
         const existingFin = existingFinancials.find(
           (f: any) =>
@@ -5327,9 +5433,14 @@ export class AdminIpoService {
             ['ebitdaMarginPercent', finItem.ebitdaMarginPercent],
           ];
           for (const [k, v] of finFields) {
-            if (v !== undefined && v !== null && !this.isPlaceholderOrNil(v) && this.isFieldEmpty((existingFin as any)[k])) {
-              (finUpdates as any)[k] = v;
-              filledFields.push(`financials.${period}.${k}`);
+            if (v !== undefined && v !== null && !this.isPlaceholderOrNil(v) && isSelected(`financials.${period}.${k}`, `financials.${period}`)) {
+              const existingVal = (existingFin as any)[k];
+              const isEmpty = this.isFieldEmpty(existingVal);
+              const shouldUpdate = isEmpty || (overwriteExisting && !this.areValuesEqual(existingVal, v));
+              if (shouldUpdate) {
+                (finUpdates as any)[k] = v;
+                filledFields.push(`financials.${period}.${k}`);
+              }
             }
           }
           if (Object.keys(finUpdates).length > 0) {
@@ -5388,7 +5499,7 @@ export class AdminIpoService {
     )?.trim?.();
 
     if (!existingReg) {
-      if (participantRegName && !this.isPlaceholderOrNil(participantRegName)) {
+      if (participantRegName && !this.isPlaceholderOrNil(participantRegName) && isSelected('participants.REGISTRAR', 'participants')) {
         await tx.ipoParticipant.create({
           data: {
             ipoId: currentIpo.id,
@@ -5404,28 +5515,28 @@ export class AdminIpoService {
       }
     } else {
       const regUpdates: any = {};
-      if (participantRegName && !this.isPlaceholderOrNil(participantRegName)) {
+      if (participantRegName && !this.isPlaceholderOrNil(participantRegName) && isSelected('participants.REGISTRAR.name', 'participants.REGISTRAR')) {
         const isEmpty = this.isFieldEmpty(existingReg.name);
         if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingReg.name, participantRegName))) {
           regUpdates.name = participantRegName;
           filledFields.push('participants.REGISTRAR.name');
         }
       }
-      if (participantRegPhone && !this.isPlaceholderOrNil(participantRegPhone)) {
+      if (participantRegPhone && !this.isPlaceholderOrNil(participantRegPhone) && isSelected('participants.REGISTRAR.phone', 'participants.REGISTRAR')) {
         const isEmpty = this.isFieldEmpty(existingReg.phone);
         if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingReg.phone, participantRegPhone))) {
           regUpdates.phone = participantRegPhone;
           filledFields.push('participants.REGISTRAR.phone');
         }
       }
-      if (participantRegEmail && !this.isPlaceholderOrNil(participantRegEmail)) {
+      if (participantRegEmail && !this.isPlaceholderOrNil(participantRegEmail) && isSelected('participants.REGISTRAR.email', 'participants.REGISTRAR')) {
         const isEmpty = this.isFieldEmpty(existingReg.email);
         if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingReg.email, participantRegEmail))) {
           regUpdates.email = participantRegEmail;
           filledFields.push('participants.REGISTRAR.email');
         }
       }
-      if (participantRegWebsite && !this.isPlaceholderOrNil(participantRegWebsite)) {
+      if (participantRegWebsite && !this.isPlaceholderOrNil(participantRegWebsite) && isSelected('participants.REGISTRAR.website', 'participants.REGISTRAR')) {
         const isEmpty = this.isFieldEmpty(existingReg.website);
         if (isEmpty || (overwriteExisting && !this.areValuesEqual(existingReg.website, participantRegWebsite))) {
           regUpdates.website = participantRegWebsite;
@@ -5460,7 +5571,7 @@ export class AdminIpoService {
 
     for (let i = 0; i < leadManagerNames.length; i++) {
       const lmName = leadManagerNames[i];
-      if (!this.isPlaceholderOrNil(lmName)) {
+      if (!this.isPlaceholderOrNil(lmName) && isSelected(`participants.BRLM.${lmName}`, 'participants')) {
         const existingLm = existingParticipants.find(
           (p: any) => p.role === ParticipantRole.BRLM && p.name.toLowerCase() === lmName.toLowerCase(),
         );
@@ -5506,6 +5617,8 @@ export class AdminIpoService {
       for (const rawAnc of incomingAnchorInvestors) {
         const anc = this.normalizeAnchorInvestorItem(rawAnc);
         if (!anc || !anc.anchorName) continue;
+        if (!isSelected(`anchorInvestors.${anc.anchorName}`, 'anchorInvestors')) continue;
+
         const ancName = anc.anchorName.trim().toLowerCase();
         const existingIdx = existingAnchorInvestors.findIndex(
           (a: any) => (a.anchorName || a.investorName || '').trim().toLowerCase() === ancName,
@@ -5606,7 +5719,8 @@ export class AdminIpoService {
     if (
       gmpAmountVal !== undefined &&
       gmpAmountVal !== null &&
-      !this.isPlaceholderOrNil(gmpAmountVal)
+      !this.isPlaceholderOrNil(gmpAmountVal) &&
+      isSelected('gmp.gmpAmount', 'gmp')
     ) {
       if (currentIpo.gmpObservations.length === 0) {
         await tx.gmpObservation.create({
@@ -5659,7 +5773,7 @@ export class AdminIpoService {
 
     // 12. Research Sources Safe Ingestion (Requirement 7)
     const rawResearchSources = norm.rawResearch?.sources || item?.research?.sources;
-    if (Array.isArray(rawResearchSources) && rawResearchSources.length > 0) {
+    if (Array.isArray(rawResearchSources) && rawResearchSources.length > 0 && isSelected('research.sources', 'research')) {
       const existingResearchDoc = (currentIpo.documents || []).find(
         (d: any) => d.documentType === DocumentType.OTHER && (d.fileName === 'Research Sources' || d.fileName === 'research_sources'),
       );
@@ -5717,9 +5831,6 @@ export class AdminIpoService {
         filledFields,
       );
     }
-
     return filledFields;
   }
 }
-
-

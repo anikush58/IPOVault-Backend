@@ -3096,4 +3096,530 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(mockPrisma.ipo.update).not.toHaveBeenCalled();
     });
   });
+
+  describe('Missing Data Filling & Granular Field Selection Regression Suite', () => {
+    it('1. identifies genuinely missing fields on first upload while marking existing populated fields unchanged', async () => {
+      const existingIpo: any = {
+        id: 'ipo-first-upload',
+        companyId: 'comp-first-upload',
+        symbol: 'GENUINE',
+        priceBandLow: 100,
+        priceBandHigh: 120,
+        lotSize: null, // missing
+        isin: null, // missing
+        publicationStatus: null, // missing
+        company: {
+          id: 'comp-first-upload',
+          legalName: 'Genuine Industries Limited',
+          displayName: 'Genuine Industries',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const incoming = {
+        companyName: 'Genuine Industries Limited',
+        symbol: 'GENUINE',
+        priceBandLow: 100, // same -> UNCHANGED
+        priceBandHigh: 120, // same -> UNCHANGED
+        lotSize: 50, // missing -> TO FILL
+        isin: 'INE123456012', // missing -> TO FILL
+        publicationStatus: 'PUBLISHED', // missing -> TO FILL
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(incoming, false);
+      expect(preview.matchedCount).toBe(1);
+      const fillFields = preview.items[0].fieldsToFill.map((f) => f.field);
+      expect(fillFields).toContain('lotSize');
+      expect(fillFields).toContain('isin');
+      expect(fillFields).toContain('publicationStatus');
+      expect(fillFields).not.toContain('symbol');
+      expect(fillFields).not.toContain('priceBandLow');
+      expect(fillFields).not.toContain('priceBandHigh');
+    });
+
+    it('2. removes completed fields from future missing-field lists after successful fill and save', async () => {
+      const initialIpo: any = {
+        id: 'ipo-fill-cycle',
+        companyId: 'comp-fill-cycle',
+        symbol: 'CYCLE',
+        lotSize: null,
+        publicationStatus: null,
+        company: {
+          id: 'comp-fill-cycle',
+          legalName: 'Cycle Technologies Limited',
+          displayName: 'Cycle Tech',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([initialIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(initialIpo);
+
+      const incoming = {
+        companyName: 'Cycle Technologies Limited',
+        symbol: 'CYCLE',
+        lotSize: 200,
+        publicationStatus: 'PUBLISHED',
+      };
+
+      // 1. Initial preview: 2 fields to fill
+      const preview1 = await adminIpoService.previewAddOnlyJsonImport(incoming, false);
+      expect(preview1.items[0].fieldsToFill.length).toBe(2);
+
+      // 2. Commit fill
+      mockPrisma.ipo.update.mockClear();
+      const commitResult = await adminIpoService.commitAddOnlyJsonImport({
+        payload: incoming,
+        overwriteExisting: false,
+      });
+      expect(commitResult.updatedCount).toBe(1);
+      expect(mockPrisma.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ipo-fill-cycle' },
+          data: expect.objectContaining({
+            lotSize: 200,
+            publicationStatus: 'PUBLISHED',
+          }),
+        }),
+      );
+
+      // 3. Now simulate updated DB state
+      const updatedIpo: any = {
+        ...initialIpo,
+        lotSize: 200,
+        publicationStatus: 'PUBLISHED',
+      };
+      mockPrisma.ipo.findMany.mockResolvedValue([updatedIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(updatedIpo);
+
+      // 4. Next preview must exclude previously filled fields
+      const preview2 = await adminIpoService.previewAddOnlyJsonImport(incoming, false);
+      expect(preview2.items[0].fieldsToFill.length).toBe(0);
+      const skippedFields = preview2.items[0].fieldsSkipped.map((s) => s.field);
+      expect(skippedFields).toContain('lotSize');
+      expect(skippedFields).toContain('publicationStatus');
+    });
+
+    it('3. does not show completed fields when re-uploading identical JSON', async () => {
+      const persistedIpo: any = {
+        id: 'ipo-repeat-upload',
+        companyId: 'comp-repeat-upload',
+        symbol: 'REPEAT',
+        lotSize: 100,
+        isin: 'INE999999999',
+        publicationStatus: 'PUBLISHED',
+        company: {
+          id: 'comp-repeat-upload',
+          legalName: 'Repeat Global Limited',
+          displayName: 'Repeat Global',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: { registrar: 'linkintime' },
+        offerCategories: [],
+        documents: [
+          {
+            id: 'doc-1',
+            documentType: 'ANCHOR_LIST',
+            sourceUrl: 'https://example.com/anchor.pdf',
+            fileName: 'Anchor List',
+            parsingStatus: 'PARSED',
+          },
+          {
+            id: 'doc-2',
+            documentType: 'OTHER',
+            sourceUrl: null,
+            fileName: 'Research Sources',
+            parsingStatus: 'PARSED',
+            extractionData: { sources: ['https://bseindia.com'] },
+          },
+        ],
+        participants: [
+          {
+            id: 'part-1',
+            role: 'REGISTRAR',
+            name: 'linkintime',
+          },
+        ],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([persistedIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(persistedIpo);
+
+      const identicalPayload = {
+        companyName: 'Repeat Global Limited',
+        symbol: 'REPEAT',
+        lotSize: 100,
+        isin: 'INE999999999',
+        publicationStatus: 'PUBLISHED',
+        registrar: 'linkintime',
+        anchorListUrl: 'https://example.com/anchor.pdf',
+        researchSources: ['https://bseindia.com'],
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(identicalPayload, false);
+      expect(preview.fieldsToFillTotal).toBe(0);
+      expect(preview.items[0].fieldsToFill.length).toBe(0);
+
+      mockPrisma.ipo.update.mockClear();
+      const commitResult = await adminIpoService.commitAddOnlyJsonImport({
+        payload: identicalPayload,
+        overwriteExisting: false,
+      });
+      expect(commitResult.skippedCount).toBe(1);
+      expect(commitResult.updatedCount).toBe(0);
+      expect(mockPrisma.ipo.update).not.toHaveBeenCalled();
+    });
+
+    it('4. does not fill or overwrite deselected fields when selectedFields is specified', async () => {
+      const existingIpo: any = {
+        id: 'ipo-deselect-test',
+        companyId: 'comp-deselect-test',
+        symbol: 'DESELECT',
+        lotSize: null,
+        isin: null,
+        bseScriptCode: null,
+        company: {
+          id: 'comp-deselect-test',
+          legalName: 'Deselect Corp Limited',
+          displayName: 'Deselect Corp',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const incoming = {
+        companyName: 'Deselect Corp Limited',
+        symbol: 'DESELECT',
+        lotSize: 75,
+        isin: 'INE000000111',
+        bseScriptCode: '540001',
+      };
+
+      mockPrisma.ipo.update.mockClear();
+      // User only selects isin and lotSize; bseScriptCode is deselected
+      const commitResult = await adminIpoService.commitAddOnlyJsonImport({
+        payload: incoming,
+        overwriteExisting: false,
+        selectedFields: {
+          'ipo-deselect-test': ['ipo.isin', 'ipo.lotSize'],
+        },
+      });
+
+      expect(commitResult.updatedCount).toBe(1);
+      expect(mockPrisma.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ipo-deselect-test' },
+          data: expect.objectContaining({
+            lotSize: 75,
+            isin: 'INE000000111',
+          }),
+        }),
+      );
+      // Verify bseScriptCode was NOT included in update payload
+      const updateCallData = mockPrisma.ipo.update.mock.calls[0][0].data;
+      expect(updateCallData.bseScriptCode).toBeUndefined();
+    });
+
+    it('5. fills and persists only selected fields while leaving unselected fields unchanged', async () => {
+      const existingIpo: any = {
+        id: 'ipo-selected-only',
+        companyId: 'comp-selected-only',
+        symbol: 'SELONLY',
+        lotSize: null,
+        freshIssueSize: null,
+        offerForSaleSize: null,
+        company: {
+          id: 'comp-selected-only',
+          legalName: 'Selected Only Limited',
+          displayName: 'Selected Only',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const incoming = {
+        companyName: 'Selected Only Limited',
+        symbol: 'SELONLY',
+        lotSize: 50,
+        freshIssueSize: 100,
+        offerForSaleSize: 50,
+      };
+
+      mockPrisma.ipo.update.mockClear();
+      // Select only freshIssueSize
+      await adminIpoService.commitAddOnlyJsonImport({
+        payload: incoming,
+        overwriteExisting: false,
+        selectedFields: ['ipo.freshIssueSize'],
+      });
+
+      expect(mockPrisma.ipo.update).toHaveBeenCalledTimes(1);
+      const updateData = mockPrisma.ipo.update.mock.calls[0][0].data;
+      expect(updateData.freshIssueSize).toEqual(100);
+      expect(updateData.lotSize).toBeUndefined();
+      expect(updateData.offerForSaleSize).toBeUndefined();
+    });
+
+    it('6. strictly treats 0 and false as populated values and does not flag them as missing', async () => {
+      const existingIpo: any = {
+        id: 'ipo-zero-false',
+        companyId: 'comp-zero-false',
+        symbol: 'ZEROFALSE',
+        freshIssueSize: 0,
+        retailQuotaDiscount: 0,
+        preIpoEps: 0,
+        company: {
+          id: 'comp-zero-false',
+          legalName: 'Zero False Limited',
+          displayName: 'Zero False',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [{ gmpAmount: 0 }],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      const incoming = {
+        companyName: 'Zero False Limited',
+        symbol: 'ZEROFALSE',
+        freshIssueSize: 500, // Conflict, existing is 0 (valid)
+        retailQuotaDiscount: 10, // Conflict, existing is 0 (valid)
+        gmpAmount: 25, // Conflict, existing is 0 (valid)
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(incoming, false);
+      // 0 values must be recognized as existing, not missing!
+      expect(preview.fieldsToFillTotal).toBe(0);
+      expect(preview.items[0].fieldsToFill.length).toBe(0);
+      const conflicts = preview.items[0].fieldsSkipped.filter((s) => s.status === 'CONFLICT');
+      expect(conflicts.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('7. follows schema rules: empty arrays and objects are treated as missing, while incoming null/empty values never overwrite', async () => {
+      const existingIpo: any = {
+        id: 'ipo-schema-rules',
+        companyId: 'comp-schema-rules',
+        symbol: 'SCHEMARULES',
+        lotSize: 100,
+        priceBandHigh: 200,
+        company: {
+          id: 'comp-schema-rules',
+          legalName: 'Schema Rules Limited',
+          displayName: 'Schema Rules',
+          financials: [], // empty array -> treated as missing
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      // Incoming provides empty string, null, and 'N/A' alongside valid financials
+      const incoming = {
+        companyName: 'Schema Rules Limited',
+        symbol: '', // empty string -> ignored
+        lotSize: null, // null -> ignored
+        priceBandHigh: 'N/A', // placeholder -> ignored
+        financials: [
+          {
+            fiscalPeriod: 'FY25',
+            periodType: 'ANNUAL',
+            revenue: 1000,
+            pat: 150,
+          },
+        ],
+      };
+
+      const preview = await adminIpoService.previewAddOnlyJsonImport(incoming, false);
+      // Only the missing financial period should be marked to fill; empty/null/N/A must be ignored
+      const fillFields = preview.items[0].fieldsToFill.map((f) => f.field);
+      const fillKeys = preview.items[0].fieldsToFill.map((f) => f.key);
+      expect(fillFields).toContain('FY25 (ANNUAL) (NEW PERIOD)');
+      expect(fillKeys).toContain('financials.FY25');
+      expect(fillFields).not.toContain('symbol');
+      expect(fillFields).not.toContain('lotSize');
+      expect(fillFields).not.toContain('priceBandHigh');
+    });
+
+    it('8. handles partial failures and retry without losing completed work', async () => {
+      const ipoA: any = {
+        id: 'ipo-batch-a',
+        companyId: 'comp-batch-a',
+        symbol: 'BATCHA',
+        lotSize: null,
+        company: {
+          id: 'comp-batch-a',
+          legalName: 'Batch A Limited',
+          displayName: 'Batch A',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      const ipoB: any = {
+        id: 'ipo-batch-b',
+        companyId: 'comp-batch-b',
+        symbol: 'BATCHB',
+        lotSize: null,
+        company: {
+          id: 'comp-batch-b',
+          legalName: 'Batch B Limited',
+          displayName: 'Batch B',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([ipoA, ipoB]);
+
+      // Setup findUniqueOrThrow to return the appropriate IPO
+      mockPrisma.ipo.findUniqueOrThrow.mockImplementation(async ({ where }: any) => {
+        if (where?.id === 'ipo-batch-a') return ipoA;
+        if (where?.id === 'ipo-batch-b') return ipoB;
+        return null;
+      });
+
+      const batchPayload = [
+        { companyName: 'Batch A Limited', symbol: 'BATCHA', lotSize: 50 },
+        { companyName: 'Batch B Limited', symbol: 'BATCHB', lotSize: 100 },
+      ];
+
+      // Simulate transaction update failure for IPO B only
+      mockPrisma.ipo.update.mockImplementation(async ({ where }: any) => {
+        if (where?.id === 'ipo-batch-b') {
+          throw new Error('Simulated database write error on IPO B');
+        }
+        return { id: where?.id };
+      });
+
+      const commitResult1 = await adminIpoService.commitAddOnlyJsonImport({
+        payload: batchPayload,
+        overwriteExisting: false,
+      });
+
+      expect(commitResult1.updatedCount).toBe(1);
+      expect(commitResult1.failedCount).toBe(1);
+      expect(commitResult1.items.find((i) => i.ipoId === 'ipo-batch-a')?.status).toBe('UPDATED');
+      expect(commitResult1.items.find((i) => i.ipoId === 'ipo-batch-b')?.status).toBe('FAILED');
+
+      // Now simulate retry: IPO A is already updated in DB (lotSize=50), IPO B is retried and succeeds
+      const ipoAUpdated = { ...ipoA, lotSize: 50 };
+      mockPrisma.ipo.findMany.mockResolvedValue([ipoAUpdated, ipoB]);
+      mockPrisma.ipo.findUniqueOrThrow.mockImplementation(async ({ where }: any) => {
+        if (where?.id === 'ipo-batch-a') return ipoAUpdated;
+        if (where?.id === 'ipo-batch-b') return ipoB;
+        return null;
+      });
+      mockPrisma.ipo.update.mockImplementation(async ({ where }: any) => ({ id: where?.id }));
+
+      const commitResult2 = await adminIpoService.commitAddOnlyJsonImport({
+        payload: batchPayload,
+        overwriteExisting: false,
+      });
+
+      // IPO A is safely skipped without losing completed work; IPO B is updated
+      expect(commitResult2.skippedCount).toBe(1);
+      expect(commitResult2.updatedCount).toBe(1);
+      expect(commitResult2.failedCount).toBe(0);
+    });
+
+    it('9. preserves existing records and unrelated fields during repeat uploads', async () => {
+      const existingIpo: any = {
+        id: 'ipo-unrelated',
+        companyId: 'comp-unrelated',
+        symbol: 'UNRELATED',
+        lotSize: 100,
+        priceBandLow: 500,
+        priceBandHigh: 550,
+        leadManagers: ['Kotak Mahindra Capital', 'Axis Capital'],
+        company: {
+          id: 'comp-unrelated',
+          legalName: 'Unrelated Assets Limited',
+          displayName: 'Unrelated Assets',
+          financials: [],
+        },
+        lifecycleEvents: [],
+        allotmentConfig: null,
+        offerCategories: [],
+        documents: [],
+        participants: [],
+        gmpObservations: [],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+      mockPrisma.ipo.findUniqueOrThrow.mockResolvedValue(existingIpo);
+
+      // Incoming upload only matches by CIN or Name but has unrelated fields
+      const incomingUnmatched = {
+        companyName: 'Totally Different Nonexistent Company Limited',
+        symbol: 'NONEXISTENT',
+        lotSize: 200,
+      };
+
+      mockPrisma.ipo.update.mockClear();
+      const commitResult = await adminIpoService.commitAddOnlyJsonImport({
+        payload: incomingUnmatched,
+        overwriteExisting: false,
+      });
+
+      expect(commitResult.skippedCount).toBe(1);
+      expect(commitResult.updatedCount).toBe(0);
+      expect(mockPrisma.ipo.update).not.toHaveBeenCalled();
+    });
+  });
 });
+

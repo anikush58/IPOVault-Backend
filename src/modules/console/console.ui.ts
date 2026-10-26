@@ -3139,6 +3139,17 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               </div>
             </div>
 
+            <!-- Global Field Selection Toolbar -->
+            <div id="json-preview-selection-toolbar" style="display:none; padding:8px 20px; background:var(--bg-hover); border-bottom:1px solid var(--border-color); align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+              <div style="font-size:12px; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+                <span>Selected Fields to Fill: <strong id="json-preview-selected-fields-count" style="color:#10B981;">0</strong> / <strong id="json-preview-total-fields-count">0</strong></span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <button type="button" onclick="toggleAllJsonFields(true)" style="background:var(--bg-surface); border:1px solid var(--border-color); color:var(--text-main); padding:3px 10px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer;">Select All</button>
+                <button type="button" onclick="toggleAllJsonFields(false)" style="background:var(--bg-surface); border:1px solid var(--border-color); color:var(--text-muted); padding:3px 10px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer;">Deselect All</button>
+              </div>
+            </div>
+
             <!-- Preview List Body -->
             <div id="json-preview-list" style="padding:16px 20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:12px; max-height:calc(88vh - 210px);">
               <!-- Populated dynamically via JS -->
@@ -7082,6 +7093,70 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       return handleJsonDetailFileSelect(evt);
     }
 
+    function handleJsonFieldCheckboxChange(changedEl) {
+      if (changedEl && changedEl.closest) {
+        const label = changedEl.closest('.json-field-label');
+        if (label) {
+          label.style.opacity = changedEl.checked ? '1' : '0.45';
+        }
+      }
+
+      const allCheckboxes = document.querySelectorAll('.json-field-checkbox');
+      const checkedBoxes = document.querySelectorAll('.json-field-checkbox:checked');
+      const totalChecked = checkedBoxes.length;
+      const totalAvailable = allCheckboxes.length;
+
+      const selCountEl = document.getElementById('json-preview-selected-fields-count');
+      if (selCountEl) selCountEl.textContent = totalChecked;
+
+      const totalFieldsEl = document.getElementById('json-preview-total-fields-count');
+      if (totalFieldsEl) totalFieldsEl.textContent = totalAvailable;
+
+      const btnConfirm = document.getElementById('btn-confirm-json-import');
+      const btnText = document.getElementById('btn-confirm-json-text');
+      const isOverwrite = window._isOverwriteMode === true;
+
+      if (totalChecked === 0 && totalAvailable > 0) {
+        if (btnConfirm) btnConfirm.disabled = true;
+        if (btnText) btnText.textContent = 'No Fields Selected';
+      } else {
+        if (isOverwrite) {
+          const overwritesCheckbox = document.getElementById('json-overwrite-confirm-checkbox');
+          const overwritesTotal = window._pendingPreviewData?.fieldsToOverwriteTotal || 0;
+          if (overwritesTotal > 0 && (!overwritesCheckbox || !overwritesCheckbox.checked)) {
+            if (btnConfirm) btnConfirm.disabled = true;
+          } else {
+            if (btnConfirm) btnConfirm.disabled = false;
+          }
+          if (btnText) btnText.textContent = 'Confirm & Apply ' + totalChecked + ' Selected Change(s)';
+        } else {
+          if (btnConfirm) btnConfirm.disabled = false;
+          if (btnText) btnText.textContent = 'Confirm & Populate ' + totalChecked + ' Selected Field(s)';
+        }
+      }
+    }
+    window.handleJsonFieldCheckboxChange = handleJsonFieldCheckboxChange;
+
+    function toggleAllJsonFields(checked) {
+      document.querySelectorAll('.json-field-checkbox').forEach(function(cb) {
+        cb.checked = checked;
+        const label = cb.closest('.json-field-label');
+        if (label) label.style.opacity = checked ? '1' : '0.45';
+      });
+      handleJsonFieldCheckboxChange();
+    }
+    window.toggleAllJsonFields = toggleAllJsonFields;
+
+    function toggleIpoFields(ipoId, checked) {
+      document.querySelectorAll('.json-field-checkbox[data-ipo-id="' + ipoId + '"]').forEach(function(cb) {
+        cb.checked = checked;
+        const label = cb.closest('.json-field-label');
+        if (label) label.style.opacity = checked ? '1' : '0.45';
+      });
+      handleJsonFieldCheckboxChange();
+    }
+    window.toggleIpoFields = toggleIpoFields;
+
     function renderJsonImportPreview(data) {
       document.getElementById('json-preview-total').textContent = data.totalRecords || 0;
       document.getElementById('json-preview-matched').textContent = data.matchedCount || 0;
@@ -7096,33 +7171,14 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       const conflictsEl = document.getElementById('json-preview-conflicts-count');
       if (conflictsEl) conflictsEl.textContent = totalConflicts;
 
-      const btnConfirm = document.getElementById('btn-confirm-json-import');
-      const btnText = document.getElementById('btn-confirm-json-text');
-      const confirmContainer = document.getElementById('json-overwrite-confirm-container');
-      const confirmCheckbox = document.getElementById('json-overwrite-confirm-checkbox');
-
       const isOverwrite = window._isOverwriteMode === true;
       const overwritesTotal = data.fieldsToOverwriteTotal || 0;
       const fillsTotal = data.fieldsToFillTotal || 0;
       const totalChanges = overwritesTotal + fillsTotal;
 
-      if (isOverwrite && overwritesTotal > 0) {
-        if (confirmContainer) confirmContainer.style.display = 'inline-flex';
-        if (confirmCheckbox) confirmCheckbox.checked = false;
-        if (btnConfirm) btnConfirm.disabled = true;
-        if (btnText) btnText.textContent = 'Confirm & Overwrite ' + overwritesTotal + ' Field(s)' + (fillsTotal > 0 ? ' & Fill ' + fillsTotal + ' Field(s)' : '');
-      } else {
-        if (confirmContainer) confirmContainer.style.display = 'none';
-        if (confirmCheckbox) confirmCheckbox.checked = false;
-        if (totalChanges === 0) {
-          if (btnConfirm) btnConfirm.disabled = true;
-          if (btnText) btnText.textContent = 'No Changes to Apply';
-        } else {
-          if (btnConfirm) btnConfirm.disabled = false;
-          if (btnText) btnText.textContent = isOverwrite
-            ? 'Confirm & Apply ' + totalChanges + ' Change(s)'
-            : 'Confirm & Populate ' + fillsTotal + ' Empty Field(s)';
-        }
+      const toolbar = document.getElementById('json-preview-selection-toolbar');
+      if (toolbar) {
+        toolbar.style.display = totalChanges > 0 ? 'flex' : 'none';
       }
 
       const listContainer = document.getElementById('json-preview-list');
@@ -7133,7 +7189,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         return;
       }
 
-      listContainer.innerHTML = data.items.map(function(item) {
+      listContainer.innerHTML = data.items.map(function(item, itemIdx) {
         let statusBadge = '';
         let borderColor = 'var(--border-color)';
         if (item.matchStatus === 'MATCHED') {
@@ -7147,20 +7203,45 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           borderColor = 'rgba(245,158,11,0.3)';
         }
 
+        const ipoIdVal = item.targetIpoId || item.inputIpoId || String(itemIdx);
+
         let toFillHtml = '';
         if (item.fieldsToFill && item.fieldsToFill.length > 0) {
           const chips = item.fieldsToFill.map(function(f) {
             const valStr = typeof f.newValue === 'object' ? JSON.stringify(f.newValue) : escapeHtml(f.newValue);
-            if (f.status === 'OVERWRITTEN') {
+            const fieldKey = f.key || (f.section ? f.section + '.' + f.field : f.field);
+            const isOvr = f.status === 'OVERWRITTEN';
+            const bg = isOvr ? 'rgba(236,72,153,0.1)' : 'rgba(16,185,129,0.1)';
+            const border = isOvr ? 'rgba(236,72,153,0.3)' : 'rgba(16,185,129,0.25)';
+
+            let content = '';
+            if (isOvr) {
               const oldStr = typeof f.oldValue === 'object' ? JSON.stringify(f.oldValue) : escapeHtml(f.oldValue);
-              return '<span style="font-size:11px; padding:3px 8px; border-radius:6px; background:rgba(236,72,153,0.1); border:1px solid rgba(236,72,153,0.3); color:var(--text-main);"><strong>' + escapeHtml(f.field) + '</strong>: <span style="text-decoration:line-through; color:#EF4444;">' + oldStr + '</span> &rarr; <span style="color:#10B981; font-weight:700;">' + valStr + '</span></span>';
+              content = '<strong>' + escapeHtml(f.field) + '</strong>: <span style="text-decoration:line-through; color:#EF4444;">' + oldStr + '</span> &rarr; <span style="color:#10B981; font-weight:700;">' + valStr + '</span>';
+            } else {
+              content = '<strong>' + escapeHtml(f.field) + '</strong>: <span style="color:#10B981;">' + valStr + '</span>';
             }
-            return '<span style="font-size:11px; padding:3px 8px; border-radius:6px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.25); color:var(--text-main);"><strong>' + escapeHtml(f.field) + '</strong>: <span style="color:#10B981;">' + valStr + '</span></span>';
+
+            return '<label class="json-field-label" style="display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 9px; border-radius:6px; background:' + bg + '; border:1px solid ' + border + '; color:var(--text-main); cursor:pointer; user-select:none; transition:opacity 0.15s ease;">'
+              + '<input type="checkbox" class="json-field-checkbox" data-ipo-id="' + escapeHtml(ipoIdVal) + '" data-field-key="' + escapeHtml(fieldKey) + '" checked onchange="handleJsonFieldCheckboxChange(this)" style="cursor:pointer; accent-color:#10B981; width:13px; height:13px; margin:0;" />'
+              + '<span>' + content + '</span>'
+              + '</label>';
           }).join('');
+
           const fillTitle = isOverwrite
             ? 'FIELDS TO UPDATE (' + item.fieldsToFill.length + '):'
             : 'FIELDS TO BE POPULATED (' + item.fieldsToFill.length + '):';
-          toFillHtml = '<div style="margin-top:8px;"><div style="font-size:11px; font-weight:700; color:#10B981; margin-bottom:4px;">' + fillTitle + '</div><div style="display:flex; flex-wrap:wrap; gap:6px;">' + chips + '</div></div>';
+
+          toFillHtml = '<div style="margin-top:8px;">'
+            + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">'
+            + '<div style="font-size:11px; font-weight:700; color:' + (isOverwrite ? '#EC4899' : '#10B981') + ';">' + fillTitle + '</div>'
+            + '<div style="display:flex; gap:6px;">'
+            + '<button type="button" onclick="toggleIpoFields(\\'' + escapeHtml(ipoIdVal) + '\\', true)" style="background:transparent; border:1px solid var(--border-color); color:var(--text-muted); padding:1px 6px; border-radius:4px; font-size:10px; cursor:pointer;">Select All</button>'
+            + '<button type="button" onclick="toggleIpoFields(\\'' + escapeHtml(ipoIdVal) + '\\', false)" style="background:transparent; border:1px solid var(--border-color); color:var(--text-muted); padding:1px 6px; border-radius:4px; font-size:10px; cursor:pointer;">Deselect All</button>'
+            + '</div>'
+            + '</div>'
+            + '<div style="display:flex; flex-wrap:wrap; gap:6px;">' + chips + '</div>'
+            + '</div>';
         } else if (item.matchStatus === 'MATCHED') {
           toFillHtml = '<div style="margin-top:6px; font-size:12px; color:var(--text-muted); font-style:italic;">No changes to apply for this IPO.</div>';
         }
@@ -7194,6 +7275,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           + skippedHtml
           + '</div>';
       }).join('');
+
+      handleJsonFieldCheckboxChange();
     }
 
     async function commitAddOnlyJsonImport() {
@@ -7212,6 +7295,29 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
       }
 
+      // Collect selected fields per target IPO ID
+      const selectedFields = {};
+      let totalSelected = 0;
+      const allCheckboxes = document.querySelectorAll('.json-field-checkbox');
+      if (allCheckboxes.length > 0) {
+        allCheckboxes.forEach(function(cb) {
+          if (cb.checked) {
+            totalSelected++;
+            const ipoId = cb.getAttribute('data-ipo-id');
+            const fieldKey = cb.getAttribute('data-field-key');
+            if (ipoId && fieldKey) {
+              if (!selectedFields[ipoId]) selectedFields[ipoId] = [];
+              selectedFields[ipoId].push(fieldKey);
+            }
+          }
+        });
+
+        if (totalSelected === 0) {
+          alert('Please select at least one field to fill.');
+          return;
+        }
+      }
+
       const btnConfirm = document.getElementById('btn-confirm-json-import');
       const btnText = document.getElementById('btn-confirm-json-text');
       if (btnConfirm) btnConfirm.disabled = true;
@@ -7226,6 +7332,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           body: JSON.stringify({
             payload: window._pendingJsonPayload,
             overwriteExisting: isOverwrite,
+            selectedFields: allCheckboxes.length > 0 ? selectedFields : undefined,
           })
         });
 
@@ -7247,6 +7354,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const result = body.data || body;
         const modeTitle = isOverwrite ? 'Authoritative Overwrite Import' : 'Add-Only Import';
         alert(modeTitle + ' Complete!\\n\\nUpdated: ' + (result.updatedCount || 0) + ' IPOs\\nSkipped (No changes / Unmatched): ' + (result.skippedCount || 0) + '\\nFailed: ' + (result.failedCount || 0));
+
         closeJsonImportModal();
         if (targetDetailIpoId) {
           await editManualIpo(targetDetailIpoId);

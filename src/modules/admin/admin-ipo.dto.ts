@@ -629,6 +629,7 @@ export type FieldReportStatus =
 export interface FieldDiffToFill {
   field: string;
   section: string;
+  key?: string;
   oldValue?: any;
   newValue: any;
   status?: FieldReportStatus;
@@ -713,6 +714,7 @@ export class JsonImportCommitDto {
   items?: ImportAdminIpoJsonDto[];
   payload?: any;
   selectedIpoIds?: string[];
+  selectedFields?: Record<string, string[]> | string[];
   overwriteExisting?: boolean;
 }
 
