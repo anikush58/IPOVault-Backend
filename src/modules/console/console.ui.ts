@@ -652,11 +652,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       font-size: 13px;
     }
 
-    /* Segmented Actions Icon Group (Table: 170px for 4 icons, Form: 212px for 5 icons) */
+    /* Segmented Actions Icon Group (Table: 212px for 5 icons, Form: 212px for 5 icons) */
     .table-action-group {
       display: inline-flex;
       align-items: center;
-      width: 170px;
+      width: 212px;
       height: 36px;
       background: #FFFFFF;
       border: 1px solid #E2E8F0;
@@ -1563,6 +1563,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                 <span>Import IPO JSONs</span>
               </button>
               <input type="file" id="bulk-json-files-input" accept=".json,application/json" multiple onchange="handleBulkJsonFilesSelect(event)" style="display:none;" />
+              <input type="file" id="json-row-file-input" accept=".json,application/json" onchange="handleJsonDetailFileSelect(event)" style="display:none;" />
               <button class="btn-secondary" onclick="openBackfillProvenanceModal('ALL')" style="border-color:#F59E0B; color:#D97706; font-size:13px; font-weight:600;" title="Backfill missing IPOGuru provenance across all eligible IPOs"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:4px;"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><span>Backfill IPOGuru Provenance</span></button>
             </div>
             <div class="manual-toolbar-filters" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
@@ -4915,9 +4916,27 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
     }
 
+    function rowUploadJson(id, event) {
+      if (event) event.stopPropagation();
+      window._pendingRowTargetIpoId = id;
+      window._pendingDetailIpoId = id;
+      const input = document.getElementById('json-row-file-input') || document.getElementById('json-detail-file-input');
+      if (input) {
+        input.value = '';
+        input.click();
+      }
+    }
+
     function renderTableRowActionIcons(id) {
       return \`
         <div class="table-action-group" onclick="event.stopPropagation()">
+          <button type="button" class="table-action-btn" title="Upload JSON" onclick="rowUploadJson('\${id}', event)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </button>
           <button type="button" class="table-action-btn" title="Publish" onclick="rowPublishManualIpo('\${id}', event)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9F4AFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
@@ -6973,6 +6992,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       window._pendingJsonPayload = null;
       window._pendingPreviewData = null;
       window._pendingDetailIpoId = null;
+      window._pendingRowTargetIpoId = null;
       window._isOverwriteMode = false;
       const cb = document.getElementById('json-overwrite-confirm-checkbox');
       if (cb) cb.checked = false;
@@ -7069,7 +7089,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
     function handleJsonDetailFileSelect(evt) {
       const file = evt.target.files[0];
       if (!file) return;
-      const currentIpoId = document.getElementById('form-ipo-id')?.value;
+      const currentIpoId = window._pendingRowTargetIpoId || document.getElementById('form-ipo-id')?.value;
 
       const reader = new FileReader();
       reader.onload = async (e) => {
@@ -7081,16 +7101,22 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             jsonPayload = jsonPayload.data;
           }
 
-          // If triggered inside IPO Details with an active IPO ID, bind target IPO ID if not explicitly specified
+          // If triggered inside IPO Details or from table row with an active IPO ID, bind target IPO ID if not explicitly specified
           if (currentIpoId) {
             window._pendingDetailIpoId = currentIpoId;
             if (Array.isArray(jsonPayload)) {
-              if (jsonPayload.length === 1 && !jsonPayload[0].id && !jsonPayload[0].ipoId && !jsonPayload[0].targetIpoId) {
-                jsonPayload[0].id = currentIpoId;
+              if (jsonPayload.length === 1) {
+                if (!jsonPayload[0].id && !jsonPayload[0].ipoId && !jsonPayload[0].targetIpoId) {
+                  jsonPayload[0].id = currentIpoId;
+                } else if (window._pendingRowTargetIpoId) {
+                  jsonPayload[0].targetIpoId = currentIpoId;
+                }
               }
             } else if (typeof jsonPayload === 'object' && jsonPayload !== null) {
               if (!jsonPayload.id && !jsonPayload.ipoId && !jsonPayload.targetIpoId) {
                 jsonPayload.id = currentIpoId;
+              } else if (window._pendingRowTargetIpoId) {
+                jsonPayload.targetIpoId = currentIpoId;
               }
             }
           } else {
@@ -7405,11 +7431,13 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         const modeTitle = isOverwrite ? 'Authoritative Overwrite Import' : 'Add-Only Import';
         alert(modeTitle + ' Complete!\\n\\nUpdated: ' + (result.updatedCount || 0) + ' IPOs\\nSkipped (No changes / Unmatched): ' + (result.skippedCount || 0) + '\\nFailed: ' + (result.failedCount || 0));
 
+        const wasInEditTab = document.getElementById('tab-manual-edit')?.style.display !== 'none';
         closeJsonImportModal();
-        if (targetDetailIpoId) {
+        if (targetDetailIpoId && wasInEditTab) {
           await editManualIpo(targetDetailIpoId);
         }
         fetchManualIpos();
+        fetchRecentDashboardIpos();
       } catch (err) {
         alert('Import failed:\\n' + formatApiError(err));
       } finally {
