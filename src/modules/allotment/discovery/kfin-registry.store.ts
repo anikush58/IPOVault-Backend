@@ -102,10 +102,17 @@ export class KfinRegistryStore {
         process.env.KFINTECH_MACHINE_READABLE_SOURCE_URL ||
         undefined,
       minItemsThreshold:
-        customConfig?.minItemsThreshold ||
-        Number(process.env.KFIN_REGISTRY_MIN_ITEMS) ||
-        (process.env.NODE_ENV === 'test' ? 1 : 20),
-      maxShrinkRatio: customConfig?.maxShrinkRatio || 0.5,
+        customConfig?.minItemsThreshold !== undefined
+          ? customConfig.minItemsThreshold
+          : (process.env.KFIN_REGISTRY_MIN_ITEMS !== undefined
+              ? Number(process.env.KFIN_REGISTRY_MIN_ITEMS)
+              : 1),
+      maxShrinkRatio:
+        customConfig?.maxShrinkRatio !== undefined
+          ? customConfig.maxShrinkRatio
+          : (process.env.KFIN_REGISTRY_MAX_SHRINK_RATIO !== undefined
+              ? Number(process.env.KFIN_REGISTRY_MAX_SHRINK_RATIO)
+              : 0),
     };
 
     // Attempt to hydrate in-memory state immediately from persistent storage
@@ -283,7 +290,11 @@ export class KfinRegistryStore {
     }
 
     // Anti-shrink protection: prevent partial/truncated updates
-    if (previousCount > 0 && process.env.NODE_ENV !== 'test') {
+    if (
+      this.config.maxShrinkRatio > 0 &&
+      previousCount > 0 &&
+      process.env.NODE_ENV !== 'test'
+    ) {
       const minAcceptableAfterShrink = Math.floor(
         previousCount * this.config.maxShrinkRatio,
       );
