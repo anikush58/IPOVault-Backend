@@ -73,6 +73,23 @@ export interface CheckAllotmentRequest {
   companyName?: string;
   companyLegalName?: string;
   symbol?: string;
+  category?: string;
+  applicationNumber?: string;
+}
+
+/**
+ * Category-level allotment breakdown for an applicant.
+ */
+export interface CategoryAllotmentResult {
+  category?: string;
+  rawCategory?: string;
+  status: AllotmentStatus;
+  sharesApplied?: number;
+  sharesAllotted: number;
+  allotmentPrice?: number;
+  amountApplied?: number;
+  amountRefunded?: number;
+  applicationNumber?: string;
 }
 
 /**
@@ -92,6 +109,7 @@ export interface NormalizedAllotmentResult {
   rawResponseRef?: string;
   errorMessage?: string;
   captchaChallenge?: CaptchaChallenge;
+  categoryResults?: CategoryAllotmentResult[];
 }
 
 /**

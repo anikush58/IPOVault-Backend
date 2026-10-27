@@ -50,6 +50,18 @@ export type CreateAllotmentJobBodyDto = z.infer<
   typeof createAllotmentJobBodySchema
 >;
 
+export interface CategoryAllotmentResultDto {
+  category?: string;
+  rawCategory?: string;
+  status: AllotmentStatus;
+  sharesApplied?: number;
+  sharesAllotted: number;
+  allotmentPrice?: number;
+  amountApplied?: number;
+  amountRefunded?: number;
+  applicationNumber?: string;
+}
+
 export interface AllotmentCheckResponseDto {
   status: AllotmentStatus;
   sharesApplied?: number;
@@ -63,6 +75,7 @@ export interface AllotmentCheckResponseDto {
   checkedAt: string;
   errorMessage?: string;
   captchaChallenge?: CaptchaChallenge;
+  categoryResults?: CategoryAllotmentResultDto[];
 }
 
 export interface AllotmentJobItemResponseDto {
@@ -73,6 +86,7 @@ export interface AllotmentJobItemResponseDto {
   sharesAllotted?: number | null;
   errorMessage?: string | null;
   checkedAt?: Date | null;
+  categoryResults?: CategoryAllotmentResultDto[];
 }
 
 export interface AllotmentJobResponseDto {

@@ -98,6 +98,7 @@ export class AllotmentController {
       checkedAt: result.checkedAt.toISOString(),
       errorMessage: result.errorMessage,
       captchaChallenge: result.captchaChallenge,
+      categoryResults: result.categoryResults,
     };
   }
 

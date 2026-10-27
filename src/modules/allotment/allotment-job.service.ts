@@ -215,15 +215,34 @@ export class AllotmentJobService {
       progressMessage,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
-      items: job.items.map((item) => ({
-        id: item.id,
-        maskedId: item.maskedId,
-        status: item.status,
-        sharesApplied: item.sharesApplied,
-        sharesAllotted: item.sharesAllotted,
-        errorMessage: item.errorMessage,
-        checkedAt: item.checkedAt,
-      })),
+      items: job.items.map((item) => {
+        let categoryResults = (item as any).categoryResults;
+        let cleanErrorMessage = item.errorMessage;
+
+        if (
+          !categoryResults &&
+          cleanErrorMessage &&
+          cleanErrorMessage.startsWith('CAT_RESULTS:')
+        ) {
+          try {
+            categoryResults = JSON.parse(cleanErrorMessage.slice(12));
+            cleanErrorMessage = null;
+          } catch {
+            // Keep cleanErrorMessage unchanged on parse error
+          }
+        }
+
+        return {
+          id: item.id,
+          maskedId: item.maskedId,
+          status: item.status,
+          sharesApplied: item.sharesApplied,
+          sharesAllotted: item.sharesAllotted,
+          errorMessage: cleanErrorMessage,
+          checkedAt: item.checkedAt,
+          categoryResults: categoryResults || undefined,
+        };
+      }),
     };
   }
 
@@ -380,6 +399,15 @@ export class AllotmentJobService {
                   result.status as keyof typeof AllotmentResultStatus
                 ] || AllotmentResultStatus.UNKNOWN) as AllotmentResultStatus;
 
+                let storedErrorMessage = result.errorMessage ?? null;
+                if (
+                  !storedErrorMessage &&
+                  result.categoryResults &&
+                  result.categoryResults.length > 0
+                ) {
+                  storedErrorMessage = `CAT_RESULTS:${JSON.stringify(result.categoryResults)}`;
+                }
+
                 // Update item record
                 if (item) {
                   await this.prisma.allotmentCheckJobItem.update({
@@ -389,7 +417,7 @@ export class AllotmentJobService {
                       sharesApplied: result.sharesApplied ?? null,
                       sharesAllotted: result.sharesAllotted ?? null,
                       latencyMs,
-                      errorMessage: result.errorMessage ?? null,
+                      errorMessage: storedErrorMessage,
                       checkedAt: new Date(),
                     },
                   });

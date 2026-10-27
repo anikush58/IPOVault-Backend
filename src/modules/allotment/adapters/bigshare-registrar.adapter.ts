@@ -2,12 +2,18 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   AllotmentIdentifierType,
   AllotmentStatus,
+  CategoryAllotmentResult,
   CheckAllotmentRequest,
   NormalizedAllotmentResult,
 } from '../allotment.types';
 import { maskIdentifier } from '../allotment.utils';
 import { BaseRegistrarAdapter } from './base-registrar.adapter';
 import { matchRegistrarCompany } from '../allotment.matching';
+import {
+  mapRegistrarCategory,
+  deduplicateCategoryRecords,
+  deriveOverallAllotment,
+} from '../allotment-category.utils';
 
 export interface BigshareCompanyOption {
   code: string;
@@ -394,6 +400,85 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
         const sharesAllotted = parseInt(allottedRaw, 10);
         const sharesApplied = parseInt(appliedRaw, 10);
 
+        // Check if multiple records returned in comp.Records
+        if (Array.isArray(comp.Records) && comp.Records.length > 0) {
+          const catResults: CategoryAllotmentResult[] = [];
+          for (const rec of comp.Records) {
+            const recAllotted = parseInt(
+              String(
+                rec.ALLOTED ?? rec.ALLOTTED ?? rec.Alloted ?? rec.Allotted ?? 0,
+              ),
+              10,
+            );
+            const recApplied = parseInt(
+              String(rec.APPLIED ?? rec.Applied ?? 0),
+              10,
+            );
+            const rawCat =
+              rec.Category ??
+              rec.CATEGORY ??
+              rec.category ??
+              rec.Cat ??
+              rec.CAT_DESC;
+            const rawCatStr =
+              rawCat !== undefined && rawCat !== null
+                ? String(rawCat).trim()
+                : undefined;
+            const canonicalCat = mapRegistrarCategory(rawCatStr);
+            const appNo =
+              rec.AppNo ?? rec.APPNO ?? rec.appno ?? rec.application_no;
+
+            const isAllotted = !isNaN(recAllotted) && recAllotted > 0;
+            catResults.push({
+              category: canonicalCat,
+              rawCategory: rawCatStr,
+              status: isAllotted
+                ? AllotmentStatus.ALLOTTED
+                : AllotmentStatus.NOT_ALLOTTED,
+              sharesAllotted: !isNaN(recAllotted) ? recAllotted : 0,
+              sharesApplied: !isNaN(recApplied) ? recApplied : 0,
+              applicationNumber: appNo ? String(appNo).trim() : undefined,
+            });
+          }
+
+          const deduped = deduplicateCategoryRecords(catResults);
+          const overall = deriveOverallAllotment(deduped);
+          const firstRec = comp.Records[0];
+
+          return {
+            status: overall.status,
+            sharesAllotted: overall.sharesAllotted,
+            sharesApplied: overall.sharesApplied,
+            applicantName:
+              firstRec.Name?.trim() || firstRec.NAME?.trim() || applicantName,
+            sourceCode: this.code,
+            checkedAt,
+            categoryResults: deduped,
+          };
+        }
+
+        const rawCat =
+          comp.Category ??
+          comp.CATEGORY ??
+          comp.category ??
+          comp.Cat ??
+          comp.CAT_DESC;
+        const rawCatStr =
+          rawCat !== undefined && rawCat !== null
+            ? String(rawCat).trim()
+            : undefined;
+        const canonicalCat = mapRegistrarCategory(rawCatStr);
+        const singleCatResult: CategoryAllotmentResult = {
+          category: canonicalCat,
+          rawCategory: rawCatStr,
+          status:
+            !isNaN(sharesAllotted) && sharesAllotted > 0
+              ? AllotmentStatus.ALLOTTED
+              : AllotmentStatus.NOT_ALLOTTED,
+          sharesAllotted: !isNaN(sharesAllotted) ? sharesAllotted : 0,
+          sharesApplied: !isNaN(sharesApplied) ? sharesApplied : 0,
+        };
+
         if (!isNaN(sharesAllotted) && sharesAllotted > 0) {
           return {
             status: AllotmentStatus.ALLOTTED,
@@ -402,6 +487,7 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
             applicantName,
             sharesAllotted,
             sharesApplied: !isNaN(sharesApplied) ? sharesApplied : 0,
+            categoryResults: [singleCatResult],
           };
         }
 
@@ -413,30 +499,7 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
             applicantName,
             sharesAllotted: 0,
             sharesApplied: !isNaN(sharesApplied) ? sharesApplied : 0,
-          };
-        }
-
-        // Check if multiple records returned in comp.Records
-        if (Array.isArray(comp.Records) && comp.Records.length > 0) {
-          const rec = comp.Records[0];
-          const recAllotted = parseInt(
-            String(rec.ALLOTED ?? rec.ALLOTTED ?? rec.Alloted ?? rec.Allotted ?? 0),
-            10,
-          );
-          const recApplied = parseInt(
-            String(rec.APPLIED ?? rec.Applied ?? 0),
-            10,
-          );
-          return {
-            status:
-              !isNaN(recAllotted) && recAllotted > 0
-                ? AllotmentStatus.ALLOTTED
-                : AllotmentStatus.NOT_ALLOTTED,
-            sourceCode: this.code,
-            checkedAt,
-            applicantName: rec.Name?.trim() || rec.NAME?.trim() || applicantName,
-            sharesAllotted: !isNaN(recAllotted) ? recAllotted : 0,
-            sharesApplied: !isNaN(recApplied) ? recApplied : 0,
+            categoryResults: [singleCatResult],
           };
         }
       }

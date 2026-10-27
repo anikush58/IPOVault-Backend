@@ -2,12 +2,18 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   AllotmentIdentifierType,
   AllotmentStatus,
+  CategoryAllotmentResult,
   CheckAllotmentRequest,
   NormalizedAllotmentResult,
 } from '../allotment.types';
 import { maskIdentifier } from '../allotment.utils';
 import { BaseRegistrarAdapter } from './base-registrar.adapter';
 import { matchRegistrarCompany, normalizeName } from '../allotment.matching';
+import {
+  mapRegistrarCategory,
+  deduplicateCategoryRecords,
+  deriveOverallAllotment,
+} from '../allotment-category.utils';
 import { KFIN_VERIFIED_FALLBACK_REGISTRY } from '../discovery/kfin-identity-discovery.adapter';
 import { KfinRegistryStore } from '../discovery/kfin-registry.store';
 
@@ -196,32 +202,203 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       };
     }
 
-    // Handle array, wrapper object with data property, or single object structure
-    const targetObj = Array.isArray(raw)
-      ? raw[0]
+    const rawList: Record<string, unknown>[] = Array.isArray(raw)
+      ? (raw as Record<string, unknown>[])
       : Array.isArray((raw as Record<string, unknown>).data)
-        ? (
-            (raw as Record<string, unknown>).data as Record<string, unknown>[]
-          )[0]
-        : (raw as Record<string, unknown>).data &&
-            typeof (raw as Record<string, unknown>).data === 'object'
-          ? ((raw as Record<string, unknown>).data as Record<string, unknown>)
-          : (raw as Record<string, unknown>).result &&
-              typeof (raw as Record<string, unknown>).result === 'object'
-            ? Array.isArray((raw as Record<string, unknown>).result)
-              ? (
-                  (raw as Record<string, unknown>).result as Record<
-                    string,
-                    unknown
-                  >[]
-                )[0]
-              : ((raw as Record<string, unknown>).result as Record<
-                  string,
-                  unknown
-                >)
-            : raw;
+        ? ((raw as Record<string, unknown>).data as Record<string, unknown>[])
+        : Array.isArray((raw as Record<string, unknown>).result)
+          ? ((raw as Record<string, unknown>).result as Record<string, unknown>[])
+          : [];
 
-    if (!targetObj) {
+    const parseRecord = (obj: Record<string, unknown>) => {
+      const rawMsg = String(
+        obj.error || obj.message || obj.msg || obj.detail || '',
+      );
+      const rawStatus = String(
+        obj.status || obj.STATUS || obj.res_code || '',
+      ).toUpperCase();
+
+      if (rawMsg || rawStatus) {
+        const lowerMsg = rawMsg.toLowerCase();
+        if (
+          lowerMsg.includes('not declared') ||
+          lowerMsg.includes('not finalized') ||
+          lowerMsg.includes('in process') ||
+          lowerMsg.includes('under process') ||
+          lowerMsg.includes('allotment awaited') ||
+          rawStatus === 'NOT_DECLARED' ||
+          rawStatus === 'AWAITED'
+        ) {
+          return { errorStatus: AllotmentStatus.NOT_YET_AVAILABLE, rawMsg };
+        }
+        if (
+          lowerMsg.includes('not found') ||
+          lowerMsg.includes('no record') ||
+          lowerMsg.includes('no data') ||
+          lowerMsg.includes('invalid pan') ||
+          lowerMsg.includes('not applied') ||
+          rawStatus === 'NOT_FOUND' ||
+          rawStatus === 'NO_RECORD'
+        ) {
+          return { errorStatus: AllotmentStatus.APPLICATION_NOT_FOUND, rawMsg };
+        }
+        if (
+          rawMsg &&
+          obj.App_Shares === undefined &&
+          obj.applied_qty === undefined &&
+          obj.All_Shares === undefined &&
+          obj.allotted_qty === undefined
+        ) {
+          return { errorStatus: AllotmentStatus.SOURCE_RESPONSE_INVALID, rawMsg };
+        }
+      }
+
+      const applied = Number(
+        obj.App_Shares ??
+          obj.applied_qty ??
+          obj.app_qty ??
+          obj.shares_applied ??
+          obj.sharesApplied ??
+          obj.applied ??
+          obj.All_Shares ??
+          0,
+      );
+      const allotted = Number(
+        obj.All_Shares ??
+          obj.allotted_qty ??
+          obj.allot_qty ??
+          obj.shares_allotted ??
+          obj.sharesAllotted ??
+          obj.allotted ??
+          0,
+      );
+
+      let status: AllotmentStatus;
+      if (allotted > 0) {
+        status =
+          applied > 0 && allotted < applied
+            ? AllotmentStatus.PARTIALLY_ALLOTTED
+            : AllotmentStatus.ALLOTTED;
+      } else {
+        status = AllotmentStatus.NOT_ALLOTTED;
+      }
+
+      const rawCat =
+        obj.Category ??
+        obj.category ??
+        obj.CAT ??
+        obj.cat ??
+        obj.CAT_DESC ??
+        obj.Category_Desc ??
+        obj.shareholder_type;
+      const rawCategoryStr =
+        rawCat !== undefined && rawCat !== null ? String(rawCat).trim() : undefined;
+      const canonicalCategory = mapRegistrarCategory(rawCategoryStr);
+
+      const appNo =
+        obj.Appln_No ||
+        obj.appln_no ||
+        obj.app_no ||
+        obj.application_no ||
+        obj.appno;
+
+      const applicantName =
+        obj.Name ||
+        obj.NAME ||
+        obj.name ||
+        obj.applicant_name ||
+        obj.investor_name
+          ? String(
+              obj.Name ||
+                obj.NAME ||
+                obj.name ||
+                obj.applicant_name ||
+                obj.investor_name,
+            ).trim()
+          : undefined;
+
+      const categoryResult: CategoryAllotmentResult = {
+        category: canonicalCategory,
+        rawCategory: rawCategoryStr,
+        status,
+        sharesApplied: applied > 0 ? applied : undefined,
+        sharesAllotted: allotted,
+        applicationNumber: appNo ? String(appNo).trim() : undefined,
+      };
+
+      return {
+        categoryResult,
+        applicantName,
+        rawResponseRef: appNo ? String(appNo).trim() : undefined,
+      };
+    };
+
+    if (rawList.length > 0) {
+      const parsedItems = rawList.map(parseRecord);
+
+      const errorItem = parsedItems.find((p) => Boolean(p.errorStatus));
+      if (errorItem && errorItem.errorStatus && parsedItems.length === 1) {
+        return {
+          status: errorItem.errorStatus,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: errorItem.rawMsg,
+        };
+      }
+
+      const validCategories: CategoryAllotmentResult[] = [];
+      let applicantName: string | undefined;
+      let rawResponseRef: string | undefined;
+
+      for (const p of parsedItems) {
+        if (p.categoryResult) {
+          validCategories.push(p.categoryResult);
+          if (!applicantName && p.applicantName) applicantName = p.applicantName;
+          if (!rawResponseRef && p.rawResponseRef) rawResponseRef = p.rawResponseRef;
+        } else if (p.errorStatus) {
+          validCategories.push({
+            status: p.errorStatus,
+            sharesAllotted: 0,
+          });
+        }
+      }
+
+      if (validCategories.length === 0) {
+        return {
+          status: errorItem?.errorStatus || AllotmentStatus.APPLICATION_NOT_FOUND,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: errorItem?.rawMsg,
+        };
+      }
+
+      const deduped = deduplicateCategoryRecords(validCategories);
+      const overall = deriveOverallAllotment(deduped);
+
+      return {
+        status: overall.status,
+        sharesApplied:
+          overall.sharesApplied > 0 ? overall.sharesApplied : undefined,
+        sharesAllotted: overall.sharesAllotted,
+        applicantName,
+        sourceCode: this.code,
+        checkedAt,
+        rawResponseRef,
+        categoryResults: deduped,
+      };
+    }
+
+    // Single object structure
+    const targetObj =
+      (raw as Record<string, unknown>).data &&
+      typeof (raw as Record<string, unknown>).data === 'object'
+        ? ((raw as Record<string, unknown>).data as Record<string, unknown>)
+        : (raw as Record<string, unknown>).result &&
+            typeof (raw as Record<string, unknown>).result === 'object'
+          ? ((raw as Record<string, unknown>).result as Record<string, unknown>)
+          : (raw as Record<string, unknown>);
+
+    if (!targetObj || Object.keys(targetObj).length === 0) {
       return {
         status: AllotmentStatus.APPLICATION_NOT_FOUND,
         sourceCode: this.code,
@@ -229,137 +406,33 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       };
     }
 
-    // Check for error field in JSON response (e.g. {"error": "Record Not Found"})
-    const rawMsg = String(
-      targetObj.error ||
-        targetObj.message ||
-        targetObj.msg ||
-        targetObj.detail ||
-        '',
-    );
-    const rawStatus = String(
-      targetObj.status || targetObj.STATUS || targetObj.res_code || '',
-    ).toUpperCase();
-
-    if (rawMsg || rawStatus) {
-      const lowerMsg = rawMsg.toLowerCase();
-      if (
-        lowerMsg.includes('not declared') ||
-        lowerMsg.includes('not finalized') ||
-        lowerMsg.includes('in process') ||
-        lowerMsg.includes('under process') ||
-        lowerMsg.includes('allotment awaited') ||
-        rawStatus === 'NOT_DECLARED' ||
-        rawStatus === 'AWAITED'
-      ) {
-        return {
-          status: AllotmentStatus.NOT_YET_AVAILABLE,
-          sourceCode: this.code,
-          checkedAt,
-          errorMessage: rawMsg || 'Allotment is awaited from registrar',
-        };
-      }
-
-      if (
-        lowerMsg.includes('not found') ||
-        lowerMsg.includes('no record') ||
-        lowerMsg.includes('no data') ||
-        lowerMsg.includes('invalid pan') ||
-        lowerMsg.includes('not applied') ||
-        rawStatus === 'NOT_FOUND' ||
-        rawStatus === 'NO_RECORD'
-      ) {
-        return {
-          status: AllotmentStatus.APPLICATION_NOT_FOUND,
-          sourceCode: this.code,
-          checkedAt,
-        };
-      }
-
-      if (
-        rawMsg &&
-        targetObj.App_Shares === undefined &&
-        targetObj.applied_qty === undefined &&
-        targetObj.All_Shares === undefined &&
-        targetObj.allotted_qty === undefined
-      ) {
-        return {
-          status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
-          sourceCode: this.code,
-          checkedAt,
-          errorMessage: rawMsg,
-        };
-      }
+    const parsed = parseRecord(targetObj);
+    if (parsed.errorStatus) {
+      return {
+        status: parsed.errorStatus,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage: parsed.rawMsg,
+      };
     }
 
-    const applied = Number(
-      targetObj.App_Shares ??
-        targetObj.applied_qty ??
-        targetObj.app_qty ??
-        targetObj.shares_applied ??
-        targetObj.sharesApplied ??
-        targetObj.applied ??
-        targetObj.All_Shares ??
-        0,
-    );
-    const allotted = Number(
-      targetObj.All_Shares ??
-        targetObj.allotted_qty ??
-        targetObj.allot_qty ??
-        targetObj.shares_allotted ??
-        targetObj.sharesAllotted ??
-        targetObj.allotted ??
-        0,
-    );
-
-    let status: AllotmentStatus;
-    if (allotted > 0) {
-      status =
-        applied > 0 && allotted < applied
-          ? AllotmentStatus.PARTIALLY_ALLOTTED
-          : AllotmentStatus.ALLOTTED;
-    } else {
-      status = AllotmentStatus.NOT_ALLOTTED;
+    if (parsed.categoryResult) {
+      return {
+        status: parsed.categoryResult.status,
+        sharesApplied: parsed.categoryResult.sharesApplied,
+        sharesAllotted: parsed.categoryResult.sharesAllotted,
+        applicantName: parsed.applicantName,
+        sourceCode: this.code,
+        checkedAt,
+        rawResponseRef: parsed.rawResponseRef,
+        categoryResults: [parsed.categoryResult],
+      };
     }
-
-    const applicantName =
-      targetObj.Name ||
-      targetObj.NAME ||
-      targetObj.name ||
-      targetObj.applicant_name ||
-      targetObj.investor_name
-        ? String(
-            targetObj.Name ||
-              targetObj.NAME ||
-              targetObj.name ||
-              targetObj.applicant_name ||
-              targetObj.investor_name,
-          ).trim()
-        : undefined;
-
-    const rawResponseRef =
-      targetObj.Appln_No ||
-      targetObj.appln_no ||
-      targetObj.app_no ||
-      targetObj.application_no ||
-      targetObj.appno
-        ? String(
-            targetObj.Appln_No ||
-              targetObj.appln_no ||
-              targetObj.app_no ||
-              targetObj.application_no ||
-              targetObj.appno,
-          ).trim()
-        : undefined;
 
     return {
-      status,
-      sharesApplied: applied,
-      sharesAllotted: allotted,
-      applicantName,
+      status: AllotmentStatus.APPLICATION_NOT_FOUND,
       sourceCode: this.code,
       checkedAt,
-      rawResponseRef,
     };
   }
 

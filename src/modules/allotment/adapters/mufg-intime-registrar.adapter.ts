@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import {
   AllotmentIdentifierType,
   AllotmentStatus,
+  CategoryAllotmentResult,
   CheckAllotmentRequest,
   NormalizedAllotmentResult,
 } from '../allotment.types';
@@ -12,6 +13,11 @@ import {
   normalizeName,
 } from '../allotment.matching';
 import { BaseRegistrarAdapter } from './base-registrar.adapter';
+import {
+  mapRegistrarCategory,
+  deduplicateCategoryRecords,
+  deriveOverallAllotment,
+} from '../allotment-category.utils';
 
 @Injectable()
 export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
@@ -287,16 +293,71 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
           };
         }
 
-        const rec = records[0];
-        const allotStr =
-          rec.ALLOT ?? rec.allot ?? rec.allotted_shares ?? rec.ashares;
-        const sharesStr =
-          rec.SHARES ?? rec.shares ?? rec.applied_shares ?? rec.nshares;
-        const priceStr = rec.offer_price ?? rec.price ?? rec.issue_price;
-        const nameStr = rec.name ?? rec.invname ?? rec.applicantName;
-        const appNoStr = rec.app_no ?? rec.appno ?? rec.Appln_No;
+        const categoryResults: CategoryAllotmentResult[] = [];
+        let firstApplicantName: string | undefined;
+        let firstAppNo: string | undefined;
+        let firstPrice: number | undefined;
 
-        if (allotStr === undefined && sharesStr === undefined && !nameStr) {
+        for (const rec of records) {
+          const allotStr =
+            rec.ALLOT ?? rec.allot ?? rec.allotted_shares ?? rec.ashares;
+          const sharesStr =
+            rec.SHARES ?? rec.shares ?? rec.applied_shares ?? rec.nshares;
+          const priceStr = rec.offer_price ?? rec.price ?? rec.issue_price;
+          const nameStr = rec.name ?? rec.invname ?? rec.applicantName;
+          const appNoStr = rec.app_no ?? rec.appno ?? rec.Appln_No;
+          const rawCat =
+            rec.CAT ??
+            rec.cat ??
+            rec.CATEGORY ??
+            rec.category ??
+            rec.cat_desc ??
+            rec.allot_cat ??
+            rec.b_type;
+
+          if (allotStr === undefined && sharesStr === undefined && !nameStr) {
+            continue;
+          }
+
+          const allotted = Number(allotStr ?? 0);
+          const applied = Number(sharesStr ?? 0);
+          const price = priceStr ? Number(priceStr) : undefined;
+          const rawCategoryStr =
+            rawCat !== undefined && rawCat !== null ? String(rawCat).trim() : undefined;
+          const canonicalCategory = mapRegistrarCategory(rawCategoryStr);
+
+          if (!firstApplicantName && nameStr) {
+            firstApplicantName = nameStr.trim();
+          }
+          if (!firstAppNo && appNoStr) {
+            firstAppNo = String(appNoStr).trim();
+          }
+          if (!firstPrice && price && price > 0) {
+            firstPrice = price;
+          }
+
+          let catStatus: AllotmentStatus;
+          if (allotted > 0) {
+            catStatus =
+              applied > 0 && allotted < applied
+                ? AllotmentStatus.PARTIALLY_ALLOTTED
+                : AllotmentStatus.ALLOTTED;
+          } else {
+            catStatus = AllotmentStatus.NOT_ALLOTTED;
+          }
+
+          categoryResults.push({
+            category: canonicalCategory,
+            rawCategory: rawCategoryStr,
+            status: catStatus,
+            sharesApplied: applied > 0 ? applied : undefined,
+            sharesAllotted: allotted,
+            allotmentPrice: price && price > 0 ? price : undefined,
+            applicationNumber: appNoStr ? String(appNoStr).trim() : undefined,
+          });
+        }
+
+        if (categoryResults.length === 0) {
           return {
             status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
             sourceCode: this.code,
@@ -305,29 +366,20 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
           };
         }
 
-        const allotted = Number(allotStr ?? 0);
-        const applied = Number(sharesStr ?? 0);
-        const price = priceStr ? Number(priceStr) : undefined;
-
-        let status: AllotmentStatus;
-        if (allotted > 0) {
-          status =
-            applied > 0 && allotted < applied
-              ? AllotmentStatus.PARTIALLY_ALLOTTED
-              : AllotmentStatus.ALLOTTED;
-        } else {
-          status = AllotmentStatus.NOT_ALLOTTED;
-        }
+        const deduped = deduplicateCategoryRecords(categoryResults);
+        const overall = deriveOverallAllotment(deduped);
 
         return {
-          status,
-          sharesApplied: applied > 0 ? applied : undefined,
-          sharesAllotted: allotted,
-          allotmentPrice: price && price > 0 ? price : undefined,
-          applicantName: nameStr ? nameStr.trim() : undefined,
+          status: overall.status,
+          sharesApplied:
+            overall.sharesApplied > 0 ? overall.sharesApplied : undefined,
+          sharesAllotted: overall.sharesAllotted,
+          allotmentPrice: firstPrice,
+          applicantName: firstApplicantName,
           sourceCode: this.code,
           checkedAt,
-          rawResponseRef: appNoStr ? String(appNoStr).trim() : undefined,
+          rawResponseRef: firstAppNo,
+          categoryResults: deduped,
         };
       }
 
