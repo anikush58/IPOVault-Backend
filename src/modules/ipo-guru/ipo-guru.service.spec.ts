@@ -1646,4 +1646,100 @@ describe('IpoGuruService', () => {
       expect(eventTypesUpserted).toContain('LISTING');
     });
   });
+
+  describe('Field-level update and skip visibility', () => {
+    it('should report updated fields and skipped fields with reasons when updating existing IPO', async () => {
+      const existingIpo = {
+        id: 'ipo-existing-1',
+        companyId: 'company-1',
+        marketSegment: 'MAINBOARD',
+        exchange: 'BSE',
+        status: 'OPEN',
+        publicationStatus: 'PUBLISHED',
+        symbol: 'EXISTING',
+        priceBandLow: new Prisma.Decimal(100),
+        priceBandHigh: new Prisma.Decimal(110),
+        lotSize: 50,
+        issueSize: new Prisma.Decimal(500),
+        freshIssueSize: new Prisma.Decimal(300),
+        ofsSize: new Prisma.Decimal(200),
+        company: { id: 'company-1', legalName: 'Existing Company Ltd', displayName: 'Existing Company' },
+        sourceIdentities: [
+          {
+            sourceId: 'source-ipoguru',
+            externalId: 'existing-company',
+            symbol: 'EXISTING',
+            source: { code: 'IPOGURU', name: 'IPO Guru v2' },
+          },
+        ],
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValue([existingIpo]);
+
+      const rawIpo = {
+        name: 'Existing Company',
+        slug: 'existing-company',
+        type: 'Mainboard', // Same segment -> skipped (Value unchanged)
+        status: 'Closed', // Status is authoritative -> skipped (Canonical lifecycle status is authoritative)
+        exchange: 'BSE, NSE', // Changed -> updated
+        price_band_min: 105, // Changed -> updated
+        price_band_max: 110, // Same -> skipped (Value unchanged)
+        lot_size: 50, // Same -> skipped (Value unchanged)
+        open_date: '2026-08-01', // Provided -> updated
+      };
+
+      const result = await service.syncIpos('MANUAL', undefined, [rawIpo]);
+
+      expect(result.items).toHaveLength(1);
+      const item = result.items[0];
+      expect(item.action).toBe('UPDATED');
+      expect(item.updatedFields).toContain('exchange');
+      expect(item.updatedFields).toContain('priceBandLow');
+      expect(item.updatedFields).toContain('openDate');
+
+      const skippedFields = item.skippedFields ?? [];
+      const skippedFieldNames = skippedFields.map((s) => s.field);
+      expect(skippedFieldNames).toContain('status');
+      expect(skippedFieldNames).toContain('marketSegment');
+      expect(skippedFieldNames).toContain('priceBandHigh');
+      expect(skippedFieldNames).toContain('lotSize');
+      expect(skippedFieldNames).toContain('listingPrice');
+
+      const statusSkip = skippedFields.find((s) => s.field === 'status');
+      expect(statusSkip?.reason).toBe('Canonical lifecycle status is authoritative');
+
+      const segSkip = skippedFields.find((s) => s.field === 'marketSegment');
+      expect(segSkip?.reason).toBe('Value unchanged');
+    });
+
+    it('should report skippedFields when match is ambiguous or empty name', async () => {
+      const ambiguousExisting = [
+        {
+          id: 'ipo-ambig-1',
+          companyId: 'company-1',
+          symbol: 'DUPE',
+          company: { displayName: 'Dupe 1' },
+          sourceIdentities: [],
+        },
+        {
+          id: 'ipo-ambig-2',
+          companyId: 'company-2',
+          symbol: 'DUPE',
+          company: { displayName: 'Dupe 2' },
+          sourceIdentities: [],
+        },
+      ];
+      mockPrisma.ipo.findMany.mockResolvedValue(ambiguousExisting);
+
+      const rawIpo = {
+        name: 'Ambiguous Corp',
+        symbol: 'DUPE',
+      };
+
+      const result = await service.syncIpos('MANUAL', undefined, [rawIpo]);
+      expect(result.items[0].action).toBe('SKIPPED');
+      expect(result.items[0].skippedFields?.[0].field).toBe('all');
+      expect(result.items[0].skippedFields?.[0].reason).toContain('Multiple candidate matches');
+    });
+  });
 });

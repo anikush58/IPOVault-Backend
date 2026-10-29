@@ -1586,6 +1586,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               <div class="sort-control-group" style="display:flex; align-items:center; gap:6px;">
                 <select id="man-sort-by" onchange="onManualSortChange()" style="padding:7px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-hover); color:var(--text-main); font-size:13px;" title="Sort IPOs">
                   <option value="smart">⚡ Smart Sort</option>
+                  <option value="updatedAt">🕒 Last Updated</option>
                   <option value="closeDate">📅 Closing Date</option>
                   <option value="openDate">🚀 Opening Date</option>
                   <option value="allotmentDate">🎯 Allotment Date</option>
@@ -1718,7 +1719,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
                   <th>Lifecycle Status</th>
                   <th>Publication Status</th>
                   <th>Price Band</th>
-                  <th>Open / Close Dates</th>
+                  <th>Last Updated</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -5563,17 +5564,48 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         }
 
         tbody.innerHTML = items.map(item => {
+          const compName = item.displayName || item.legalName || 'N/A';
+          const initials = (compName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2) || 'IP').toUpperCase();
+          const logoHtml = item.logoUrl
+            ? '<div style="position:relative; width:36px; height:36px; flex-shrink:0;">'
+                + '<img src="' + item.logoUrl + '" alt="" style="width:36px; height:36px; border-radius:8px; object-fit:contain; background:#ffffff; border:1px solid var(--border-color); padding:2px;" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';" />'
+                + '<div style="display:none; width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, #4F46E5, #06B6D4); color:#ffffff; font-size:12px; font-weight:700; align-items:center; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,0.1); width:100%; height:100%;">' + initials + '</div>'
+              + '</div>'
+            : '<div style="width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, #4F46E5, #06B6D4); color:#ffffff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 1px 3px rgba(0,0,0,0.1);">' + initials + '</div>';
+
+          let updatedDisplay = '<span style="color:var(--text-muted); font-size:12px;">N/A</span>';
+          if (item.updatedAt) {
+            const d = new Date(item.updatedAt);
+            if (!isNaN(d.getTime())) {
+              const datePart = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+              const timePart = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+              const isoStr = d.toISOString();
+              updatedDisplay = '<div title="' + isoStr + '" style="cursor:help;">'
+                + '<div style="font-size:12px; font-weight:600; color:var(--text-main); line-height:1.3;">' + datePart + '</div>'
+                + '<div style="font-size:11px; color:var(--text-muted); font-family:monospace; margin-top:2px;">' + timePart + '</div>'
+                + '</div>';
+            }
+          }
+
           return \`
             <tr class="clickable-row" onclick="editManualIpo('\${item.id}')" title="Click to view/edit details">
               <td onclick="event.stopPropagation()" style="text-align:center;">
                 <input type="checkbox" class="manual-ipo-checkbox" value="\${item.id}" onchange="updateBulkSelectionBar()" style="cursor:pointer; width:16px; height:16px;" />
               </td>
-              <td><strong>\${item.legalName || 'N/A'}</strong><br/><span style="font-size:11px; color:var(--text-muted)">\${item.symbol || 'No Symbol'}</span></td>
+              <td>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  \${logoHtml}
+                  <div style="min-width:0;">
+                    <strong style="display:block; font-size:13px; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;" title="\${item.legalName || ''}">\${compName}</strong>
+                    <span style="font-size:11px; color:var(--text-muted);">\${item.symbol || 'No Symbol'}</span>
+                  </div>
+                </div>
+              </td>
               <td>\${item.marketSegment || 'MAINBOARD'}</td>
               <td onclick="event.stopPropagation()">\${renderStatusSelect(item.id, item.status)}</td>
               <td><span class="status-pill \${item.publicationStatus === 'PUBLISHED' ? 'published' : 'upcoming'}">\${item.publicationStatus || 'DRAFT'}</span></td>
               <td>₹\${item.priceBandLow || 0} - ₹\${item.priceBandHigh || 0}</td>
-              <td style="font-size:12px;">\${item.openDate || 'TBD'} to \${item.closeDate || 'TBD'}</td>
+              <td>\${updatedDisplay}</td>
               <td onclick="event.stopPropagation()" style="text-align:center;">
                 \${renderTableRowActionIcons(item.id)}
               </td>

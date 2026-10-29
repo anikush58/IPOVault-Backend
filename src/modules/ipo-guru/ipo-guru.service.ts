@@ -20,6 +20,7 @@ import { AdminValidationService } from '../admin/admin-validation.service';
 import { EnrichmentOrchestratorService } from '../enrichment/enrichment-orchestrator.service';
 import {
   IpoGuruFetchResult,
+  IpoGuruSkippedField,
   IpoGuruStatusResponse,
   IpoGuruSyncItemDetail,
   IpoGuruSyncResult,
@@ -525,13 +526,35 @@ export class IpoGuruService {
           guruName: 'Unknown',
           action: 'SKIPPED',
           reason: 'Record has empty company name',
+          updatedFields: [],
+          skippedFields: [{ field: 'all', reason: 'Record has empty company name' }],
         });
+        this.logger.warn('[IPO Guru Sync] "Unknown" (SKIPPED): Record has empty company name');
         continue;
       }
 
       try {
         const itemResult = await this.syncSingleIpo(rawItem, sourceId, existingIpos, adminSourceId);
         summary.items.push(itemResult);
+
+        const updatedSummary =
+          itemResult.updatedFields && itemResult.updatedFields.length > 0
+            ? `Updated [${itemResult.updatedFields.join(', ')}]`
+            : 'Updated [none]';
+        const skippedSummary =
+          itemResult.skippedFields && itemResult.skippedFields.length > 0
+            ? `Skipped [${itemResult.skippedFields.map((s) => `${s.field} (${s.reason})`).join(', ')}]`
+            : 'Skipped [none]';
+
+        if (itemResult.action === 'SKIPPED') {
+          this.logger.warn(
+            `[IPO Guru Sync] "${guruName}" (SKIPPED): ${itemResult.reason || 'Skipped'}`,
+          );
+        } else {
+          this.logger.log(
+            `[IPO Guru Sync] "${guruName}" (${itemResult.action}): ${updatedSummary} | ${skippedSummary}`,
+          );
+        }
         if (itemResult.action === 'UPDATED') {
           summary.matchedUpdated++;
           if (itemResult.ipoId && this.enrichmentOrchestrator) {
@@ -697,11 +720,14 @@ export class IpoGuruService {
         action: 'SKIPPED',
         matchedBy: 'AMBIGUOUS',
         reason: `AMBIGUOUS_MATCH: Multiple existing records matched: [${candidatesStr}]`,
+        updatedFields: [],
+        skippedFields: [{ field: 'all', reason: `Multiple candidate matches found: [${candidatesStr}]` }],
       };
     }
 
     return await this.prisma.$transaction(async (tx) => {
       const updatedFields: string[] = [];
+      const skippedFields: IpoGuruSkippedField[] = [];
 
       // Parsed fields
       const marketSegment = this.parseMarketSegment(rawItem.type || rawItem.sub_type || rawItem.ipo_type);
@@ -752,10 +778,21 @@ export class IpoGuruService {
         ipoId = existingIpo.id;
         companyId = existingIpo.companyId;
 
+        skippedFields.push({
+          field: 'companyName',
+          reason: 'Canonical company identity is authoritative',
+        });
+
         const updateData: Prisma.IpoUpdateInput = {};
-        if (marketSegment && marketSegment !== existingIpo.marketSegment) {
-          updateData.marketSegment = marketSegment;
-          updatedFields.push('marketSegment');
+        if (marketSegment) {
+          if (marketSegment !== existingIpo.marketSegment) {
+            updateData.marketSegment = marketSegment;
+            updatedFields.push('marketSegment');
+          } else {
+            skippedFields.push({ field: 'marketSegment', reason: 'Value unchanged' });
+          }
+        } else {
+          skippedFields.push({ field: 'marketSegment', reason: 'Not provided in payload' });
         }
 
         // Check if existing record is under manual review or admin-managed
@@ -814,10 +851,18 @@ export class IpoGuruService {
           });
 
           if (isAwaitingManualReview) {
+            skippedFields.push({
+              field: 'publicationStatus',
+              reason: 'Preserving DRAFT (awaiting manual review / admin-managed)',
+            });
             this.logger.debug(
               `Preserving DRAFT status for IPO "${existingIpo.company?.displayName || ipoId}": awaiting manual review / admin-managed.`,
             );
           } else if (!effectivePubEligibility.eligible) {
+            skippedFields.push({
+              field: 'publicationStatus',
+              reason: `Preserving DRAFT (quality criteria not met: ${effectivePubEligibility.blockers.join(', ')})`,
+            });
             this.logger.warn(
               `Preserving DRAFT status for IPO "${existingIpo.company?.displayName || ipoId}": publication criteria not met (${effectivePubEligibility.blockers.join(', ')}).`,
             );
@@ -826,52 +871,124 @@ export class IpoGuruService {
             updatedFields.push('publicationStatus');
             publicationStatusResult = PublicationStatus.PUBLISHED;
           }
+        } else {
+          skippedFields.push({ field: 'publicationStatus', reason: 'Already PUBLISHED' });
         }
         // NOTE: Canonical IPO lifecycle status is authoritative and MUST NEVER be overwritten by IPO Guru.
-        if (exchange && exchange !== existingIpo.exchange) {
-          updateData.exchange = exchange;
-          updatedFields.push('exchange');
+        skippedFields.push({ field: 'status', reason: 'Canonical lifecycle status is authoritative' });
+
+        if (exchange) {
+          if (exchange !== existingIpo.exchange) {
+            updateData.exchange = exchange;
+            updatedFields.push('exchange');
+          } else {
+            skippedFields.push({ field: 'exchange', reason: 'Value unchanged' });
+          }
+        } else {
+          skippedFields.push({ field: 'exchange', reason: 'Not provided in payload' });
         }
-        if (priceBand.low != null && (!existingIpo.priceBandLow || !existingIpo.priceBandLow.equals(priceBand.low))) {
-          updateData.priceBandLow = priceBand.low;
-          updatedFields.push('priceBandLow');
+
+        if (priceBand.low != null) {
+          if (!existingIpo.priceBandLow || !existingIpo.priceBandLow.equals(priceBand.low)) {
+            updateData.priceBandLow = priceBand.low;
+            updatedFields.push('priceBandLow');
+          } else {
+            skippedFields.push({ field: 'priceBandLow', reason: 'Value unchanged' });
+          }
+        } else {
+          skippedFields.push({ field: 'priceBandLow', reason: 'Not provided in payload' });
         }
-        if (priceBand.high != null && (!existingIpo.priceBandHigh || !existingIpo.priceBandHigh.equals(priceBand.high))) {
-          updateData.priceBandHigh = priceBand.high;
-          updatedFields.push('priceBandHigh');
+
+        if (priceBand.high != null) {
+          if (!existingIpo.priceBandHigh || !existingIpo.priceBandHigh.equals(priceBand.high)) {
+            updateData.priceBandHigh = priceBand.high;
+            updatedFields.push('priceBandHigh');
+          } else {
+            skippedFields.push({ field: 'priceBandHigh', reason: 'Value unchanged' });
+          }
+        } else {
+          skippedFields.push({ field: 'priceBandHigh', reason: 'Not provided in payload' });
         }
-        if (lotSize != null && lotSize !== existingIpo.lotSize) {
-          updateData.lotSize = lotSize;
-          updatedFields.push('lotSize');
+
+        if (lotSize != null) {
+          if (lotSize !== existingIpo.lotSize) {
+            updateData.lotSize = lotSize;
+            updatedFields.push('lotSize');
+          } else {
+            skippedFields.push({ field: 'lotSize', reason: 'Value unchanged' });
+          }
+        } else {
+          skippedFields.push({ field: 'lotSize', reason: 'Not provided in payload' });
         }
-        if (faceValue != null && (!existingIpo.faceValue || !existingIpo.faceValue.equals(faceValue))) {
-          updateData.faceValue = faceValue;
-          updatedFields.push('faceValue');
+
+        if (faceValue != null) {
+          if (!existingIpo.faceValue || !existingIpo.faceValue.equals(faceValue)) {
+            updateData.faceValue = faceValue;
+            updatedFields.push('faceValue');
+          } else {
+            skippedFields.push({ field: 'faceValue', reason: 'Value unchanged' });
+          }
+        } else {
+          skippedFields.push({ field: 'faceValue', reason: 'Not provided in payload' });
         }
-        if (issueSize != null && (!existingIpo.issueSize || !existingIpo.issueSize.equals(issueSize))) {
-          updateData.issueSize = issueSize;
-          updatedFields.push('issueSize');
+
+        if (issueSize != null) {
+          if (!existingIpo.issueSize || !existingIpo.issueSize.equals(issueSize)) {
+            updateData.issueSize = issueSize;
+            updatedFields.push('issueSize');
+          } else {
+            skippedFields.push({ field: 'issueSize', reason: 'Value unchanged' });
+          }
+        } else {
+          skippedFields.push({ field: 'issueSize', reason: 'Not provided in payload' });
         }
-        if (freshIssueSize != null && (!existingIpo.freshIssueSize || !existingIpo.freshIssueSize.equals(freshIssueSize))) {
-          updateData.freshIssueSize = freshIssueSize;
-          updatedFields.push('freshIssueSize');
+
+        if (freshIssueSize != null) {
+          if (!existingIpo.freshIssueSize || !existingIpo.freshIssueSize.equals(freshIssueSize)) {
+            updateData.freshIssueSize = freshIssueSize;
+            updatedFields.push('freshIssueSize');
+          } else {
+            skippedFields.push({ field: 'freshIssueSize', reason: 'Value unchanged' });
+          }
+        } else {
+          skippedFields.push({ field: 'freshIssueSize', reason: 'Not provided in payload' });
         }
-        if (ofsSize != null && (!existingIpo.ofsSize || !existingIpo.ofsSize.equals(ofsSize))) {
-          updateData.ofsSize = ofsSize;
-          updatedFields.push('ofsSize');
+
+        if (ofsSize != null) {
+          if (!existingIpo.ofsSize || !existingIpo.ofsSize.equals(ofsSize)) {
+            updateData.ofsSize = ofsSize;
+            updatedFields.push('ofsSize');
+          } else {
+            skippedFields.push({ field: 'ofsSize', reason: 'Value unchanged' });
+          }
+        } else {
+          skippedFields.push({ field: 'ofsSize', reason: 'Not provided in payload' });
         }
+
         // Listing price sync rule:
         // - If canonical IPO status is LISTED, allow IPO Guru's listing price to update listingPrice.
         // - If canonical IPO status is anything other than LISTED, do NOT update listingPrice.
         // - Never overwrite an existing valid listing price with null/undefined/missing IPO Guru data.
-        if (
-          existingIpo.status === IpoStatus.LISTED &&
-          listingPrice != null &&
-          (!existingIpo.listingPrice || !existingIpo.listingPrice.equals(listingPrice))
-        ) {
+        if (existingIpo.status !== IpoStatus.LISTED) {
+          skippedFields.push({ field: 'listingPrice', reason: 'IPO status is not LISTED' });
+        } else if (listingPrice == null) {
+          skippedFields.push({ field: 'listingPrice', reason: 'Not provided in payload' });
+        } else if (existingIpo.listingPrice && existingIpo.listingPrice.equals(listingPrice)) {
+          skippedFields.push({ field: 'listingPrice', reason: 'Value unchanged' });
+        } else {
           updateData.listingPrice = listingPrice;
           updatedFields.push('listingPrice');
         }
+
+        if (rawItem.symbol) {
+          updatedFields.push('sourceIdentitySymbol');
+        } else {
+          skippedFields.push({ field: 'symbol', reason: 'Not provided in payload' });
+        }
+        skippedFields.push({
+          field: 'isin',
+          reason: rawItem.isin ? 'Canonical ISIN is preserved on IPO record' : 'Not provided in payload',
+        });
 
         if (Object.keys(updateData).length > 0) {
           await tx.ipo.update({
@@ -922,6 +1039,22 @@ export class IpoGuruService {
         });
         ipoId = newIpo.id;
         updatedFields.push('company', 'ipo');
+        if (rawItem.symbol) updatedFields.push('sourceIdentitySymbol');
+
+        if (!priceBand.low) skippedFields.push({ field: 'priceBandLow', reason: 'Not provided in payload' });
+        if (!priceBand.high) skippedFields.push({ field: 'priceBandHigh', reason: 'Not provided in payload' });
+        if (lotSize == null) skippedFields.push({ field: 'lotSize', reason: 'Not provided in payload' });
+        if (faceValue == null) skippedFields.push({ field: 'faceValue', reason: 'Not provided in payload' });
+        if (issueSize == null) skippedFields.push({ field: 'issueSize', reason: 'Not provided in payload' });
+        if (freshIssueSize == null) skippedFields.push({ field: 'freshIssueSize', reason: 'Not provided in payload' });
+        if (ofsSize == null) skippedFields.push({ field: 'ofsSize', reason: 'Not provided in payload' });
+        if (initialStatus !== IpoStatus.LISTED) {
+          skippedFields.push({ field: 'listingPrice', reason: 'IPO status is not LISTED' });
+        } else if (listingPrice == null) {
+          skippedFields.push({ field: 'listingPrice', reason: 'Not provided in payload' });
+        }
+        if (!rawItem.symbol) skippedFields.push({ field: 'symbol', reason: 'Not provided in payload' });
+        if (!rawItem.isin) skippedFields.push({ field: 'isin', reason: 'Not provided in payload' });
       }
 
       // Link SourceIdentity for IPOGURU (v2 uses slug as identifier)
@@ -952,6 +1085,8 @@ export class IpoGuruService {
           create: { ipoId, eventType: 'OPEN', eventDate: openDate, sourceId },
         });
         updatedFields.push('openDate');
+      } else {
+        skippedFields.push({ field: 'openDate', reason: 'Not provided in payload' });
       }
 
       if (closeDate) {
@@ -961,6 +1096,8 @@ export class IpoGuruService {
           create: { ipoId, eventType: 'CLOSE', eventDate: closeDate, sourceId },
         });
         updatedFields.push('closeDate');
+      } else {
+        skippedFields.push({ field: 'closeDate', reason: 'Not provided in payload' });
       }
 
       if (allotmentDate) {
@@ -970,6 +1107,8 @@ export class IpoGuruService {
           create: { ipoId, eventType: 'BASIS_OF_ALLOTMENT', eventDate: allotmentDate, sourceId },
         });
         updatedFields.push('allotmentDate');
+      } else {
+        skippedFields.push({ field: 'allotmentDate', reason: 'Not provided in payload' });
       }
 
       if (refundDate) {
@@ -979,6 +1118,8 @@ export class IpoGuruService {
           create: { ipoId, eventType: 'REFUND_INITIATION', eventDate: refundDate, sourceId },
         });
         updatedFields.push('refundDate');
+      } else {
+        skippedFields.push({ field: 'refundDate', reason: 'Not provided in payload' });
       }
 
       if (listingDate) {
@@ -988,6 +1129,8 @@ export class IpoGuruService {
           create: { ipoId, eventType: 'LISTING', eventDate: listingDate, sourceId },
         });
         updatedFields.push('listingDate');
+      } else {
+        skippedFields.push({ field: 'listingDate', reason: 'Not provided in payload' });
       }
 
       // --- 4. ALLOTMENT CONFIG & REGISTRAR PARTICIPANT ---
@@ -1026,6 +1169,8 @@ export class IpoGuruService {
           });
         }
         updatedFields.push('registrar');
+      } else {
+        skippedFields.push({ field: 'registrar', reason: 'Not provided in payload' });
       }
 
       // --- 5. GMP OBSERVATION ---
@@ -1055,7 +1200,11 @@ export class IpoGuruService {
             },
           });
           updatedFields.push('gmpObservation');
+        } else {
+          skippedFields.push({ field: 'gmpObservation', reason: 'Observation at timestamp already exists' });
         }
+      } else {
+        skippedFields.push({ field: 'gmpObservation', reason: 'Not provided in payload' });
       }
 
       // --- 6. SUBSCRIPTION OBSERVATIONS ---
@@ -1092,7 +1241,11 @@ export class IpoGuruService {
               },
             });
             updatedFields.push(`subscription_${cat}`);
+          } else {
+            skippedFields.push({ field: `subscription_${cat}`, reason: 'Observation at timestamp already exists' });
           }
+        } else {
+          skippedFields.push({ field: `subscription_${cat}`, reason: 'Not provided in payload' });
         }
       }
 
@@ -1143,6 +1296,7 @@ export class IpoGuruService {
         companyName: match.matchedIpo ? match.matchedIpo.company.displayName : guruName,
         matchedBy: match.matchedBy,
         updatedFields,
+        skippedFields,
         publicationStatus: publicationStatusResult,
       };
     });

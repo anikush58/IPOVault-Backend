@@ -936,6 +936,7 @@ export class AdminIpoService {
           id: ipo.id,
           legalName: ipo.company?.legalName || '',
           displayName: ipo.company?.displayName || ipo.company?.legalName || '',
+          logoUrl: ipo.company?.logoUrl || null,
           symbol: ipo.symbol,
           marketSegment: ipo.marketSegment,
           exchange: ipo.exchange,

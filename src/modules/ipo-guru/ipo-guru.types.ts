@@ -145,6 +145,11 @@ export interface IpoGuruFetchResult {
 
 export type IpoGuruSyncAction = 'UPDATED' | 'CREATED' | 'SKIPPED' | 'ERROR';
 
+export interface IpoGuruSkippedField {
+  field: string;
+  reason: string;
+}
+
 export interface IpoGuruSyncItemDetail {
   guruName: string;
   action: IpoGuruSyncAction;
@@ -153,6 +158,7 @@ export interface IpoGuruSyncItemDetail {
   matchedBy?: 'SYMBOL' | 'NAME' | 'AMBIGUOUS' | 'NONE';
   reason?: string;
   updatedFields?: string[];
+  skippedFields?: IpoGuruSkippedField[];
   publicationStatus?: string;
   error?: string;
 }
