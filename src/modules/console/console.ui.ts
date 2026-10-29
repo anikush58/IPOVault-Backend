@@ -5216,6 +5216,11 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }, 2500);
     }
 
+    function onLogoError(img) {
+      img.style.display = 'none';
+      if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
+    }
+
     function renderStatusSelect(id, currentStatus) {
       const norm = (currentStatus || 'DRAFT').toUpperCase();
       let statusPillClass = norm.toLowerCase();
@@ -5568,7 +5573,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           const initials = (compName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2) || 'IP').toUpperCase();
           const logoHtml = item.logoUrl
             ? '<div style="position:relative; width:36px; height:36px; flex-shrink:0;">'
-                + '<img src="' + item.logoUrl + '" alt="" style="width:36px; height:36px; border-radius:8px; object-fit:contain; background:#ffffff; border:1px solid var(--border-color); padding:2px;" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';" />'
+                + '<img src="' + item.logoUrl + '" alt="" style="width:36px; height:36px; border-radius:8px; object-fit:contain; background:#ffffff; border:1px solid var(--border-color); padding:2px;" onerror="onLogoError(this)" />'
                 + '<div style="display:none; width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, #4F46E5, #06B6D4); color:#ffffff; font-size:12px; font-weight:700; align-items:center; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,0.1); width:100%; height:100%;">' + initials + '</div>'
               + '</div>'
             : '<div style="width:36px; height:36px; border-radius:8px; background:linear-gradient(135deg, #4F46E5, #06B6D4); color:#ffffff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 1px 3px rgba(0,0,0,0.1);">' + initials + '</div>';
