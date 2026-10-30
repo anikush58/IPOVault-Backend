@@ -12,10 +12,12 @@ export function mapRegistrarCategory(raw?: unknown): string | undefined {
 
   // Shareholder category indicators
   if (
+    upper === 'S' ||
     upper === 'SH' ||
     upper === 'SHA' ||
     upper === 'SHR' ||
     upper === 'SHH' ||
+    upper === 'SH_IND' ||
     upper.includes('SHAREHOLDER') ||
     upper.includes('SHARE HOLDER') ||
     upper.includes('SHARE-HOLDER')

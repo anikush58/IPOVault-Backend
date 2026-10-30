@@ -486,7 +486,7 @@ export class KfinRegistryStore {
     // Resilient fallback candidate: verified known bundle path
     if (!targetBundleUrl) {
       targetBundleUrl = new URL(
-        '/static/js/main.9f7d02b5.js',
+        '/static/js/main.f0d85b13.js',
         portalUrl,
       ).toString();
     }

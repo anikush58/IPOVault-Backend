@@ -9,6 +9,7 @@ export const KFIN_VERIFIED_FALLBACK_REGISTRY: Array<{
   clientId: string;
   name: string;
 }> = [
+  { clientId: '72794313091', name: 'BLS POLYMERS LIMITED' },
   { clientId: '78061126051', name: 'JIO PLATFORMS LIMITED' },
   { clientId: '15211216041', name: 'TONBO IMAGING INDIA LIMITED' },
   { clientId: '29931891190', name: 'ZETWERK MANUFACTURING BUSINESSES LIMITED' },

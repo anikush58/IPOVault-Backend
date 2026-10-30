@@ -71,6 +71,7 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
         return resolved;
       }
       clientId = resolved;
+      request.registrarIpoCode = clientId;
     }
 
     try {
@@ -467,7 +468,37 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
         }
       }
 
+      // On-demand live mirror discovery (Zero-Touch):
+      // If cached registry items and static fallback did not yield a match, force a live
+      // refresh from KFintech's live portal bundle and asset-manifest (multi-mirror discovery).
       const identifier = request.symbol || request.companyName || request.ipoId;
+      this.logger.log(
+        `IPO '${identifier}' not found in cached KFin registry (${snapshot.items.length} items). Executing on-demand live mirror discovery...`,
+      );
+      try {
+        const liveSnapshot = await this.store.getActiveRegistry(true);
+        if (liveSnapshot && liveSnapshot.items.length > 0) {
+          const liveMatch = this.matchCompanyInList(
+            liveSnapshot.items,
+            request,
+            checkedAt,
+          );
+          if (typeof liveMatch === 'string') {
+            this.logger.log(
+              `Live mirror discovery successfully resolved KFintech clientId '${liveMatch}' for '${identifier}'!`,
+            );
+            return liveMatch;
+          }
+          if (liveMatch.status === AllotmentStatus.NEEDS_REVIEW) {
+            return liveMatch;
+          }
+        }
+      } catch (refreshErr) {
+        this.logger.warn(
+          `On-demand live KFintech discovery attempt failed (${(refreshErr as Error)?.message || refreshErr}); falling back to matched result`,
+        );
+      }
+
       this.logger.warn(
         `[REGISTRAR_ALERT:UNKNOWN_IPO] IPO '${identifier}' not found in KFintech live active list (${snapshot.items.length} items, isStale: ${snapshot.metadata.isStale})`,
       );

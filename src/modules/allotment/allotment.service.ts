@@ -129,6 +129,20 @@ export class AllotmentService {
         latencyMs,
       );
 
+      if (request.registrarIpoCode && !resolved.registrarIpoCode) {
+        this.resolver
+          .persistDiscoveredRegistrarIdentity(
+            request.ipoId,
+            adapter.code,
+            request.registrarIpoCode,
+          )
+          .catch((persistErr: unknown) => {
+            this.logger.debug(
+              `Failed to persist dynamically discovered registrar code: ${(persistErr as Error)?.message || persistErr}`,
+            );
+          });
+      }
+
       // If registrar explicitly confirms an allotment result (ALLOTTED, PARTIALLY_ALLOTTED, or NOT_ALLOTTED),
       // this is authoritative proof that allotment has been declared for this IPO.
       // Transition IPO from CLOSED or ALLOTMENT_PENDING to ALLOTMENT_COMPLETED.

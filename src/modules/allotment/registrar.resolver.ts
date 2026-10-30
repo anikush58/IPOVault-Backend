@@ -336,7 +336,7 @@ export class RegistrarResolver {
     return undefined;
   }
 
-  private async persistDiscoveredRegistrarIdentity(
+  public async persistDiscoveredRegistrarIdentity(
     ipoId: string,
     registrarCode: string,
     externalId: string,
@@ -368,5 +368,26 @@ export class RegistrarResolver {
         externalId,
       },
     });
+
+    if (typeof this.prisma.ipoAllotmentConfig?.upsert === 'function') {
+      try {
+        await this.prisma.ipoAllotmentConfig.upsert({
+          where: { ipoId },
+          create: {
+            ipoId,
+            registrar: registrarCode,
+            registrarIpoCode: externalId,
+            enabled: true,
+          },
+          update: {
+            registrar: registrarCode,
+            registrarIpoCode: externalId,
+            enabled: true,
+          },
+        });
+      } catch {
+        // Non-blocking
+      }
+    }
   }
 }

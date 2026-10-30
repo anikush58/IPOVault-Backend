@@ -43,6 +43,12 @@ export function configureApp(app: INestApplication): void {
     express.static(join(process.cwd(), 'public', 'delete-account')),
   );
 
+  // Serve app-ads.txt for Google AdMob crawlers and developer domain verification
+  app.use('/app-ads.txt', (_req: express.Request, res: express.Response) => {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send('google.com, pub-3768316467682663, DIRECT, f08c47fec0942fa0\n');
+  });
+
   // Redirect /console to /api/v1/console
   app.use('/console', (req: express.Request, res: express.Response) => {
     res.redirect(301, '/api/v1/console' + (req.url === '/' ? '' : req.url));
