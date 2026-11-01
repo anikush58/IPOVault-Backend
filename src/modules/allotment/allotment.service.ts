@@ -11,6 +11,7 @@ import { PurvaRegistrarAdapter } from './adapters/purva-registrar.adapter';
 import { BigshareRegistrarAdapter } from './adapters/bigshare-registrar.adapter';
 import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
 import {
+  AllotmentIdentifierType,
   AllotmentStatus,
   CheckAllotmentRequest,
   NormalizedAllotmentResult,
@@ -197,6 +198,127 @@ export class AllotmentService {
       );
 
       return errorResult;
+    }
+  }
+
+  /**
+   * Fast real-time registrar availability probe:
+   * Checks whether the registrar has published allotment results for the given IPO.
+   * If newly detected live, automatically transitions IPO status to ALLOTMENT_COMPLETED.
+   */
+  async checkIpoAllotmentAvailability(
+    ipoId: string,
+  ): Promise<{ available: boolean; status: string; registrarCode?: string }> {
+    const ipo = await this.prisma.ipo.findUnique({
+      where: { id: ipoId },
+      include: {
+        company: true,
+        lifecycleEvents: true,
+        allotmentConfig: true,
+      },
+    });
+
+    if (!ipo) {
+      throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO not found');
+    }
+
+    // If already confirmed in DB, return available: true immediately
+    if (
+      ipo.status === IpoStatus.ALLOTMENT_COMPLETED ||
+      ipo.status === IpoStatus.LISTED
+    ) {
+      return {
+        available: true,
+        status: ipo.status,
+        registrarCode: ipo.allotmentConfig?.registrarIpoCode ?? undefined,
+      };
+    }
+
+    try {
+      const resolved = await this.resolver.resolveAdapter(ipo.id);
+      if (!resolved || !resolved.adapter) {
+        return {
+          available: false,
+          status: ipo.status,
+        };
+      }
+
+      const { adapter, registrarIpoCode } = resolved;
+
+      if (typeof adapter.resolveRegistrarIpoCode === 'function') {
+        const checkRequest: CheckAllotmentRequest = {
+          ipoId: ipo.id,
+          registrarIpoCode,
+          identifierType: AllotmentIdentifierType.PAN,
+          identifierValue: '',
+          companyName: ipo.company.displayName,
+          companyLegalName: ipo.company.legalName,
+          symbol: ipo.symbol || undefined,
+        };
+
+        const result = await adapter.resolveRegistrarIpoCode(checkRequest);
+
+        if (
+          typeof result === 'string' &&
+          result.trim().length > 0 &&
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            result.trim(),
+          )
+        ) {
+          const now = new Date();
+          const updatePayload: Prisma.IpoUpdateManyMutationInput = {
+            status: IpoStatus.ALLOTMENT_COMPLETED,
+          };
+          if (!ipo.allotmentResultAvailableAt) {
+            updatePayload.allotmentResultAvailableAt = now;
+          }
+
+          await this.prisma.ipo.updateMany({
+            where: {
+              id: ipo.id,
+              status: {
+                in: [
+                  IpoStatus.CLOSED,
+                  IpoStatus.ALLOTMENT_PENDING,
+                  IpoStatus.OPEN,
+                  IpoStatus.CLOSING_TODAY,
+                ],
+              },
+            },
+            data: updatePayload,
+          });
+
+          if (!ipo.allotmentConfig?.registrarIpoCode && result.trim()) {
+            await this.prisma.ipoAllotmentConfig.updateMany({
+              where: { ipoId: ipo.id },
+              data: { registrarIpoCode: result.trim() },
+            });
+          }
+
+          this.logger.log(
+            `[Allotment Availability Probe] Live availability confirmed for IPO '${ipo.company.displayName}' (${ipo.id}). Transitioned to ALLOTMENT_COMPLETED`,
+          );
+
+          return {
+            available: true,
+            status: IpoStatus.ALLOTMENT_COMPLETED,
+            registrarCode: result.trim(),
+          };
+        }
+      }
+
+      return {
+        available: false,
+        status: ipo.status,
+      };
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Registrar availability probe failed for IPO ${ipo.id}: ${(err as Error)?.message || err}`,
+      );
+      return {
+        available: false,
+        status: ipo.status,
+      };
     }
   }
 

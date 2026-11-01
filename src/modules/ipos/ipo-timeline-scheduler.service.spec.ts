@@ -244,9 +244,9 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
   });
 
   describe('Transition 4: Allotment Polling & ALLOTMENT_COMPLETED (ALLOTMENT_OUT)', () => {
-    it('8. should NOT start registrar polling before 9:00 PM (21:00:00) IST on allotment date', async () => {
+    it('8. should NOT start registrar polling before allotment date (before 00:00:00 IST on allotment date)', async () => {
       const allotmentDate = new Date('2026-09-28T00:00:00.000Z');
-      const nowBefore9PM = new Date('2026-09-28T15:29:59.000Z'); // 20:59:59 IST
+      const nowBeforeAllotmentDate = new Date('2026-09-27T18:29:59.000Z'); // 23:59:59 IST day before
 
       prismaMock.ipo.findMany.mockResolvedValue([
         {
@@ -259,14 +259,14 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         },
       ]);
 
-      const result = await service.processTimelineTransitions(nowBefore9PM);
+      const result = await service.processTimelineTransitions(nowBeforeAllotmentDate);
       expect(result.allotmentConfirmedCount).toBe(0);
       expect(resolverMock.resolveAdapter).not.toHaveBeenCalled();
     });
 
-    it('9. should poll registrar after 9:00 PM IST and transition to ALLOTMENT_COMPLETED when allotment is out', async () => {
+    it('9. should poll registrar on allotment date and transition to ALLOTMENT_COMPLETED when allotment is out', async () => {
       const allotmentDate = new Date('2026-09-28T00:00:00.000Z');
-      const nowAt9PM = new Date('2026-09-28T15:30:00.000Z'); // 21:00:00 IST
+      const nowOnAllotmentDate = new Date('2026-09-28T04:30:00.000Z'); // 10:00:00 IST morning
 
       prismaMock.ipo.findMany.mockResolvedValue([
         {
@@ -288,7 +288,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         registrarIpoCode: 'GAMMA',
       });
 
-      const result = await service.processTimelineTransitions(nowAt9PM);
+      const result = await service.processTimelineTransitions(nowOnAllotmentDate);
       expect(result.allotmentConfirmedCount).toBe(1);
       expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
         where: {
@@ -297,7 +297,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         },
         data: {
           status: IpoStatus.ALLOTMENT_COMPLETED,
-          allotmentResultAvailableAt: nowAt9PM,
+          allotmentResultAvailableAt: nowOnAllotmentDate,
         },
       });
       expect(notificationOrchestratorMock.processAllotmentOutEvent).toHaveBeenCalledWith('ipo-3');
@@ -305,9 +305,9 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
 
     it('10. should throttle 5-minute allotment polling intervals per IPO', async () => {
       const allotmentDate = new Date('2026-09-28T00:00:00.000Z');
-      const nowAt9PM = new Date('2026-09-28T15:30:00.000Z'); // 21:00:00 IST
-      const nowAt902PM = new Date('2026-09-28T15:32:00.000Z'); // 21:02:00 IST (2 mins later, < 5 mins)
-      const nowAt906PM = new Date('2026-09-28T15:36:00.000Z'); // 21:06:00 IST (> 5 mins later)
+      const nowAt10AM = new Date('2026-09-28T04:30:00.000Z'); // 10:00:00 IST
+      const nowAt1002AM = new Date('2026-09-28T04:32:00.000Z'); // 10:02:00 IST (2 mins later, < 5 mins)
+      const nowAt1006AM = new Date('2026-09-28T04:36:00.000Z'); // 10:06:00 IST (> 5 mins later)
 
       prismaMock.ipo.findMany.mockResolvedValue([
         {
@@ -328,16 +328,16 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         registrarIpoCode: 'GAMMA',
       });
 
-      // 1st tick at 21:00 -> polls registrar
-      await service.processTimelineTransitions(nowAt9PM);
+      // 1st tick at 10:00 -> polls registrar
+      await service.processTimelineTransitions(nowAt10AM);
       expect(mockAdapter.resolveRegistrarIpoCode).toHaveBeenCalledTimes(1);
 
-      // 2nd tick at 21:02 -> throttled (skipped)
-      await service.processTimelineTransitions(nowAt902PM);
+      // 2nd tick at 10:02 -> throttled (skipped)
+      await service.processTimelineTransitions(nowAt1002AM);
       expect(mockAdapter.resolveRegistrarIpoCode).toHaveBeenCalledTimes(1);
 
-      // 3rd tick at 21:06 -> eligible (> 5 mins elapsed) -> polls registrar
-      await service.processTimelineTransitions(nowAt906PM);
+      // 3rd tick at 10:06 -> eligible (> 5 mins elapsed) -> polls registrar
+      await service.processTimelineTransitions(nowAt1006AM);
       expect(mockAdapter.resolveRegistrarIpoCode).toHaveBeenCalledTimes(2);
     });
     it('10b. should trigger automated user allotment checks upon ALLOTMENT_OUT for eligible users', async () => {
@@ -525,13 +525,61 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
         where: {
           id: 'ipo-awaited-1',
-          status: { in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING] },
+          status: {
+            in: [
+              IpoStatus.CLOSED,
+              IpoStatus.ALLOTMENT_PENDING,
+              IpoStatus.OPEN,
+              IpoStatus.CLOSING_TODAY,
+            ],
+          },
         },
         data: expect.objectContaining({
           status: IpoStatus.ALLOTMENT_COMPLETED,
         }),
       });
       expect(notificationOrchestratorMock.processAllotmentOutEvent).toHaveBeenCalledWith('ipo-awaited-1');
+    });
+
+    it('18. should check and update IPOs currently in OPEN status when close date has passed', async () => {
+      const pastCloseDate = new Date('2026-10-25T00:00:00.000Z');
+      const sampleOpenIpo = {
+        id: 'ipo-open-1',
+        status: IpoStatus.OPEN,
+        company: { displayName: 'Acme India', legalName: 'Acme India Industries Limited' },
+        lifecycleEvents: [
+          { eventType: LifecycleEventType.CLOSE, eventDate: pastCloseDate },
+        ],
+        allotmentConfig: { registrar: 'Bigshare Services Pvt Ltd', registrarIpoCode: '606' },
+      };
+
+      prismaMock.ipo.findMany.mockResolvedValue([sampleOpenIpo]);
+      resolverMock.resolveAdapter.mockResolvedValue({
+        adapter: {
+          resolveRegistrarIpoCode: jest.fn().mockResolvedValue('606'),
+        },
+        registrarIpoCode: '606',
+      });
+
+      const res = await service.checkAllotmentForAwaitedIpos();
+      expect(res.totalChecked).toBe(1);
+      expect(res.totalUpdated).toBe(1);
+      expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'ipo-open-1',
+          status: {
+            in: [
+              IpoStatus.CLOSED,
+              IpoStatus.ALLOTMENT_PENDING,
+              IpoStatus.OPEN,
+              IpoStatus.CLOSING_TODAY,
+            ],
+          },
+        },
+        data: expect.objectContaining({
+          status: IpoStatus.ALLOTMENT_COMPLETED,
+        }),
+      });
     });
   });
 });

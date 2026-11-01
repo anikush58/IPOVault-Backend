@@ -17,7 +17,7 @@ describe('AllotmentService & Resolver Integration', () => {
   let resolver: RegistrarResolver;
   let prismaMock: {
     ipo: { findUnique: jest.Mock; findFirst: jest.Mock; updateMany: jest.Mock };
-    ipoAllotmentConfig: { findUnique: jest.Mock };
+    ipoAllotmentConfig: { findUnique: jest.Mock; updateMany: jest.Mock };
     ipoSourceIdentity: { findFirst: jest.Mock; upsert?: jest.Mock };
     ipoParticipant: { findFirst: jest.Mock };
   };
@@ -30,7 +30,10 @@ describe('AllotmentService & Resolver Integration', () => {
         findFirst: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
-      ipoAllotmentConfig: { findUnique: jest.fn() },
+      ipoAllotmentConfig: {
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       ipoSourceIdentity: { findFirst: jest.fn(), upsert: jest.fn().mockResolvedValue({}) },
       ipoParticipant: { findFirst: jest.fn() },
     };
@@ -239,5 +242,85 @@ describe('AllotmentService & Resolver Integration', () => {
 
     expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
     expect(prismaMock.ipo.updateMany).not.toHaveBeenCalled();
+  });
+
+  describe('checkIpoAllotmentAvailability probe', () => {
+    it('20. should return available: true immediately if IPO is already ALLOTMENT_COMPLETED or LISTED', async () => {
+      prismaMock.ipo.findUnique.mockResolvedValue({
+        id: 'ipo-completed-1',
+        status: 'ALLOTMENT_COMPLETED',
+        company: { displayName: 'Completed IPO' },
+        allotmentConfig: { registrarIpoCode: '606' },
+      });
+
+      const res = await service.checkIpoAllotmentAvailability('ipo-completed-1');
+      expect(res.available).toBe(true);
+      expect(res.status).toBe('ALLOTMENT_COMPLETED');
+      expect(res.registrarCode).toBe('606');
+    });
+
+    it('21. should live-probe registrar and transition to ALLOTMENT_COMPLETED when allotment is newly detected', async () => {
+      prismaMock.ipo.findUnique.mockResolvedValue({
+        id: 'ipo-awaiting-1',
+        status: 'ALLOTMENT_PENDING',
+        allotmentResultAvailableAt: null,
+        company: { displayName: 'Acme India', legalName: 'Acme India Industries Limited' },
+        allotmentConfig: { registrar: 'bigshare', registrarIpoCode: null },
+      });
+
+      const mockAdapter = {
+        code: 'BIGSHARE',
+        name: 'Bigshare Services',
+        supportedIdentifiers: new Set([AllotmentIdentifierType.PAN]),
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue('606'),
+      };
+
+      jest.spyOn(resolver, 'resolveAdapter').mockResolvedValue({
+        adapter: mockAdapter as any,
+        registrarIpoCode: undefined,
+      });
+
+      const res = await service.checkIpoAllotmentAvailability('ipo-awaiting-1');
+      expect(res.available).toBe(true);
+      expect(res.status).toBe('ALLOTMENT_COMPLETED');
+      expect(res.registrarCode).toBe('606');
+      expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'ALLOTMENT_COMPLETED',
+          }),
+        }),
+      );
+      expect(prismaMock.ipoAllotmentConfig.updateMany).toHaveBeenCalledWith({
+        where: { ipoId: 'ipo-awaiting-1' },
+        data: { registrarIpoCode: '606' },
+      });
+    });
+
+    it('22. should return available: false when registrar has not yet released the allotment', async () => {
+      prismaMock.ipo.findUnique.mockResolvedValue({
+        id: 'ipo-awaiting-2',
+        status: 'ALLOTMENT_PENDING',
+        allotmentResultAvailableAt: null,
+        company: { displayName: 'Pending Co', legalName: 'Pending Company Limited' },
+        allotmentConfig: { registrar: 'bigshare', registrarIpoCode: null },
+      });
+
+      const mockAdapter = {
+        code: 'BIGSHARE',
+        name: 'Bigshare Services',
+        supportedIdentifiers: new Set([AllotmentIdentifierType.PAN]),
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue(null),
+      };
+
+      jest.spyOn(resolver, 'resolveAdapter').mockResolvedValue({
+        adapter: mockAdapter as any,
+        registrarIpoCode: undefined,
+      });
+
+      const res = await service.checkIpoAllotmentAvailability('ipo-awaiting-2');
+      expect(res.available).toBe(false);
+      expect(res.status).toBe('ALLOTMENT_PENDING');
+    });
   });
 });

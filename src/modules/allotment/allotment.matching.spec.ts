@@ -87,6 +87,19 @@ describe('Allotment Matching Pure Utility Tests', () => {
 
   describe('Registrar Matching Contract Test Suite', () => {
     // 1. Exact Match: Molbio Diagnostics Limited
+    it('0. should immediately match pre-configured registrarIpoCode if candidate code exists in list', () => {
+      const list = [
+        { clientId: '606', name: 'ACME INDIA INDUSTRIES LIMITED' },
+        { clientId: '605', name: 'PARAMOUNT SYNTEX LIMITED' },
+      ];
+      const req = {
+        ...dummyRequest('Acme India Industries', 'Acme India'),
+        registrarIpoCode: '606',
+      };
+      const res = matchRegistrarCompany(list, req, 'BIGSHARE', 'Bigshare Services');
+      expect(res).toBe('606');
+    });
+
     it('1. should match Molbio Diagnostics Limited exactly', () => {
       const list = [
         { clientId: '81387868980', name: 'MOLBIO DIAGNOSTICS LIMITED' },

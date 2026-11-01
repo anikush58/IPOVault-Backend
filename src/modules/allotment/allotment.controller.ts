@@ -66,6 +66,17 @@ export class AllotmentController {
   }
 
   /**
+   * Public Fast Live Availability Probe:
+   * Checks whether the registrar has published allotment results for the given IPO.
+   * If newly detected live, automatically transitions IPO status to ALLOTMENT_COMPLETED.
+   */
+  @Public()
+  @Get('ipos/:id/availability')
+  async getIpoAllotmentAvailability(@Param('id') id: string) {
+    return this.allotmentService.checkIpoAllotmentAvailability(id);
+  }
+
+  /**
    * Public Single-Check: Performs direct live lookup on official registrar without authentication.
    * Does not store or persist PAN in database.
    */

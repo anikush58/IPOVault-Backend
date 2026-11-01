@@ -275,6 +275,26 @@ export function matchRegistrarCompany(
   const targetDisplayTokens = extractMeaningfulTokens(targetDisplayName);
 
   // ============================================================
+  // STEP 0: Pre-configured Registrar IPO Code Match (Absolute Highest Priority)
+  // If the IPO already has a non-UUID registrarIpoCode configured, and that
+  // exact code exists in the registrar's live candidate list, accept it immediately.
+  // ============================================================
+  if (
+    request.registrarIpoCode &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      request.registrarIpoCode.trim(),
+    )
+  ) {
+    const rawReqCode = request.registrarIpoCode.trim().toLowerCase();
+    const codeMatch = candidates.find(
+      (c) => c.code.toLowerCase() === rawReqCode,
+    );
+    if (codeMatch) {
+      return codeMatch.code;
+    }
+  }
+
+  // ============================================================
   // STEP 1: Exact Symbol Match (Highest Priority)
   // ============================================================
   if (targetSymbol) {

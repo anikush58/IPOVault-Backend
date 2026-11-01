@@ -368,18 +368,21 @@ export class IpoTimelineSchedulerService
       }
 
       // =========================================================================
-      // 5. Allotment Polling (around 9:00 PM / 21:00:00 IST on allotment date, every 5 mins)
+      // 5. Allotment Polling (from 12:00 AM / 00:00:00 IST on allotment date, every 5 mins)
       // -> ALLOTMENT_COMPLETED / ALLOTMENT_OUT when found
       // =========================================================================
       if (
         currentStatus === IpoStatus.CLOSED ||
         currentStatus === IpoStatus.ALLOTMENT_PENDING
       ) {
-        const pollingDate = allotmentDateStr || closeDateStr;
-        if (pollingDate) {
-          const pollingStartThreshold = createISTDateTime(pollingDate, 21, 0, 0);
+        let pollingStartThreshold: Date | null = null;
+        if (allotmentDateStr) {
+          pollingStartThreshold = createISTDateTime(allotmentDateStr, 0, 0, 0);
+        } else if (closeDateStr) {
+          pollingStartThreshold = createISTDateTime(closeDateStr, 20, 0, 0);
+        }
 
-          if (now >= pollingStartThreshold) {
+        if (pollingStartThreshold && now >= pollingStartThreshold) {
             // Check 5-minute per-IPO polling throttle (300,000 ms)
             const lastPoll = this.lastAllotmentPollingAt.get(ipo.id) ?? 0;
             const elapsed = now.getTime() - lastPoll;
@@ -442,7 +445,6 @@ export class IpoTimelineSchedulerService
             }
           }
         }
-      }
 
       // =========================================================================
       // 6. ALLOTMENT_COMPLETED / LISTING_PENDING -> LISTED (at listing date 10:00:00 IST)
@@ -669,8 +671,33 @@ export class IpoTimelineSchedulerService
   }> {
     const awaitedIpos = await this.prisma.ipo.findMany({
       where: {
+        OR: [
+          {
+            status: {
+              in: [IpoStatus.ALLOTMENT_PENDING, IpoStatus.CLOSED],
+            },
+          },
+          {
+            status: {
+              in: [IpoStatus.OPEN, IpoStatus.CLOSING_TODAY],
+            },
+            lifecycleEvents: {
+              some: {
+                eventType: {
+                  in: [
+                    LifecycleEventType.CLOSE,
+                    LifecycleEventType.BASIS_OF_ALLOTMENT,
+                  ],
+                },
+                eventDate: {
+                  lte: now,
+                },
+              },
+            },
+          },
+        ],
         status: {
-          in: [IpoStatus.ALLOTMENT_PENDING, IpoStatus.CLOSED],
+          notIn: [IpoStatus.WITHDRAWN, IpoStatus.CANCELLED],
         },
       },
       include: {
@@ -700,7 +727,14 @@ export class IpoTimelineSchedulerService
         const updated = await this.prisma.ipo.updateMany({
           where: {
             id: ipo.id,
-            status: { in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING] },
+            status: {
+              in: [
+                IpoStatus.CLOSED,
+                IpoStatus.ALLOTMENT_PENDING,
+                IpoStatus.OPEN,
+                IpoStatus.CLOSING_TODAY,
+              ],
+            },
           },
           data: updatePayload,
         });
