@@ -91,12 +91,107 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
   }
 
   /**
-   * Queries Maashitla's official REST API search endpoint.
-   * Endpoint: GET https://api.maashitla.com/api/public-issue/search?company_name=...&pan=...
+   * Queries Maashitla's allotment status.
+   * Primary: AWS API Gateway (used by live official portal https://maashitla.com/allotment-status/public-issues)
+   * Fallback: Legacy REST search endpoint (/public-issue/search)
    */
   private async queryMaashitlaApi(
     request: CheckAllotmentRequest,
+    companyIdentifier: string,
+  ): Promise<NormalizedAllotmentResult> {
+    const checkedAt = new Date();
+    const awsBaseUrl =
+      process.env.MAASHITLA_AWS_API_URL ||
+      'https://pnjbvxj6md.execute-api.ap-south-1.amazonaws.com/prod/check';
+
+    const slug = this.toSlug(companyIdentifier);
+    const paramKey =
+      request.identifierType === AllotmentIdentifierType.PAN
+        ? 'pan'
+        : request.identifierType === AllotmentIdentifierType.APPLICATION_NUMBER
+          ? 'application_no'
+          : 'dpid_client_id';
+    const paramVal =
+      request.identifierType === AllotmentIdentifierType.PAN
+        ? request.identifierValue.trim().toUpperCase()
+        : request.identifierValue.trim();
+
+    try {
+      const awsUrl = `${awsBaseUrl}/${encodeURIComponent(slug)}?${encodeURIComponent(paramKey)}=${encodeURIComponent(paramVal)}`;
+      const response = await this.fetchWithRetry(awsUrl, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json, text/plain, */*',
+          Origin: 'https://maashitla.com',
+          Referer: 'https://maashitla.com/',
+        },
+      });
+
+      if (response.status === 429) {
+        return {
+          status: AllotmentStatus.RATE_LIMITED,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: 'Maashitla API rate limit exceeded',
+        };
+      }
+
+      if (response.status === 404) {
+        return {
+          status: AllotmentStatus.APPLICATION_NOT_FOUND,
+          sourceCode: this.code,
+          checkedAt,
+        };
+      }
+
+      if (response.ok) {
+        let parsed: Record<string, unknown> | null = null;
+        try {
+          parsed = (await response.json()) as Record<string, unknown>;
+        } catch {
+          return {
+            status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
+            sourceCode: this.code,
+            checkedAt,
+            errorMessage: 'Failed to parse JSON response from Maashitla AWS gateway',
+          };
+        }
+
+        if (
+          !parsed ||
+          Object.keys(parsed).length === 0 ||
+          parsed.name == null
+        ) {
+          return {
+            status: AllotmentStatus.APPLICATION_NOT_FOUND,
+            sourceCode: this.code,
+            checkedAt,
+          };
+        }
+
+        return this.normalizeMaashitlaResponse(parsed, checkedAt);
+      }
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Maashitla AWS gateway check failed, attempting fallback to legacy API: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return this.queryLegacyMaashitlaApi(
+      request,
+      companyIdentifier,
+      checkedAt,
+    );
+  }
+
+  /**
+   * Fallback for older offerings or legacy environments.
+   * Endpoint: GET https://api.maashitla.com/api/public-issue/search?company_name=...
+   */
+  private async queryLegacyMaashitlaApi(
+    request: CheckAllotmentRequest,
     companyName: string,
+    checkedAt: Date,
   ): Promise<NormalizedAllotmentResult> {
     const baseUrl =
       process.env.MAASHITLA_API_URL || 'https://api.maashitla.com/api';
@@ -128,8 +223,6 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
         Accept: 'application/json, text/plain, */*',
       },
     });
-
-    const checkedAt = new Date();
 
     if (response.status === 404) {
       return {
@@ -172,6 +265,38 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
     }
 
     return this.normalizeMaashitlaResponse(parsed, checkedAt);
+  }
+
+  /**
+   * Resolves or converts a company identifier into Maashitla's official slug.
+   * Example: "WISCON INDUSTRIES LIMITED" -> "wiscon-industries-limited"
+   */
+  public toSlug(companyIdentifier: string): string {
+    const trimmed = companyIdentifier.trim();
+    if (!trimmed) return '';
+
+    // If it already matches a kebab-case slug format
+    if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(trimmed)) {
+      return trimmed;
+    }
+
+    // Check if we have an exact match in our cached directory
+    if (this.cachedCompanyList?.items) {
+      const match = this.cachedCompanyList.items.find(
+        (c) =>
+          c.name.toLowerCase() === trimmed.toLowerCase() ||
+          c.code.toLowerCase() === trimmed.toLowerCase(),
+      );
+      if (match && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(match.code)) {
+        return match.code;
+      }
+    }
+
+    return trimmed
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
   }
 
   /**
@@ -241,6 +366,24 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
         ) {
           return { errorStatus: AllotmentStatus.SOURCE_RESPONSE_INVALID, rawMsg };
         }
+      }
+
+      if (
+        !obj.name &&
+        !obj.applicant_name &&
+        !obj.client_name &&
+        !obj.shareholder_name &&
+        !obj.investor_name &&
+        !obj.holder_name &&
+        obj.shares_applied === undefined &&
+        obj.sharesApplied === undefined &&
+        obj.shares_allotted === undefined &&
+        obj.shares_alloted === undefined
+      ) {
+        return {
+          errorStatus: AllotmentStatus.APPLICATION_NOT_FOUND,
+          rawMsg: 'No allotment record found',
+        };
       }
 
       const applied = Number(
@@ -507,7 +650,11 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
   > {
     const baseUrl =
       process.env.MAASHITLA_API_URL || 'https://api.maashitla.com/api';
-    const endpoints = ['/public-issue/companies', '/companies'];
+    const endpoints = [
+      '/company-directory',
+      '/public-issue/companies',
+      '/companies',
+    ];
     const validated: Array<{ code: string; name: string }> = [];
     const seen = new Set<string>();
 
@@ -535,10 +682,10 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
 
         const rawList = Array.isArray(parsed)
           ? parsed
-          : Array.isArray((parsed as Record<string, unknown>)?.data)
-            ? ((parsed as Record<string, unknown>).data as unknown[])
-            : Array.isArray((parsed as Record<string, unknown>)?.companies)
-              ? ((parsed as Record<string, unknown>).companies as unknown[])
+          : Array.isArray((parsed as Record<string, unknown>)?.companies)
+            ? ((parsed as Record<string, unknown>).companies as unknown[])
+            : Array.isArray((parsed as Record<string, unknown>)?.data)
+              ? ((parsed as Record<string, unknown>).data as unknown[])
               : Array.isArray((parsed as Record<string, unknown>)?.result)
                 ? ((parsed as Record<string, unknown>).result as unknown[])
                 : [];
@@ -549,10 +696,15 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
           const name = String(
             rec.company_name || rec.companyName || rec.name || '',
           ).trim();
+          const slug = String(
+            rec.company_slug || rec.slug || rec.company_id || '',
+          ).trim();
+
+          const candidateCode = slug || name;
 
           if (name && !seen.has(name.toLowerCase())) {
             seen.add(name.toLowerCase());
-            validated.push({ code: name, name });
+            validated.push({ code: candidateCode, name });
           }
         }
       } catch {

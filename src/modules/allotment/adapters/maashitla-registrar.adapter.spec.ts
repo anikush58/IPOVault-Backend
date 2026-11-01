@@ -148,7 +148,7 @@ describe('MaashitlaRegistrarAdapter Production Contract Tests', () => {
     expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
   });
 
-  it('10. should support direct registrarIpoCode parameter when supplied', async () => {
+  it('10. should query AWS API Gateway directly when registrarIpoCode parameter is supplied', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() =>
       Promise.resolve({
         ok: true,
@@ -168,13 +168,11 @@ describe('MaashitlaRegistrarAdapter Production Contract Tests', () => {
     expect(result.status).toBe(AllotmentStatus.ALLOTTED);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining('/public-issue/search'),
-      expect.objectContaining({
-        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
-      }),
+      expect.stringContaining('execute-api.ap-south-1.amazonaws.com/prod/check/spectraa-technology-solutions-limited'),
+      expect.anything(),
     );
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining('company_name=SPECTRAA+TECHNOLOGY+SOLUTIONS+LIMITED'),
+      expect.stringContaining('pan=ABCDE1234F'),
       expect.anything(),
     );
   });
@@ -184,11 +182,36 @@ describe('MaashitlaRegistrarAdapter Production Contract Tests', () => {
       .spyOn(global, 'fetch')
       .mockImplementation((url: unknown) => {
         const urlStr = String(url);
+        if (urlStr.includes('/company-directory')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              companies: [
+                {
+                  company_name: 'VAMA WOVENFAB LIMITED',
+                  company_slug: 'vama-wovenfab-limited',
+                },
+              ],
+            }),
+          } as Response);
+        }
         if (urlStr.includes('/public-issue/companies')) {
           return Promise.resolve({
             ok: true,
             status: 200,
             json: async () => sampleCompaniesList,
+          } as Response);
+        }
+        if (urlStr.includes('/prod/check/vama-wovenfab-limited')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              name: 'TEST APPLICANT',
+              shares_applied: 2000,
+              shares_allotted: 2000,
+            }),
           } as Response);
         }
         if (urlStr.includes('/public-issue/search')) {
@@ -220,7 +243,7 @@ describe('MaashitlaRegistrarAdapter Production Contract Tests', () => {
     expect(result.status).toBe(AllotmentStatus.ALLOTTED);
     expect(result.applicantName).toBe('TEST APPLICANT');
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining('company_name=VAMA+WOVENFAB+LIMITED'),
+      expect.stringContaining('vama-wovenfab-limited'),
       expect.anything(),
     );
   });
@@ -326,5 +349,66 @@ describe('MaashitlaRegistrarAdapter Production Contract Tests', () => {
     expect(list).toHaveLength(2);
     expect(list[0].name).toBe('SHIVCHEM AGRO LIMITED');
     expect(list[1].name).toBe('ACME UNIVERSAL SAFEZONE 9 LIMITED');
+  });
+
+  it('17. should discover and match Wiscon Industries from /company-directory', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/company-directory')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            companies: [
+              {
+                company_name: 'WISCON INDUSTRIES LIMITED',
+                company_slug: 'wiscon-industries-limited',
+              },
+            ],
+          }),
+        } as Response);
+      }
+      if (urlStr.includes('/prod/check/wiscon-industries-limited')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            name: 'WISCON INVESTOR',
+            shares_applied: 1200,
+            shares_allotted: 1200,
+          }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: false, status: 404 } as Response);
+    });
+
+    const wisconReq = {
+      ipoId: '39cdd3fe-8455-47ad-98e6-497d1249abc9',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Wiscon Industries',
+      companyLegalName: 'Wiscon Industries Limited',
+    };
+
+    const resolved = await adapter.resolveRegistrarIpoCode(wisconReq);
+    expect(resolved).toBe('wiscon-industries-limited');
+
+    const result = await adapter.checkAllotment(wisconReq);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(result.applicantName).toBe('WISCON INVESTOR');
+    expect(result.sharesAllotted).toBe(1200);
+  });
+
+  it('18. should handle empty object {} from AWS gateway as APPLICATION_NOT_FOUND', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response),
+    );
+
+    const result = await adapter.checkAllotment(mockRequest);
+    expect(result.status).toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
   });
 });

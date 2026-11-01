@@ -185,7 +185,9 @@ export function parseCompanyCandidates(
     const rec = item as Record<string, unknown>;
 
     let code = String(
-      rec.clientId ||
+      rec.company_slug ||
+        rec.slug ||
+        rec.clientId ||
         rec.client_id ||
         rec.clientid ||
         rec.code ||
