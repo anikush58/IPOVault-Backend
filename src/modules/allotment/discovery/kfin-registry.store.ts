@@ -8,6 +8,8 @@ import { KFIN_VERIFIED_FALLBACK_REGISTRY } from './kfin-identity-discovery.adapt
 export interface KfinRegistryItem {
   clientId: string;
   name: string;
+  lastSeen?: string;
+  verifiedAt?: string;
 }
 
 export type KfinRegistrySourceType =
@@ -30,6 +32,7 @@ export interface KfinRegistryMetadata {
   validationStatus: KfinRegistryValidationStatus;
   isStale: boolean;
   contentHash: string;
+  lastVerifiedAt?: string;
 }
 
 export interface KfinRegistrySnapshot {
@@ -88,7 +91,7 @@ export class KfinRegistryStore {
       cacheTtlMs:
         customConfig?.cacheTtlMs ||
         Number(process.env.KFIN_REGISTRY_CACHE_TTL_MS) ||
-        15 * 60 * 1000, // 15 minutes
+        30 * 60 * 1000, // 30 minutes
       staleCacheTtlMs:
         customConfig?.staleCacheTtlMs ||
         Number(process.env.KFIN_REGISTRY_STALE_TTL_MS) ||
@@ -104,15 +107,15 @@ export class KfinRegistryStore {
       minItemsThreshold:
         customConfig?.minItemsThreshold !== undefined
           ? customConfig.minItemsThreshold
-          : (process.env.KFIN_REGISTRY_MIN_ITEMS !== undefined
-              ? Number(process.env.KFIN_REGISTRY_MIN_ITEMS)
-              : 1),
+          : process.env.KFIN_REGISTRY_MIN_ITEMS !== undefined
+            ? Number(process.env.KFIN_REGISTRY_MIN_ITEMS)
+            : 1,
       maxShrinkRatio:
         customConfig?.maxShrinkRatio !== undefined
           ? customConfig.maxShrinkRatio
-          : (process.env.KFIN_REGISTRY_MAX_SHRINK_RATIO !== undefined
-              ? Number(process.env.KFIN_REGISTRY_MAX_SHRINK_RATIO)
-              : 0),
+          : process.env.KFIN_REGISTRY_MAX_SHRINK_RATIO !== undefined
+            ? Number(process.env.KFIN_REGISTRY_MAX_SHRINK_RATIO)
+            : 0,
     };
 
     // Attempt to hydrate in-memory state immediately from persistent storage
@@ -310,6 +313,8 @@ export class KfinRegistryStore {
     const validated: KfinRegistryItem[] = [];
     const seenCodes = new Set<string>();
 
+    const nowIso = new Date().toISOString();
+
     for (const entry of rawItems) {
       if (!entry || typeof entry !== 'object') continue;
       const rec = entry as Record<string, unknown>;
@@ -327,7 +332,12 @@ export class KfinRegistryStore {
       ) {
         if (!seenCodes.has(code)) {
           seenCodes.add(code);
-          validated.push({ clientId: code, name });
+          validated.push({
+            clientId: code,
+            name,
+            lastSeen: String(rec.lastSeen || nowIso),
+            verifiedAt: String(rec.verifiedAt || nowIso),
+          });
         }
       }
     }
@@ -483,12 +493,20 @@ export class KfinRegistryStore {
       }
     }
 
-    // Resilient fallback candidate: verified known bundle path
+    // Resilient fallback candidate: prioritize last-known verified bundle from snapshot before static seed
     if (!targetBundleUrl) {
-      targetBundleUrl = new URL(
-        '/static/js/main.f0d85b13.js',
-        portalUrl,
-      ).toString();
+      const lastKnownBundle =
+        this.cachedSnapshot?.metadata?.sourceUrl ||
+        this.hydrateFromPersistentStorage()?.metadata?.sourceUrl;
+
+      if (lastKnownBundle && lastKnownBundle.includes('/static/js/')) {
+        targetBundleUrl = lastKnownBundle;
+      } else {
+        targetBundleUrl = new URL(
+          '/static/js/main.3d909f65.js',
+          portalUrl,
+        ).toString();
+      }
     }
 
     // Phase 2: Fetch JS bundle with exponential backoff & jitter
@@ -764,17 +782,15 @@ export class KfinRegistryStore {
     let lastError: unknown;
 
     while (attempt <= maxRetries) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+      try {
         const response = await fetch(url, {
           method: 'GET',
           headers: options.headers,
           signal: controller.signal,
         });
-
-        clearTimeout(timeoutId);
 
         // Retry on 429 or 5xx server errors
         if (
@@ -805,6 +821,8 @@ export class KfinRegistryStore {
           continue;
         }
         break;
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 

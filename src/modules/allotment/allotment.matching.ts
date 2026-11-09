@@ -359,6 +359,10 @@ export function matchRegistrarCompany(
     return exactMatches[0].code;
   }
   if (exactMatches.length > 1) {
+    const uniqueCodes = new Set(exactMatches.map((c) => c.code));
+    if (uniqueCodes.size === 1) {
+      return exactMatches[0].code;
+    }
     return {
       status: AllotmentStatus.NEEDS_REVIEW,
       sourceCode: registrarCode,
@@ -454,4 +458,120 @@ export function matchRegistrarCompany(
     checkedAt,
     errorMessage: `IPO not found in ${registrarName} live active list`,
   };
+}
+
+/**
+ * Resolves all valid registrar client IDs/codes for a company.
+ * Handles single-code and multi-tranche IPOs (multiple client IDs for the same company).
+ */
+export function matchAllRegistrarCompanyCodes(
+  items: unknown[],
+  request: CheckAllotmentRequest,
+  registrarCode: string,
+  registrarName: string,
+  checkedAt: Date = new Date(),
+): string[] | NormalizedAllotmentResult {
+  const candidates = parseCompanyCandidates(items);
+
+  const targetSymbol = request.symbol?.trim().toUpperCase();
+  const targetLegalName = request.companyLegalName || '';
+  const targetDisplayName = request.companyName || '';
+
+  const targetLegalKey = normalizeName(targetLegalName);
+  const targetDisplayKey = normalizeName(targetDisplayName);
+
+  // STEP 0: Pre-configured Registrar IPO Code Match
+  if (
+    request.registrarIpoCode &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      request.registrarIpoCode.trim(),
+    )
+  ) {
+    const rawReqCode = request.registrarIpoCode.trim().toLowerCase();
+    const codeMatch = candidates.find(
+      (c) => c.code.toLowerCase() === rawReqCode,
+    );
+    if (codeMatch) {
+      return [codeMatch.code];
+    }
+  }
+
+  // STEP 1: Exact Symbol Match
+  if (targetSymbol) {
+    const symbolMatches = candidates.filter(
+      (c) => c.symbol && c.symbol === targetSymbol,
+    );
+    if (symbolMatches.length > 0) {
+      const uniqueKeys = new Set(symbolMatches.map((c) => c.cleanKey));
+      if (uniqueKeys.size === 1) {
+        return Array.from(new Set(symbolMatches.map((c) => c.code)));
+      }
+      return {
+        status: AllotmentStatus.NEEDS_REVIEW,
+        sourceCode: registrarCode,
+        checkedAt,
+        errorMessage: `Multiple ambiguous matches found by symbol '${targetSymbol}' in ${registrarName} live list`,
+      };
+    }
+  }
+
+  // STEP 2: Tier 1 Strict Exact Normalized Name Match
+  const exactMatches = candidates.filter((c) => {
+    return (
+      (targetLegalKey.length > 0 && c.cleanKey === targetLegalKey) ||
+      (targetDisplayKey.length > 0 && c.cleanKey === targetDisplayKey)
+    );
+  });
+
+  if (exactMatches.length > 0) {
+    const uniqueKeys = new Set(exactMatches.map((c) => c.cleanKey));
+    if (uniqueKeys.size === 1) {
+      return Array.from(new Set(exactMatches.map((c) => c.code)));
+    }
+    return {
+      status: AllotmentStatus.NEEDS_REVIEW,
+      sourceCode: registrarCode,
+      checkedAt,
+      errorMessage: `Multiple ambiguous matches found by company name in ${registrarName} live list`,
+    };
+  }
+
+  // STEP 3: Tier 2 Canonical Spelling Alias Match
+  const aliasLegalKey = applyRegistrarSpellingAliases(targetLegalKey);
+  const aliasDisplayKey = applyRegistrarSpellingAliases(targetDisplayKey);
+
+  if (aliasLegalKey || aliasDisplayKey) {
+    const aliasMatches = candidates.filter((c) => {
+      return (
+        (aliasLegalKey.length > 0 && c.aliasKey === aliasLegalKey) ||
+        (aliasDisplayKey.length > 0 && c.aliasKey === aliasDisplayKey)
+      );
+    });
+
+    if (aliasMatches.length > 0) {
+      const uniqueKeys = new Set(aliasMatches.map((c) => c.aliasKey));
+      if (uniqueKeys.size === 1) {
+        return Array.from(new Set(aliasMatches.map((c) => c.code)));
+      }
+      return {
+        status: AllotmentStatus.NEEDS_REVIEW,
+        sourceCode: registrarCode,
+        checkedAt,
+        errorMessage: `Multiple ambiguous alias matches found in ${registrarName} live list`,
+      };
+    }
+  }
+
+  // Fallback to single matchRegistrarCompany for token/containment logic
+  const single = matchRegistrarCompany(
+    items,
+    request,
+    registrarCode,
+    registrarName,
+    checkedAt,
+  );
+  if (typeof single === 'string') {
+    return [single];
+  }
+  return single;
 }

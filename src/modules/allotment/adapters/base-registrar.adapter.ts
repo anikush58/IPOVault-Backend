@@ -70,7 +70,12 @@ export abstract class BaseRegistrarAdapter implements IRegistrarAdapter {
 
         clearTimeout(timeoutId);
 
-        if (response.ok || response.status === 404 || response.status === 429) {
+        if (
+          response.ok ||
+          response.status === 404 ||
+          response.status === 429 ||
+          response.status === 403
+        ) {
           return response;
         }
 

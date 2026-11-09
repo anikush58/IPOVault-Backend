@@ -8,7 +8,11 @@ import {
 } from '../allotment.types';
 import { maskIdentifier } from '../allotment.utils';
 import { BaseRegistrarAdapter } from './base-registrar.adapter';
-import { matchRegistrarCompany, normalizeName } from '../allotment.matching';
+import {
+  matchRegistrarCompany,
+  matchAllRegistrarCompanyCodes,
+  normalizeName,
+} from '../allotment.matching';
 import {
   mapRegistrarCategory,
   deduplicateCategoryRecords,
@@ -77,25 +81,168 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     try {
       return await this.queryKfinApiGateway(request, clientId);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `[REGISTRAR_ALERT:DISCOVERY_FAILURE] KFintech gateway fetch failure for ${masked}: ${msg}`,
-      );
+      return this.handleGatewayFetchError(err, request, masked);
+    }
+  }
 
-      if (msg.includes('429')) {
-        return this.createErrorResult(
-          request,
-          AllotmentStatus.RATE_LIMITED,
-          `KFintech rate limit encountered`,
-        );
-      }
+  private handleGatewayFetchError(
+    err: unknown,
+    request: CheckAllotmentRequest,
+    masked: string,
+  ): NormalizedAllotmentResult {
+    const msg = err instanceof Error ? err.message : String(err);
+    this.logger.error(
+      `[REGISTRAR_ALERT:DISCOVERY_FAILURE] KFintech gateway fetch failure for ${masked}: ${msg}`,
+    );
 
+    const isTimeout =
+      (err instanceof Error && err.name === 'AbortError') ||
+      msg.toLowerCase().includes('timeout') ||
+      msg.toLowerCase().includes('aborted');
+
+    if (isTimeout) {
       return this.createErrorResult(
         request,
         AllotmentStatus.SOURCE_UNAVAILABLE,
-        `KFintech API gateway unavailable: ${msg}`,
+        `KFintech API request timed out`,
       );
     }
+
+    if (msg.includes('429')) {
+      return this.createErrorResult(
+        request,
+        AllotmentStatus.RATE_LIMITED,
+        `KFintech API rate limit exceeded (HTTP 429)`,
+      );
+    }
+
+    if (msg.includes('403')) {
+      return this.createErrorResult(
+        request,
+        AllotmentStatus.SOURCE_UNAVAILABLE,
+        `KFintech API request forbidden (HTTP 403)`,
+      );
+    }
+
+    if (/5\d{2}/.test(msg)) {
+      return this.createErrorResult(
+        request,
+        AllotmentStatus.SOURCE_UNAVAILABLE,
+        `KFintech API gateway server error: ${msg}`,
+      );
+    }
+
+    return this.createErrorResult(
+      request,
+      AllotmentStatus.SOURCE_UNAVAILABLE,
+      `KFintech API gateway unavailable: ${msg}`,
+    );
+  }
+
+  public mergeMultiTrancheResults(
+    results: NormalizedAllotmentResult[],
+    _request: CheckAllotmentRequest,
+  ): NormalizedAllotmentResult {
+    const checkedAt = new Date();
+
+    // 1. Check for confirmed allotment (ALLOTTED or PARTIALLY_ALLOTTED)
+    const confirmedResults = results.filter(
+      (r) =>
+        r.status === AllotmentStatus.ALLOTTED ||
+        r.status === AllotmentStatus.PARTIALLY_ALLOTTED,
+    );
+
+    if (confirmedResults.length > 0) {
+      const allCategories: CategoryAllotmentResult[] = [];
+      let applicantName: string | undefined;
+      let rawRef: string | undefined;
+
+      for (const r of confirmedResults) {
+        if (!applicantName && r.applicantName) applicantName = r.applicantName;
+        if (!rawRef && r.rawResponseRef) rawRef = r.rawResponseRef;
+        if (r.categoryResults) {
+          allCategories.push(...r.categoryResults);
+        } else {
+          allCategories.push({
+            status: r.status,
+            sharesApplied: r.sharesApplied,
+            sharesAllotted: r.sharesAllotted || 0,
+          });
+        }
+      }
+
+      // Also include NOT_ALLOTTED categories from other tranches if present
+      const notAllottedResults = results.filter(
+        (r) => r.status === AllotmentStatus.NOT_ALLOTTED && r.categoryResults,
+      );
+      for (const r of notAllottedResults) {
+        if (r.categoryResults) {
+          allCategories.push(...r.categoryResults);
+        }
+      }
+
+      const deduped = deduplicateCategoryRecords(allCategories);
+      const overall = deriveOverallAllotment(deduped);
+
+      return {
+        status: overall.status,
+        sharesApplied:
+          overall.sharesApplied > 0 ? overall.sharesApplied : undefined,
+        sharesAllotted: overall.sharesAllotted,
+        applicantName,
+        sourceCode: this.code,
+        checkedAt,
+        rawResponseRef: rawRef,
+        categoryResults: deduped,
+      };
+    }
+
+    // 2. Check for confirmed NOT_ALLOTTED
+    const notAllotted = results.find(
+      (r) => r.status === AllotmentStatus.NOT_ALLOTTED,
+    );
+    if (notAllotted) {
+      return notAllotted;
+    }
+
+    // 3. If any returned NOT_YET_AVAILABLE
+    const awaited = results.find(
+      (r) => r.status === AllotmentStatus.NOT_YET_AVAILABLE,
+    );
+    if (awaited) {
+      return awaited;
+    }
+
+    // 4. If all returned APPLICATION_NOT_FOUND
+    const allNotFound = results.every(
+      (r) => r.status === AllotmentStatus.APPLICATION_NOT_FOUND,
+    );
+    if (allNotFound) {
+      return {
+        status: AllotmentStatus.APPLICATION_NOT_FOUND,
+        sourceCode: this.code,
+        checkedAt,
+      };
+    }
+
+    // 5. Technical errors (403, 429, 5xx)
+    const techError = results.find(
+      (r) =>
+        r.status === AllotmentStatus.RATE_LIMITED ||
+        r.status === AllotmentStatus.SOURCE_UNAVAILABLE ||
+        r.status === AllotmentStatus.SOURCE_RESPONSE_INVALID,
+    );
+    if (techError) {
+      return techError;
+    }
+
+    return (
+      results[0] || {
+        status: AllotmentStatus.APPLICATION_NOT_FOUND,
+        sourceCode: this.code,
+        checkedAt,
+      }
+    );
   }
 
   /**
@@ -148,19 +295,43 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
 
     if (response.status === 429) {
       this.logger.warn(
-        `[REGISTRAR_ALERT:MALFORMED_RESPONSE] KFintech API rate limit encountered for IPO ${request.ipoId} (Identifier: ${masked})`,
+        `[REGISTRAR_ALERT:RATE_LIMITED] KFintech API rate limit encountered for IPO ${request.ipoId} (Identifier: ${masked})`,
       );
       return {
         status: AllotmentStatus.RATE_LIMITED,
         sourceCode: this.code,
         checkedAt,
-        errorMessage: 'KFintech API rate limit exceeded',
+        errorMessage: 'KFintech API rate limit exceeded (HTTP 429)',
+      };
+    }
+
+    if (response.status === 403) {
+      this.logger.warn(
+        `[REGISTRAR_ALERT:FORBIDDEN] KFintech API access forbidden for IPO ${request.ipoId} (Identifier: ${masked})`,
+      );
+      return {
+        status: AllotmentStatus.SOURCE_UNAVAILABLE,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage: 'KFintech API request forbidden (HTTP 403)',
+      };
+    }
+
+    if (response.status >= 500) {
+      this.logger.warn(
+        `[REGISTRAR_ALERT:SERVER_ERROR] KFintech API returned HTTP status ${response.status} for IPO ${request.ipoId} (Identifier: ${masked})`,
+      );
+      return {
+        status: AllotmentStatus.SOURCE_UNAVAILABLE,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage: `KFintech API gateway server error (HTTP ${response.status})`,
       };
     }
 
     if (!response.ok) {
       this.logger.warn(
-        `[REGISTRAR_ALERT:MALFORMED_RESPONSE] KFintech API returned HTTP status ${response.status} for IPO ${request.ipoId} (Identifier: ${masked})`,
+        `[REGISTRAR_ALERT:UPSTREAM_HTTP_ERROR] KFintech API returned HTTP status ${response.status} for IPO ${request.ipoId} (Identifier: ${masked})`,
       );
       return {
         status: AllotmentStatus.SOURCE_UNAVAILABLE,
@@ -208,7 +379,10 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       : Array.isArray((raw as Record<string, unknown>).data)
         ? ((raw as Record<string, unknown>).data as Record<string, unknown>[])
         : Array.isArray((raw as Record<string, unknown>).result)
-          ? ((raw as Record<string, unknown>).result as Record<string, unknown>[])
+          ? ((raw as Record<string, unknown>).result as Record<
+              string,
+              unknown
+            >[])
           : [];
 
     const parseRecord = (obj: Record<string, unknown>) => {
@@ -250,7 +424,10 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
           obj.All_Shares === undefined &&
           obj.allotted_qty === undefined
         ) {
-          return { errorStatus: AllotmentStatus.SOURCE_RESPONSE_INVALID, rawMsg };
+          return {
+            errorStatus: AllotmentStatus.SOURCE_RESPONSE_INVALID,
+            rawMsg,
+          };
         }
       }
 
@@ -293,7 +470,9 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
         obj.Category_Desc ??
         obj.shareholder_type;
       const rawCategoryStr =
-        rawCat !== undefined && rawCat !== null ? String(rawCat).trim() : undefined;
+        rawCat !== undefined && rawCat !== null
+          ? String(rawCat).trim()
+          : undefined;
       const canonicalCategory = mapRegistrarCategory(rawCategoryStr);
 
       const appNo =
@@ -354,8 +533,10 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       for (const p of parsedItems) {
         if (p.categoryResult) {
           validCategories.push(p.categoryResult);
-          if (!applicantName && p.applicantName) applicantName = p.applicantName;
-          if (!rawResponseRef && p.rawResponseRef) rawResponseRef = p.rawResponseRef;
+          if (!applicantName && p.applicantName)
+            applicantName = p.applicantName;
+          if (!rawResponseRef && p.rawResponseRef)
+            rawResponseRef = p.rawResponseRef;
         } else if (p.errorStatus) {
           validCategories.push({
             status: p.errorStatus,
@@ -366,7 +547,8 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
 
       if (validCategories.length === 0) {
         return {
-          status: errorItem?.errorStatus || AllotmentStatus.APPLICATION_NOT_FOUND,
+          status:
+            errorItem?.errorStatus || AllotmentStatus.APPLICATION_NOT_FOUND,
           sourceCode: this.code,
           checkedAt,
           errorMessage: errorItem?.rawMsg,
@@ -512,6 +694,118 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
         checkedAt,
       );
       if (typeof fallbackMatch === 'string') {
+        return fallbackMatch;
+      }
+
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `[REGISTRAR_ALERT:DISCOVERY_FAILURE] Failed to resolve KFintech registrar code: ${msg}`,
+      );
+
+      if (
+        msg.includes('JSON') ||
+        msg.includes('parse') ||
+        msg.includes('bundle')
+      ) {
+        return {
+          status: AllotmentStatus.SOURCE_RESPONSE_INVALID,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: `Failed to parse KFintech active company bundle: ${msg}`,
+        };
+      }
+      return {
+        status: AllotmentStatus.SOURCE_UNAVAILABLE,
+        sourceCode: this.code,
+        checkedAt,
+        errorMessage: `KFintech portal unavailable: ${msg}`,
+      };
+    }
+  }
+
+  public async resolveAllRegistrarIpoCodes(
+    request: CheckAllotmentRequest,
+  ): Promise<string[] | NormalizedAllotmentResult> {
+    const checkedAt = new Date();
+    try {
+      const snapshot = await this.store.getActiveRegistry();
+      const matched = matchAllRegistrarCompanyCodes(
+        snapshot.items,
+        request,
+        this.code,
+        this.name,
+        checkedAt,
+      );
+      if (Array.isArray(matched)) {
+        return matched;
+      }
+
+      if (matched.status === AllotmentStatus.NEEDS_REVIEW) {
+        return matched;
+      }
+
+      // If active list did not yield a match, check verified fallback registry if different
+      if (snapshot.items !== KFIN_VERIFIED_FALLBACK_REGISTRY) {
+        const fallbackMatch = matchAllRegistrarCompanyCodes(
+          KFIN_VERIFIED_FALLBACK_REGISTRY,
+          request,
+          this.code,
+          this.name,
+          checkedAt,
+        );
+        if (Array.isArray(fallbackMatch)) {
+          return fallbackMatch;
+        }
+      }
+
+      // On-demand live mirror discovery (Zero-Touch):
+      // If cached registry items and static fallback did not yield a match, force a live
+      // refresh from KFintech's live portal bundle and asset-manifest (multi-mirror discovery).
+      const identifier = request.symbol || request.companyName || request.ipoId;
+      this.logger.log(
+        `IPO '${identifier}' not found in cached KFin registry (${snapshot.items.length} items). Executing on-demand live mirror discovery...`,
+      );
+      try {
+        const liveSnapshot = await this.store.getActiveRegistry(true);
+        if (liveSnapshot && liveSnapshot.items.length > 0) {
+          const liveMatch = matchAllRegistrarCompanyCodes(
+            liveSnapshot.items,
+            request,
+            this.code,
+            this.name,
+            checkedAt,
+          );
+          if (Array.isArray(liveMatch)) {
+            this.logger.log(
+              `Live mirror discovery successfully resolved KFintech clientIds [${liveMatch.join(', ')}] for '${identifier}'!`,
+            );
+            return liveMatch;
+          }
+          if (liveMatch.status === AllotmentStatus.NEEDS_REVIEW) {
+            return liveMatch;
+          }
+        }
+      } catch (refreshErr) {
+        this.logger.warn(
+          `On-demand live KFintech discovery attempt failed (${(refreshErr as Error)?.message || refreshErr}); falling back to matched result`,
+        );
+      }
+
+      this.logger.warn(
+        `[REGISTRAR_ALERT:UNKNOWN_IPO] IPO '${identifier}' not found in KFintech live active list (${snapshot.items.length} items, isStale: ${snapshot.metadata.isStale})`,
+      );
+
+      return matched;
+    } catch (err: unknown) {
+      // Attempt fallback matching before surfacing error
+      const fallbackMatch = matchAllRegistrarCompanyCodes(
+        KFIN_VERIFIED_FALLBACK_REGISTRY,
+        request,
+        this.code,
+        this.name,
+        checkedAt,
+      );
+      if (Array.isArray(fallbackMatch)) {
         return fallbackMatch;
       }
 

@@ -161,6 +161,43 @@ describe('KfinRegistryStore — Permanent Registrar Reliability & Anti-Corruptio
         expect.anything(),
       );
     });
+
+    it('defaults cache TTL to 30 minutes (1800000ms) for production stability', () => {
+      const defaultStore = new KfinRegistryStore();
+      expect(defaultStore.getConfig().cacheTtlMs).toBe(30 * 60 * 1000);
+    });
+
+    it('forces refresh on demand bypassing in-memory cache when forceRefresh=true', async () => {
+      let fetchCount = 0;
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (urlStr.includes('.js')) {
+          fetchCount++;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => validBundleWithNewIpos,
+          } as unknown as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => validHtmlWithDynamicScript,
+        } as unknown as Response);
+      });
+
+      // First fetch: populates cache
+      await store.getActiveRegistry();
+      expect(fetchCount).toBe(1);
+
+      // Normal fetch within TTL: serves from cache
+      await store.getActiveRegistry();
+      expect(fetchCount).toBe(1);
+
+      // Forced refresh: bypasses cache and hits network again
+      await store.getActiveRegistry(true);
+      expect(fetchCount).toBe(2);
+    });
   });
 
   describe('2. Anti-Corruption Guard & Validation', () => {

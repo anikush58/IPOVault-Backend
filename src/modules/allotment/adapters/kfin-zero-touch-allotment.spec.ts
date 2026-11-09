@@ -857,4 +857,376 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
       Date.now = origNow;
     }
   });
+
+  it('23. HTTP 403 Forbidden maps distinctly to SOURCE_UNAVAILABLE without crashing or spoofing', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.resolve({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+      } as unknown as Response);
+    });
+
+    const req = {
+      ipoId: 'test-ipo-id',
+      registrarIpoCode: '15211216041',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+    expect(result.errorMessage).toContain('403');
+    expect(result.errorMessage).toContain('forbidden');
+  });
+
+  it('24. HTTP 429 Rate Limited maps distinctly to RATE_LIMITED', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.resolve({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+      } as unknown as Response);
+    });
+
+    const req = {
+      ipoId: 'test-ipo-id',
+      registrarIpoCode: '15211216041',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.RATE_LIMITED);
+    expect(result.errorMessage).toContain('429');
+  });
+
+  it('25. Request timeout maps distinctly to SOURCE_UNAVAILABLE with timeout message', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      const abortError = new Error('The operation was aborted');
+      abortError.name = 'AbortError';
+      return Promise.reject(abortError);
+    });
+
+    const req = {
+      ipoId: 'test-ipo-id',
+      registrarIpoCode: '15211216041',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+    };
+
+    const result = await adapter.checkAllotment(req);
+    expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+    expect(result.errorMessage).toContain('timed out');
+  });
+
+  it('26. PAN Redaction: Raw synthetic PAN is strictly never exposed in error messages across all error conditions', async () => {
+    const rawSyntheticPan = 'ABCDE9999Z';
+
+    const testCases: Array<{
+      name: string;
+      fetchMock: () => Promise<Response>;
+    }> = [
+      {
+        name: '403 Forbidden',
+        fetchMock: () =>
+          Promise.resolve({
+            ok: false,
+            status: 403,
+            statusText: 'Forbidden',
+          } as unknown as Response),
+      },
+      {
+        name: '429 Rate Limited',
+        fetchMock: () =>
+          Promise.resolve({
+            ok: false,
+            status: 429,
+            statusText: 'Too Many Requests',
+          } as unknown as Response),
+      },
+      {
+        name: '500 Server Error',
+        fetchMock: () =>
+          Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+          } as unknown as Response),
+      },
+      {
+        name: 'Network / Timeout Error',
+        fetchMock: () =>
+          Promise.reject(new Error('Connection timed out to gateway')),
+      },
+      {
+        name: 'Malformed JSON Error',
+        fetchMock: () =>
+          Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => {
+              throw new Error('Unexpected token < in JSON');
+            },
+          } as unknown as Response),
+      },
+    ];
+
+    for (const tc of testCases) {
+      jest.spyOn(global, 'fetch').mockImplementation(tc.fetchMock);
+
+      const req = {
+        ipoId: 'test-ipo-id',
+        registrarIpoCode: '15211216041',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: rawSyntheticPan,
+        companyName: 'Tonbo Imaging India',
+      };
+
+      const result = await adapter.checkAllotment(req);
+      // Raw PAN must NEVER be in errorMessage
+      if (result.errorMessage) {
+        expect(result.errorMessage).not.toContain(rawSyntheticPan);
+      }
+    }
+  });
+
+  it('27. Fallback failure without unhandled client errors: complete upstream network failure returns structured NormalizedAllotmentResult', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(() => {
+      return Promise.reject(new Error('DNS resolution failed: EAI_AGAIN'));
+    });
+
+    const req = {
+      ipoId: 'test-ipo-id',
+      registrarIpoCode: '15211216041',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Tonbo Imaging India',
+    };
+
+    // Must not throw an unhandled exception
+    await expect(adapter.checkAllotment(req)).resolves.toEqual(
+      expect.objectContaining({
+        status: AllotmentStatus.SOURCE_UNAVAILABLE,
+        sourceCode: 'KFINTECH',
+        checkedAt: expect.any(Date),
+      }),
+    );
+  });
+
+  it('28. Historical / previously closed IPO remains selectable and queryable when present in verified registrar registry', async () => {
+    // BLS POLYMERS LIMITED was a previously closed IPO
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('0uz601ms56.execute-api')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              All_Shares: 120,
+              App_Shares: 120,
+              Name: 'HISTORICAL APPLICANT',
+              Appln_No: 'BLS-9911',
+            },
+          ],
+        } as unknown as Response);
+      }
+      return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+    });
+
+    const historicalReq = {
+      ipoId: 'bls-polymers-historical-id',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'BLS Polymers Limited',
+    };
+
+    const result = await adapter.checkAllotment(historicalReq);
+    expect(result.status).toBe(AllotmentStatus.ALLOTTED);
+    expect(result.sharesAllotted).toBe(120);
+    expect(result.applicantName).toBe('HISTORICAL APPLICANT');
+  });
+
+  describe('Multiple Client IDs & Multi-Tranche Resolution', () => {
+    it('29. Tonbo Imaging: Multiple client IDs (15211216040 and 15211216041) for the same company resolve cleanly via resolveAllRegistrarIpoCodes', async () => {
+      const tonboMultiBundle = `
+        var rf=JSON.parse('[{"clientId":"15211216040","name":"TONBO IMAGING INDIA LIMITED"},{"clientId":"15211216041","name":"TONBO IMAGING INDIA LIMITED"}]');
+      `;
+
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (
+          urlStr.includes('ipostatus.kfintech.com') &&
+          !urlStr.includes('.js')
+        ) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => sampleLiveHtml,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => tonboMultiBundle,
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected ${urlStr}`));
+      });
+
+      const tonboReq = {
+        ipoId: 'tonbo-imaging-ipo-id',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: 'ABCDE1234F',
+        companyName: 'Tonbo Imaging India Limited',
+      };
+
+      const resolvedCodes = await adapter.resolveAllRegistrarIpoCodes(tonboReq);
+      expect(Array.isArray(resolvedCodes)).toBe(true);
+      expect(resolvedCodes).toEqual(
+        expect.arrayContaining(['15211216040', '15211216041']),
+      );
+
+      // Explicit issue mappings for each client ID resolve directly
+      const code1 = await adapter.resolveRegistrarIpoCode({
+        ...tonboReq,
+        registrarIpoCode: '15211216040',
+      });
+      expect(code1).toBe('15211216040');
+
+      const code2 = await adapter.resolveRegistrarIpoCode({
+        ...tonboReq,
+        registrarIpoCode: '15211216041',
+      });
+      expect(code2).toBe('15211216041');
+    });
+
+    it('30. Multi-tranche query: when querying specific issue mappings (15211216040 vs 15211216041), each returns accurate status without duplicate or missing results', async () => {
+      const queriedClientIds: string[] = [];
+
+      jest
+        .spyOn(global, 'fetch')
+        .mockImplementation((url: unknown, options?: unknown) => {
+          const urlStr = String(url);
+          if (urlStr.includes('0uz601ms56.execute-api')) {
+            const headers =
+              (options as { headers?: Record<string, string> })?.headers || {};
+            const cid = headers['client_id'];
+            queriedClientIds.push(cid);
+
+            if (cid === '15211216040') {
+              // Tranche 1: No record found for this PAN
+              return Promise.resolve({
+                ok: false,
+                status: 404,
+                statusText: 'Not Found',
+              } as unknown as Response);
+            }
+            if (cid === '15211216041') {
+              // Tranche 2: Confirmed allotment!
+              return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: async () => [
+                  {
+                    All_Shares: 21,
+                    App_Shares: 21,
+                    Name: 'TONBO ALLOTTEE',
+                    Appln_No: 'APP-TONBO-TR2',
+                    Category: 'IND',
+                  },
+                ],
+              } as unknown as Response);
+            }
+          }
+          return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+        });
+
+      const tonboReq1 = {
+        ipoId: 'tonbo-imaging-ipo-id',
+        registrarIpoCode: '15211216040',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: 'ABCDE1234F',
+        companyName: 'Tonbo Imaging India Limited',
+      };
+
+      const tonboReq2 = {
+        ipoId: 'tonbo-imaging-ipo-id',
+        registrarIpoCode: '15211216041',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: 'ABCDE1234F',
+        companyName: 'Tonbo Imaging India Limited',
+      };
+
+      const res1 = await adapter.checkAllotment(tonboReq1);
+      expect(res1.status).toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
+
+      const res2 = await adapter.checkAllotment(tonboReq2);
+      expect(res2.status).toBe(AllotmentStatus.ALLOTTED);
+      expect(res2.sharesAllotted).toBe(21);
+      expect(res2.applicantName).toBe('TONBO ALLOTTEE');
+
+      expect(queriedClientIds).toContain('15211216040');
+      expect(queriedClientIds).toContain('15211216041');
+    });
+
+    it('31. Multi-tranche category merge: when applicant has applications across tranches (Retail in tranche 1, Shareholder in tranche 2), results merge cleanly with zero duplicates', () => {
+      const res1 = {
+        status: AllotmentStatus.ALLOTTED,
+        sharesAllotted: 21,
+        sharesApplied: 21,
+        applicantName: 'DUAL APPLICANT',
+        applicationNumber: 'APP-RETAIL-01',
+        sourceCode: 'KFINTECH',
+        checkedAt: new Date(),
+        categoryResults: [
+          {
+            status: AllotmentStatus.ALLOTTED,
+            category: 'RETAIL',
+            sharesAllotted: 21,
+            sharesApplied: 21,
+          },
+        ],
+      };
+
+      const res2 = {
+        status: AllotmentStatus.ALLOTTED,
+        sharesAllotted: 42,
+        sharesApplied: 42,
+        applicantName: 'DUAL APPLICANT',
+        applicationNumber: 'APP-SH-02',
+        sourceCode: 'KFINTECH',
+        checkedAt: new Date(),
+        categoryResults: [
+          {
+            status: AllotmentStatus.ALLOTTED,
+            category: 'SHAREHOLDER',
+            sharesAllotted: 42,
+            sharesApplied: 42,
+          },
+        ],
+      };
+
+      const dualReq = {
+        ipoId: 'tonbo-imaging-ipo-id',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: 'ABCDE1234F',
+        companyName: 'Tonbo Imaging India Limited',
+      };
+
+      const merged = adapter.mergeMultiTrancheResults([res1, res2], dualReq);
+      expect(merged.status).toBe(AllotmentStatus.ALLOTTED);
+      expect(merged.sharesAllotted).toBe(63); // 21 + 42 = 63
+      expect(merged.sharesApplied).toBe(63);
+      expect(merged.categoryResults?.length).toBe(2);
+      expect(merged.categoryResults?.map((c) => c.category)).toEqual(
+        expect.arrayContaining(['RETAIL', 'SHAREHOLDER']),
+      );
+    });
+  });
 });
