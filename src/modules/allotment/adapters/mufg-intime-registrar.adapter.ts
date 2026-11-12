@@ -19,6 +19,19 @@ import {
   deriveOverallAllotment,
 } from '../allotment-category.utils';
 
+interface MufgCompanyListItem {
+  clientid: string;
+  companyname: string;
+  symbol?: string;
+}
+
+class MufgCompanyListHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`MUFG Intime company list returned HTTP status ${status}`);
+    this.name = 'MufgCompanyListHttpError';
+  }
+}
+
 @Injectable()
 export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
   readonly code = 'MUFG_INTIME';
@@ -29,7 +42,15 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
     AllotmentIdentifierType.DP_CLIENT_ID,
   ]);
 
+  private static readonly DEFAULT_COMPANY_LIST_CACHE_TTL_MS = 15 * 60 * 1000;
+
   private readonly logger = new Logger(MufgIntimeRegistrarAdapter.name);
+  private cachedCompanyList: {
+    items: MufgCompanyListItem[];
+    fetchedAt: number;
+  } | null = null;
+  private inFlightCompanyListPromise: Promise<MufgCompanyListItem[]> | null =
+    null;
 
   async checkAllotment(
     request: CheckAllotmentRequest,
@@ -565,61 +586,17 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
   ): Promise<string | NormalizedAllotmentResult> {
     const checkedAt = new Date();
     try {
-      const baseHost =
-        process.env.MUFG_INTIME_BASE_URL || 'https://in.mpms.mufg.com';
-      const companyListUrl =
-        process.env.MUFG_INTIME_COMPANY_LIST_URL ||
-        `${baseHost}/Initial_Offer/IPO.aspx/GetDetails`;
-
-      const response = await this.fetchWithRetry(companyListUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          Accept: 'application/json, text/javascript, */*; q=0.01',
-          Origin: baseHost,
-          Referer: `${baseHost}/Initial_Offer/public-issues.html`,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        body: JSON.stringify({}),
-      });
-
-      if (!response.ok) {
+      const list = await this.getActiveCompanyList();
+      return this.matchCompanyInList([...list], request, checkedAt);
+    } catch (err: unknown) {
+      if (err instanceof MufgCompanyListHttpError) {
         return {
           status: AllotmentStatus.SOURCE_UNAVAILABLE,
           sourceCode: this.code,
           checkedAt,
-          errorMessage: `MUFG Intime company list returned HTTP status ${response.status}`,
+          errorMessage: err.message,
         };
       }
-
-      const rawJson = (await response.json()) as { d?: string };
-      const xmlString = typeof rawJson?.d === 'string' ? rawJson.d : '';
-      const parsedRecords = this.parseXmlDataSet(xmlString);
-
-      const list: Array<{
-        clientid: string;
-        companyname: string;
-        symbol?: string;
-      }> = [];
-      for (const rec of parsedRecords) {
-        const code = rec.company_id || rec.clientid || rec.id || '';
-        const name = rec.companyname || rec.company_name || rec.name || '';
-        if (code && name) {
-          list.push({
-            clientid: code,
-            companyname: name,
-            symbol: rec.symbol,
-          });
-        }
-      }
-
-      // Also support legacy JSON fallback if GetDetails returns array in test environment
-      if (list.length === 0 && Array.isArray(rawJson)) {
-        list.push(...(rawJson as any[]));
-      }
-
-      return this.matchCompanyInList(list, request, checkedAt);
-    } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return {
         status: AllotmentStatus.SOURCE_UNAVAILABLE,
@@ -628,6 +605,168 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
         errorMessage: `MUFG Intime company list unavailable: ${msg}`,
       };
     }
+  }
+
+  private getCompanyListCacheTtlMs(): number {
+    const raw = process.env.MUFG_INTIME_COMPANY_LIST_CACHE_TTL_MS;
+    if (raw) {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return MufgIntimeRegistrarAdapter.DEFAULT_COMPANY_LIST_CACHE_TTL_MS;
+  }
+
+  private async getActiveCompanyList(): Promise<MufgCompanyListItem[]> {
+    const now = Date.now();
+    const ttlMs = this.getCompanyListCacheTtlMs();
+    if (this.cachedCompanyList) {
+      if (now - this.cachedCompanyList.fetchedAt < ttlMs) {
+        return [...this.cachedCompanyList.items];
+      }
+      this.cachedCompanyList = null;
+    }
+
+    if (this.inFlightCompanyListPromise) {
+      return this.inFlightCompanyListPromise;
+    }
+
+    const fetchPromise = this.fetchAndCacheCompanyList();
+    this.inFlightCompanyListPromise = fetchPromise;
+    try {
+      return await fetchPromise;
+    } finally {
+      if (this.inFlightCompanyListPromise === fetchPromise) {
+        this.inFlightCompanyListPromise = null;
+      }
+    }
+  }
+
+  private async fetchAndCacheCompanyList(): Promise<MufgCompanyListItem[]> {
+    const baseHost =
+      process.env.MUFG_INTIME_BASE_URL || 'https://in.mpms.mufg.com';
+    const companyListUrl =
+      process.env.MUFG_INTIME_COMPANY_LIST_URL ||
+      `${baseHost}/Initial_Offer/IPO.aspx/GetDetails`;
+
+    const response = await this.fetchWithRetry(companyListUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        Origin: baseHost,
+        Referer: `${baseHost}/Initial_Offer/public-issues.html`,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      throw new MufgCompanyListHttpError(response.status);
+    }
+
+    let rawJson: unknown;
+    try {
+      rawJson = await response.json();
+    } catch (parseErr: unknown) {
+      const msg =
+        parseErr instanceof Error ? parseErr.message : String(parseErr);
+      throw new Error(`Invalid JSON response: ${msg}`);
+    }
+
+    const list = this.parseCompanyListPayload(rawJson);
+    if (list.length > 0) {
+      this.cachedCompanyList = {
+        items: list,
+        fetchedAt: Date.now(),
+      };
+    }
+
+    return [...list];
+  }
+
+  private parseCompanyListPayload(rawJson: unknown): MufgCompanyListItem[] {
+    if (!rawJson || typeof rawJson !== 'object') {
+      throw new Error('Unexpected company list payload from MUFG Intime');
+    }
+
+    // Support legacy JSON array fallback if GetDetails returns array in tests
+    if (Array.isArray(rawJson)) {
+      if (rawJson.length === 0) {
+        return [];
+      }
+      const fallbackList: MufgCompanyListItem[] = [];
+      for (const entry of rawJson) {
+        if (!entry || typeof entry !== 'object') {
+          continue;
+        }
+        const rec = entry as Record<string, unknown>;
+        const code = String(
+          rec.company_id ??
+            rec.clientid ??
+            rec.id ??
+            rec.clientId ??
+            rec.code ??
+            '',
+        ).trim();
+        const name = String(
+          rec.companyname ?? rec.company_name ?? rec.name ?? '',
+        ).trim();
+        const symbol =
+          typeof rec.symbol === 'string' && rec.symbol.trim()
+            ? rec.symbol.trim()
+            : undefined;
+        if (code && name) {
+          fallbackList.push({ clientid: code, companyname: name, symbol });
+        }
+      }
+      if (fallbackList.length === 0) {
+        throw new Error(
+          'MUFG Intime company list contained incomplete company records',
+        );
+      }
+      return fallbackList;
+    }
+
+    const envelope = rawJson as { d?: unknown };
+    if (typeof envelope.d !== 'string') {
+      throw new Error('Invalid company list envelope from MUFG Intime');
+    }
+
+    const xmlString = envelope.d.trim();
+    if (!xmlString) {
+      return [];
+    }
+
+    if (
+      /<(!doctype|html|head|body)\b/i.test(xmlString) ||
+      (!xmlString.includes('<NewDataSet') && !xmlString.includes('<Table'))
+    ) {
+      throw new Error('Invalid XML company list payload from MUFG Intime');
+    }
+
+    const parsedRecords = this.parseXmlDataSet(xmlString);
+    const list: MufgCompanyListItem[] = [];
+    for (const rec of parsedRecords) {
+      const code = rec.company_id || rec.clientid || rec.id || '';
+      const name = rec.companyname || rec.company_name || rec.name || '';
+      if (code && name) {
+        list.push({
+          clientid: code,
+          companyname: name,
+          symbol: rec.symbol,
+        });
+      }
+    }
+
+    if (parsedRecords.length > 0 && list.length === 0) {
+      throw new Error(
+        'MUFG Intime company list contained incomplete company records',
+      );
+    }
+
+    return list;
   }
 
   public matchCompanyInList(

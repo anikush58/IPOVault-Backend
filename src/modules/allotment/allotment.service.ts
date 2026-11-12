@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { IpoStatus, Prisma } from '@prisma/client';
+import { IpoStatus, ParticipantRole, Prisma } from '@prisma/client';
 import { AppException } from '../../common/errors/app.exception';
 import { ErrorCode } from '../../common/errors/error-codes';
 import { PrismaService } from '../../database/prisma.service';
@@ -14,11 +14,21 @@ import {
   AllotmentIdentifierType,
   AllotmentStatus,
   CheckAllotmentRequest,
+  isValidRegistrarIpoCode,
   NormalizedAllotmentResult,
+  sanitizeRegistrarIpoCode,
 } from './allotment.types';
 import { maskIdentifier } from './allotment.utils';
 import { AllotmentRepository } from './allotment.repository';
-import { RegistrarResolver } from './registrar.resolver';
+import {
+  inspectStoredRegistrarMetadata,
+  reconcileStoredRegistrarMetadata,
+  RegistrarMetadataIpoRecord,
+  RegistrarResolver,
+  StoredRegistrarMetadata,
+} from './registrar.resolver';
+
+type AvailabilityIpoRecord = RegistrarMetadataIpoRecord;
 
 @Injectable()
 export class AllotmentService {
@@ -99,7 +109,8 @@ export class AllotmentService {
     }
 
     const { adapter, registrarIpoCode } = resolved;
-    request.registrarIpoCode = registrarIpoCode;
+    const sanitizedInitialCode = sanitizeRegistrarIpoCode(registrarIpoCode);
+    request.registrarIpoCode = sanitizedInitialCode;
 
     if (!adapter.supportsIdentifier(request.identifierType)) {
       const unsupportedResult: NormalizedAllotmentResult = {
@@ -130,23 +141,32 @@ export class AllotmentService {
         latencyMs,
       );
 
-      if (request.registrarIpoCode && !resolved.registrarIpoCode) {
-        this.resolver
-          .persistDiscoveredRegistrarIdentity(
+      const sanitizedResolvedCode = sanitizeRegistrarIpoCode(
+        request.registrarIpoCode,
+      );
+
+      if (
+        sanitizedResolvedCode &&
+        (!sanitizedInitialCode ||
+          sanitizedInitialCode !== sanitizedResolvedCode)
+      ) {
+        Promise.resolve(
+          this.resolver.persistDiscoveredRegistrarIdentity?.(
             request.ipoId,
             adapter.code,
-            request.registrarIpoCode,
-          )
-          .catch((persistErr: unknown) => {
-            this.logger.debug(
-              `Failed to persist dynamically discovered registrar code: ${(persistErr as Error)?.message || persistErr}`,
-            );
-          });
+            sanitizedResolvedCode,
+          ),
+        ).catch((persistErr: unknown) => {
+          this.logger.debug(
+            `Failed to persist dynamically discovered registrar code: ${(persistErr as Error)?.message || persistErr}`,
+          );
+        });
       }
 
       // If registrar explicitly confirms an allotment result (ALLOTTED, PARTIALLY_ALLOTTED, or NOT_ALLOTTED),
       // this is authoritative proof that allotment has been declared for this IPO.
-      // Transition IPO from CLOSED or ALLOTMENT_PENDING to ALLOTMENT_COMPLETED.
+      // Transition IPO from CLOSED or ALLOTMENT_PENDING to ALLOTMENT_COMPLETED, and backfill
+      // allotmentResultAvailableAt for later stages (e.g., LISTED) when it is still null.
       // Notice: APPLICATION_NOT_FOUND, TEMPORARY_ERROR, or NOT_YET_AVAILABLE NEVER alter the IPO declaration status.
       if (
         result.status === AllotmentStatus.ALLOTTED ||
@@ -154,23 +174,45 @@ export class AllotmentService {
         result.status === AllotmentStatus.NOT_ALLOTTED
       ) {
         try {
-          const updatePayload: Prisma.IpoUpdateManyMutationInput = {
-            status: IpoStatus.ALLOTMENT_COMPLETED,
-          };
-          if (!ipo.allotmentResultAvailableAt) {
-            updatePayload.allotmentResultAvailableAt = new Date();
-          }
-          const updated = await this.prisma.ipo.updateMany({
-            where: {
-              id: request.ipoId,
-              status: { in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING] },
-            },
-            data: updatePayload,
-          });
-          if (updated.count > 0) {
-            this.logger.log(
-              `[Allotment] Confirmed allotment live via checkAllotment for IPO '${request.ipoId}'. Transitioned to ALLOTMENT_COMPLETED`,
-            );
+          const isPostAllotmentStage =
+            ipo.status === IpoStatus.ALLOTMENT_COMPLETED ||
+            ipo.status === IpoStatus.LISTING_PENDING ||
+            ipo.status === IpoStatus.LISTED;
+
+          if (isPostAllotmentStage) {
+            if (!ipo.allotmentResultAvailableAt) {
+              const backfilled = await this.prisma.ipo.updateMany({
+                where: {
+                  id: request.ipoId,
+                  allotmentResultAvailableAt: null,
+                },
+                data: { allotmentResultAvailableAt: new Date() },
+              });
+              if (backfilled?.count > 0) {
+                this.logger.log(
+                  `[Allotment] Backfilled allotmentResultAvailableAt via checkAllotment for ${ipo.status} IPO '${request.ipoId}'`,
+                );
+              }
+            }
+          } else {
+            const updatePayload: Prisma.IpoUpdateManyMutationInput = {
+              status: IpoStatus.ALLOTMENT_COMPLETED,
+            };
+            if (!ipo.allotmentResultAvailableAt) {
+              updatePayload.allotmentResultAvailableAt = new Date();
+            }
+            const updated = await this.prisma.ipo.updateMany({
+              where: {
+                id: request.ipoId,
+                status: { in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING] },
+              },
+              data: updatePayload,
+            });
+            if (updated?.count > 0) {
+              this.logger.log(
+                `[Allotment] Confirmed allotment live via checkAllotment for IPO '${request.ipoId}'. Transitioned to ALLOTMENT_COMPLETED`,
+              );
+            }
           }
         } catch (transErr: unknown) {
           this.logger.error(
@@ -215,6 +257,16 @@ export class AllotmentService {
         company: true,
         lifecycleEvents: true,
         allotmentConfig: true,
+        sourceIdentities: {
+          include: {
+            source: true,
+          },
+        },
+        participants: {
+          where: {
+            role: ParticipantRole.REGISTRAR,
+          },
+        },
       },
     });
 
@@ -222,20 +274,153 @@ export class AllotmentService {
       throw new AppException(ErrorCode.IPO_NOT_FOUND, 'IPO not found');
     }
 
-    // If already confirmed in DB, return available: true immediately
-    if (
-      ipo.status === IpoStatus.ALLOTMENT_COMPLETED ||
-      ipo.status === IpoStatus.LISTED
-    ) {
+    if (ipo.allotmentConfig?.enabled === false) {
       return {
-        available: true,
+        available: false,
         status: ipo.status,
-        registrarCode: ipo.allotmentConfig?.registrarIpoCode ?? undefined,
+      };
+    }
+
+    const isPostAllotmentStage =
+      ipo.status === IpoStatus.ALLOTMENT_COMPLETED ||
+      ipo.status === IpoStatus.LISTING_PENDING ||
+      ipo.status === IpoStatus.LISTED;
+
+    // Post-allotment IPOs (ALLOTMENT_COMPLETED, LISTING_PENDING, LISTED):
+    // fast-path when verified non-placeholder code & availability timestamp already exist;
+    // otherwise live-probe and fail closed unless reconciled or positively non-KFin.
+    if (isPostAllotmentStage) {
+      const rawConfigCode = ipo.allotmentConfig?.registrarIpoCode?.trim();
+      let registrarCode = sanitizeRegistrarIpoCode(rawConfigCode);
+      const needsTimestampBackfill = !ipo.allotmentResultAvailableAt;
+
+      if (registrarCode && !needsTimestampBackfill) {
+        return {
+          available: true,
+          status: ipo.status,
+          registrarCode,
+        };
+      }
+
+      let confirmedByAdapter = false;
+      let resolvedAdapterCode: string | undefined;
+      let candidateRegistrarCode: string | undefined;
+      let storedMetadata: StoredRegistrarMetadata | undefined;
+
+      try {
+        const resolved = await this.resolver.resolveAdapter(ipo.id, undefined, {
+          requireLiveActiveList: true,
+          skipIdentityPersistence: true,
+        });
+        if (resolved?.adapter) {
+          resolvedAdapterCode = resolved.adapter.code;
+          candidateRegistrarCode = sanitizeRegistrarIpoCode(
+            resolved.registrarIpoCode,
+          );
+
+          if (typeof resolved.adapter.resolveRegistrarIpoCode === 'function') {
+            const probeResult = await resolved.adapter.resolveRegistrarIpoCode({
+              ipoId: ipo.id,
+              registrarIpoCode:
+                registrarCode ?? candidateRegistrarCode ?? undefined,
+              identifierType: AllotmentIdentifierType.PAN,
+              identifierValue: '',
+              companyName: ipo.company.displayName,
+              companyLegalName: ipo.company.legalName,
+              symbol: ipo.symbol || undefined,
+              requireLiveActiveList: true,
+            });
+
+            const liveProbeCode = sanitizeRegistrarIpoCode(probeResult);
+            if (liveProbeCode) {
+              storedMetadata = await this.inspectStoredRegistrarMetadata(ipo);
+              const reconciledRegistrar = this.reconcileStoredRegistrarMetadata(
+                storedMetadata,
+                resolved.adapter.code,
+              );
+
+              if (reconciledRegistrar) {
+                registrarCode = liveProbeCode;
+                confirmedByAdapter = true;
+
+                // Persist discovered code only when live-verified and reconciled
+                // against stored registrar metadata.
+                if (registrarCode !== rawConfigCode) {
+                  await this.persistVerifiedRegistrarCode(
+                    ipo.id,
+                    resolved.adapter.code,
+                    registrarCode,
+                    'availability backfill',
+                  );
+                }
+
+                if (needsTimestampBackfill) {
+                  await this.prisma.ipo.updateMany({
+                    where: {
+                      id: ipo.id,
+                      allotmentResultAvailableAt: null,
+                    },
+                    data: { allotmentResultAvailableAt: new Date() },
+                  });
+                }
+              } else {
+                this.logger.warn(
+                  `[Allotment Availability Probe] Rejected live '${resolved.adapter.code}' match for ${ipo.status} IPO ${ipo.id} due to disabled config or conflicting/unknown stored registrar metadata`,
+                );
+              }
+            }
+          }
+        }
+      } catch (err: unknown) {
+        this.logger.debug(
+          `Best-effort backfill during checkIpoAllotmentAvailability failed for ${ipo.id}: ${(err as Error)?.message || err}`,
+        );
+      }
+
+      if (storedMetadata?.disabledByConfig) {
+        return {
+          available: false,
+          status: ipo.status,
+        };
+      }
+
+      if (!needsTimestampBackfill || confirmedByAdapter) {
+        return {
+          available: true,
+          status: ipo.status,
+          registrarCode,
+        };
+      }
+
+      const metadata =
+        storedMetadata ?? (await this.inspectStoredRegistrarMetadata(ipo));
+      const authoritativeRegistrar = this.reconcileStoredRegistrarMetadata(
+        metadata,
+        resolvedAdapterCode,
+      );
+      const isConfirmedNonKfin = Boolean(
+        authoritativeRegistrar && authoritativeRegistrar !== 'KFINTECH',
+      );
+
+      if (isConfirmedNonKfin) {
+        return {
+          available: true,
+          status: ipo.status,
+          registrarCode: registrarCode ?? candidateRegistrarCode,
+        };
+      }
+
+      return {
+        available: false,
+        status: ipo.status,
       };
     }
 
     try {
-      const resolved = await this.resolver.resolveAdapter(ipo.id);
+      const resolved = await this.resolver.resolveAdapter(ipo.id, undefined, {
+        requireLiveActiveList: true,
+        skipIdentityPersistence: true,
+      });
       if (!resolved || !resolved.adapter) {
         return {
           available: false,
@@ -244,27 +429,40 @@ export class AllotmentService {
       }
 
       const { adapter, registrarIpoCode } = resolved;
+      const sanitizedConfigCode = sanitizeRegistrarIpoCode(registrarIpoCode);
 
       if (typeof adapter.resolveRegistrarIpoCode === 'function') {
         const checkRequest: CheckAllotmentRequest = {
           ipoId: ipo.id,
-          registrarIpoCode,
+          registrarIpoCode: sanitizedConfigCode,
           identifierType: AllotmentIdentifierType.PAN,
           identifierValue: '',
           companyName: ipo.company.displayName,
           companyLegalName: ipo.company.legalName,
           symbol: ipo.symbol || undefined,
+          requireLiveActiveList: true,
         };
 
         const result = await adapter.resolveRegistrarIpoCode(checkRequest);
+        const liveProbeCode = sanitizeRegistrarIpoCode(result);
 
-        if (
-          typeof result === 'string' &&
-          result.trim().length > 0 &&
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-            result.trim(),
-          )
-        ) {
+        if (liveProbeCode) {
+          const storedMetadata = await this.inspectStoredRegistrarMetadata(ipo);
+          const reconciledRegistrar = this.reconcileStoredRegistrarMetadata(
+            storedMetadata,
+            adapter.code,
+          );
+
+          if (!reconciledRegistrar) {
+            this.logger.warn(
+              `[Allotment Availability Probe] Rejected pre-allotment live '${adapter.code}' match for IPO ${ipo.id} due to disabled config or conflicting/unknown stored registrar metadata`,
+            );
+            return {
+              available: false,
+              status: ipo.status,
+            };
+          }
+
           const now = new Date();
           const updatePayload: Prisma.IpoUpdateManyMutationInput = {
             status: IpoStatus.ALLOTMENT_COMPLETED,
@@ -288,11 +486,14 @@ export class AllotmentService {
             data: updatePayload,
           });
 
-          if (!ipo.allotmentConfig?.registrarIpoCode && result.trim()) {
-            await this.prisma.ipoAllotmentConfig.updateMany({
-              where: { ipoId: ipo.id },
-              data: { registrarIpoCode: result.trim() },
-            });
+          const rawConfigCode = ipo.allotmentConfig?.registrarIpoCode?.trim();
+          if (liveProbeCode !== rawConfigCode) {
+            await this.persistVerifiedRegistrarCode(
+              ipo.id,
+              adapter.code,
+              liveProbeCode,
+              'availability probe',
+            );
           }
 
           this.logger.log(
@@ -302,7 +503,7 @@ export class AllotmentService {
           return {
             available: true,
             status: IpoStatus.ALLOTMENT_COMPLETED,
-            registrarCode: result.trim(),
+            registrarCode: liveProbeCode,
           };
         }
       }
@@ -320,6 +521,58 @@ export class AllotmentService {
         status: ipo.status,
       };
     }
+  }
+
+  private async persistVerifiedRegistrarCode(
+    ipoId: string,
+    adapterCode: string,
+    registrarCode: string,
+    context: string,
+  ): Promise<void> {
+    if (!isValidRegistrarIpoCode(registrarCode)) {
+      return;
+    }
+
+    await Promise.resolve(
+      this.resolver.persistDiscoveredRegistrarIdentity?.(
+        ipoId,
+        adapterCode,
+        registrarCode,
+      ),
+    ).catch((persistErr: unknown) => {
+      this.logger.debug(
+        `Failed to persist registrar identity during ${context} for ${ipoId}: ${(persistErr as Error)?.message || persistErr}`,
+      );
+    });
+
+    if (this.prisma.ipoAllotmentConfig?.updateMany) {
+      await this.prisma.ipoAllotmentConfig.updateMany({
+        where: { ipoId },
+        data: { registrarIpoCode: registrarCode },
+      });
+    }
+  }
+
+  private inspectStoredRegistrarMetadata(
+    ipo: AvailabilityIpoRecord,
+  ): Promise<StoredRegistrarMetadata> {
+    return inspectStoredRegistrarMetadata(
+      ipo,
+      this.prisma,
+      this.registry,
+      this.logger,
+    );
+  }
+
+  private reconcileStoredRegistrarMetadata(
+    metadata: StoredRegistrarMetadata,
+    candidateAdapterCode?: string,
+  ): string | undefined {
+    return reconcileStoredRegistrarMetadata(
+      metadata,
+      candidateAdapterCode,
+      this.registry,
+    );
   }
 
   getSupportedRegistrars() {

@@ -1,9 +1,13 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { AllotmentIdentifierType, AllotmentStatus } from '../allotment.types';
 import { KfinRegistrarAdapter } from './kfin-registrar.adapter';
 import {
   KFIN_VERIFIED_FALLBACK_REGISTRY,
   KfinIdentityDiscoveryAdapter,
 } from '../discovery/kfin-identity-discovery.adapter';
+import { KfinRegistryStore } from '../discovery/kfin-registry.store';
 
 describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
   let adapter: KfinRegistrarAdapter;
@@ -1227,6 +1231,537 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
       expect(merged.categoryResults?.map((c) => c.category)).toEqual(
         expect.arrayContaining(['RETAIL', 'SHAREHOLDER']),
       );
+    });
+  });
+
+  describe('Maxwell Engineering Solutions Limited Zero-Touch Discovery & Response Mapping', () => {
+    const staleMaxwellHtml = `<!doctype html><html><head><script defer="defer" src="./static/js/main.f0d85b13.js"></script></head><body><div id="root"></div></body></html>`;
+    const oldBundleWithoutMaxwell = `var rf=JSON.parse('[{"clientId":"11111111111","name":"SOME EARLIER IPO LIMITED"}]');`;
+    const manifestWithMaxwell = {
+      files: { 'main.js': './static/js/main.3d909f65.js' },
+    };
+    const bundleWithMaxwell = `var rf=JSON.parse('[{"clientId":"11111111111","name":"SOME EARLIER IPO LIMITED"},{"clientId":"88356314970","name":"MAXWELL ENGINEERING SOLUTIONS LIMITED"}]');`;
+
+    function mockPortalWithManifestAndGateway(
+      gatewayResponder: (urlStr: string, init?: RequestInit) => Response,
+    ) {
+      return jest
+        .spyOn(global, 'fetch')
+        .mockImplementation((url: unknown, init?: RequestInit) => {
+          const urlStr = String(url);
+          if (urlStr === 'https://ipostatus.kfintech.com/') {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              text: async () => staleMaxwellHtml,
+            } as unknown as Response);
+          }
+          if (urlStr.includes('/asset-manifest.json')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers({ 'content-type': 'application/json' }),
+              json: async () => manifestWithMaxwell,
+            } as unknown as Response);
+          }
+          if (urlStr.includes('main.3d909f65.js')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers({ 'content-type': 'text/javascript' }),
+              text: async () => bundleWithMaxwell,
+            } as unknown as Response);
+          }
+          if (urlStr.includes('main.f0d85b13.js')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers({ 'content-type': 'text/javascript' }),
+              text: async () => oldBundleWithoutMaxwell,
+            } as unknown as Response);
+          }
+          if (urlStr.includes('0uz601ms56.execute-api')) {
+            return Promise.resolve(gatewayResponder(urlStr, init));
+          }
+          return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+        });
+    }
+
+    function extractClientIdHeader(init?: RequestInit): string | undefined {
+      const rawHeaders = init?.headers;
+      if (!rawHeaders) {
+        return undefined;
+      }
+      if (rawHeaders instanceof Headers) {
+        return rawHeaders.get('client_id') ?? undefined;
+      }
+      if (Array.isArray(rawHeaders)) {
+        const match = rawHeaders.find(
+          ([key]) => key.toLowerCase() === 'client_id',
+        );
+        return match?.[1];
+      }
+      return (rawHeaders as Record<string, string>).client_id;
+    }
+
+    it('resolves Maxwell Engineering Solutions to clientId 88356314970 via normal discovery and maps All_Shares=0 to NOT_ALLOTTED', async () => {
+      let sentClientId: string | undefined;
+      mockPortalWithManifestAndGateway((_urlStr, init) => {
+        sentClientId = extractClientIdHeader(init);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              All_Shares: 0,
+              App_Shares: 100,
+              Name: 'SYNTHETIC APPLICANT',
+              Appln_No: '900112233',
+              Pan_No: 'XXXXXX1234F',
+            },
+          ],
+        } as unknown as Response;
+      });
+
+      const request = {
+        ipoId: 'cc511556-ee9f-493b-8eb1-fb0580a7fd93',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: 'ABCDE1234F',
+        companyName: 'Maxwell Engineering Solutions',
+        companyLegalName: 'Maxwell Engineering Solutions Limited',
+      };
+
+      const resolvedCode = await adapter.resolveRegistrarIpoCode({
+        ...request,
+        identifierValue: '',
+      });
+      expect(resolvedCode).toBe('88356314970');
+
+      const result = await adapter.checkAllotment(request);
+      expect(sentClientId).toBe('88356314970');
+      expect(result.status).toBe(AllotmentStatus.NOT_ALLOTTED);
+      expect(result.status).not.toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+      expect(result.sharesAllotted).toBe(0);
+      expect(result.sharesApplied).toBe(100);
+    });
+
+    it('maps KFintech HTTP 404 Record Not Found to APPLICATION_NOT_FOUND for Maxwell clientId 88356314970', async () => {
+      let sentClientId: string | undefined;
+      mockPortalWithManifestAndGateway((_urlStr, init) => {
+        sentClientId = extractClientIdHeader(init);
+        return {
+          ok: false,
+          status: 404,
+          statusText: 'Not Found',
+          json: async () => ({ error: 'Record Not Found' }),
+        } as unknown as Response;
+      });
+
+      const result = await adapter.checkAllotment({
+        ipoId: 'cc511556-ee9f-493b-8eb1-fb0580a7fd93',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: 'ABCDE9999Z',
+        companyName: 'Maxwell Engineering Solutions',
+        companyLegalName: 'Maxwell Engineering Solutions Limited',
+      });
+
+      expect(sentClientId).toBe('88356314970');
+      expect(result.status).toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
+    });
+
+    it('maps KFintech HTTP 500 Unexpected error to SOURCE_UNAVAILABLE without confusing it with NOT_ALLOTTED', async () => {
+      mockPortalWithManifestAndGateway(() => {
+        return {
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          json: async () => ({ error: 'Unexpected error' }),
+        } as unknown as Response;
+      });
+
+      const result = await adapter.checkAllotment({
+        ipoId: 'cc511556-ee9f-493b-8eb1-fb0580a7fd93',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: 'ABCDE9999Z',
+        companyName: 'Maxwell Engineering Solutions',
+        companyLegalName: 'Maxwell Engineering Solutions Limited',
+      });
+
+      expect(result.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+    });
+
+    it('preserves historical fallback registry entries alongside Maxwell 88356314970 when network is down', async () => {
+      expect(KFIN_VERIFIED_FALLBACK_REGISTRY.length).toBeGreaterThanOrEqual(
+        104,
+      );
+      expect(
+        KFIN_VERIFIED_FALLBACK_REGISTRY.find(
+          (entry) => entry.clientId === '88356314970',
+        ),
+      ).toEqual(
+        expect.objectContaining({
+          clientId: '88356314970',
+          name: 'MAXWELL ENGINEERING SOLUTIONS LIMITED',
+        }),
+      );
+
+      jest
+        .spyOn(global, 'fetch')
+        .mockImplementation(() => Promise.reject(new Error('ECONNREFUSED')));
+
+      const fallbackResolved = await adapter.resolveRegistrarIpoCode({
+        ipoId: 'cc511556-ee9f-493b-8eb1-fb0580a7fd93',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: '',
+        companyName: 'Maxwell Engineering Solutions',
+        companyLegalName: 'Maxwell Engineering Solutions Limited',
+      });
+      expect(fallbackResolved).toBe('88356314970');
+    });
+
+    it('reuses cached KFintech registry across misses within cooldown and respects skipForceRefresh without force-refreshing per IPO', async () => {
+      const store = new KfinRegistryStore();
+      const getRegistrySpy = jest.spyOn(store, 'getActiveRegistry');
+      const localAdapter = new KfinRegistrarAdapter(store);
+
+      let bundleDownloads = 0;
+      const origNow = Date.now;
+      let fakeNowMs = origNow();
+      Date.now = () => fakeNowMs;
+
+      mockPortalWithManifestAndGateway(() => ({ ok: true }) as Response);
+      const portalImpl = jest.spyOn(global, 'fetch').getMockImplementation();
+      jest
+        .spyOn(global, 'fetch')
+        .mockImplementation((url: unknown, init?: RequestInit) => {
+          const urlStr = String(url);
+          if (/\.js(?:$|\?)/.test(urlStr)) {
+            bundleDownloads++;
+          }
+          if (!portalImpl) {
+            return Promise.reject(
+              new Error(`Missing portal fetch mock for ${urlStr}`),
+            );
+          }
+          return portalImpl(url as RequestInfo | URL, init);
+        });
+
+      try {
+        // First miss populates live cache (1 bundle download, no redundant immediate force-refresh)
+        const firstMiss = await localAdapter.resolveRegistrarIpoCode({
+          ipoId: 'unknown-1',
+          identifierType: AllotmentIdentifierType.PAN,
+          identifierValue: '',
+          companyName: 'Unlisted Alpha Co',
+        });
+        expect(typeof firstMiss).not.toBe('string');
+        expect(bundleDownloads).toBe(1);
+
+        // Second miss within cooldown reuses cached registry without another download
+        const secondMiss = await localAdapter.resolveRegistrarIpoCode({
+          ipoId: 'unknown-2',
+          identifierType: AllotmentIdentifierType.PAN,
+          identifierValue: '',
+          companyName: 'Unlisted Beta Co',
+        });
+        expect(typeof secondMiss).not.toBe('string');
+        expect(bundleDownloads).toBe(1);
+
+        // Even 10 minutes later (within 30m cache TTL), skipForceRefresh=true reuses cached registry
+        fakeNowMs += 10 * 60 * 1000;
+        const skippedForce = await localAdapter.resolveRegistrarIpoCode({
+          ipoId: 'unknown-3',
+          identifierType: AllotmentIdentifierType.PAN,
+          identifierValue: '',
+          companyName: 'Unlisted Gamma Co',
+          skipForceRefresh: true,
+        });
+        expect(typeof skippedForce).not.toBe('string');
+        expect(bundleDownloads).toBe(1);
+        expect(getRegistrySpy).not.toHaveBeenCalledWith(true);
+      } finally {
+        Date.now = origNow;
+        getRegistrySpy.mockRestore();
+      }
+    });
+  });
+
+  describe('requireLiveActiveList Strict Live Availability Safeguard', () => {
+    const maxwellRequest = {
+      ipoId: 'cc511556-ee9f-493b-8eb1-fb0580a7fd93',
+      registrarIpoCode: '88356314970',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: '',
+      companyName: 'Maxwell Engineering Solutions',
+      companyLegalName: 'Maxwell Engineering Solutions Limited',
+      symbol: 'MAXWELL',
+      requireLiveActiveList: true,
+    };
+
+    const mockFreshBundle = (
+      items: Array<{ clientId: string; name: string }>,
+    ) => {
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (urlStr === 'https://ipostatus.kfintech.com/') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () =>
+              '<!doctype html><html><head><script src="./static/js/main.live1234.js"></script></head><body></body></html>',
+          } as unknown as Response);
+        }
+        if (urlStr.includes('/asset-manifest.json')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              files: { 'main.js': './static/js/main.live1234.js' },
+            }),
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.live1234.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/javascript' }),
+            text: async () =>
+              `var rf=JSON.parse('${JSON.stringify(items).replace(/'/g, "\\'")}');`,
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
+    };
+
+    it('rejects KFIN_VERIFIED_FALLBACK_REGISTRY match when fresh live list omits the IPO (returns NOT_YET_AVAILABLE)', async () => {
+      const store = new KfinRegistryStore();
+      const localAdapter = new KfinRegistrarAdapter(store);
+      mockFreshBundle([
+        { clientId: '94818267561', name: 'DHOOT TRANSMISSION LIMITED' },
+      ]);
+
+      const res = await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
+      expect(typeof res).not.toBe('string');
+      expect((res as { status: AllotmentStatus }).status).toBe(
+        AllotmentStatus.NOT_YET_AVAILABLE,
+      );
+    });
+
+    it('returns NOT_YET_AVAILABLE when fresh live list omits an unlisted IPO', async () => {
+      const store = new KfinRegistryStore();
+      const localAdapter = new KfinRegistrarAdapter(store);
+      mockFreshBundle([
+        { clientId: '94818267561', name: 'DHOOT TRANSMISSION LIMITED' },
+      ]);
+
+      const res = await localAdapter.resolveRegistrarIpoCode({
+        ipoId: 'unlisted-ipo-1',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: '',
+        companyName: 'Future Unlisted Industries Limited',
+        requireLiveActiveList: true,
+      });
+      expect((res as { status: AllotmentStatus }).status).toBe(
+        AllotmentStatus.NOT_YET_AVAILABLE,
+      );
+    });
+
+    it('confirms availability when fresh live active-list snapshot includes the IPO', async () => {
+      const store = new KfinRegistryStore();
+      const localAdapter = new KfinRegistrarAdapter(store);
+      mockFreshBundle([
+        {
+          clientId: '88356314970',
+          name: 'MAXWELL ENGINEERING SOLUTIONS LIMITED',
+        },
+      ]);
+
+      const res = await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
+      expect(res).toBe('88356314970');
+    });
+
+    it('rejects STATIC_BASELINE fallback when live source is unavailable (returns SOURCE_UNAVAILABLE)', async () => {
+      const tmpDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), 'kfin-strict-baseline-'),
+      );
+      const store = new KfinRegistryStore({
+        storagePath: path.join(tmpDir, 'nonexistent-cache.json'),
+      });
+      const localAdapter = new KfinRegistrarAdapter(store);
+      jest.spyOn(global, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+
+      try {
+        const res = await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
+        expect(typeof res).not.toBe('string');
+        expect((res as { status: AllotmentStatus }).status).toBe(
+          AllotmentStatus.SOURCE_UNAVAILABLE,
+        );
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects stale PERSISTED_DISK_SNAPSHOT when live source is unavailable and recovers when live bundle succeeds', async () => {
+      const tmpDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), 'kfin-strict-disk-'),
+      );
+      const storagePath = path.join(tmpDir, 'persisted-cache.json');
+      fs.writeFileSync(
+        storagePath,
+        JSON.stringify({
+          metadata: {
+            version: 1,
+            registrarCode: 'KFINTECH',
+            sourceTimestamp: '2026-11-10T00:00:00.000Z',
+            fetchedAt: '2026-11-10T00:00:00.000Z',
+            sourceType: 'PORTAL_SPA_BUNDLE',
+            itemCount: 1,
+            validationStatus: 'VALID',
+            isStale: false,
+            contentHash: 'deadbeef',
+          },
+          items: [
+            {
+              clientId: '88356314970',
+              name: 'MAXWELL ENGINEERING SOLUTIONS LIMITED',
+            },
+          ],
+        }),
+        'utf8',
+      );
+
+      const store = new KfinRegistryStore({
+        storagePath,
+        minItemsThreshold: 1,
+      });
+      store.hydrateFromPersistentStorage();
+      const localAdapter = new KfinRegistrarAdapter(store);
+
+      let allowLive = false;
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        if (!allowLive) {
+          return Promise.reject(new Error('Origin unavailable'));
+        }
+        const urlStr = String(url);
+        if (urlStr === 'https://ipostatus.kfintech.com/') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () =>
+              '<!doctype html><html><head><script src="./static/js/main.recovered.js"></script></head><body></body></html>',
+          } as unknown as Response);
+        }
+        if (urlStr.includes('/asset-manifest.json')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              files: { 'main.js': './static/js/main.recovered.js' },
+            }),
+          } as unknown as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'text/javascript' }),
+          text: async () =>
+            `var rf=JSON.parse('[{"clientId":"88356314970","name":"MAXWELL ENGINEERING SOLUTIONS LIMITED"}]');`,
+        } as unknown as Response);
+      });
+
+      try {
+        const staleRes =
+          await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
+        expect(typeof staleRes).not.toBe('string');
+        expect((staleRes as { status: AllotmentStatus }).status).toBe(
+          AllotmentStatus.SOURCE_UNAVAILABLE,
+        );
+
+        allowLive = true;
+        const freshRes =
+          await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
+        expect(freshRes).toBe('88356314970');
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects stale on-demand refreshed snapshot and thrown store errors as SOURCE_UNAVAILABLE', async () => {
+      const store = new KfinRegistryStore();
+      const localAdapter = new KfinRegistrarAdapter(store);
+      jest.spyOn(store, 'getActiveRegistry').mockResolvedValue({
+        metadata: {
+          version: 1,
+          registrarCode: 'KFINTECH',
+          sourceTimestamp: '2026-11-10T00:00:00.000Z',
+          fetchedAt: '2026-11-10T00:00:00.000Z',
+          sourceType: 'STATIC_BASELINE',
+          itemCount: 1,
+          validationStatus: 'STALE',
+          isStale: true,
+          contentHash: 'abc',
+        },
+        items: [
+          {
+            clientId: '88356314970',
+            name: 'MAXWELL ENGINEERING SOLUTIONS LIMITED',
+          },
+        ],
+      });
+
+      const staleForceRes =
+        await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
+      expect((staleForceRes as { status: AllotmentStatus }).status).toBe(
+        AllotmentStatus.SOURCE_UNAVAILABLE,
+      );
+
+      jest
+        .spyOn(store, 'getActiveRegistry')
+        .mockRejectedValue(new Error('Invalid portal HTML payload'));
+      const thrownRes =
+        await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
+      expect((thrownRes as { status: AllotmentStatus }).status).toBe(
+        AllotmentStatus.SOURCE_UNAVAILABLE,
+      );
+    });
+
+    it('preserves static fallback lookup for normal historical KfinRegistrarAdapter.checkAllotment applicant queries', async () => {
+      const store = new KfinRegistryStore();
+      const localAdapter = new KfinRegistrarAdapter(store);
+      let queriedClientId: string | undefined;
+
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown, init) => {
+        const urlStr = String(url);
+        if (urlStr.includes('0uz601ms56.execute-api')) {
+          const headers = (init?.headers || {}) as Record<string, string>;
+          queriedClientId = headers.client_id;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                All_Shares: 0,
+                App_Shares: 100,
+                Name: 'SYNTHETIC APPLICANT',
+                Appln_No: '900112233',
+                Pan_No: 'XXXXXX1234F',
+              },
+            ],
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error('Portal bundle network down'));
+      });
+
+      const res = await localAdapter.checkAllotment({
+        ipoId: 'cc511556-ee9f-493b-8eb1-fb0580a7fd93',
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: 'ABCDE1234F',
+        companyName: 'Maxwell Engineering Solutions',
+        companyLegalName: 'Maxwell Engineering Solutions Limited',
+      });
+
+      expect(queriedClientId).toBe('88356314970');
+      expect(res.status).toBe(AllotmentStatus.NOT_ALLOTTED);
     });
   });
 });

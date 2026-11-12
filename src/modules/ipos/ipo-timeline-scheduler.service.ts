@@ -5,15 +5,33 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
-import { IpoStatus, LifecycleEventType, Prisma, PublicationStatus } from '@prisma/client';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import {
+  IpoStatus,
+  LifecycleEventType,
+  ParticipantRole,
+  Prisma,
+  PublicationStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { RegistrarResolver } from '../allotment/registrar.resolver';
+import {
+  inspectStoredRegistrarMetadata,
+  reconcileStoredRegistrarMetadata,
+  RegistrarMetadataIpoRecord,
+  RegistrarResolver,
+  StoredRegistrarMetadata,
+} from '../allotment/registrar.resolver';
+import { RegistrarAdapterRegistry } from '../allotment/adapters/registrar-adapter.registry';
 import { NotificationOrchestratorService } from '../notifications/notification-orchestrator.service';
 import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { AllotmentJobService } from '../allotment/allotment-job.service';
 import {
   AllotmentIdentifierType,
   CheckAllotmentRequest,
+  sanitizeRegistrarIpoCode,
 } from '../allotment/allotment.types';
 
 export interface TimelineSchedulerConfig {
@@ -42,6 +60,21 @@ export const PROTECTED_TIMELINE_STATUSES = new Set<IpoStatus>([
   IpoStatus.WITHDRAWN,
   IpoStatus.CANCELLED,
 ]);
+
+export const BACKFILL_MAX_AGE_DAYS = 30;
+export const BACKFILL_MAX_ATTEMPTS = 5;
+export const BACKFILL_BASE_COOLDOWN_MS = 5 * 60 * 1000;
+export const BACKFILL_MAX_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+
+export interface AllotmentBackfillRetryEntry {
+  attempts: number;
+  lastAttemptAt: number;
+  nextEligibleAt: number;
+}
+
+export interface AllotmentAvailabilityCheckOptions {
+  skipForceRefresh?: boolean;
+}
 
 /**
  * Calculates current time components in Asia/Kolkata (IST = UTC+05:30).
@@ -96,9 +129,16 @@ export class IpoTimelineSchedulerService
   private timer: NodeJS.Timeout | null = null;
   private isProcessing = false;
 
-  // In-memory throttling maps for 5-min allotment polling and listing price checks
+  // In-memory throttling maps for 5-min allotment polling, bounded backfill retries, and listing price checks
   private readonly lastAllotmentPollingAt = new Map<string, number>();
   private readonly lastListingPriceCheckAt = new Map<string, number>();
+  private readonly backfillRetryState = new Map<
+    string,
+    AllotmentBackfillRetryEntry
+  >();
+  private backfillStateLoaded = false;
+  private readonly backfillStateStoragePath: string;
+  private readonly ownsTempBackfillStateFile: boolean;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -109,7 +149,32 @@ export class IpoTimelineSchedulerService
     private readonly ipoGuruService?: IpoGuruService,
     @Optional()
     private readonly allotmentJobService?: AllotmentJobService,
-  ) {}
+    @Optional()
+    private readonly registry?: RegistrarAdapterRegistry,
+  ) {
+    const explicitStatePath = process.env.ALLOTMENT_BACKFILL_STATE_PATH?.trim();
+    const isTestEnv = process.env.NODE_ENV === 'test';
+    if (explicitStatePath) {
+      this.backfillStateStoragePath = explicitStatePath;
+      this.ownsTempBackfillStateFile = false;
+    } else if (isTestEnv) {
+      this.backfillStateStoragePath = path.join(
+        os.tmpdir(),
+        'ipovault-test-registries',
+        `timeline-backfill-${crypto.randomUUID()}.json`,
+      );
+      this.ownsTempBackfillStateFile = true;
+    } else {
+      const storageDir =
+        process.env.REGISTRAR_REGISTRY_DIR ||
+        path.join(process.cwd(), 'data', 'registries');
+      this.backfillStateStoragePath = path.join(
+        storageDir,
+        'allotment-backfill-retry-state.json',
+      );
+      this.ownsTempBackfillStateFile = false;
+    }
+  }
 
   public getConfig(): TimelineSchedulerConfig {
     const enabled =
@@ -155,6 +220,15 @@ export class IpoTimelineSchedulerService
       clearInterval(this.timer);
       this.timer = null;
       this.logger.log('IPO Timeline scheduler stopped (timer handle cleared)');
+    }
+    if (this.ownsTempBackfillStateFile) {
+      try {
+        if (fs.existsSync(this.backfillStateStoragePath)) {
+          fs.unlinkSync(this.backfillStateStoragePath);
+        }
+      } catch {
+        // Non-fatal test cleanup
+      }
     }
   }
 
@@ -221,6 +295,16 @@ export class IpoTimelineSchedulerService
         company: true,
         lifecycleEvents: true,
         allotmentConfig: true,
+        sourceIdentities: {
+          include: {
+            source: true,
+          },
+        },
+        participants: {
+          where: {
+            role: ParticipantRole.REGISTRAR,
+          },
+        },
       },
     });
 
@@ -460,10 +544,7 @@ export class IpoTimelineSchedulerService
             where: {
               id: ipo.id,
               status: {
-                in: [
-                  IpoStatus.ALLOTMENT_COMPLETED,
-                  IpoStatus.LISTING_PENDING,
-                ],
+                in: [IpoStatus.ALLOTMENT_COMPLETED, IpoStatus.LISTING_PENDING],
               },
             },
             data: { status: IpoStatus.LISTED },
@@ -485,6 +566,61 @@ export class IpoTimelineSchedulerService
         const persisted = await this.checkAndPersistListingPrice(ipo, now);
         if (persisted) {
           summary.listingPriceCount++;
+        }
+      }
+
+      // =========================================================================
+      // 8. Late Allotment Identity & Timestamp Backfill for Listed / Completed IPOs
+      // =========================================================================
+      if (
+        (currentStatus === IpoStatus.ALLOTMENT_COMPLETED ||
+          currentStatus === IpoStatus.LISTING_PENDING ||
+          currentStatus === IpoStatus.LISTED) &&
+        ipo.allotmentConfig?.enabled !== false &&
+        Boolean(ipo.allotmentConfig?.registrar) &&
+        (!ipo.allotmentResultAvailableAt ||
+          !this.extractValidRegistrarCode(
+            ipo.allotmentConfig?.registrarIpoCode,
+          )) &&
+        this.isWithinAllotmentBackfillWindow(
+          ipo,
+          currentStatus,
+          listingDateStr,
+          allotmentDateStr,
+          closeDateStr,
+          now,
+        ) &&
+        this.canAttemptBackfill(ipo.id, now.getTime())
+      ) {
+        try {
+          const confirmed = await this.confirmActualAllotmentAvailability(ipo, {
+            skipForceRefresh: true,
+          });
+          if (confirmed) {
+            this.clearBackfillRetryState(ipo.id, now.getTime());
+            this.lastAllotmentPollingAt.delete(ipo.id);
+            if (!ipo.allotmentResultAvailableAt) {
+              const backfilled = await this.prisma.ipo.updateMany({
+                where: {
+                  id: ipo.id,
+                  allotmentResultAvailableAt: null,
+                },
+                data: { allotmentResultAvailableAt: now },
+              });
+              if (backfilled?.count > 0) {
+                this.logger.log(
+                  `[Timeline] Backfilled allotmentResultAvailableAt for ${currentStatus} IPO '${ipo.company.displayName}' (${ipo.id})`,
+                );
+              }
+            }
+          } else {
+            this.recordBackfillFailure(ipo.id, now.getTime());
+          }
+        } catch (backfillErr: unknown) {
+          this.recordBackfillFailure(ipo.id, now.getTime());
+          this.logger.debug(
+            `Late allotment backfill failed for IPO ${ipo.id}: ${(backfillErr as Error)?.message || backfillErr}`,
+          );
         }
       }
     }
@@ -595,6 +731,237 @@ export class IpoTimelineSchedulerService
     }
   }
 
+  private parseDateOnlyUtcMs(dateStr?: string): number | null {
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return null;
+    }
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return Date.UTC(year, month - 1, day);
+  }
+
+  /**
+   * Restricts late backfill to IPOs whose listing date is within the last 30 days
+   * (or recent post-allotment IPOs without a listing date yet), preventing indefinite
+   * polling of historical LISTED IPOs.
+   */
+  private isWithinAllotmentBackfillWindow(
+    ipo: { createdAt?: Date | null },
+    currentStatus: IpoStatus,
+    listingDateStr: string | undefined,
+    allotmentDateStr: string | undefined,
+    closeDateStr: string | undefined,
+    now: Date,
+  ): boolean {
+    const currentIstDayMs = this.parseDateOnlyUtcMs(getNowInIST(now).dateStr);
+    const listingDayMs = this.parseDateOnlyUtcMs(listingDateStr);
+
+    if (listingDayMs !== null && currentIstDayMs !== null) {
+      return (
+        (currentIstDayMs - listingDayMs) / 86_400_000 <= BACKFILL_MAX_AGE_DAYS
+      );
+    }
+
+    const fallbackDayMs = this.parseDateOnlyUtcMs(
+      allotmentDateStr || closeDateStr,
+    );
+    if (fallbackDayMs !== null && currentIstDayMs !== null) {
+      return (
+        (currentIstDayMs - fallbackDayMs) / 86_400_000 <= BACKFILL_MAX_AGE_DAYS
+      );
+    }
+
+    if (ipo.createdAt instanceof Date) {
+      return (
+        now.getTime() - ipo.createdAt.getTime() <=
+        BACKFILL_MAX_AGE_DAYS * 86_400_000
+      );
+    }
+
+    // Never auto-poll LISTED IPOs that lack any recent date signal; preserve recent pre-listing stages.
+    return currentStatus !== IpoStatus.LISTED;
+  }
+
+  private extractValidRegistrarCode(
+    ...candidates: Array<string | null | undefined>
+  ): string | null {
+    for (const candidate of candidates) {
+      const sanitized = sanitizeRegistrarIpoCode(candidate);
+      if (sanitized) {
+        return sanitized;
+      }
+    }
+    return null;
+  }
+
+  private loadBackfillRetryState(): void {
+    if (this.backfillStateLoaded) {
+      return;
+    }
+    this.backfillStateLoaded = true;
+    try {
+      if (!fs.existsSync(this.backfillStateStoragePath)) {
+        return;
+      }
+      const raw = JSON.parse(
+        fs.readFileSync(this.backfillStateStoragePath, 'utf-8'),
+      ) as { entries?: Record<string, AllotmentBackfillRetryEntry> };
+      if (!raw?.entries || typeof raw.entries !== 'object') {
+        return;
+      }
+      for (const [ipoId, entry] of Object.entries(raw.entries)) {
+        if (
+          entry &&
+          typeof entry.attempts === 'number' &&
+          Number.isFinite(entry.attempts) &&
+          entry.attempts > 0 &&
+          typeof entry.lastAttemptAt === 'number' &&
+          Number.isFinite(entry.lastAttemptAt) &&
+          typeof entry.nextEligibleAt === 'number' &&
+          Number.isFinite(entry.nextEligibleAt)
+        ) {
+          this.backfillRetryState.set(ipoId, entry);
+        }
+      }
+    } catch (err: unknown) {
+      this.logger.debug(
+        `Unable to load allotment backfill retry state from ${this.backfillStateStoragePath}: ${(err as Error)?.message || err}`,
+      );
+    }
+  }
+
+  private saveBackfillRetryState(nowMs: number): void {
+    const retentionCutoffMs = nowMs - (BACKFILL_MAX_AGE_DAYS + 1) * 86_400_000;
+    for (const [ipoId, entry] of this.backfillRetryState.entries()) {
+      if (entry.lastAttemptAt < retentionCutoffMs) {
+        this.backfillRetryState.delete(ipoId);
+      }
+    }
+
+    try {
+      const dir = path.dirname(this.backfillStateStoragePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const payload = {
+        version: 1,
+        updatedAt: new Date(nowMs).toISOString(),
+        entries: Object.fromEntries(this.backfillRetryState.entries()),
+      };
+      const tmpPath = `${this.backfillStateStoragePath}.${process.pid}.tmp`;
+      fs.writeFileSync(tmpPath, JSON.stringify(payload), 'utf-8');
+      fs.renameSync(tmpPath, this.backfillStateStoragePath);
+    } catch (err: unknown) {
+      this.logger.debug(
+        `Unable to persist allotment backfill retry state to ${this.backfillStateStoragePath}: ${(err as Error)?.message || err}`,
+      );
+    }
+  }
+
+  private canAttemptBackfill(ipoId: string, nowMs: number): boolean {
+    this.loadBackfillRetryState();
+    const entry = this.backfillRetryState.get(ipoId);
+    if (!entry) {
+      return true;
+    }
+    if (entry.attempts >= BACKFILL_MAX_ATTEMPTS) {
+      return false;
+    }
+    return nowMs >= entry.nextEligibleAt;
+  }
+
+  private recordBackfillFailure(ipoId: string, nowMs: number): void {
+    this.loadBackfillRetryState();
+    const prev = this.backfillRetryState.get(ipoId);
+    const attempts = (prev?.attempts ?? 0) + 1;
+    const delayMs = Math.min(
+      BACKFILL_MAX_COOLDOWN_MS,
+      BACKFILL_BASE_COOLDOWN_MS * Math.pow(3, attempts - 1),
+    );
+    this.backfillRetryState.set(ipoId, {
+      attempts,
+      lastAttemptAt: nowMs,
+      nextEligibleAt: nowMs + delayMs,
+    });
+    this.saveBackfillRetryState(nowMs);
+    if (attempts >= BACKFILL_MAX_ATTEMPTS) {
+      this.logger.debug(
+        `[Timeline] Allotment backfill reached max attempts (${BACKFILL_MAX_ATTEMPTS}) for IPO ${ipoId}; automatic polling paused`,
+      );
+    }
+  }
+
+  private clearBackfillRetryState(ipoId: string, nowMs: number): void {
+    this.loadBackfillRetryState();
+    if (this.backfillRetryState.delete(ipoId)) {
+      this.saveBackfillRetryState(nowMs);
+    }
+  }
+
+  private async persistDiscoveredCode(
+    ipo: RegistrarMetadataIpoRecord,
+    adapterCode: string | undefined,
+    discoveredCode: string,
+    precomputedMetadata?: StoredRegistrarMetadata,
+  ): Promise<boolean> {
+    const cleanDiscoveredCode = sanitizeRegistrarIpoCode(discoveredCode);
+    if (!cleanDiscoveredCode) {
+      return false;
+    }
+
+    const storedMetadata =
+      precomputedMetadata ??
+      (await inspectStoredRegistrarMetadata(
+        ipo,
+        this.prisma,
+        this.registry,
+        this.logger,
+      ));
+    const reconciledRegistrar = reconcileStoredRegistrarMetadata(
+      storedMetadata,
+      adapterCode,
+      this.registry,
+    );
+
+    if (!reconciledRegistrar) {
+      this.logger.warn(
+        `Rejected persisting discovered registrar code '${cleanDiscoveredCode}' for IPO ${ipo.id}: conflicting, disabled, unknown, or unresolved registrar metadata`,
+      );
+      return false;
+    }
+
+    const existingConfigCode = this.extractValidRegistrarCode(
+      ipo.allotmentConfig?.registrarIpoCode,
+    );
+
+    if (!existingConfigCode || existingConfigCode !== cleanDiscoveredCode) {
+      try {
+        const registrarToPersist = adapterCode?.trim() || reconciledRegistrar;
+        if (
+          registrarToPersist &&
+          typeof this.resolver.persistDiscoveredRegistrarIdentity === 'function'
+        ) {
+          await this.resolver.persistDiscoveredRegistrarIdentity(
+            ipo.id,
+            registrarToPersist,
+            cleanDiscoveredCode,
+          );
+        }
+        if (this.prisma?.ipoAllotmentConfig?.updateMany) {
+          await this.prisma.ipoAllotmentConfig.updateMany({
+            where: { ipoId: ipo.id },
+            data: { registrarIpoCode: cleanDiscoveredCode },
+          });
+        }
+      } catch (persistErr: unknown) {
+        this.logger.debug(
+          `Failed to persist discovered registrar code '${cleanDiscoveredCode}' for IPO ${ipo.id}: ${(persistErr as Error)?.message || persistErr}`,
+        );
+      }
+    }
+
+    return true;
+  }
+
   /**
    * Confirms actual allotment-result availability from the registrar's official lookup service.
    * Leverages the registrar adapter's authoritative active-issue resolution mechanism (KFin React bundle,
@@ -607,39 +974,90 @@ export class IpoTimelineSchedulerService
         lifecycleEvents: true;
         allotmentConfig: true;
       };
-    }>,
+    }> &
+      Pick<RegistrarMetadataIpoRecord, 'sourceIdentities' | 'participants'>,
+    options: AllotmentAvailabilityCheckOptions = {},
   ): Promise<boolean> {
     try {
-      const resolved = await this.resolver.resolveAdapter(ipo.id);
+      if (ipo.allotmentConfig?.enabled === false) {
+        return false;
+      }
+
+      const storedMetadata = await inspectStoredRegistrarMetadata(
+        ipo,
+        this.prisma,
+        this.registry,
+        this.logger,
+      );
+      if (
+        storedMetadata.disabledByConfig ||
+        storedMetadata.lookupFailed ||
+        storedMetadata.hasUnrecognizedEntry ||
+        storedMetadata.recognizedCodes.size > 1
+      ) {
+        this.logger.warn(
+          `Rejected allotment availability check for IPO ${ipo.id}: conflicting, disabled, unknown, or unreadable registrar metadata`,
+        );
+        return false;
+      }
+
+      const probeOptions = {
+        requireLiveActiveList: true,
+        skipIdentityPersistence: true,
+        ...(options.skipForceRefresh ? { skipForceRefresh: true } : {}),
+      };
+      const resolved = await this.resolver.resolveAdapter(
+        ipo.id,
+        undefined,
+        probeOptions,
+      );
       if (!resolved || !resolved.adapter) {
         return false;
       }
 
       const { adapter, registrarIpoCode } = resolved;
+      const reconciledBeforeProbe = reconcileStoredRegistrarMetadata(
+        storedMetadata,
+        adapter.code,
+        this.registry,
+      );
+      if (!reconciledBeforeProbe) {
+        this.logger.warn(
+          `Rejected allotment availability probe for IPO ${ipo.id}: resolved adapter '${adapter.code}' conflicts with or cannot be reconciled against stored registrar metadata`,
+        );
+        return false;
+      }
+
+      const sanitizedCode = sanitizeRegistrarIpoCode(registrarIpoCode);
 
       if (typeof adapter.resolveRegistrarIpoCode === 'function') {
         const checkRequest: CheckAllotmentRequest = {
           ipoId: ipo.id,
-          registrarIpoCode,
+          registrarIpoCode: sanitizedCode,
           identifierType: AllotmentIdentifierType.PAN,
           identifierValue: '', // No fake applicant PAN or identifier sent
           companyName: ipo.company.displayName,
           companyLegalName: ipo.company.legalName,
           symbol: ipo.symbol || undefined,
+          requireLiveActiveList: true,
+          ...(options.skipForceRefresh ? { skipForceRefresh: true } : {}),
         };
 
         const result = await adapter.resolveRegistrarIpoCode(checkRequest);
 
         // A valid resolved string code (non-empty and not a UUID fallback) indicates
         // that the IPO is actively published and available in the registrar's allotment dataset.
-        if (
-          typeof result === 'string' &&
-          result.trim().length > 0 &&
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-            result.trim(),
-          )
-        ) {
-          return true;
+        const discoveredCode =
+          typeof result === 'string'
+            ? this.extractValidRegistrarCode(result)
+            : null;
+        if (discoveredCode) {
+          return await this.persistDiscoveredCode(
+            ipo,
+            adapter.code,
+            discoveredCode,
+            storedMetadata,
+          );
         }
 
         return false;
@@ -704,6 +1122,16 @@ export class IpoTimelineSchedulerService
         company: true,
         lifecycleEvents: true,
         allotmentConfig: true,
+        sourceIdentities: {
+          include: {
+            source: true,
+          },
+        },
+        participants: {
+          where: {
+            role: ParticipantRole.REGISTRAR,
+          },
+        },
       },
     });
 
@@ -878,4 +1306,3 @@ export class IpoTimelineSchedulerService
     }
   }
 }
-

@@ -75,6 +75,8 @@ export interface CheckAllotmentRequest {
   symbol?: string;
   category?: string;
   applicationNumber?: string;
+  skipForceRefresh?: boolean;
+  requireLiveActiveList?: boolean;
 }
 
 /**
@@ -134,4 +136,32 @@ export interface IRegistrarAdapter {
  */
 export interface RegistrarConcurrencyConfig {
   [registrarCode: string]: number;
+}
+
+const UUID_REGISTRAR_CODE_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const PLACEHOLDER_REGISTRAR_CODE_REGEX =
+  /^(TBD|TO\s+BE\s+DECIDED|N\s*\/\s*A|NA|NONE|NIL|NULL|UNDEFINED|PENDING|UNKNOWN|NOT\s+APPLICABLE|NOT\s+AVAILABLE|-+|●|\[●\])$/i;
+
+/**
+ * Returns true when a raw registrar IPO code is a usable non-UUID, non-placeholder identifier.
+ */
+export function isValidRegistrarIpoCode(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const trimmed = value.trim();
+  return (
+    trimmed.length > 0 &&
+    !UUID_REGISTRAR_CODE_REGEX.test(trimmed) &&
+    !PLACEHOLDER_REGISTRAR_CODE_REGEX.test(trimmed)
+  );
+}
+
+/**
+ * Returns a trimmed registrar IPO code when valid, or undefined for UUIDs and placeholders.
+ */
+export function sanitizeRegistrarIpoCode(value: unknown): string | undefined {
+  return isValidRegistrarIpoCode(value) ? value.trim() : undefined;
 }

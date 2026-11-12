@@ -259,4 +259,205 @@ describe('RegistrarResolver tests', () => {
     const resolved = await resolver.resolveAdapter('unmapped-ipo');
     expect(resolved).toBeUndefined();
   });
+
+  it('14. should forward requireLiveActiveList and skipForceRefresh probe options during Step 4 dynamic discovery', async () => {
+    const dynamicIpoId = '16ad8e62-1881-4c3b-b1f3-1ea2af818b99';
+    (
+      prismaService.ipoAllotmentConfig.findUnique as jest.Mock
+    ).mockResolvedValue(null);
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue(
+      null,
+    );
+    (prismaService.ipo.findUnique as jest.Mock).mockResolvedValue({
+      id: dynamicIpoId,
+      symbol: 'MAXWELL',
+      company: {
+        displayName: 'Maxwell Engineering Solutions',
+        legalName: 'Maxwell Engineering Solutions Limited',
+      },
+    });
+    (
+      prismaService.ipoSourceIdentity as unknown as { upsert: jest.Mock }
+    ).upsert = jest.fn();
+    const persistSpy = jest
+      .spyOn(resolver, 'persistDiscoveredRegistrarIdentity')
+      .mockResolvedValue(undefined);
+
+    const kfinSpy = {
+      code: 'KFINTECH',
+      resolveRegistrarIpoCode: jest.fn().mockResolvedValue('88356314970'),
+    };
+    (registry as unknown as { getAll: jest.Mock }).getAll = jest
+      .fn()
+      .mockReturnValue([kfinSpy]);
+
+    try {
+      const resolved = await resolver.resolveAdapter(dynamicIpoId, undefined, {
+        requireLiveActiveList: true,
+        skipForceRefresh: true,
+      });
+
+      expect(kfinSpy.resolveRegistrarIpoCode).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ipoId: dynamicIpoId,
+          requireLiveActiveList: true,
+          skipForceRefresh: true,
+        }),
+      );
+      expect(resolved?.registrarIpoCode).toBe('88356314970');
+    } finally {
+      persistSpy.mockRestore();
+    }
+  });
+
+  it('ignores placeholder registrar codes (TBD, N/A) in config/sourceIdentity and never persists Step 4 placeholder codes', async () => {
+    (registry.get as jest.Mock).mockReturnValue(mockKfinAdapter);
+    (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      registrar: 'KFINTECH',
+      registrarIpoCode: 'TBD',
+      enabled: true,
+    });
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValueOnce({
+      externalId: '37168935020',
+      source: { code: 'KFINTECH', sourceType: 'REGISTRAR' },
+    });
+
+    const fallbackResolved = await resolver.resolveAdapter(
+      '16ad8e62-1881-4c3b-b1f3-1ea2af818b77',
+    );
+    expect(fallbackResolved?.adapter.code).toBe('KFINTECH');
+    expect(fallbackResolved?.registrarIpoCode).toBe('37168935020');
+
+    // Step 2 IpoSourceIdentity with placeholder 'N/A' ignores 'N/A'
+    (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValueOnce({
+      externalId: 'N/A',
+      source: { code: 'KFINTECH', sourceType: 'REGISTRAR' },
+    });
+    const sourcePlaceholder = await resolver.resolveAdapter(
+      '16ad8e62-1881-4c3b-b1f3-1ea2af818b78',
+    );
+    expect(sourcePlaceholder?.adapter.code).toBe('KFINTECH');
+    expect(sourcePlaceholder?.registrarIpoCode).toBeUndefined();
+
+    // Step 4 dynamic probe returning 'TBD' must never persist or return 'TBD'
+    (prismaService.ipoAllotmentConfig.findUnique as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
+    (prismaService.ipo.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: '16ad8e62-1881-4c3b-b1f3-1ea2af818b79',
+      symbol: 'PHSTEP4',
+      company: {
+        displayName: 'Placeholder Step4 Corp',
+        legalName: 'Placeholder Step4 Corp Limited',
+      },
+    });
+
+    const persistSpy = jest
+      .spyOn(resolver, 'persistDiscoveredRegistrarIdentity')
+      .mockResolvedValue(undefined);
+    const kfinPlaceholderSpy = {
+      code: 'KFINTECH',
+      resolveRegistrarIpoCode: jest.fn().mockResolvedValue('TBD'),
+    };
+    (registry as unknown as { getAll: jest.Mock }).getAll = jest
+      .fn()
+      .mockReturnValue([kfinPlaceholderSpy]);
+
+    try {
+      const unresolvedPlaceholder = await resolver.resolveAdapter(
+        '16ad8e62-1881-4c3b-b1f3-1ea2af818b79',
+      );
+      expect(persistSpy).not.toHaveBeenCalled();
+      expect(unresolvedPlaceholder).toBeUndefined();
+    } finally {
+      persistSpy.mockRestore();
+    }
+  });
+
+  it('15. suppresses Step 4 eager identity persistence under requireLiveActiveList or skipIdentityPersistence while preserving non-strict persistence', async () => {
+    const targetId = '16ad8e62-1881-4c3b-b1f3-1ea2af818b88';
+    const sourceFindUnique = jest.fn().mockResolvedValue({ id: 'src-kfin-1' });
+    const identityUpsert = jest.fn().mockResolvedValue({});
+    const configUpsert = jest.fn().mockResolvedValue({});
+
+    (prismaService as unknown as Record<string, unknown>).source = {
+      findUnique: sourceFindUnique,
+    };
+    (
+      prismaService.ipoSourceIdentity as unknown as { upsert: jest.Mock }
+    ).upsert = identityUpsert;
+    (
+      prismaService.ipoAllotmentConfig as unknown as { upsert: jest.Mock }
+    ).upsert = configUpsert;
+
+    (
+      prismaService.ipoAllotmentConfig.findUnique as jest.Mock
+    ).mockResolvedValue(null);
+    (prismaService.ipoSourceIdentity.findFirst as jest.Mock).mockResolvedValue(
+      null,
+    );
+    (prismaService.ipo.findUnique as jest.Mock).mockResolvedValue({
+      id: targetId,
+      symbol: 'STRICT1',
+      company: {
+        displayName: 'Strict Persistence Test Ltd',
+        legalName: 'Strict Persistence Test Limited',
+      },
+    });
+
+    const kfinSpy = {
+      code: 'KFINTECH',
+      resolveRegistrarIpoCode: jest.fn().mockResolvedValue('88356314970'),
+    };
+    (registry as unknown as { getAll: jest.Mock }).getAll = jest
+      .fn()
+      .mockReturnValue([kfinSpy]);
+
+    const persistSpy = jest.spyOn(resolver, 'persistDiscoveredRegistrarIdentity');
+
+    try {
+      const strictResolved = await resolver.resolveAdapter(targetId, undefined, {
+        requireLiveActiveList: true,
+      });
+      expect(strictResolved?.registrarIpoCode).toBe('88356314970');
+      expect(persistSpy).not.toHaveBeenCalled();
+      expect(sourceFindUnique).not.toHaveBeenCalled();
+      expect(identityUpsert).not.toHaveBeenCalled();
+      expect(configUpsert).not.toHaveBeenCalled();
+
+      const explicitSuppressed = await resolver.resolveAdapter(
+        targetId,
+        undefined,
+        {
+          skipIdentityPersistence: true,
+        },
+      );
+      expect(explicitSuppressed?.registrarIpoCode).toBe('88356314970');
+      expect(persistSpy).not.toHaveBeenCalled();
+      expect(identityUpsert).not.toHaveBeenCalled();
+      expect(configUpsert).not.toHaveBeenCalled();
+
+      // Non-strict workflow continues to persist Step 4 discovered identity normally
+      const nonStrictResolved = await resolver.resolveAdapter(targetId);
+      expect(nonStrictResolved?.registrarIpoCode).toBe('88356314970');
+      // Wait a microtask tick for the fire-and-forget Step 4 persistence promise
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(persistSpy).toHaveBeenCalledWith(
+        targetId,
+        'KFINTECH',
+        '88356314970',
+      );
+      expect(identityUpsert).toHaveBeenCalledTimes(1);
+      expect(configUpsert).toHaveBeenCalledTimes(1);
+    } finally {
+      persistSpy.mockRestore();
+    }
+  });
 });

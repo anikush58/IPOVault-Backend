@@ -5,6 +5,7 @@ import {
   CategoryAllotmentResult,
   CheckAllotmentRequest,
   NormalizedAllotmentResult,
+  sanitizeRegistrarIpoCode,
 } from '../allotment.types';
 import { maskIdentifier } from '../allotment.utils';
 import { BaseRegistrarAdapter } from './base-registrar.adapter';
@@ -19,10 +20,15 @@ import {
   deriveOverallAllotment,
 } from '../allotment-category.utils';
 import { KFIN_VERIFIED_FALLBACK_REGISTRY } from '../discovery/kfin-identity-discovery.adapter';
-import { KfinRegistryStore } from '../discovery/kfin-registry.store';
+import {
+  KfinRegistrySnapshot,
+  KfinRegistryStore,
+} from '../discovery/kfin-registry.store';
 
 @Injectable()
 export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
+  private static readonly ON_DEMAND_REFRESH_COOLDOWN_MS = 60_000;
+
   readonly code = 'KFINTECH';
   readonly name = 'KFin Technologies';
   override readonly defaultConcurrency = 5;
@@ -34,6 +40,7 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
 
   private readonly logger = new Logger(KfinRegistrarAdapter.name);
   private readonly store: KfinRegistryStore;
+  private lastOnDemandForceRefreshAt = 0;
 
   constructor(@Optional() registryStore?: KfinRegistryStore) {
     super();
@@ -59,15 +66,7 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       );
     }
 
-    let clientId = request.registrarIpoCode?.trim();
-    if (
-      clientId &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        clientId,
-      )
-    ) {
-      clientId = undefined;
-    }
+    let clientId = sanitizeRegistrarIpoCode(request.registrarIpoCode);
 
     if (!clientId) {
       const resolved = await this.resolveRegistrarIpoCode(request);
@@ -619,27 +618,108 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
     };
   }
 
+  /**
+   * Performs an on-demand forced live refresh when an IPO is missing from cached
+   * registry items, while enforcing cooldown/skip rules to avoid per-IPO refresh storms.
+   */
+  private async tryOnDemandLiveRefresh(
+    snapshot: KfinRegistrySnapshot,
+    identifier: string,
+    allowForceRefresh = true,
+  ): Promise<KfinRegistrySnapshot | null> {
+    if (!allowForceRefresh) {
+      this.logger.debug(
+        `IPO '${identifier}' not found in cached KFin registry (${snapshot.items.length} items); reusing cached registry without forced refresh`,
+      );
+      return null;
+    }
+
+    const nowMs = Date.now();
+    const fetchedAtMs = Date.parse(snapshot.metadata.fetchedAt);
+    const snapshotAgeMs = nowMs - fetchedAtMs;
+    const isRecentLiveSnapshot =
+      !snapshot.metadata.isStale &&
+      (snapshot.metadata.sourceType === 'PORTAL_SPA_BUNDLE' ||
+        snapshot.metadata.sourceType === 'OFFICIAL_MACHINE_READABLE') &&
+      Number.isFinite(fetchedAtMs) &&
+      snapshotAgeMs >= -5_000 &&
+      snapshotAgeMs < KfinRegistrarAdapter.ON_DEMAND_REFRESH_COOLDOWN_MS;
+
+    const sinceLastForceMs = nowMs - this.lastOnDemandForceRefreshAt;
+    const isWithinForceCooldown =
+      this.lastOnDemandForceRefreshAt > 0 &&
+      sinceLastForceMs >= 0 &&
+      sinceLastForceMs < KfinRegistrarAdapter.ON_DEMAND_REFRESH_COOLDOWN_MS;
+
+    if (isRecentLiveSnapshot || isWithinForceCooldown) {
+      this.logger.debug(
+        `IPO '${identifier}' not found in cached KFin registry (${snapshot.items.length} items); reusing recent live registry within cooldown`,
+      );
+      return null;
+    }
+
+    this.logger.log(
+      `IPO '${identifier}' not found in cached KFin registry (${snapshot.items.length} items). Executing on-demand live mirror discovery...`,
+    );
+    this.lastOnDemandForceRefreshAt = nowMs;
+
+    try {
+      const liveSnapshot = await this.store.getActiveRegistry(true);
+      return liveSnapshot && liveSnapshot.items.length > 0
+        ? liveSnapshot
+        : null;
+    } catch (refreshErr) {
+      this.logger.warn(
+        `On-demand live KFintech discovery attempt failed (${(refreshErr as Error)?.message || refreshErr}); falling back to matched result`,
+      );
+      return null;
+    }
+  }
+
+  private isFreshLiveSnapshot(
+    snapshot: KfinRegistrySnapshot | null | undefined,
+  ): boolean {
+    return Boolean(
+      snapshot &&
+      snapshot.metadata &&
+      snapshot.metadata.isStale === false &&
+      snapshot.metadata.sourceType !== 'STATIC_BASELINE' &&
+      snapshot.metadata.sourceType !== 'PERSISTED_DISK_SNAPSHOT',
+    );
+  }
+
   public async resolveRegistrarIpoCode(
     request: CheckAllotmentRequest,
   ): Promise<string | NormalizedAllotmentResult> {
     const checkedAt = new Date();
+    const requireLiveActiveList = Boolean(request.requireLiveActiveList);
     try {
       const snapshot = await this.store.getActiveRegistry();
-      const matched = this.matchCompanyInList(
-        snapshot.items,
-        request,
+      const isInitialFreshLive = this.isFreshLiveSnapshot(snapshot);
+      let hasVerifiedFreshLiveList = isInitialFreshLive;
+      let matched: string | NormalizedAllotmentResult = {
+        status: AllotmentStatus.NOT_YET_AVAILABLE,
+        sourceCode: this.code,
         checkedAt,
-      );
-      if (typeof matched === 'string') {
-        return matched;
+        errorMessage: `No matching allotment record found for this IPO yet on ${this.name}`,
+      };
+
+      if (!requireLiveActiveList || isInitialFreshLive) {
+        matched = this.matchCompanyInList(snapshot.items, request, checkedAt);
+        if (typeof matched === 'string') {
+          return matched;
+        }
+
+        if (matched.status === AllotmentStatus.NEEDS_REVIEW) {
+          return matched;
+        }
       }
 
-      if (matched.status === AllotmentStatus.NEEDS_REVIEW) {
-        return matched;
-      }
-
-      // If active list did not yield a match, check verified fallback registry if different
-      if (snapshot.items !== KFIN_VERIFIED_FALLBACK_REGISTRY) {
+      // If active list did not yield a match, check verified fallback registry if allowed & different
+      if (
+        !requireLiveActiveList &&
+        snapshot.items !== KFIN_VERIFIED_FALLBACK_REGISTRY
+      ) {
         const fallbackMatch = this.matchCompanyInList(
           KFIN_VERIFIED_FALLBACK_REGISTRY,
           request,
@@ -651,15 +731,23 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       }
 
       // On-demand live mirror discovery (Zero-Touch):
-      // If cached registry items and static fallback did not yield a match, force a live
-      // refresh from KFintech's live portal bundle and asset-manifest (multi-mirror discovery).
+      // Reuse a recently refreshed live registry and respect skipForceRefresh so scheduler
+      // sweeps do not trigger separate forced downloads for every IPO.
       const identifier = request.symbol || request.companyName || request.ipoId;
-      this.logger.log(
-        `IPO '${identifier}' not found in cached KFin registry (${snapshot.items.length} items). Executing on-demand live mirror discovery...`,
+      const liveSnapshot = await this.tryOnDemandLiveRefresh(
+        snapshot,
+        identifier,
+        !request.skipForceRefresh,
       );
-      try {
-        const liveSnapshot = await this.store.getActiveRegistry(true);
-        if (liveSnapshot && liveSnapshot.items.length > 0) {
+      if (liveSnapshot) {
+        if (requireLiveActiveList && !this.isFreshLiveSnapshot(liveSnapshot)) {
+          this.logger.warn(
+            `[REGISTRAR_ALERT:STALE_REGISTRY] Rejected non-live KFintech snapshot (sourceType: ${liveSnapshot.metadata?.sourceType}, isStale: ${liveSnapshot.metadata?.isStale}) during live availability check for '${identifier}'`,
+          );
+        } else {
+          if (this.isFreshLiveSnapshot(liveSnapshot)) {
+            hasVerifiedFreshLiveList = true;
+          }
           const liveMatch = this.matchCompanyInList(
             liveSnapshot.items,
             request,
@@ -674,11 +762,20 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
           if (liveMatch.status === AllotmentStatus.NEEDS_REVIEW) {
             return liveMatch;
           }
+          matched = liveMatch;
         }
-      } catch (refreshErr) {
+      }
+
+      if (requireLiveActiveList && !hasVerifiedFreshLiveList) {
         this.logger.warn(
-          `On-demand live KFintech discovery attempt failed (${(refreshErr as Error)?.message || refreshErr}); falling back to matched result`,
+          `[REGISTRAR_ALERT:DISCOVERY_FAILURE] KFintech live active company list unavailable for '${identifier}' (sourceType: ${snapshot.metadata?.sourceType}, isStale: ${snapshot.metadata?.isStale})`,
         );
+        return {
+          status: AllotmentStatus.SOURCE_UNAVAILABLE,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: `KFintech live active company list unavailable (only ${snapshot.metadata?.sourceType || 'stale'} snapshot available)`,
+        };
       }
 
       this.logger.warn(
@@ -687,20 +784,31 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
 
       return matched;
     } catch (err: unknown) {
-      // Attempt fallback matching before surfacing error
-      const fallbackMatch = this.matchCompanyInList(
-        KFIN_VERIFIED_FALLBACK_REGISTRY,
-        request,
-        checkedAt,
-      );
-      if (typeof fallbackMatch === 'string') {
-        return fallbackMatch;
+      if (!requireLiveActiveList) {
+        // Attempt fallback matching before surfacing error
+        const fallbackMatch = this.matchCompanyInList(
+          KFIN_VERIFIED_FALLBACK_REGISTRY,
+          request,
+          checkedAt,
+        );
+        if (typeof fallbackMatch === 'string') {
+          return fallbackMatch;
+        }
       }
 
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(
         `[REGISTRAR_ALERT:DISCOVERY_FAILURE] Failed to resolve KFintech registrar code: ${msg}`,
       );
+
+      if (requireLiveActiveList) {
+        return {
+          status: AllotmentStatus.SOURCE_UNAVAILABLE,
+          sourceCode: this.code,
+          checkedAt,
+          errorMessage: `KFintech live active company list unavailable: ${msg}`,
+        };
+      }
 
       if (
         msg.includes('JSON') ||
@@ -759,36 +867,29 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       }
 
       // On-demand live mirror discovery (Zero-Touch):
-      // If cached registry items and static fallback did not yield a match, force a live
-      // refresh from KFintech's live portal bundle and asset-manifest (multi-mirror discovery).
       const identifier = request.symbol || request.companyName || request.ipoId;
-      this.logger.log(
-        `IPO '${identifier}' not found in cached KFin registry (${snapshot.items.length} items). Executing on-demand live mirror discovery...`,
+      const liveSnapshot = await this.tryOnDemandLiveRefresh(
+        snapshot,
+        identifier,
+        !request.skipForceRefresh,
       );
-      try {
-        const liveSnapshot = await this.store.getActiveRegistry(true);
-        if (liveSnapshot && liveSnapshot.items.length > 0) {
-          const liveMatch = matchAllRegistrarCompanyCodes(
-            liveSnapshot.items,
-            request,
-            this.code,
-            this.name,
-            checkedAt,
-          );
-          if (Array.isArray(liveMatch)) {
-            this.logger.log(
-              `Live mirror discovery successfully resolved KFintech clientIds [${liveMatch.join(', ')}] for '${identifier}'!`,
-            );
-            return liveMatch;
-          }
-          if (liveMatch.status === AllotmentStatus.NEEDS_REVIEW) {
-            return liveMatch;
-          }
-        }
-      } catch (refreshErr) {
-        this.logger.warn(
-          `On-demand live KFintech discovery attempt failed (${(refreshErr as Error)?.message || refreshErr}); falling back to matched result`,
+      if (liveSnapshot) {
+        const liveMatch = matchAllRegistrarCompanyCodes(
+          liveSnapshot.items,
+          request,
+          this.code,
+          this.name,
+          checkedAt,
         );
+        if (Array.isArray(liveMatch)) {
+          this.logger.log(
+            `Live mirror discovery successfully resolved KFintech clientIds [${liveMatch.join(', ')}] for '${identifier}'!`,
+          );
+          return liveMatch;
+        }
+        if (liveMatch.status === AllotmentStatus.NEEDS_REVIEW) {
+          return liveMatch;
+        }
       }
 
       this.logger.warn(

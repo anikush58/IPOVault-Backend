@@ -821,6 +821,289 @@ describe('MufgIntimeRegistrarAdapter Production Contract Tests', () => {
     const result = await adapter.checkAllotment(mockRequest);
     expect(result.status).toBe(AllotmentStatus.SOURCE_RESPONSE_INVALID);
   });
+
+  it('11. should cache valid MUFG GetDetails company list across multiple IPO checks', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        d: '<NewDataSet><Table><company_id>10001</company_id><companyname>ALPHA INDUSTRIES LIMITED</companyname></Table><Table><company_id>10002</company_id><companyname>BETA TECH LIMITED</companyname></Table></NewDataSet>',
+      }),
+    } as unknown as Response);
+
+    const code1 = await adapter.resolveRegistrarIpoCode({
+      ...mockRequest,
+      registrarIpoCode: undefined,
+      companyName: 'Alpha Industries',
+    });
+    const code2 = await adapter.resolveRegistrarIpoCode({
+      ...mockRequest,
+      ipoId: '33333333-3333-3333-3333-333333333333',
+      registrarIpoCode: undefined,
+      companyName: 'Beta Tech',
+    });
+    const code3 = await adapter.resolveRegistrarIpoCode({
+      ...mockRequest,
+      ipoId: '44444444-4444-4444-4444-444444444444',
+      registrarIpoCode: undefined,
+      companyName: 'Gamma Unlisted',
+    });
+
+    expect(code1).toBe('10001');
+    expect(code2).toBe('10002');
+    expect((code3 as { status: AllotmentStatus }).status).toBe(
+      AllotmentStatus.NOT_YET_AVAILABLE,
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('12. should deduplicate concurrent GetDetails requests via single-flight protection', async () => {
+    let resolveResponse!: (value: Response) => void;
+    const pendingFetch = new Promise<Response>((resolve) => {
+      resolveResponse = resolve;
+    });
+    const fetchSpy = jest.spyOn(global, 'fetch').mockReturnValue(pendingFetch);
+
+    const checksPromise = Promise.all([
+      adapter.resolveRegistrarIpoCode({
+        ...mockRequest,
+        registrarIpoCode: undefined,
+        companyName: 'Alpha Industries',
+      }),
+      adapter.resolveRegistrarIpoCode({
+        ...mockRequest,
+        ipoId: '33333333-3333-3333-3333-333333333333',
+        registrarIpoCode: undefined,
+        companyName: 'Beta Tech',
+      }),
+      adapter.resolveRegistrarIpoCode({
+        ...mockRequest,
+        ipoId: '44444444-4444-4444-4444-444444444444',
+        registrarIpoCode: undefined,
+        companyName: 'Delta Systems',
+      }),
+    ]);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    resolveResponse({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        d: '<NewDataSet><Table><company_id>10001</company_id><companyname>ALPHA INDUSTRIES LIMITED</companyname></Table><Table><company_id>10002</company_id><companyname>BETA TECH LIMITED</companyname></Table></NewDataSet>',
+      }),
+    } as unknown as Response);
+
+    const [res1, res2, res3] = await checksPromise;
+    expect(res1).toBe('10001');
+    expect(res2).toBe('10002');
+    expect((res3 as { status: AllotmentStatus }).status).toBe(
+      AllotmentStatus.NOT_YET_AVAILABLE,
+    );
+  });
+
+  it('13. should refresh cached MUFG company list after cache TTL expires', async () => {
+    const prevTtlEnv = process.env.MUFG_INTIME_COMPANY_LIST_CACHE_TTL_MS;
+    process.env.MUFG_INTIME_COMPANY_LIST_CACHE_TTL_MS = '60000';
+    let currentTime = 1_794_400_000_000;
+    const dateNowSpy = jest
+      .spyOn(Date, 'now')
+      .mockImplementation(() => currentTime);
+
+    let callCount = 0;
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() => {
+      callCount++;
+      const xml =
+        callCount === 1
+          ? '<NewDataSet><Table><company_id>10001</company_id><companyname>ALPHA INDUSTRIES LIMITED</companyname></Table></NewDataSet>'
+          : '<NewDataSet><Table><company_id>20002</company_id><companyname>OMEGA VENTURES LIMITED</companyname></Table></NewDataSet>';
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ d: xml }),
+      } as unknown as Response);
+    });
+
+    try {
+      const first = await adapter.resolveRegistrarIpoCode({
+        ...mockRequest,
+        registrarIpoCode: undefined,
+        companyName: 'Alpha Industries',
+      });
+      expect(first).toBe('10001');
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      currentTime += 30_000;
+      const withinTtl = await adapter.resolveRegistrarIpoCode({
+        ...mockRequest,
+        registrarIpoCode: undefined,
+        companyName: 'Omega Ventures',
+      });
+      expect((withinTtl as { status: AllotmentStatus }).status).toBe(
+        AllotmentStatus.NOT_YET_AVAILABLE,
+      );
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      currentTime += 31_000;
+      const afterExpiry = await adapter.resolveRegistrarIpoCode({
+        ...mockRequest,
+        registrarIpoCode: undefined,
+        companyName: 'Omega Ventures',
+      });
+      expect(afterExpiry).toBe('20002');
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      dateNowSpy.mockRestore();
+      if (prevTtlEnv === undefined) {
+        delete process.env.MUFG_INTIME_COMPANY_LIST_CACHE_TTL_MS;
+      } else {
+        process.env.MUFG_INTIME_COMPANY_LIST_CACHE_TTL_MS = prevTtlEnv;
+      }
+    }
+  });
+
+  it('14. should NOT cache HTTP errors, HTML pages, invalid JSON, malformed envelopes, or empty lists and should recover on retry', async () => {
+    let callNum = 0;
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() => {
+      callNum++;
+      if (callNum === 1) {
+        return Promise.resolve({
+          ok: false,
+          status: 403,
+        } as unknown as Response);
+      }
+      if (callNum === 2) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            d: '<!DOCTYPE html><html><body>WAF Block</body></html>',
+          }),
+        } as unknown as Response);
+      }
+      if (callNum === 3) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ Message: 'Unexpected failure' }),
+        } as unknown as Response);
+      }
+      if (callNum === 4) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new SyntaxError('Unexpected token <');
+          },
+        } as unknown as Response);
+      }
+      if (callNum === 5) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ d: '<NewDataSet />' }),
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          d: '<NewDataSet><Table><company_id>10001</company_id><companyname>ALPHA INDUSTRIES LIMITED</companyname></Table></NewDataSet>',
+        }),
+      } as unknown as Response);
+    });
+
+    const req = {
+      ...mockRequest,
+      registrarIpoCode: undefined,
+      companyName: 'Alpha Industries',
+    };
+
+    const httpErr = (await adapter.resolveRegistrarIpoCode(req)) as {
+      status: AllotmentStatus;
+      errorMessage?: string;
+    };
+    expect(httpErr.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+    expect(httpErr.errorMessage).toContain('HTTP status 403');
+
+    const htmlErr = (await adapter.resolveRegistrarIpoCode(req)) as {
+      status: AllotmentStatus;
+    };
+    expect(htmlErr.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+
+    const envelopeErr = (await adapter.resolveRegistrarIpoCode(req)) as {
+      status: AllotmentStatus;
+    };
+    expect(envelopeErr.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+
+    const jsonErr = (await adapter.resolveRegistrarIpoCode(req)) as {
+      status: AllotmentStatus;
+    };
+    expect(jsonErr.status).toBe(AllotmentStatus.SOURCE_UNAVAILABLE);
+
+    const emptyRes = (await adapter.resolveRegistrarIpoCode(req)) as {
+      status: AllotmentStatus;
+    };
+    expect(emptyRes.status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+
+    const recovered = await adapter.resolveRegistrarIpoCode(req);
+    expect(recovered).toBe('10001');
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
+
+    const cachedFollowUp = await adapter.resolveRegistrarIpoCode(req);
+    expect(cachedFollowUp).toBe('10001');
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
+  });
+
+  it('15. should clear single-flight lock after failure so subsequent callers retry cleanly', async () => {
+    let callNum = 0;
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() => {
+      callNum++;
+      if (callNum === 1) {
+        return Promise.resolve({
+          ok: false,
+          status: 403,
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          d: '<NewDataSet><Table><company_id>30003</company_id><companyname>NOVA MOTORS LIMITED</companyname></Table></NewDataSet>',
+        }),
+      } as unknown as Response);
+    });
+
+    const [err1, err2] = await Promise.all([
+      adapter.resolveRegistrarIpoCode({
+        ...mockRequest,
+        registrarIpoCode: undefined,
+        companyName: 'Nova Motors',
+      }),
+      adapter.resolveRegistrarIpoCode({
+        ...mockRequest,
+        ipoId: '33333333-3333-3333-3333-333333333333',
+        registrarIpoCode: undefined,
+        companyName: 'Nova Motors',
+      }),
+    ]);
+
+    expect((err1 as { status: AllotmentStatus }).status).toBe(
+      AllotmentStatus.SOURCE_UNAVAILABLE,
+    );
+    expect((err2 as { status: AllotmentStatus }).status).toBe(
+      AllotmentStatus.SOURCE_UNAVAILABLE,
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    const retryRes = await adapter.resolveRegistrarIpoCode({
+      ...mockRequest,
+      registrarIpoCode: undefined,
+      companyName: 'Nova Motors',
+    });
+    expect(retryRes).toBe('30003');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('PurvaRegistrarAdapter Contract & Registry Tests', () => {

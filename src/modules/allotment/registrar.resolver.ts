@@ -1,8 +1,341 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { Prisma } from '@prisma/client';
-import { IRegistrarAdapter } from './allotment.types';
-import { RegistrarAdapterRegistry } from './adapters/registrar-adapter.registry';
+import { ParticipantRole, Prisma, SourceType } from '@prisma/client';
+import {
+  IRegistrarAdapter,
+  isValidRegistrarIpoCode,
+  sanitizeRegistrarIpoCode,
+} from './allotment.types';
+import {
+  normalizeRegistrarCode,
+  RegistrarAdapterRegistry,
+} from './adapters/registrar-adapter.registry';
+
+export const KNOWN_NON_KFIN_REGISTRAR_CODES = new Set<string>([
+  'MUFG_INTIME',
+  'BIGSHARE',
+  'MAASHITLA',
+  'SKYLINE',
+  'PURVA',
+  'CAMEO',
+]);
+
+export interface StoredRegistrarMetadata {
+  disabledByConfig: boolean;
+  recognizedCodes: Set<string>;
+  hasUnrecognizedEntry: boolean;
+  lookupFailed: boolean;
+}
+
+export interface RegistrarMetadataIpoRecord {
+  id: string;
+  allotmentResultAvailableAt?: Date | null;
+  allotmentConfig?: {
+    enabled?: boolean | null;
+    registrar?: string | null;
+    registrarIpoCode?: string | null;
+  } | null;
+  sourceIdentities?: Array<{
+    source?: {
+      code?: string | null;
+      name?: string | null;
+      sourceType?: string | null;
+    } | null;
+  }>;
+  participants?: Array<{
+    role?: string | null;
+    name?: string | null;
+    entityName?: string | null;
+  }>;
+}
+
+export interface RegistrarMetadataLookupPrisma {
+  ipoAllotmentConfig?: {
+    findUnique?(args: {
+      where: { ipoId: string };
+    }): Promise<RegistrarMetadataIpoRecord['allotmentConfig'] | null>;
+  };
+  ipoSourceIdentity?: {
+    findMany?(args: {
+      where: {
+        ipoId: string;
+        source: { sourceType: SourceType };
+      };
+      include: { source: true };
+    }): Promise<NonNullable<RegistrarMetadataIpoRecord['sourceIdentities']>>;
+  };
+  ipoParticipant?: {
+    findMany?(args: {
+      where: {
+        ipoId: string;
+        role: ParticipantRole;
+      };
+    }): Promise<NonNullable<RegistrarMetadataIpoRecord['participants']>>;
+  };
+}
+
+export function normalizeKnownRegistrarCode(
+  raw?: string | null,
+  registry?: RegistrarAdapterRegistry,
+): string | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const normalized = normalizeRegistrarCode(trimmed);
+  if (normalized === 'KFINTECH') {
+    return 'KFINTECH';
+  }
+
+  const registeredAdapter = registry?.get(trimmed);
+  if (registeredAdapter) {
+    const adapterNormalized = normalizeRegistrarCode(registeredAdapter.code);
+    if (adapterNormalized === 'KFINTECH') {
+      return 'KFINTECH';
+    }
+    return registeredAdapter.code.toUpperCase();
+  }
+
+  if (KNOWN_NON_KFIN_REGISTRAR_CODES.has(normalized)) {
+    return normalized;
+  }
+
+  return undefined;
+}
+
+/**
+ * Normalizes all raw strings from a single registrar record and adds
+ * recognized canonical codes to `recognizedCodes`. Returns `true` when
+ * the record contains any unrecognized non-empty companion field or is
+ * unexpectedly empty.
+ */
+export function collectRegistrarCandidateValues(
+  rawValues: Array<string | null | undefined>,
+  recognizedCodes: Set<string>,
+  treatEmptyAsUnrecognized: boolean,
+  registry?: RegistrarAdapterRegistry,
+): boolean {
+  const nonEmptyValues = rawValues
+    .map((val) => val?.trim())
+    .filter((val): val is string => Boolean(val));
+
+  if (nonEmptyValues.length === 0) {
+    return treatEmptyAsUnrecognized;
+  }
+
+  let hasUnrecognizedValue = false;
+  for (const val of nonEmptyValues) {
+    const normalized = normalizeKnownRegistrarCode(val, registry);
+    if (normalized) {
+      recognizedCodes.add(normalized);
+    } else {
+      hasUnrecognizedValue = true;
+    }
+  }
+
+  return hasUnrecognizedValue;
+}
+
+/**
+ * Inspects stored registrar metadata across allotmentConfig, sourceIdentities,
+ * and participants without short-circuiting so conflicts and unknown entries
+ * are always visible to callers.
+ */
+export async function inspectStoredRegistrarMetadata(
+  ipo: RegistrarMetadataIpoRecord,
+  prisma?: RegistrarMetadataLookupPrisma,
+  registry?: RegistrarAdapterRegistry,
+  logger?: Logger,
+): Promise<StoredRegistrarMetadata> {
+  const recognizedCodes = new Set<string>();
+  let hasUnrecognizedEntry = false;
+
+  let allotmentConfig = ipo.allotmentConfig;
+  if (
+    !allotmentConfig &&
+    typeof prisma?.ipoAllotmentConfig?.findUnique === 'function'
+  ) {
+    try {
+      allotmentConfig = await prisma.ipoAllotmentConfig.findUnique({
+        where: { ipoId: ipo.id },
+      });
+    } catch (err: unknown) {
+      logger?.debug(
+        `Fallback allotmentConfig lookup failed for ${ipo.id}: ${(err as Error)?.message || err}`,
+      );
+      return {
+        disabledByConfig: false,
+        recognizedCodes,
+        hasUnrecognizedEntry,
+        lookupFailed: true,
+      };
+    }
+  }
+
+  if (allotmentConfig?.enabled === false) {
+    return {
+      disabledByConfig: true,
+      recognizedCodes,
+      hasUnrecognizedEntry,
+      lookupFailed: false,
+    };
+  }
+
+  if (allotmentConfig?.registrar?.trim()) {
+    if (
+      collectRegistrarCandidateValues(
+        [allotmentConfig.registrar],
+        recognizedCodes,
+        false,
+        registry,
+      )
+    ) {
+      hasUnrecognizedEntry = true;
+    }
+  }
+
+  let sourceIdentities = ipo.sourceIdentities;
+  if (
+    !Array.isArray(sourceIdentities) &&
+    typeof prisma?.ipoSourceIdentity?.findMany === 'function'
+  ) {
+    try {
+      const queried = await prisma.ipoSourceIdentity.findMany({
+        where: {
+          ipoId: ipo.id,
+          source: { sourceType: SourceType.REGISTRAR },
+        },
+        include: { source: true },
+      });
+      if (Array.isArray(queried)) {
+        sourceIdentities = queried;
+      }
+    } catch (err: unknown) {
+      logger?.debug(
+        `Authoritative sourceIdentity lookup failed for ${ipo.id}: ${(err as Error)?.message || err}`,
+      );
+      return {
+        disabledByConfig: false,
+        recognizedCodes,
+        hasUnrecognizedEntry,
+        lookupFailed: true,
+      };
+    }
+  }
+
+  if (Array.isArray(sourceIdentities)) {
+    for (const si of sourceIdentities) {
+      if (si.source?.sourceType !== SourceType.REGISTRAR) {
+        continue;
+      }
+      if (
+        collectRegistrarCandidateValues(
+          [si.source?.code, si.source?.name],
+          recognizedCodes,
+          true,
+          registry,
+        )
+      ) {
+        hasUnrecognizedEntry = true;
+      }
+    }
+  }
+
+  let participants = ipo.participants;
+  if (
+    !Array.isArray(participants) &&
+    typeof prisma?.ipoParticipant?.findMany === 'function'
+  ) {
+    try {
+      const queried = await prisma.ipoParticipant.findMany({
+        where: {
+          ipoId: ipo.id,
+          role: ParticipantRole.REGISTRAR,
+        },
+      });
+      if (Array.isArray(queried)) {
+        participants = queried;
+      }
+    } catch (err: unknown) {
+      logger?.debug(
+        `Authoritative participant lookup failed for ${ipo.id}: ${(err as Error)?.message || err}`,
+      );
+      return {
+        disabledByConfig: false,
+        recognizedCodes,
+        hasUnrecognizedEntry,
+        lookupFailed: true,
+      };
+    }
+  }
+
+  if (Array.isArray(participants)) {
+    for (const participant of participants) {
+      if (
+        participant.role &&
+        participant.role !== ParticipantRole.REGISTRAR
+      ) {
+        continue;
+      }
+      if (
+        collectRegistrarCandidateValues(
+          [participant.name, participant.entityName],
+          recognizedCodes,
+          true,
+          registry,
+        )
+      ) {
+        hasUnrecognizedEntry = true;
+      }
+    }
+  }
+
+  return {
+    disabledByConfig: false,
+    recognizedCodes,
+    hasUnrecognizedEntry,
+    lookupFailed: false,
+  };
+}
+
+/**
+ * Reconciles stored registrar identities (and optional live/resolver adapter code).
+ * Rejects disabled configs, lookup errors, unknown entries, and cross-source
+ * registrar conflicts while allowing stale codes or legacy aliases that map to
+ * the same authoritative registrar (or clean unpopulated metadata on a live probe).
+ */
+export function reconcileStoredRegistrarMetadata(
+  metadata: StoredRegistrarMetadata,
+  candidateAdapterCode?: string,
+  registry?: RegistrarAdapterRegistry,
+): string | undefined {
+  if (
+    metadata.disabledByConfig ||
+    metadata.lookupFailed ||
+    metadata.hasUnrecognizedEntry
+  ) {
+    return undefined;
+  }
+
+  const reconciledCodes = new Set(metadata.recognizedCodes);
+  if (candidateAdapterCode?.trim()) {
+    const normalizedCandidate = normalizeKnownRegistrarCode(
+      candidateAdapterCode,
+      registry,
+    );
+    if (!normalizedCandidate) {
+      return undefined;
+    }
+    reconciledCodes.add(normalizedCandidate);
+  }
+
+  if (reconciledCodes.size !== 1) {
+    return undefined;
+  }
+
+  return Array.from(reconciledCodes)[0];
+}
 
 export interface ResolvedRegistrar {
   adapter: IRegistrarAdapter;
@@ -25,6 +358,11 @@ export class RegistrarResolver {
   async resolveAdapter(
     ipoId: string,
     requestedCode?: string,
+    probeOptions?: {
+      skipForceRefresh?: boolean;
+      requireLiveActiveList?: boolean;
+      skipIdentityPersistence?: boolean;
+    },
   ): Promise<ResolvedRegistrar | undefined> {
     const isUuid =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -75,14 +413,9 @@ export class RegistrarResolver {
       if (config && config.enabled && config.registrar) {
         const adapter = this.registry.get(config.registrar);
         if (adapter) {
-          const rawCode = config.registrarIpoCode?.trim();
-          const isCodeUuid = rawCode
-            ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-                rawCode,
-              )
-            : false;
-          let registrarIpoCode =
-            rawCode && !isCodeUuid ? rawCode : undefined;
+          let registrarIpoCode = sanitizeRegistrarIpoCode(
+            config.registrarIpoCode,
+          );
 
           if (
             !registrarIpoCode &&
@@ -101,15 +434,9 @@ export class RegistrarResolver {
                 source: true,
               },
             });
-            if (kfinIdentity?.externalId) {
-              const extCode = kfinIdentity.externalId.trim();
-              const isExtUuid =
-                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-                  extCode,
-                );
-              if (extCode && !isExtUuid) {
-                registrarIpoCode = extCode;
-              }
+            const extCode = sanitizeRegistrarIpoCode(kfinIdentity?.externalId);
+            if (extCode) {
+              registrarIpoCode = extCode;
             }
 
             // Fallback: If no direct identity on configured IPO, check sibling IPOs for the same company
@@ -187,13 +514,7 @@ export class RegistrarResolver {
                   new Set(
                     (siblingIdentities || [])
                       .map((s) => s.externalId?.trim())
-                      .filter(
-                        (c): c is string =>
-                          Boolean(c) &&
-                          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-                            c!,
-                          ),
-                      ),
+                      .filter((c): c is string => isValidRegistrarIpoCode(c)),
                   ),
                 );
 
@@ -236,14 +557,9 @@ export class RegistrarResolver {
     if (sourceIdentity?.source?.code) {
       const adapter = this.registry.get(sourceIdentity.source.code);
       if (adapter) {
-        const rawCode = sourceIdentity.externalId?.trim();
-        const isCodeUuid = rawCode
-          ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-              rawCode,
-            )
-          : false;
-        const registrarIpoCode =
-          rawCode && !isCodeUuid ? rawCode : undefined;
+        const registrarIpoCode = sanitizeRegistrarIpoCode(
+          sourceIdentity.externalId,
+        );
 
         return {
           adapter,
@@ -291,29 +607,40 @@ export class RegistrarResolver {
             symbol,
             identifierType: 'PAN' as any,
             identifierValue: '',
+            ...(probeOptions?.skipForceRefresh
+              ? { skipForceRefresh: true }
+              : {}),
+            ...(probeOptions?.requireLiveActiveList
+              ? { requireLiveActiveList: true }
+              : {}),
           };
 
           for (const candidateAdapter of this.registry.getAll()) {
             if (typeof candidateAdapter.resolveRegistrarIpoCode === 'function') {
               try {
                 const probeResult = await candidateAdapter.resolveRegistrarIpoCode(checkRequest);
-                if (
-                  typeof probeResult === 'string' &&
-                  probeResult.trim().length > 0 &&
-                  !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(probeResult.trim())
-                ) {
-                  const resolvedCode = probeResult.trim();
+                const resolvedCode = sanitizeRegistrarIpoCode(probeResult);
+                if (resolvedCode) {
                   this.logger.log(
                     `Dynamically discovered registrar '${candidateAdapter.code}' with code '${resolvedCode}' for IPO ${targetIpoId} (${companyName})`,
                   );
 
-                  // Best-effort non-blocking persistence of dynamic discovery
-                  this.persistDiscoveredRegistrarIdentity(targetIpoId, candidateAdapter.code, resolvedCode)
-                    .catch((persistErr: unknown) => {
+                  const suppressEagerPersistence =
+                    Boolean(probeOptions?.requireLiveActiveList) ||
+                    Boolean(probeOptions?.skipIdentityPersistence);
+
+                  if (!suppressEagerPersistence) {
+                    // Best-effort non-blocking persistence of dynamic discovery
+                    this.persistDiscoveredRegistrarIdentity(
+                      targetIpoId,
+                      candidateAdapter.code,
+                      resolvedCode,
+                    ).catch((persistErr: unknown) => {
                       this.logger.debug(
                         `Failed to persist dynamic registrar identity for IPO ${targetIpoId}: ${(persistErr as Error)?.message || persistErr}`,
                       );
                     });
+                  }
 
                   return {
                     adapter: candidateAdapter,

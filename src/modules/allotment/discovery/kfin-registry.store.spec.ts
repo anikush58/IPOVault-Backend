@@ -171,7 +171,7 @@ describe('KfinRegistryStore — Permanent Registrar Reliability & Anti-Corruptio
       let fetchCount = 0;
       jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
         const urlStr = String(url);
-        if (urlStr.includes('.js')) {
+        if (/\.js(\?|$)/i.test(urlStr)) {
           fetchCount++;
           return Promise.resolve({
             ok: true,
@@ -325,7 +325,7 @@ describe('KfinRegistryStore — Permanent Registrar Reliability & Anti-Corruptio
 
       jest.spyOn(global, 'fetch').mockImplementation(async (url: unknown) => {
         const urlStr = String(url);
-        if (urlStr.includes('.js')) {
+        if (/\.js(\?|$)/i.test(urlStr)) {
           networkFetchCount++;
           await new Promise((resolve) => setTimeout(resolve, 50)); // simulate latency
           return {
@@ -465,6 +465,279 @@ describe('KfinRegistryStore — Permanent Registrar Reliability & Anti-Corruptio
       expect(injectedStore).toBeDefined();
       expect(injectedStore).toBeInstanceOf(KfinRegistryStore);
       expect(injectedStore.getActiveRegistry).toBeDefined();
+    });
+  });
+
+  describe('9. CloudFront Stale HTML, Forced Refresh Snapshot Isolation & Content-Type Hardening', () => {
+    const staleBundleHtml = `<!doctype html><html><head><script defer="defer" src="./static/js/main.f0d85b13.js"></script></head><body></body></html>`;
+    const staleBundleJs = `var rf=JSON.parse('[{"clientId":"11111111111","name":"OLDER OCTOBER IPO LIMITED"}]');`;
+    const freshMaxwellBundleJs = `var rf=JSON.parse('[{"clientId":"11111111111","name":"OLDER OCTOBER IPO LIMITED"},{"clientId":"88356314970","name":"MAXWELL ENGINEERING SOLUTIONS LIMITED"}]');`;
+
+    it('prefers newer bundle from asset-manifest.json even when CloudFront root HTML serves an older script hash', async () => {
+      const requestedUrls: string[] = [];
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        requestedUrls.push(urlStr);
+
+        if (urlStr === 'https://ipostatus.kfintech.com/') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => staleBundleHtml,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('/asset-manifest.json')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => ({
+              files: { 'main.js': './static/js/main.3d909f65.js' },
+            }),
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.3d909f65.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/javascript' }),
+            text: async () => freshMaxwellBundleJs,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.f0d85b13.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/javascript' }),
+            text: async () => staleBundleJs,
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
+
+      const snapshot = await store.getActiveRegistry(true);
+
+      expect(requestedUrls).toContain(
+        'https://ipostatus.kfintech.com/asset-manifest.json',
+      );
+      expect(requestedUrls).not.toContain(
+        'https://ipostatus.kfintech.com/static/js/main.f0d85b13.js',
+      );
+      expect(snapshot.metadata.sourceUrl).toBe(
+        'https://ipostatus.kfintech.com/static/js/main.3d909f65.js',
+      );
+      expect(snapshot.metadata.isStale).toBe(false);
+      expect(snapshot.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            clientId: '88356314970',
+            name: 'MAXWELL ENGINEERING SOLUTIONS LIMITED',
+          }),
+        ]),
+      );
+    });
+
+    it('resolves top-level CRA entrypoints from asset-manifest.json when files.main.js is absent', async () => {
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (urlStr === 'https://ipostatus.kfintech.com/') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => staleBundleHtml,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('/asset-manifest.json')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => ({
+              entrypoints: [
+                'static/css/main.chunk.css',
+                'static/js/main.3d909f65.js',
+              ],
+            }),
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.3d909f65.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({
+              'content-type': 'application/javascript; charset=utf-8',
+            }),
+            text: async () => freshMaxwellBundleJs,
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
+
+      const snapshot = await store.getActiveRegistry(true);
+      expect(snapshot.metadata.sourceUrl).toBe(
+        'https://ipostatus.kfintech.com/static/js/main.3d909f65.js',
+      );
+      expect(
+        snapshot.items.find((i) => i.clientId === '88356314970'),
+      ).toBeDefined();
+    });
+
+    it('prevents stale lastKnownBundle and persisted disk snapshots from overriding newer verified live or seed bundle during forced refresh', async () => {
+      const staleDiskSnapshot: KfinRegistrySnapshot = {
+        metadata: {
+          version: 1,
+          registrarCode: 'KFINTECH',
+          sourceTimestamp: new Date(Date.now() - 3600_000).toISOString(),
+          sourceType: 'PORTAL_SPA_BUNDLE',
+          sourceUrl:
+            'https://ipostatus.kfintech.com/static/js/main.f0d85b13.js',
+          fetchedAt: new Date(Date.now() - 3600_000).toISOString(),
+          itemCount: 1,
+          contentHash: 'stale-disk-hash',
+          validationStatus: 'VALID',
+          isStale: false,
+        },
+        items: [{ clientId: '11111111111', name: 'OLDER OCTOBER IPO LIMITED' }],
+      };
+      fs.writeFileSync(
+        testStoragePath,
+        JSON.stringify(staleDiskSnapshot, null, 2),
+        'utf8',
+      );
+
+      // HTML and manifest temporarily fail; forced refresh must prefer default seed main.3d909f65.js
+      // rather than pinning to stale disk lastKnownBundle main.f0d85b13.js.
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (
+          urlStr === 'https://ipostatus.kfintech.com/' ||
+          urlStr.includes('/asset-manifest.json')
+        ) {
+          return Promise.resolve({
+            ok: false,
+            status: 502,
+            statusText: 'Bad Gateway',
+            text: async () => '<html>502 Bad Gateway</html>',
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.3d909f65.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/javascript' }),
+            text: async () => freshMaxwellBundleJs,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.f0d85b13.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/javascript' }),
+            text: async () => staleBundleJs,
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
+
+      const refreshed = await store.getActiveRegistry(true);
+      expect(refreshed.metadata.sourceUrl).toBe(
+        'https://ipostatus.kfintech.com/static/js/main.3d909f65.js',
+      );
+      expect(refreshed.metadata.isStale).toBe(false);
+      expect(
+        refreshed.items.find((i) => i.clientId === '88356314970'),
+      ).toBeDefined();
+    });
+
+    it('retries cache-busted bundle when CloudFront returns incorrect Content-Type text/html, and never overwrites valid registry on invalid Content-Type', async () => {
+      // Step 1: Populate a valid registry initially
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (urlStr === 'https://ipostatus.kfintech.com/') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => staleBundleHtml,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('/asset-manifest.json')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              files: { 'main.js': './static/js/main.3d909f65.js' },
+            }),
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.3d909f65.js') && !urlStr.includes('cb=')) {
+          // Primary CloudFront response returns HTTP 200 with HTML Content-Type & error page
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({
+              'content-type': 'text/html; charset=UTF-8',
+            }),
+            text: async () =>
+              '<html><head><title>ERROR: The request could not be satisfied</title></head></html>',
+          } as unknown as Response);
+        }
+        if (urlStr.includes('main.3d909f65.js') && urlStr.includes('cb=')) {
+          // Cache-busted retry returns valid JavaScript
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/javascript' }),
+            text: async () => freshMaxwellBundleJs,
+          } as unknown as Response);
+        }
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
+
+      const validInitial = await store.getActiveRegistry(true);
+      expect(validInitial.metadata.isStale).toBe(false);
+      expect(
+        validInitial.items.find((i) => i.clientId === '88356314970'),
+      ).toBeDefined();
+
+      // Step 2: Subsequent forced refresh returns non-JS Content-Type (application/json)
+      // even on ?cb= retry -> must retain previous valid cached items and never overwrite them.
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        if (urlStr === 'https://ipostatus.kfintech.com/') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => staleBundleHtml,
+          } as unknown as Response);
+        }
+        if (urlStr.includes('/asset-manifest.json')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              files: { 'main.js': './static/js/main.3d909f65.js' },
+            }),
+          } as unknown as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          text: async () => '{"error":"CloudFront blocked"}',
+        } as unknown as Response);
+      });
+
+      const recovered = await store.getActiveRegistry(true);
+      expect(recovered.metadata.isStale).toBe(true);
+      expect(recovered.items.length).toBe(2);
+      expect(
+        recovered.items.find((i) => i.clientId === '88356314970'),
+      ).toBeDefined();
+
+      const persistedOnDisk = JSON.parse(
+        fs.readFileSync(testStoragePath, 'utf8'),
+      ) as KfinRegistrySnapshot;
+      expect(persistedOnDisk.items.length).toBe(2);
     });
   });
 });

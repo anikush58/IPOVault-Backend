@@ -174,7 +174,7 @@ export class KfinRegistryStore {
       return this.inFlightRefresh;
     }
 
-    this.inFlightRefresh = this.executeRefreshCycle();
+    this.inFlightRefresh = this.executeRefreshCycle(forceRefresh);
     try {
       const result = await this.inFlightRefresh;
       return result;
@@ -360,7 +360,9 @@ export class KfinRegistryStore {
    * Executes a complete refresh cycle with discovery cascade, retry backoff with jitter,
    * validation, atomic persistence, and stale-cache recovery.
    */
-  private async executeRefreshCycle(): Promise<KfinRegistrySnapshot> {
+  private async executeRefreshCycle(
+    forceRefresh = false,
+  ): Promise<KfinRegistrySnapshot> {
     const previousCount = this.cachedSnapshot?.items?.length || 0;
 
     try {
@@ -391,8 +393,10 @@ export class KfinRegistryStore {
       this.logger.log(
         `Executing resilient KFintech portal discovery from ${this.config.portalUrl}...`,
       );
-      const portalSnapshot =
-        await this.discoverFromPortalWithRetry(previousCount);
+      const portalSnapshot = await this.discoverFromPortalWithRetry(
+        previousCount,
+        forceRefresh,
+      );
 
       this.applySuccessfulRefresh(portalSnapshot);
       return portalSnapshot;
@@ -426,24 +430,223 @@ export class KfinRegistryStore {
   /**
    * Discovers and parses KFintech registry from portal with bounded exponential backoff and jitter.
    */
+  /**
+   * Reads persisted snapshot from disk without mutating in-memory cache state.
+   */
+  private readPersistedSnapshotFromDisk(): KfinRegistrySnapshot | null {
+    try {
+      if (!fs.existsSync(this.config.storagePath)) {
+        return null;
+      }
+      const raw = fs.readFileSync(this.config.storagePath, 'utf8');
+      const parsed = JSON.parse(raw) as KfinRegistrySnapshot;
+      if (!parsed || !parsed.metadata || !Array.isArray(parsed.items)) {
+        return null;
+      }
+      const validation = this.validateRegistry(parsed.items, 0);
+      if (!validation.valid) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Detects responses whose explicit Content-Type is not JavaScript (e.g., CloudFront HTML error pages).
+   */
+  private isInvalidJsContentType(res: Response): boolean {
+    const rawContentType = res.headers?.get?.('content-type');
+    if (!rawContentType || !rawContentType.trim()) {
+      return false;
+    }
+    const mimeType = rawContentType.split(';')[0].trim().toLowerCase();
+    const validJsMimeTypes = [
+      'application/javascript',
+      'text/javascript',
+      'application/x-javascript',
+      'application/ecmascript',
+      'text/ecmascript',
+    ];
+    return (
+      !validJsMimeTypes.includes(mimeType) && !mimeType.endsWith('+javascript')
+    );
+  }
+
+  /**
+   * Detects empty, HTML, or XML error payloads masquerading as JS bundles.
+   */
+  private isInvalidBundlePayload(text: string): boolean {
+    if (!text || !text.trim()) {
+      return true;
+    }
+    if (this.isHtmlPayload(text)) {
+      return true;
+    }
+    return /^\s*(<\?xml\b|<Error\b)/i.test(text);
+  }
+
+  private resolvePortalAssetUrl(assetPath: string, portalUrl: string): string {
+    const normalizedPath = assetPath.startsWith('http')
+      ? assetPath
+      : `/${assetPath.replace(/^\.?\//, '')}`;
+    return new URL(normalizedPath, portalUrl).toString();
+  }
+
+  /**
+   * Extracts main JS bundle URL from CRA asset-manifest.json safely across real & mocked Response objects.
+   */
+  private async parseManifestBundleUrl(
+    manifestRes: Response,
+    portalUrl: string,
+  ): Promise<string | null> {
+    if (!manifestRes.ok) {
+      return null;
+    }
+
+    const contentType =
+      manifestRes.headers?.get?.('content-type')?.toLowerCase() || '';
+    if (contentType.includes('text/html')) {
+      return null;
+    }
+
+    let manifestJson: {
+      files?: Record<string, unknown>;
+      entrypoints?: unknown;
+    } | null = null;
+
+    try {
+      if (typeof manifestRes.json === 'function') {
+        manifestJson = (await manifestRes.json()) as {
+          files?: Record<string, unknown>;
+          entrypoints?: unknown;
+        };
+      } else if (typeof manifestRes.text === 'function') {
+        const manifestText = await manifestRes.text();
+        if (!this.isInvalidBundlePayload(manifestText)) {
+          manifestJson = JSON.parse(manifestText) as {
+            files?: Record<string, unknown>;
+            entrypoints?: unknown;
+          };
+        }
+      }
+    } catch {
+      return null;
+    }
+
+    const filesMainJs = manifestJson?.files?.['main.js'];
+    const topEntrypoints = Array.isArray(manifestJson?.entrypoints)
+      ? manifestJson.entrypoints
+      : undefined;
+    const nestedEntrypoints = Array.isArray(
+      manifestJson?.files?.['entrypoints'],
+    )
+      ? manifestJson.files['entrypoints']
+      : undefined;
+    const jsEntrypoint = (topEntrypoints || nestedEntrypoints)?.find(
+      (entry): entry is string =>
+        typeof entry === 'string' && /\.js(\?|$)/i.test(entry),
+    );
+    const mainPath =
+      typeof filesMainJs === 'string' && /\.js(\?|$)/i.test(filesMainJs)
+        ? filesMainJs
+        : jsEntrypoint;
+
+    return mainPath ? this.resolvePortalAssetUrl(mainPath, portalUrl) : null;
+  }
+
+  private async fetchAndValidateCandidateBundle(
+    candidateUrl: string,
+    headers: Record<string, string>,
+    previousCount: number,
+  ): Promise<ReturnType<KfinRegistryStore['validateRegistry']>> {
+    let candidateRes = await this.fetchWithBackoffAndJitter(candidateUrl, {
+      headers,
+      timeoutMs: 6000,
+      maxRetries: 2,
+    });
+    let candidateText = candidateRes.ok ? await candidateRes.text() : '';
+
+    // Retry once with cache-busting query param when CDN returns error, wrong Content-Type, or HTML/XML page
+    if (
+      !candidateRes.ok ||
+      this.isInvalidJsContentType(candidateRes) ||
+      this.isInvalidBundlePayload(candidateText)
+    ) {
+      try {
+        const cbUrl = `${candidateUrl}${candidateUrl.includes('?') ? '&' : '?'}cb=${Date.now()}`;
+        const originRes = await this.fetchWithBackoffAndJitter(cbUrl, {
+          headers,
+          timeoutMs: 6000,
+          maxRetries: 1,
+        });
+        if (originRes.ok && !this.isInvalidJsContentType(originRes)) {
+          const originText = await originRes.text();
+          if (!this.isInvalidBundlePayload(originText)) {
+            candidateRes = originRes;
+            candidateText = originText;
+          }
+        }
+      } catch {
+        // Fall through to validation error evaluation below
+      }
+    }
+
+    if (!candidateRes.ok) {
+      throw new Error(
+        `KFintech SPA bundle returned HTTP ${candidateRes.status} (${candidateRes.statusText})`,
+      );
+    }
+
+    if (this.isInvalidJsContentType(candidateRes)) {
+      const contentType =
+        candidateRes.headers?.get?.('content-type') || 'unknown';
+      throw new Error(
+        `[REGISTRAR_ALERT:MALFORMED_RESPONSE] KFintech SPA bundle returned invalid Content-Type: ${contentType}`,
+      );
+    }
+
+    if (this.isInvalidBundlePayload(candidateText)) {
+      throw new Error(
+        '[REGISTRAR_ALERT:MALFORMED_RESPONSE] Portal returned HTML error page instead of JS bundle',
+      );
+    }
+
+    const rawList = this.extractCompanyListFromBundle(candidateText);
+    const validation = this.validateRegistry(rawList, previousCount);
+
+    if (!validation.valid) {
+      throw new Error(
+        `[REGISTRAR_ALERT:MALFORMED_RESPONSE] Extracted registry failed validation: ${validation.reason}`,
+      );
+    }
+
+    return validation;
+  }
+
   private async discoverFromPortalWithRetry(
     previousCount: number,
+    forceRefresh = false,
   ): Promise<KfinRegistrySnapshot> {
     const portalUrl = this.config.portalUrl;
-    const browserHeaders: Record<string, string> = {
+    const noCacheHeaders: Record<string, string> = {
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       Accept: '*/*',
       Origin: 'https://ipostatus.kfintech.com',
       Referer: 'https://ipostatus.kfintech.com/',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
     };
 
-    let targetBundleUrl: string | null = null;
+    let htmlBundleUrl: string | null = null;
+    let manifestBundleUrl: string | null = null;
 
-    // Phase 1: Discover bundle location via HTML or Manifest
+    // Phase 1a: Inspect root HTML for main JS script reference
     try {
       const htmlRes = await this.fetchWithBackoffAndJitter(portalUrl, {
-        headers: browserHeaders,
+        headers: noCacheHeaders,
         timeoutMs: 4000,
         maxRetries: 1,
       });
@@ -454,110 +657,95 @@ export class KfinRegistryStore {
           /src=["']?(\.?\/static\/js\/[^"'\s>]+)/i,
         );
         if (scriptMatch && scriptMatch[1]) {
-          const cleanPath = scriptMatch[1].replace(/^\./, '');
-          targetBundleUrl = new URL(cleanPath, portalUrl).toString();
+          htmlBundleUrl = this.resolvePortalAssetUrl(scriptMatch[1], portalUrl);
         }
       }
     } catch (htmlErr) {
       this.logger.debug(
-        `Portal HTML fetch threw (${htmlErr}); trying asset-manifest`,
+        `Portal HTML fetch threw (${htmlErr}); checking asset-manifest`,
       );
     }
 
-    if (!targetBundleUrl) {
-      try {
-        const manifestUrl = new URL(
-          '/asset-manifest.json',
-          portalUrl,
-        ).toString();
-        const manifestRes = await this.fetchWithBackoffAndJitter(manifestUrl, {
-          headers: browserHeaders,
-          timeoutMs: 3000,
-          maxRetries: 1,
-        });
+    // Phase 1b: Always check latest asset-manifest.json even when HTML resolved a script hash
+    try {
+      const manifestUrl = new URL('/asset-manifest.json', portalUrl).toString();
+      const manifestRes = await this.fetchWithBackoffAndJitter(manifestUrl, {
+        headers: noCacheHeaders,
+        timeoutMs: 3000,
+        maxRetries: 1,
+      });
 
-        if (manifestRes.ok) {
-          const manifestJson = (await manifestRes.json()) as {
-            files?: Record<string, string>;
-          };
-          const mainPath =
-            manifestJson.files?.['main.js'] ||
-            (manifestJson.files?.['entrypoints'] as unknown as string[])?.[1];
-          if (mainPath && typeof mainPath === 'string') {
-            const cleanPath = mainPath.replace(/^\./, '');
-            targetBundleUrl = new URL(cleanPath, portalUrl).toString();
-          }
-        }
-      } catch {
-        // Ignore manifest error
-      }
+      manifestBundleUrl = await this.parseManifestBundleUrl(
+        manifestRes,
+        portalUrl,
+      );
+    } catch {
+      // Ignore manifest error
     }
 
-    // Resilient fallback candidate: prioritize last-known verified bundle from snapshot before static seed
-    if (!targetBundleUrl) {
+    // Build deduplicated ordered candidate URLs, prioritizing manifest over HTML so CloudFront
+    // stale index.html cannot pin us to an outdated bundle hash.
+    const candidateUrls: string[] = [];
+    const pushCandidate = (url: string | null | undefined) => {
+      if (url && !candidateUrls.includes(url)) {
+        candidateUrls.push(url);
+      }
+    };
+
+    pushCandidate(manifestBundleUrl);
+    pushCandidate(htmlBundleUrl);
+
+    if (candidateUrls.length === 0) {
+      const defaultSeedUrl = new URL(
+        '/static/js/main.3d909f65.js',
+        portalUrl,
+      ).toString();
+      const diskSnapshot = this.readPersistedSnapshotFromDisk();
       const lastKnownBundle =
         this.cachedSnapshot?.metadata?.sourceUrl ||
-        this.hydrateFromPersistentStorage()?.metadata?.sourceUrl;
+        diskSnapshot?.metadata?.sourceUrl;
+      const validLastKnown =
+        lastKnownBundle && lastKnownBundle.includes('/static/js/')
+          ? lastKnownBundle
+          : null;
 
-      if (lastKnownBundle && lastKnownBundle.includes('/static/js/')) {
-        targetBundleUrl = lastKnownBundle;
+      if (forceRefresh) {
+        // Never allow stale disk/memory bundle URLs to preempt the verified default seed on force refresh
+        pushCandidate(defaultSeedUrl);
+        pushCandidate(validLastKnown);
       } else {
-        targetBundleUrl = new URL(
-          '/static/js/main.3d909f65.js',
-          portalUrl,
-        ).toString();
+        pushCandidate(validLastKnown);
+        pushCandidate(defaultSeedUrl);
       }
     }
 
-    // Phase 2: Fetch JS bundle with exponential backoff & jitter
-    let bundleRes = await this.fetchWithBackoffAndJitter(targetBundleUrl, {
-      headers: browserHeaders,
-      timeoutMs: 6000,
-      maxRetries: 2,
-    });
+    // Phase 2 & 3: Fetch, validate Content-Type/payload, and extract companies across candidates
+    let targetBundleUrl: string | null = null;
+    let validation: ReturnType<KfinRegistryStore['validateRegistry']> | null =
+      null;
+    let lastError: Error | null = null;
 
-    let bundleText = bundleRes.ok ? await bundleRes.text() : '';
-
-    // If primary returned error or HTML, try cache-busted origin fallback
-    if (!bundleRes.ok || this.isHtmlPayload(bundleText)) {
+    for (const candidateUrl of candidateUrls) {
       try {
-        const cbUrl = `${targetBundleUrl}${targetBundleUrl.includes('?') ? '&' : '?'}cb=${Date.now()}`;
-        const originRes = await this.fetchWithBackoffAndJitter(cbUrl, {
-          headers: browserHeaders,
-          timeoutMs: 6000,
-          maxRetries: 1,
-        });
-        if (originRes.ok) {
-          const originText = await originRes.text();
-          if (!this.isHtmlPayload(originText)) {
-            bundleRes = originRes;
-            bundleText = originText;
-          }
-        }
-      } catch {
-        // Fall through to error evaluation below
+        validation = await this.fetchAndValidateCandidateBundle(
+          candidateUrl,
+          noCacheHeaders,
+          previousCount,
+        );
+        targetBundleUrl = candidateUrl;
+        break;
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        this.logger.debug(
+          `KFintech bundle candidate ${candidateUrl} failed: ${lastError.message}`,
+        );
       }
     }
 
-    if (!bundleRes.ok) {
-      throw new Error(
-        `KFintech SPA bundle returned HTTP ${bundleRes.status} (${bundleRes.statusText})`,
-      );
-    }
-
-    if (this.isHtmlPayload(bundleText)) {
-      throw new Error(
-        '[REGISTRAR_ALERT:MALFORMED_RESPONSE] Portal returned HTML error page instead of JS bundle',
-      );
-    }
-
-    // Phase 3: Parse and validate extracted company array
-    const rawList = this.extractCompanyListFromBundle(bundleText);
-    const validation = this.validateRegistry(rawList, previousCount);
-
-    if (!validation.valid) {
-      throw new Error(
-        `[REGISTRAR_ALERT:MALFORMED_RESPONSE] Extracted registry failed validation: ${validation.reason}`,
+    if (!targetBundleUrl || !validation) {
+      throw (
+        lastError ||
+        new Error('KFintech SPA bundle discovery failed for all candidates')
       );
     }
 
