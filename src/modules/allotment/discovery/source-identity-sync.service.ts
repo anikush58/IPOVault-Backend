@@ -73,6 +73,7 @@ export class SourceIdentitySyncService {
     let discoveredCount = 0;
     let changedCount = 0;
     let unresolvedCount = 0;
+    let skippedCount = 0;
 
     for (const issue of discoveredIssues) {
       if (!issue.externalId?.trim() || !issue.externalName?.trim()) {
@@ -145,6 +146,24 @@ export class SourceIdentitySyncService {
               this.normalizeCompanyName(ipo.company.displayName);
 
           if (isSameCompany) {
+            const isStale = Boolean(issue.isStale || issue.rawPayload?.isStale);
+            if (isStale) {
+              skippedCount++;
+              syncRecords.push({
+                status: SourceIdentitySyncStatus.SKIPPED,
+                registrarCode: adapter.registrarCode,
+                externalId: issue.externalId,
+                externalName: issue.externalName,
+                ipoId: ipo.id,
+                companyName: ipo.company.displayName,
+                previousExternalId: issue.externalId,
+                newExternalId: issue.externalId,
+                reason:
+                  'Skipped: stale cached registrar issue cannot relink existing identity',
+              });
+              continue;
+            }
+
             await this.prisma.ipoSourceIdentity.update({
               where: { id: existingMappingByExternalId.id },
               data: { ipoId: ipo.id },
@@ -181,7 +200,26 @@ export class SourceIdentitySyncService {
         (identity) => !identity.sourceId || identity.sourceId === source.id,
       );
 
+      const isStale = Boolean(issue.isStale || issue.rawPayload?.isStale);
+
       if (existingIdentityOnIpo) {
+        if (isStale) {
+          skippedCount++;
+          syncRecords.push({
+            status: SourceIdentitySyncStatus.SKIPPED,
+            registrarCode: adapter.registrarCode,
+            externalId: issue.externalId,
+            externalName: issue.externalName,
+            ipoId: ipo.id,
+            companyName: ipo.company.displayName,
+            previousExternalId: existingIdentityOnIpo.externalId ?? undefined,
+            newExternalId: issue.externalId,
+            reason:
+              'Skipped: stale cached registrar issue cannot update existing identity',
+          });
+          continue;
+        }
+
         // Update stale identity on matched IPO
         const previousExternalId = existingIdentityOnIpo.externalId ?? undefined;
         await this.prisma.ipoSourceIdentity.update({
@@ -205,6 +243,22 @@ export class SourceIdentitySyncService {
           newExternalId: issue.externalId,
         });
       } else {
+        if (isStale) {
+          skippedCount++;
+          syncRecords.push({
+            status: SourceIdentitySyncStatus.SKIPPED,
+            registrarCode: adapter.registrarCode,
+            externalId: issue.externalId,
+            externalName: issue.externalName,
+            ipoId: ipo.id,
+            companyName: ipo.company.displayName,
+            newExternalId: issue.externalId,
+            reason:
+              'Skipped: stale cached registrar issue cannot be persisted as new live identity',
+          });
+          continue;
+        }
+
         // Create new IpoSourceIdentity
         await this.prisma.ipoSourceIdentity.create({
           data: {
@@ -227,6 +281,10 @@ export class SourceIdentitySyncService {
       }
     }
 
+    const isSummaryStale =
+      discoveredIssues.length > 0 &&
+      discoveredIssues.some((i) => i.isStale || Boolean(i.rawPayload?.isStale));
+
     return {
       registrarCode: adapter.registrarCode,
       totalDiscovered: discoveredIssues.length,
@@ -234,6 +292,8 @@ export class SourceIdentitySyncService {
       discoveredCount,
       changedCount,
       unresolvedCount,
+      skippedCount,
+      isStale: isSummaryStale,
       syncRecords,
       executedAt: startTime,
     };

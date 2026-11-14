@@ -6,6 +6,7 @@ export interface DiscoveredRegistrarIssue {
   externalName: string;
   registrarCode: string;
   discoveredAt: Date;
+  isStale?: boolean;
   rawPayload?: Record<string, unknown>;
 }
 
@@ -45,6 +46,8 @@ export interface RegistrarSourceIdentitySyncSummary {
   discoveredCount: number;
   changedCount: number;
   unresolvedCount: number;
+  skippedCount?: number;
+  isStale?: boolean;
   syncRecords: SourceIdentitySyncRecordResult[];
   executedAt: Date;
 }

@@ -2,7 +2,15 @@ import {
   KfinIdentityDiscoveryAdapter,
   KFIN_VERIFIED_FALLBACK_REGISTRY,
 } from './kfin-identity-discovery.adapter';
-import { MufgIdentityDiscoveryAdapter, parseMufgRegistryHtml } from './mufg-identity-discovery.adapter';
+import {
+  MufgIdentityDiscoveryAdapter,
+  parseMufgGetDetailsPayload,
+  isValidMufgCompanyRecord,
+  DEFAULT_MUFG_INTIME_COMPANY_LIST_URL,
+  DEFAULT_MUFG_CACHE_TTL_MS,
+  DEFAULT_MUFG_MAX_RESPONSE_BYTES,
+} from './mufg-identity-discovery.adapter';
+import { SourceIdentitySyncStatus } from './registrar-identity-discovery.types';
 import { SourceIdentitySyncService } from './source-identity-sync.service';
 import { PrismaService } from '../../../database/prisma.service';
 
@@ -201,43 +209,477 @@ describe('Registrar Source Identity Discovery & Sync', () => {
       }
     });
 
-    it('parseMufgRegistryHtml: extracts valid options, trims whitespace, sets registrarCode, discoveredAt, and rawPayload', () => {
-      expect(mufgAdapter.registrarCode).toBe('MUFG_INTIME');
-      const html = `
-        <select name="ddlCompany">
-          <option value="0">--Select Company--</option>
-          <option value="-1"> Select Company </option>
-          <option value=" 99887 ">  SPARTAN TECH LIMITED  </option>
-        </select>
-      `;
-      const issues = parseMufgRegistryHtml(html);
-      expect(issues.length).toBe(1);
-      expect(issues[0]?.externalId).toBe('99887');
-      expect(issues[0]?.externalName).toBe('SPARTAN TECH LIMITED');
-      expect(issues[0]?.registrarCode).toBe('MUFG_INTIME');
-      expect(issues[0]?.discoveredAt).toBeInstanceOf(Date);
-      expect(issues[0]?.rawPayload).toEqual({ value: '99887', text: 'SPARTAN TECH LIMITED' });
-    });
+    describe('MUFG Intime GetDetails Parser & Identity Discovery', () => {
+      const sampleMultiIpoXml = `<NewDataSet>
+        <Table>
+          <company_id>11971</company_id>
+          <companyname>Vectras Enprocon Limited - IPO</companyname>
+        </Table>
+        <Table>
+          <company_id>11968</company_id>
+          <companyname>Suraksha Diagnostic Limited - IPO</companyname>
+        </Table>
+        <Table>
+          <company_id>11965</company_id>
+          <companyname>Property Share Investment Trust</companyname>
+        </Table>
+      </NewDataSet>`;
 
-    it('parseMufgRegistryHtml: ignores value "0", "-1", "--select--", and "Select Company"', () => {
-      const html = `
-        <option value="0">Zero Value</option>
-        <option value="-1">Minus One Value</option>
-        <option value="100">--Select--</option>
-        <option value="101">Select Company</option>
-      `;
-      const issues = parseMufgRegistryHtml(html);
-      expect(issues.length).toBe(0);
-    });
+      it('1. parseMufgGetDetailsPayload: valid response with multiple IPO records', () => {
+        expect(mufgAdapter.registrarCode).toBe('MUFG_INTIME');
+        const payload = { d: sampleMultiIpoXml };
+        const issues = parseMufgGetDetailsPayload(payload);
 
-    it('parseMufgRegistryHtml: safely ignores malformed option markup', () => {
-      const html = `
-        <option value="">Empty Value</option>
-        <option>No Value Attribute</option>
-        <div>Not an option</div>
-      `;
-      const issues = parseMufgRegistryHtml(html);
-      expect(issues.length).toBe(0);
+        expect(issues).toHaveLength(3);
+
+        expect(issues[0]?.externalId).toBe('11971');
+        expect(issues[0]?.externalName).toBe('Vectras Enprocon Limited - IPO');
+        expect(issues[0]?.registrarCode).toBe('MUFG_INTIME');
+        expect(issues[0]?.isStale).toBe(false);
+        expect(issues[0]?.discoveredAt).toBeInstanceOf(Date);
+        expect(issues[0]?.rawPayload).toEqual({
+          company_id: '11971',
+          companyname: 'Vectras Enprocon Limited - IPO',
+        });
+
+        expect(issues[1]?.externalId).toBe('11968');
+        expect(issues[1]?.externalName).toBe('Suraksha Diagnostic Limited - IPO');
+
+        expect(issues[2]?.externalId).toBe('11965');
+        expect(issues[2]?.externalName).toBe('Property Share Investment Trust');
+      });
+
+      it('2. parseMufgGetDetailsPayload: correctly decodes CDATA, named XML entities, and numeric entities', () => {
+        const payload = {
+          d: `<NewDataSet>
+            <Table>
+              <company_id>  11971  </company_id>
+              <companyname>   <![CDATA[Vectras & Enprocon]]> &#39;Special&#39; Limited &quot;SME&quot; - IPO   </companyname>
+            </Table>
+            <Table>
+              <company_id>11972</company_id>
+              <companyname>Numeric &amp; Entity &#38; Hex &#x26; Test Limited</companyname>
+            </Table>
+          </NewDataSet>`,
+        };
+        const issues = parseMufgGetDetailsPayload(payload);
+        expect(issues).toHaveLength(2);
+        expect(issues[0]?.externalId).toBe('11971');
+        expect(issues[0]?.externalName).toBe(
+          `Vectras & Enprocon 'Special' Limited "SME" - IPO`,
+        );
+        expect(issues[1]?.externalId).toBe('11972');
+        expect(issues[1]?.externalName).toBe(
+          'Numeric & Entity & Hex & Test Limited',
+        );
+      });
+
+      it('3. parseMufgGetDetailsPayload: handles legitimate empty self-closing and closed NewDataSet', () => {
+        expect(parseMufgGetDetailsPayload({ d: '<NewDataSet />' })).toEqual([]);
+        expect(parseMufgGetDetailsPayload({ d: '<NewDataSet/>' })).toEqual([]);
+        expect(
+          parseMufgGetDetailsPayload({
+            d: '<NewDataSet xmlns="http://tempuri.org" />',
+          }),
+        ).toEqual([]);
+        expect(parseMufgGetDetailsPayload({ d: '<NewDataSet></NewDataSet>' })).toEqual([]);
+        expect(parseMufgGetDetailsPayload({ d: '<NewDataSet />\r\n' })).toEqual([]);
+        expect(parseMufgGetDetailsPayload({ d: '' })).toEqual([]);
+      });
+
+      it('4. parseMufgGetDetailsPayload: throws error on malformed JSON string', () => {
+        expect(() =>
+          parseMufgGetDetailsPayload('{"d": <invalid json>'),
+        ).toThrow(/Malformed JSON payload from MUFG endpoint/);
+      });
+
+      it('5. parseMufgGetDetailsPayload: throws error on HTML error page or non-XML text', () => {
+        // HTML error page
+        const htmlPayload = {
+          d: '<!doctype html><html><head><title>500</title></head><body>Internal Error</body></html>',
+        };
+        expect(() => parseMufgGetDetailsPayload(htmlPayload)).toThrow(
+          /received HTML document/,
+        );
+
+        // Missing NewDataSet root tag
+        const nonXmlPayload = { d: 'Plain text error without dataset elements' };
+        expect(() => parseMufgGetDetailsPayload(nonXmlPayload)).toThrow(
+          /missing NewDataSet root element/,
+        );
+      });
+
+      it('6. parseMufgGetDetailsPayload: throws error when "d" property is missing or invalid', () => {
+        expect(() => parseMufgGetDetailsPayload({})).toThrow(
+          /Missing "d" property in MUFG company list response/,
+        );
+        expect(() => parseMufgGetDetailsPayload({ d: null })).toThrow(
+          /Missing "d" property in MUFG company list response/,
+        );
+        expect(() => parseMufgGetDetailsPayload({ d: 12345 })).toThrow(
+          /Invalid "d" property type in MUFG company list response/,
+        );
+      });
+
+      it('7. parseMufgGetDetailsPayload: rejects several valid records followed by an unclosed Table tag (truncated XML)', () => {
+        const truncatedXml = `<NewDataSet>
+          <Table>
+            <company_id>11971</company_id>
+            <companyname>Vectras Enprocon Limited</companyname>
+          </Table>
+          <Table>
+            <company_id>11968</company_id>
+            <companyname>Suraksha Diagnostic Limited</companyname>
+          </Table>
+          <Table>
+            <company_id>11965</company_id>
+            <companyname>Unfinished Company Truncated`;
+
+        expect(() =>
+          parseMufgGetDetailsPayload({ d: truncatedXml }),
+        ).toThrow(/(mismatched Table tags|unclosed Table element|missing closing <\/NewDataSet>)/);
+      });
+
+      it('8. parseMufgGetDetailsPayload: rejects truncation after complete records due to missing closing </NewDataSet>', () => {
+        const missingRootCloseXml = `<NewDataSet>
+          <Table>
+            <company_id>11971</company_id>
+            <companyname>Vectras Enprocon Limited</companyname>
+          </Table>
+          <Table>
+            <company_id>11968</company_id>
+            <companyname>Suraksha Diagnostic Limited</companyname>
+          </Table>`;
+
+        expect(() =>
+          parseMufgGetDetailsPayload({ d: missingRootCloseXml }),
+        ).toThrow(/missing closing <\/NewDataSet> root tag \(truncated XML\)/);
+      });
+
+      it('9. parseMufgGetDetailsPayload: safely ignores duplicate company IDs, retaining first occurrence', () => {
+        const payload = {
+          d: `<NewDataSet>
+            <Table>
+              <company_id>11971</company_id>
+              <companyname>Vectras Enprocon Limited - Primary</companyname>
+            </Table>
+            <Table>
+              <company_id>11971</company_id>
+              <companyname>Vectras Enprocon Limited - Duplicate Entry</companyname>
+            </Table>
+            <Table>
+              <company_id>11968</company_id>
+              <companyname>Suraksha Diagnostic Limited - IPO</companyname>
+            </Table>
+          </NewDataSet>`,
+        };
+        const issues = parseMufgGetDetailsPayload(payload);
+        expect(issues).toHaveLength(2);
+        expect(issues[0]?.externalId).toBe('11971');
+        expect(issues[0]?.externalName).toBe('Vectras Enprocon Limited - Primary');
+        expect(issues[1]?.externalId).toBe('11968');
+      });
+
+      it('10. parseMufgGetDetailsPayload: ignores invalid IDs (0, -1, UUIDs, placeholders) and empty/select names', () => {
+        const payload = {
+          d: `<NewDataSet>
+            <Table>
+              <company_id>0</company_id>
+              <companyname>Select Company</companyname>
+            </Table>
+            <Table>
+              <company_id>-1</company_id>
+              <companyname>--Select Company--</companyname>
+            </Table>
+            <Table>
+              <company_id>TBD</company_id>
+              <companyname>To Be Decided</companyname>
+            </Table>
+            <Table>
+              <company_id>c6e18f2d-3277-44f3-b8ef-5e7e0129cf93</company_id>
+              <companyname>UUID Company</companyname>
+            </Table>
+            <Table>
+              <company_id>11999</company_id>
+              <companyname></companyname>
+            </Table>
+            <Table>
+              <company_id></company_id>
+              <companyname>No ID Company</companyname>
+            </Table>
+            <Table>
+              <company_id>11971</company_id>
+              <companyname>Valid Alpha Tech Limited</companyname>
+            </Table>
+          </NewDataSet>`,
+        };
+        const issues = parseMufgGetDetailsPayload(payload);
+        expect(issues).toHaveLength(1);
+        expect(issues[0]?.externalId).toBe('11971');
+        expect(issues[0]?.externalName).toBe('Valid Alpha Tech Limited');
+        expect(isValidMufgCompanyRecord('11971', 'Valid Alpha Tech Limited')).toBe(true);
+        expect(isValidMufgCompanyRecord('0', 'Some Company')).toBe(false);
+        expect(isValidMufgCompanyRecord('-1', 'Some Company')).toBe(false);
+        expect(isValidMufgCompanyRecord('11971', '--Select Company--')).toBe(false);
+        expect(isValidMufgCompanyRecord('c6e18f2d-3277-44f3-b8ef-5e7e0129cf93', 'UUID Corp')).toBe(false);
+      });
+
+      it('11. MufgIdentityDiscoveryAdapter.discoverIssues: sends POST {} with proper headers and discovers fresh issues', async () => {
+        const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json; charset=utf-8' }),
+          text: async () => JSON.stringify({ d: sampleMultiIpoXml }),
+        } as unknown as Response);
+
+        const issues = await mufgAdapter.discoverIssues();
+        expect(issues).toHaveLength(3);
+        expect(issues[0]?.isStale).toBe(false);
+        expect(fetchSpy).toHaveBeenCalledWith(
+          DEFAULT_MUFG_INTIME_COMPANY_LIST_URL,
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({}),
+            headers: expect.objectContaining({
+              'Content-Type': 'application/json; charset=utf-8',
+              'X-Requested-With': 'XMLHttpRequest',
+            }),
+          }),
+        );
+        expect(mufgAdapter.getCachedIssues()).toHaveLength(3);
+        expect(mufgAdapter.getCachedAt()).toBeDefined();
+      });
+
+      it('12. MufgIdentityDiscoveryAdapter.discoverIssues: rejects HTML Content-Type without rejecting omitted header', async () => {
+        mufgAdapter.clearCache();
+
+        // HTML Content-Type rejected
+        jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+          text: async () => '<html><body>Error page</body></html>',
+        } as unknown as Response);
+
+        await expect(mufgAdapter.discoverIssues()).rejects.toThrow(
+          /returned HTML content-type/,
+        );
+
+        // Omitted Content-Type accepted if payload is valid JSON
+        jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({}),
+          text: async () => JSON.stringify({ d: sampleMultiIpoXml }),
+        } as unknown as Response);
+
+        const issues = await mufgAdapter.discoverIssues();
+        expect(issues).toHaveLength(3);
+      });
+
+      it('13. MufgIdentityDiscoveryAdapter.discoverIssues: rejects response exceeding maximum size limit (5MB)', async () => {
+        mufgAdapter.clearCache();
+
+        // 1. Content-Length header exceeding limit
+        jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'content-length': String(DEFAULT_MUFG_MAX_RESPONSE_BYTES + 1024),
+          }),
+          text: async () => '{}',
+        } as unknown as Response);
+
+        await expect(mufgAdapter.discoverIssues()).rejects.toThrow(
+          /exceeds maximum limit/,
+        );
+
+        // 2. Body size exceeding limit
+        const hugePayload = ' '.repeat(DEFAULT_MUFG_MAX_RESPONSE_BYTES + 50);
+        jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({}),
+          text: async () => hugePayload,
+        } as unknown as Response);
+
+        await expect(mufgAdapter.discoverIssues()).rejects.toThrow(
+          /exceeds maximum limit/,
+        );
+      });
+
+      it('14. MufgIdentityDiscoveryAdapter.discoverIssues: handles HTTP failure and timeout when cache is empty (fail-closed)', async () => {
+        mufgAdapter.clearCache();
+
+        // HTTP 500
+        jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          headers: new Headers(),
+          text: async () => 'Server error',
+        } as unknown as Response);
+
+        await expect(mufgAdapter.discoverIssues()).rejects.toThrow(
+          /MUFG Intime discovery failed \(no cached registry available\): MUFG Intime company list returned HTTP status 500/,
+        );
+
+        // Abort timeout
+        const abortError = new Error('The operation was aborted');
+        abortError.name = 'AbortError';
+        jest.spyOn(global, 'fetch').mockRejectedValueOnce(abortError);
+
+        await expect(mufgAdapter.discoverIssues()).rejects.toThrow(
+          /MUFG Intime discovery failed \(no cached registry available\): MUFG Intime discovery request timed out after 8000ms/,
+        );
+      });
+
+      it('15. MufgIdentityDiscoveryAdapter.discoverIssues: preserves valid cache during transient failure within TTL and marks issues as isStale', async () => {
+        // 1. Initial successful discovery seeds cache
+        jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => JSON.stringify({ d: sampleMultiIpoXml }),
+        } as unknown as Response);
+
+        const initialIssues = await mufgAdapter.discoverIssues();
+        expect(initialIssues).toHaveLength(3);
+        expect(initialIssues[0]?.isStale).toBe(false);
+        const initialCachedAt = mufgAdapter.getCachedAt();
+        expect(initialCachedAt).not.toBeNull();
+
+        // 2. Next cycle encounters HTTP 502 error -> returns cached registry, marked isStale: true
+        jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+          ok: false,
+          status: 502,
+          headers: new Headers(),
+          text: async () => 'Bad Gateway',
+        } as unknown as Response);
+
+        const fallbackIssues = await mufgAdapter.discoverIssues();
+        expect(fallbackIssues).toHaveLength(3);
+        expect(fallbackIssues[0]?.externalId).toBe('11971');
+        expect(fallbackIssues[0]?.isStale).toBe(true);
+        expect(fallbackIssues[0]?.rawPayload?.isStale).toBe(true);
+        expect(mufgAdapter.getCachedIssues()).toHaveLength(3);
+      });
+
+      it('16. MufgIdentityDiscoveryAdapter.discoverIssues: does NOT overwrite cache when a malformed/truncated response arrives after populated cache', async () => {
+        // Seed cache with 3 valid items
+        mufgAdapter.setCachedIssues([
+          {
+            externalId: '11971',
+            externalName: 'Company A',
+            registrarCode: 'MUFG_INTIME',
+            discoveredAt: new Date(),
+          },
+          {
+            externalId: '11968',
+            externalName: 'Company B',
+            registrarCode: 'MUFG_INTIME',
+            discoveredAt: new Date(),
+          },
+        ]);
+
+        // Malformed / truncated XML response arrives (contains 1 complete record but truncated stream)
+        const truncatedXml = `<NewDataSet>
+          <Table>
+            <company_id>99999</company_id>
+            <companyname>Truncated Stream Company</companyname>
+          </Table>
+          <Table><company_id>88888</company_id><companyname>Unclosed`;
+
+        jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => JSON.stringify({ d: truncatedXml }),
+        } as unknown as Response);
+
+        const recoveredIssues = await mufgAdapter.discoverIssues();
+        // The cache must NOT be overwritten by the 1 truncated item! It must retain the 2 existing items!
+        expect(recoveredIssues).toHaveLength(2);
+        expect(recoveredIssues[0]?.externalId).toBe('11971');
+        expect(recoveredIssues[0]?.isStale).toBe(true);
+        expect(mufgAdapter.getCachedIssues()).toHaveLength(2);
+      });
+
+      it('17. MufgIdentityDiscoveryAdapter.discoverIssues: does NOT refresh cache timestamp when live request fails', async () => {
+        const fixedTimestamp = Date.now() - 3600 * 1000; // 1 hour ago
+        mufgAdapter.setCachedIssues(
+          [
+            {
+              externalId: '11971',
+              externalName: 'Company A',
+              registrarCode: 'MUFG_INTIME',
+              discoveredAt: new Date(fixedTimestamp),
+            },
+          ],
+          fixedTimestamp,
+        );
+
+        jest.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('Network outage'));
+
+        await mufgAdapter.discoverIssues();
+        // cachedAt must remain fixed at 1 hour ago, not updated to now!
+        expect(mufgAdapter.getCachedAt()).toBe(fixedTimestamp);
+      });
+
+      it('18. MufgIdentityDiscoveryAdapter.discoverIssues: expires cache after TTL (24h) and fails closed on refresh error', async () => {
+        const expiredTimestamp = Date.now() - (DEFAULT_MUFG_CACHE_TTL_MS + 60 * 1000); // 24h + 1m ago
+        mufgAdapter.setCachedIssues(
+          [
+            {
+              externalId: '11971',
+              externalName: 'Company A',
+              registrarCode: 'MUFG_INTIME',
+              discoveredAt: new Date(expiredTimestamp),
+            },
+          ],
+          expiredTimestamp,
+        );
+
+        jest.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('Portal unreachable'));
+
+        // Since cache is expired, it must fail closed rather than serving expired stale data!
+        await expect(mufgAdapter.discoverIssues()).rejects.toThrow(
+          /MUFG Intime discovery failed \(cached registry expired/,
+        );
+      });
+
+      it('19. MufgIdentityDiscoveryAdapter: supports MUFG_INTIME_COMPANY_LIST_URL and MUFG_INTIME_BASE_URL overrides', () => {
+        const originalListUrl = process.env.MUFG_INTIME_COMPANY_LIST_URL;
+        const originalBaseUrl = process.env.MUFG_INTIME_BASE_URL;
+        try {
+          delete process.env.MUFG_INTIME_COMPANY_LIST_URL;
+          delete process.env.MUFG_INTIME_BASE_URL;
+          expect(mufgAdapter.getCompanyListUrl()).toBe(
+            'https://in.mpms.mufg.com/Initial_Offer/IPO.aspx/GetDetails',
+          );
+
+          process.env.MUFG_INTIME_BASE_URL = 'https://custom-mufg.example.com';
+          expect(mufgAdapter.getCompanyListUrl()).toBe(
+            'https://custom-mufg.example.com/Initial_Offer/IPO.aspx/GetDetails',
+          );
+
+          process.env.MUFG_INTIME_COMPANY_LIST_URL =
+            'https://custom-mufg.example.com/api/v2/GetCompanyList';
+          expect(mufgAdapter.getCompanyListUrl()).toBe(
+            'https://custom-mufg.example.com/api/v2/GetCompanyList',
+          );
+        } finally {
+          if (originalListUrl !== undefined) {
+            process.env.MUFG_INTIME_COMPANY_LIST_URL = originalListUrl;
+          } else {
+            delete process.env.MUFG_INTIME_COMPANY_LIST_URL;
+          }
+          if (originalBaseUrl !== undefined) {
+            process.env.MUFG_INTIME_BASE_URL = originalBaseUrl;
+          } else {
+            delete process.env.MUFG_INTIME_BASE_URL;
+          }
+        }
+      });
     });
   });
 
@@ -540,6 +982,45 @@ describe('Registrar Source Identity Discovery & Sync', () => {
       expect(summary2.noChangeCount).toBe(1);
       expect(summary2.discoveredCount).toBe(0);
       expect(mockPrisma.ipoSourceIdentity.create).toHaveBeenCalledTimes(1); // Not called again
+    });
+
+    // 12. Stale cached registrar issues (isStale: true) are marked SKIPPED and never persisted to database
+    it('12. Stale cached registrar issues (isStale: true) are marked SKIPPED and never persisted to database', async () => {
+      mockPrisma.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-stale-test',
+          symbol: 'STALE',
+          company: { displayName: 'Stale Company', legalName: 'Stale Company Limited' },
+          sourceIdentities: [],
+        },
+      ]);
+
+      const mockStaleAdapter = {
+        registrarCode: 'MUFG_INTIME',
+        name: 'Mock MUFG',
+        discoverIssues: jest.fn().mockResolvedValue([
+          {
+            externalId: '998877',
+            externalName: 'STALE COMPANY LIMITED',
+            registrarCode: 'MUFG_INTIME',
+            isStale: true,
+            rawPayload: { isStale: true, cachedAt: Date.now() - 3600 * 1000 },
+          },
+        ]),
+      };
+
+      const summary = await syncService.syncRegistrarIdentities(mockStaleAdapter);
+
+      expect(summary.isStale).toBe(true);
+      expect(summary.totalDiscovered).toBe(1);
+      expect(summary.discoveredCount).toBe(0);
+      expect(summary.skippedCount).toBe(1);
+      expect(summary.syncRecords[0]?.status).toBe(SourceIdentitySyncStatus.SKIPPED);
+      expect(summary.syncRecords[0]?.reason).toContain('stale cached registrar issue cannot be persisted');
+
+      // Crucial: database create/update must NOT have been called!
+      expect(mockPrisma.ipoSourceIdentity.create).not.toHaveBeenCalled();
+      expect(mockPrisma.ipoSourceIdentity.update).not.toHaveBeenCalled();
     });
   });
 

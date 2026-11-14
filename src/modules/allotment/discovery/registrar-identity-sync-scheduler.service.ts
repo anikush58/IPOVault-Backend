@@ -23,6 +23,7 @@ export interface RegistrarSyncCycleResult {
   durationMs: number;
   results: Record<string, {
     success: boolean;
+    isStale?: boolean;
     summary?: RegistrarSourceIdentitySyncSummary;
     error?: string;
   }>;
@@ -150,14 +151,17 @@ export class RegistrarIdentitySyncSchedulerService
         try {
           this.logger.log(`[${cycleId}] Running identity sync for registrar '${adapterCode}'...`);
           const summary = await this.syncService.syncRegistrarIdentities(adapter);
+          const isStale = Boolean(summary?.isStale);
           results[adapterCode] = {
             success: true,
+            isStale: isStale || undefined,
             summary,
           };
           this.logger.log(
-            `[${cycleId}] Identity sync completed for '${adapterCode}': ` +
-              `total=${summary.totalDiscovered}, new=${summary.discoveredCount}, ` +
-              `changed=${summary.changedCount}, noChange=${summary.noChangeCount}, unresolved=${summary.unresolvedCount}`,
+            `[${cycleId}] Identity sync completed for '${adapterCode}'${isStale ? ' [STALE_REGISTRY_FALLBACK]' : ''}: ` +
+              `total=${summary?.totalDiscovered ?? 0}, new=${summary?.discoveredCount ?? 0}, ` +
+              `changed=${summary?.changedCount ?? 0}, noChange=${summary?.noChangeCount ?? 0}, unresolved=${summary?.unresolvedCount ?? 0}` +
+              (summary?.skippedCount ? `, skipped=${summary.skippedCount}` : ''),
           );
         } catch (adapterErr: unknown) {
           const errMsg = adapterErr instanceof Error ? adapterErr.message : String(adapterErr);
