@@ -29,6 +29,10 @@ describe('IpoGuruService', () => {
       },
       ipoSourceIdentity: {
         upsert: jest.fn().mockResolvedValue({ id: 'isi-1' }),
+        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+        delete: jest.fn().mockResolvedValue({ id: 'isi-1' }),
+        update: jest.fn().mockResolvedValue({ id: 'isi-1' }),
       },
       ipoLifecycleEvent: {
         upsert: jest.fn().mockResolvedValue({ id: 'ile-1' }),
@@ -1740,6 +1744,43 @@ describe('IpoGuruService', () => {
       expect(result.items[0].action).toBe('SKIPPED');
       expect(result.items[0].skippedFields?.[0].field).toBe('all');
       expect(result.items[0].skippedFields?.[0].reason).toContain('Multiple candidate matches');
+    });
+
+    it('should create dual source identities (IPOGURU and ADMIN) for synced IPO to guarantee visibility in Manual IPO Manager', async () => {
+      mockPrisma.source.upsert
+        .mockResolvedValueOnce({ id: 'source-ipoguru-id', code: 'IPOGURU' })
+        .mockResolvedValueOnce({ id: 'source-admin-id', code: 'ADMIN' });
+
+      const rawIpo = {
+        name: 'Dual Identity Tech Ltd',
+        symbol: 'DUALTECH',
+        slug: 'dual-tech',
+      };
+
+      const result = await service.syncIpos('MANUAL', undefined, [rawIpo]);
+      expect(result.newlyCreated).toBe(1);
+
+      const tx = mockPrisma._txMock;
+      expect(tx.ipoSourceIdentity.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ipoId_sourceId: {
+              ipoId: 'new-ipo-id',
+              sourceId: 'source-ipoguru-id',
+            },
+          }),
+        }),
+      );
+      expect(tx.ipoSourceIdentity.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ipoId_sourceId: {
+              ipoId: 'new-ipo-id',
+              sourceId: 'source-admin-id',
+            },
+          }),
+        }),
+      );
     });
   });
 });

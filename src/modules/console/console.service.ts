@@ -3,7 +3,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { IpoService } from '../ipos/ipo.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { NotificationDeliveryOperationsService } from '../notifications/notification-delivery-operations.service';
-import { ExchangeListing, IpoStatus, MarketSegment } from '@prisma/client';
+import { ExchangeListing, IpoStatus, MarketSegment, Prisma, SourceType } from '@prisma/client';
 import {
   ConsoleDashboardSummaryDto,
   ConsoleDataQualitySummaryDto,
@@ -24,16 +24,60 @@ export class ConsoleService {
    * Aggregates top-level read-only backend observability metrics for the Console Dashboard.
    */
   async getDashboardSummary(): Promise<ConsoleDashboardSummaryDto> {
-    const manualIpoWhere = {
-      sourceIdentities: {
-        some: {
-          source: {
-            code: {
-              in: ['ADMIN', 'IPOGURU'],
+    const manualIpoWhere: Prisma.IpoWhereInput = {
+      OR: [
+        {
+          sourceIdentities: {
+            some: {
+              OR: [
+                {
+                  source: {
+                    code: {
+                      in: [
+                        'ADMIN',
+                        'IPOGURU',
+                        'IPOGURU_COMMERCIAL',
+                        'IPO_GURU',
+                        'IPOGURU_V2',
+                        'ipoguru',
+                        'admin',
+                        'MANUAL',
+                        'MANUAL_UPLOAD',
+                      ],
+                    },
+                  },
+                },
+                {
+                  source: {
+                    sourceType: SourceType.SECONDARY,
+                  },
+                },
+                {
+                  source: {
+                    code: {
+                      contains: 'guru',
+                      mode: 'insensitive' as Prisma.QueryMode,
+                    },
+                  },
+                },
+                {
+                  source: {
+                    code: {
+                      contains: 'admin',
+                      mode: 'insensitive' as Prisma.QueryMode,
+                    },
+                  },
+                },
+              ],
             },
           },
         },
-      },
+        {
+          sourceIdentities: {
+            none: {},
+          },
+        },
+      ],
     };
 
     const [

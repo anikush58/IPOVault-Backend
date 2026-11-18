@@ -334,6 +334,44 @@ export class IpoTimelineSchedulerService
       const listingDateStr = eventsMap.get(LifecycleEventType.LISTING);
 
       // =========================================================================
+      // 0. DRAFT -> UPCOMING / OPEN (when dates exist on published IPO)
+      // =========================================================================
+      if (
+        currentStatus === IpoStatus.DRAFT &&
+        openDateStr &&
+        ipo.publicationStatus === PublicationStatus.PUBLISHED
+      ) {
+        const openThreshold = createISTDateTime(openDateStr, 0, 0, 0);
+        const closeDayStart = closeDateStr
+          ? createISTDateTime(closeDateStr, 0, 0, 0)
+          : null;
+        if (now < openThreshold) {
+          const updated = await this.prisma.ipo.updateMany({
+            where: { id: ipo.id, status: IpoStatus.DRAFT },
+            data: { status: IpoStatus.UPCOMING },
+          });
+          if (updated.count > 0) {
+            currentStatus = IpoStatus.UPCOMING;
+            this.logger.log(
+              `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) DRAFT -> UPCOMING`,
+            );
+          }
+        } else if (!closeDayStart || now < closeDayStart) {
+          const updated = await this.prisma.ipo.updateMany({
+            where: { id: ipo.id, status: IpoStatus.DRAFT },
+            data: { status: IpoStatus.OPEN },
+          });
+          if (updated.count > 0) {
+            currentStatus = IpoStatus.OPEN;
+            summary.openedCount += updated.count;
+            this.logger.log(
+              `[Timeline] Transitioned IPO '${ipo.company.displayName}' (${ipo.id}) DRAFT -> OPEN (LIVE_NOW)`,
+            );
+          }
+        }
+      }
+
+      // =========================================================================
       // 1. UPCOMING -> OPEN / LIVE_NOW (at opening date 12:00 AM / 00:00:00 IST)
       // =========================================================================
       if (currentStatus === IpoStatus.UPCOMING && openDateStr) {

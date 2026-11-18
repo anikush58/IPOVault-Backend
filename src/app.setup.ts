@@ -43,6 +43,12 @@ export function configureApp(app: INestApplication): void {
     express.static(join(process.cwd(), 'public', 'delete-account')),
   );
 
+  // Serve public Terms of Service at /terms (Google Play Compliance)
+  app.use(
+    '/terms',
+    express.static(join(process.cwd(), 'public', 'terms')),
+  );
+
   // Serve app-ads.txt for Google AdMob crawlers and developer domain verification
   app.use('/app-ads.txt', (_req: express.Request, res: express.Response) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');

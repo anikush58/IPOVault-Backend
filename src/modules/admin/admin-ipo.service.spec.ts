@@ -459,7 +459,6 @@ describe('AdminIpoService & AdminValidationService', () => {
       expect(mockPrisma.ipo.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            sourceIdentities: { some: { source: { code: { in: ['ADMIN', 'IPOGURU'] } } } },
             publicationStatus: 'DRAFT',
           }),
         }),

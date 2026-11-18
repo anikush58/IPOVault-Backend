@@ -493,18 +493,9 @@ export class IpoGuruService {
       return summary;
     }
 
-    // Ensure IPOGURU source exists
+    // Ensure IPOGURU and ADMIN sources exist for authoritative lineage and admin console visibility
     const sourceId = await this.ensureIpoGuruSource();
-
-    // Query ADMIN source ID if exists for review preservation
-    let adminSourceId: string | undefined;
-    try {
-      const adminSource = await this.prisma.source.findUnique({
-        where: { code: 'ADMIN' },
-        select: { id: true },
-      });
-      adminSourceId = adminSource?.id;
-    } catch {}
+    const adminSourceId = await this.ensureAdminSource();
 
     // Load existing canonical IPOs with companies and source identities for matching
     const existingIpos = await this.prisma.ipo.findMany({
@@ -576,7 +567,10 @@ export class IpoGuruService {
               publicationStatus: createdPubStatus,
               symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
               company: { id: itemResult.ipoId, legalName: guruName, displayName: guruName } as any,
-              sourceIdentities: [{ sourceId, externalId: extId, symbol: rawItem.symbol || null }] as any,
+              sourceIdentities: [
+                { sourceId, externalId: extId, symbol: rawItem.symbol || null, source: { code: 'IPOGURU' } },
+                { sourceId: adminSourceId, externalId: itemResult.ipoId, symbol: rawItem.symbol || null, source: { code: 'ADMIN' } },
+              ] as any,
             } as any);
             if (this.enrichmentOrchestrator) {
               this.enrichmentOrchestrator.enqueueIpoEnrichment(itemResult.ipoId);
@@ -874,8 +868,24 @@ export class IpoGuruService {
         } else {
           skippedFields.push({ field: 'publicationStatus', reason: 'Already PUBLISHED' });
         }
-        // NOTE: Canonical IPO lifecycle status is authoritative and MUST NEVER be overwritten by IPO Guru.
-        skippedFields.push({ field: 'status', reason: 'Canonical lifecycle status is authoritative' });
+        // When existing IPO is still in pre-issue DRAFT state, initialize its lifecycle status
+        if (existingIpo.status === IpoStatus.DRAFT) {
+          const derivedStatus =
+            status ||
+            (openDate
+              ? openDate > new Date()
+                ? IpoStatus.UPCOMING
+                : IpoStatus.OPEN
+              : IpoStatus.UPCOMING);
+          updateData.status = derivedStatus;
+          updatedFields.push('status');
+        } else {
+          // NOTE: Canonical active IPO lifecycle status is authoritative and MUST NEVER be overwritten by IPO Guru.
+          skippedFields.push({
+            field: 'status',
+            reason: 'Canonical lifecycle status is authoritative',
+          });
+        }
 
         if (exchange) {
           if (exchange !== existingIpo.exchange) {
@@ -1059,24 +1069,77 @@ export class IpoGuruService {
 
       // Link SourceIdentity for IPOGURU (v2 uses slug as identifier)
       const externalId = (rawItem.slug || (rawItem.id ? String(rawItem.id) : guruName)).trim();
-      await tx.ipoSourceIdentity.upsert({
-        where: {
-          ipoId_sourceId: {
+
+      // Safely link IPOGURU SourceIdentity (preventing P2002 on source_id + external_id)
+      const existingBySourceAndExt = await tx.ipoSourceIdentity.findFirst({
+        where: { sourceId, externalId },
+      });
+      const existingByIpoAndSource = await tx.ipoSourceIdentity.findUnique({
+        where: { ipoId_sourceId: { ipoId, sourceId } },
+      });
+
+      if (existingBySourceAndExt && existingBySourceAndExt.ipoId !== ipoId) {
+        if (existingByIpoAndSource) {
+          await tx.ipoSourceIdentity.delete({
+            where: { id: existingBySourceAndExt.id },
+          });
+          await tx.ipoSourceIdentity.update({
+            where: { id: existingByIpoAndSource.id },
+            data: {
+              externalId,
+              symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : undefined,
+            },
+          });
+        } else {
+          await tx.ipoSourceIdentity.update({
+            where: { id: existingBySourceAndExt.id },
+            data: {
+              ipoId,
+              symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : undefined,
+            },
+          });
+        }
+      } else {
+        await tx.ipoSourceIdentity.upsert({
+          where: {
+            ipoId_sourceId: {
+              ipoId,
+              sourceId,
+            },
+          },
+          update: {
+            externalId,
+            symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : undefined,
+          },
+          create: {
             ipoId,
             sourceId,
+            externalId,
+            symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
           },
-        },
-        update: {
-          externalId,
-          symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : undefined,
-        },
-        create: {
-          ipoId,
-          sourceId,
-          externalId,
-          symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
-        },
-      });
+        });
+      }
+
+      // Link ADMIN SourceIdentity so the IPO is immediately recognized in Manual IPO Manager
+      if (adminSourceId) {
+        await tx.ipoSourceIdentity.upsert({
+          where: {
+            ipoId_sourceId: {
+              ipoId,
+              sourceId: adminSourceId,
+            },
+          },
+          update: {
+            symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : undefined,
+          },
+          create: {
+            ipoId,
+            sourceId: adminSourceId,
+            externalId: ipoId,
+            symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
+          },
+        });
+      }
 
       if (openDate) {
         await tx.ipoLifecycleEvent.upsert({
@@ -1372,8 +1435,8 @@ export class IpoGuruService {
     if (rawNormName) {
       const nameMatches: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>> = [];
       for (const ipo of existingIpos) {
-        const legalNorm = this.normalizeCompanyName(ipo.company.legalName);
-        const displayNorm = this.normalizeCompanyName(ipo.company.displayName);
+        const legalNorm = ipo.company?.legalName ? this.normalizeCompanyName(ipo.company.legalName) : '';
+        const displayNorm = ipo.company?.displayName ? this.normalizeCompanyName(ipo.company.displayName) : '';
         if (legalNorm === rawNormName || displayNorm === rawNormName) {
           nameMatches.push(ipo);
         }
@@ -1385,7 +1448,7 @@ export class IpoGuruService {
         return {
           matchedIpo: null,
           matchedBy: 'AMBIGUOUS',
-          ambiguousCandidates: nameMatches.map((m) => `${m.company.displayName} (ID: ${m.id})`),
+          ambiguousCandidates: nameMatches.map((m) => `${m.company?.displayName || m.company?.legalName || m.id} (ID: ${m.id})`),
         };
       }
 
@@ -1393,8 +1456,8 @@ export class IpoGuruService {
       if (rawNormName.length >= 4) {
         const tokenMatches: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>> = [];
         for (const ipo of existingIpos) {
-          const legalNorm = this.normalizeCompanyName(ipo.company.legalName);
-          const displayNorm = this.normalizeCompanyName(ipo.company.displayName);
+          const legalNorm = ipo.company?.legalName ? this.normalizeCompanyName(ipo.company.legalName) : '';
+          const displayNorm = ipo.company?.displayName ? this.normalizeCompanyName(ipo.company.displayName) : '';
           if (
             (legalNorm.length >= 4 && (legalNorm.includes(rawNormName) || rawNormName.includes(legalNorm))) ||
             (displayNorm.length >= 4 && (displayNorm.includes(rawNormName) || rawNormName.includes(displayNorm)))
@@ -1409,7 +1472,7 @@ export class IpoGuruService {
           return {
             matchedIpo: null,
             matchedBy: 'AMBIGUOUS',
-            ambiguousCandidates: tokenMatches.map((m) => `${m.company.displayName} (ID: ${m.id})`),
+            ambiguousCandidates: tokenMatches.map((m) => `${m.company?.displayName || m.company?.legalName || m.id} (ID: ${m.id})`),
           };
         }
       }
@@ -1443,6 +1506,20 @@ export class IpoGuruService {
         sourceType: 'SECONDARY',
         baseUrl: this.BASE_URL,
         priority: 50,
+      },
+    });
+    return source.id;
+  }
+
+  private async ensureAdminSource(): Promise<string> {
+    const source = await this.prisma.source.upsert({
+      where: { code: 'ADMIN' },
+      update: {},
+      create: {
+        code: 'ADMIN',
+        name: 'Admin Manual Review',
+        sourceType: 'OFFICIAL_FILING',
+        priority: 1,
       },
     });
     return source.id;

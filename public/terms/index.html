@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="IPOVault Terms of Service. Information regarding app usage, financial disclaimers, third-party data tracking, and account responsibilities.">
+  <meta name="theme-color" content="#090d16">
+  <title>Terms of Service - IPOVault</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-light: #60a5fa;
+      --badge-bg: #1e293b;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font);
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.6;
+      padding: 40px 20px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      max-width: 780px;
+      width: 100%;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      text-decoration: none;
+    }
+
+    .brand-icon {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 22px;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+
+    .brand-name {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #ffffff;
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: var(--primary-light);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+      color: #ffffff;
+    }
+
+    .subtitle {
+      font-size: 15px;
+      color: var(--text-muted);
+      max-width: 620px;
+      margin: 0 auto;
+    }
+
+    .overview-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+    }
+
+    .overview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .effective-date {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .version-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      background: var(--badge-bg);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .overview-summary {
+      font-size: 14.5px;
+      color: var(--text-main);
+      line-height: 1.65;
+    }
+
+    .section-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .section-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-content {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+
+    .section-content p {
+      margin-bottom: 12px;
+    }
+
+    .section-content p:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-content ul {
+      margin: 10px 0 12px 20px;
+    }
+
+    .section-content li {
+      margin-bottom: 6px;
+    }
+
+    .callout-box {
+      margin-top: 14px;
+      padding: 12px 16px;
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.22);
+      border-radius: 10px;
+      font-size: 13.5px;
+      color: #bfdbfe;
+      line-height: 1.6;
+    }
+
+    .callout-box strong {
+      color: #ffffff;
+    }
+
+    .contact-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-top: 12px;
+      margin-bottom: 32px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .contact-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+
+    .contact-text {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+
+    a {
+      color: var(--primary-light);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 12.5px;
+      color: #64748b;
+      margin-top: auto;
+      padding-top: 24px;
+      line-height: 1.6;
+    }
+
+    footer a {
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="brand-icon">V</div>
+        <div class="brand-name">IPOVault</div>
+      </div>
+      <div class="eyebrow">Legal &amp; Compliance</div>
+      <h1>Terms of Service</h1>
+      <p class="subtitle">Please review these terms governing the permitted use of the IPOVault mobile application and related services.</p>
+    </header>
+
+    <!-- Overview Card -->
+    <div class="overview-card">
+      <div class="overview-header">
+        <span class="effective-date">Effective Date: November 2026</span>
+        <span class="version-badge">v1.0.0</span>
+      </div>
+      <p class="overview-summary">
+        These Terms of Service (&ldquo;Terms&rdquo;) constitute a binding agreement between you and the operators of IPOVault (&ldquo;IPOVault&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;). By accessing, downloading, or using the IPOVault application or website, you acknowledge that you have read, understood, and agreed to be bound by these Terms and our <a href="/privacy-policy">Privacy Policy</a>.
+      </p>
+    </div>
+
+    <!-- Section 1 -->
+    <div class="section-card">
+      <h2 class="section-title">1. Description &amp; Permitted Use of IPOVault</h2>
+      <div class="section-content">
+        <p>
+          IPOVault is a personal utility and portfolio-tracking tool engineered to help individual investors organize, log, and monitor Indian Initial Public Offering (IPO) applications, mandate references, and allotment statuses across multiple family or demat accounts.
+        </p>
+        <p>
+          You are granted a non-exclusive, non-transferable, revocable license to use IPOVault strictly for your own personal, non-commercial portfolio-management purposes on supported Android and mobile devices. You agree not to reverse-engineer, decompile, scrape, resell, or distribute the application or its underlying APIs.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 2 -->
+    <div class="section-card">
+      <h2 class="section-title">2. Application &amp; Allotment Tracking Limitations</h2>
+      <div class="section-content">
+        <p>
+          <strong>No Financial Execution:</strong> IPOVault is an application recorder and status aggregator. IPOVault does <em>not</em> place bids on stock exchanges, does not process UPI mandate payments, does not block bank funds, and does not interact with Application Supported by Blocked Amount (ASBA) banking channels. All IPO bids must be submitted through your authorized broker, banking portal, or syndicate member.
+        </p>
+        <p>
+          <strong>Official Registrar Queries:</strong> When querying allotment status, the application queries public enquiry portals hosted by official SEBI-registered share transfer agents and registrars (such as Link Intime, KFin Technologies, Bigshare Services, Skyline Financial Services, and Purva Sharegistry). IPOVault acts as a convenience lookup client and does not control registrar data processing or release schedules.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 3 -->
+    <div class="section-card">
+      <h2 class="section-title">3. Third-Party Data Accuracy &amp; Availability</h2>
+      <div class="section-content">
+        <p>
+          IPOVault compiles information relating to IPO timelines, price bands, issue sizes, subscription multiples, and Grey Market Premium (GMP) estimates from public market disclosures, stock exchange feeds (NSE and BSE), regulatory filings, and market aggregators.
+        </p>
+        <p>
+          While we strive to keep information current and accurate:
+        </p>
+        <ul>
+          <li>Market data, Grey Market Premiums (GMP), and subscription multiples are unofficial or estimated indicators and may fluctuate unpredictably.</li>
+          <li>Registrar portals and third-party feeds may experience unexpected server outages, CAPTCHA blocks, rate limiting, or data transmission delays during peak allotment days.</li>
+          <li>IPOVault makes no warranty regarding the completeness, timeliness, or accuracy of third-party market data.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 4 -->
+    <div class="section-card">
+      <h2 class="section-title">4. No Investment Advice or Allotment Guarantee</h2>
+      <div class="section-content">
+        <div class="callout-box">
+          <strong>Mandatory Regulatory &amp; Risk Disclaimer:</strong>
+          IPOVault is not a SEBI-registered Investment Advisor, Research Analyst, Stockbroker, Depository Participant, or Merchant Banker. Content provided in the app is solely for educational, reference, and organizational tracking purposes. Nothing within IPOVault constitutes an offer to buy, sell, or subscribe to any securities, nor does it constitute financial, tax, or investment advice.
+        </div>
+        <p style="margin-top: 12px;">
+          Share allotments are determined strictly by market demand, basis of allotment rules, registrar algorithms, and lottery processes mandated by SEBI. IPOVault does not and cannot guarantee allotment of shares. You are solely responsible for evaluating IPO prospectuses (RHP/DRHP) and consulting a certified financial advisor before making any financial commitments.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 5 -->
+    <div class="section-card">
+      <h2 class="section-title">5. User Responsibilities &amp; Device Security</h2>
+      <div class="section-content">
+        <p>
+          <strong>Local-First Storage:</strong> IPOVault operates primarily on a local-first architecture. Your investor profiles, family member records, and logged applications reside in an encrypted SQLite database on your device. You are solely responsible for:
+        </p>
+        <ul>
+          <li>Ensuring device physical security, screen lock passcode protection, and operating system updates.</li>
+          <li>Accurately entering application details, PAN identifiers, and bank references.</li>
+          <li>Performing periodic data exports or backups to avoid data loss in the event of device damage or replacement.</li>
+          <li>Safeguarding your Google or email credentials if opting into cloud backup.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 6 -->
+    <div class="section-card">
+      <h2 class="section-title">6. Data Ownership, Account Deletion &amp; Termination</h2>
+      <div class="section-content">
+        <p>
+          You retain full ownership of the data you enter into IPOVault. You may export or permanently purge your data at any time:
+        </p>
+        <ul>
+          <li><strong>In-App Deletion:</strong> You can initiate permanent account and data deletion directly within the mobile application under <em>Settings &gt; Edit Profile &gt; Delete Account</em>.</li>
+          <li><strong>Web Portal Deletion:</strong> If you have uninstalled the app or cannot access your device, you can submit an account and cloud data deletion request at our public <a href="/delete-account">Web Account Deletion Portal</a>.</li>
+        </ul>
+        <p>
+          Account deletion permanently purges authentication records, cloud snapshots, and associated metadata in accordance with our <a href="/privacy-policy">Privacy Policy</a> and Google Play User Data Policies.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 7 -->
+    <div class="section-card">
+      <h2 class="section-title">7. Intellectual Property &amp; Limitation of Liability</h2>
+      <div class="section-content">
+        <p>
+          The IPOVault name, brand marks, icons, custom illustrations, software algorithms, and interface designs are the intellectual property of IPOVault operators and protected by applicable copyright and trademark laws.
+        </p>
+        <p>
+          To the maximum extent permitted under applicable law, IPOVault, its developers, and contributors shall not be liable for any direct, indirect, incidental, punitive, or consequential damages, including loss of profits, missed allotment opportunities, incorrect bidding details, banking penalties, or system unavailability resulting from the use of or inability to use the service.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 8 -->
+    <div class="section-card">
+      <h2 class="section-title">8. Modifications to Terms</h2>
+      <div class="section-content">
+        <p>
+          We reserve the right to modify or replace these Terms at any time to reflect software improvements, feature updates, or legal compliance requirements. The updated Terms will be published on this page with a revised effective date. Your continued use of the application following the posting of changes constitutes acceptance of the revised Terms.
+        </p>
+      </div>
+    </div>
+
+    <!-- Contact & Grievance Card -->
+    <div class="contact-card">
+      <h2 class="contact-title">9. Contact &amp; Grievance Redressal</h2>
+      <p class="contact-text">
+        If you have questions, feedback, or grievance inquiries regarding these Terms of Service or our operational practices, please contact our support team at:
+      </p>
+      <p class="contact-text" style="margin-top: 10px;">
+        &bull; General Support &amp; Terms Inquiries: <a href="mailto:support@getipovault.in">support@getipovault.in</a><br>
+        &bull; Privacy &amp; Data Protection: <a href="mailto:privacy@ipovault.app">privacy@ipovault.app</a><br>
+        &bull; Account Deletion Requests: <a href="/delete-account">https://getipovault.in/delete-account</a>
+      </p>
+      <div class="callout-box" style="margin-top: 14px; font-size: 12.5px;">
+        <strong>Notice on Statutory Information:</strong> Formal incorporated entity name, physical corporate registered office, and statutory grievance officer designation under the Information Technology (Intermediary Guidelines and Digital Media Ethics Code) Rules will be published upon completion of corporate incorporation.
+      </div>
+    </div>
+
+    <footer>
+      <p>IPOVault &copy; 2026. All rights reserved.</p>
+      <p style="margin-top: 6px;">
+        <a href="/privacy-policy">Privacy Policy</a> &bull;
+        <a href="/terms">Terms of Service</a> &bull;
+        <a href="/delete-account">Account Deletion</a> &bull;
+        <a href="/app-ads.txt">app-ads.txt</a>
+      </p>
+    </footer>
+  </div>
+</body>
+</html>

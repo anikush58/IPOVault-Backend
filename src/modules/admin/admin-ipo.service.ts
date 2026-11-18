@@ -15,6 +15,7 @@ import {
   ParticipantRole,
   Prisma,
   PublicationStatus,
+  SourceType,
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { deriveIpoStatus } from '../discovery/canonicalizer.service';
@@ -775,15 +776,59 @@ export class AdminIpoService {
     const skip = (page - 1) * limit;
 
     const baseSourceWhere: Prisma.IpoWhereInput = {
-      sourceIdentities: {
-        some: {
-          source: {
-            code: {
-              in: ['ADMIN', 'IPOGURU'],
+      OR: [
+        {
+          sourceIdentities: {
+            some: {
+              OR: [
+                {
+                  source: {
+                    code: {
+                      in: [
+                        'ADMIN',
+                        'IPOGURU',
+                        'IPOGURU_COMMERCIAL',
+                        'IPO_GURU',
+                        'IPOGURU_V2',
+                        'ipoguru',
+                        'admin',
+                        'MANUAL',
+                        'MANUAL_UPLOAD',
+                      ],
+                    },
+                  },
+                },
+                {
+                  source: {
+                    sourceType: SourceType.SECONDARY,
+                  },
+                },
+                {
+                  source: {
+                    code: {
+                      contains: 'guru',
+                      mode: 'insensitive' as Prisma.QueryMode,
+                    },
+                  },
+                },
+                {
+                  source: {
+                    code: {
+                      contains: 'admin',
+                      mode: 'insensitive' as Prisma.QueryMode,
+                    },
+                  },
+                },
+              ],
             },
           },
         },
-      },
+        {
+          sourceIdentities: {
+            none: {},
+          },
+        },
+      ],
     };
 
     const where: Prisma.IpoWhereInput = {
