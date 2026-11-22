@@ -5573,7 +5573,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           if (currentStatusFilter && currentStatusFilter !== 'ALL' && totalAll > 0) {
             tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 24px; color:var(--text-muted);">'
               + 'No Manual IPOs found matching "<strong>' + currentStatusFilter + '</strong>" filter (' + totalAll + ' IPOs exist across other statuses). '
-              + '<button type="button" class="btn-secondary" onclick="setStatusFilter(\'ALL\')" style="margin-left:8px; font-size:12px; padding:3px 10px; cursor:pointer;">Switch to All Statuses (' + totalAll + ')</button>'
+              + '<button type="button" class="btn-secondary" onclick="setStatusFilter(\\\'ALL\\\')" style="margin-left:8px; font-size:12px; padding:3px 10px; cursor:pointer;">Switch to All Statuses (' + totalAll + ')</button>'
               + '</td></tr>';
           } else {
             tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 24px; color:var(--text-muted);">No Manual IPOs found matching filter.</td></tr>';
@@ -8078,7 +8078,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
             syncActionWrap.style.marginTop = '12px';
             syncActionWrap.style.paddingTop = '10px';
             syncActionWrap.style.borderTop = '1px solid var(--border-color)';
-            syncActionWrap.innerHTML = '<button type="button" class="btn-primary" onclick="switchToManualWithFilter(\'ALL\')" style="font-size:12px; font-weight:600; padding:6px 14px; gap:6px; display:inline-flex; align-items:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg><span>View in Manual IPO Manager (All Statuses)</span></button>';
+            syncActionWrap.innerHTML = '<button type="button" class="btn-primary" onclick="switchToManualWithFilter(\\\'ALL\\\')" style="font-size:12px; font-weight:600; padding:6px 14px; gap:6px; display:inline-flex; align-items:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg><span>View in Manual IPO Manager (All Statuses)</span></button>';
             summaryEl.appendChild(syncActionWrap);
           }
           summaryEl.style.display = 'block';

@@ -530,6 +530,8 @@ export class IpoGuruService {
             source: true,
           },
         },
+        lifecycleEvents: true,
+        allotmentConfig: true,
       },
     });
 
@@ -575,11 +577,13 @@ export class IpoGuruService {
           summary.matchedUpdated++;
           if (itemResult.updatedFields && itemResult.updatedFields.length > 0) {
             summary.updatedCount++;
+            const targetStatus = itemResult.targetStatus;
+            const isActive = targetStatus === IpoStatus.UPCOMING || targetStatus === IpoStatus.OPEN;
+            if (itemResult.ipoId && this.enrichmentOrchestrator && isActive) {
+              this.enrichmentOrchestrator.enqueueIpoEnrichment(itemResult.ipoId);
+            }
           } else {
             summary.unchangedCount++;
-          }
-          if (itemResult.ipoId && this.enrichmentOrchestrator) {
-            this.enrichmentOrchestrator.enqueueIpoEnrichment(itemResult.ipoId);
           }
         } else if (itemResult.action === 'CREATED') {
           summary.newlyCreated++;
@@ -589,21 +593,26 @@ export class IpoGuruService {
             const createdPubStatus =
               (itemResult.publicationStatus as PublicationStatus) ||
               PublicationStatus.DRAFT;
+            const createdCompanyId = itemResult.companyId || itemResult.ipoId;
+            const createdStatus = (itemResult.targetStatus as IpoStatus) || IpoStatus.UPCOMING;
             existingIpos.push({
               id: itemResult.ipoId,
-              companyId: itemResult.ipoId,
+              companyId: createdCompanyId,
               marketSegment: MarketSegment.MAINBOARD,
               exchange: ExchangeListing.BOTH,
-              status: IpoStatus.UPCOMING,
+              status: createdStatus,
               publicationStatus: createdPubStatus,
               symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
-              company: { id: itemResult.ipoId, legalName: guruName, displayName: guruName } as any,
+              company: { id: createdCompanyId, legalName: guruName, displayName: guruName } as any,
               sourceIdentities: [
                 { sourceId, externalId: extId, symbol: rawItem.symbol || null, source: { code: 'IPOGURU' } },
                 { sourceId: adminSourceId, externalId: itemResult.ipoId, symbol: rawItem.symbol || null, source: { code: 'ADMIN' } },
               ] as any,
+              lifecycleEvents: [],
+              allotmentConfig: rawItem.registrar ? ({ registrar: rawItem.registrar.trim() } as any) : null,
             } as any);
-            if (this.enrichmentOrchestrator) {
+            const isActive = createdStatus === IpoStatus.UPCOMING || createdStatus === IpoStatus.OPEN;
+            if (this.enrichmentOrchestrator && isActive) {
               this.enrichmentOrchestrator.enqueueIpoEnrichment(itemResult.ipoId);
             }
           }
@@ -844,10 +853,16 @@ export class IpoGuruService {
         allotmentDate,
       });
 
+      if (priceBand.wasInverted) {
+        pubEligibility.eligible = false;
+        pubEligibility.blockers.push('Inverted price band range in source payload (low > high)');
+      }
+
       let ipoId: string;
       let companyId: string;
       let action: 'UPDATED' | 'CREATED';
       let publicationStatusResult: PublicationStatus;
+      let targetStatusResult: IpoStatus;
 
       if (match.matchedIpo) {
         // --- 1. UPDATE EXISTING IPO ---
@@ -942,6 +957,11 @@ export class IpoGuruService {
             listingDate,
             allotmentDate,
           });
+
+          if (priceBand.wasInverted) {
+            effectivePubEligibility.eligible = false;
+            effectivePubEligibility.blockers.push('Inverted price band range in source payload (low > high)');
+          }
 
           if (isAwaitingManualReview) {
             skippedFields.push({
@@ -1089,8 +1109,21 @@ export class IpoGuruService {
           updatedFields.push('listingPrice');
         }
 
-        if (rawItem.symbol) {
-          updatedFields.push('sourceIdentitySymbol');
+        const cleanSymbol = rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null;
+        if (cleanSymbol) {
+          const hasMatchingSymbol =
+            (existingIpo.symbol && existingIpo.symbol.toUpperCase() === cleanSymbol) ||
+            existingIpo.sourceIdentities?.some(
+              (si: any) =>
+                (si.sourceId === sourceId || si.source?.code === 'IPOGURU') &&
+                si.symbol &&
+                si.symbol.toUpperCase() === cleanSymbol,
+            );
+          if (!hasMatchingSymbol) {
+            updatedFields.push('sourceIdentitySymbol');
+          } else {
+            skippedFields.push({ field: 'symbol', reason: 'Value unchanged' });
+          }
         } else {
           skippedFields.push({ field: 'symbol', reason: 'Not provided in payload' });
         }
@@ -1099,6 +1132,7 @@ export class IpoGuruService {
           reason: rawItem.isin ? 'Canonical ISIN is preserved on IPO record' : 'Not provided in payload',
         });
 
+        targetStatusResult = (updateData.status as IpoStatus) || existingIpo.status;
         if (Object.keys(updateData).length > 0) {
           await tx.ipo.update({
             where: { id: ipoId },
@@ -1119,6 +1153,7 @@ export class IpoGuruService {
         if (rawLogo) updatedFields.push('logoUrl');
 
         const initialStatus = status || IpoStatus.UPCOMING;
+        targetStatusResult = initialStatus;
 
         if (!pubEligibility.eligible) {
           this.logger.warn(
@@ -1243,56 +1278,86 @@ export class IpoGuruService {
       }
 
       if (openDate) {
-        await tx.ipoLifecycleEvent.upsert({
-          where: { ipoId_eventType: { ipoId, eventType: 'OPEN' } },
-          update: { eventDate: openDate, sourceId },
-          create: { ipoId, eventType: 'OPEN', eventDate: openDate, sourceId },
-        });
-        updatedFields.push('openDate');
+        const existingOpen = (match.matchedIpo as any)?.lifecycleEvents?.find((e: any) => e.eventType === 'OPEN');
+        const isDateChanged = action === 'CREATED' || !existingOpen || !existingOpen.eventDate || new Date(existingOpen.eventDate).getTime() !== openDate.getTime();
+        if (isDateChanged) {
+          await tx.ipoLifecycleEvent.upsert({
+            where: { ipoId_eventType: { ipoId, eventType: 'OPEN' } },
+            update: { eventDate: openDate, sourceId },
+            create: { ipoId, eventType: 'OPEN', eventDate: openDate, sourceId },
+          });
+          updatedFields.push('openDate');
+        } else {
+          skippedFields.push({ field: 'openDate', reason: 'Value unchanged' });
+        }
       } else {
         skippedFields.push({ field: 'openDate', reason: 'Not provided in payload' });
       }
 
       if (closeDate) {
-        await tx.ipoLifecycleEvent.upsert({
-          where: { ipoId_eventType: { ipoId, eventType: 'CLOSE' } },
-          update: { eventDate: closeDate, sourceId },
-          create: { ipoId, eventType: 'CLOSE', eventDate: closeDate, sourceId },
-        });
-        updatedFields.push('closeDate');
+        const existingClose = (match.matchedIpo as any)?.lifecycleEvents?.find((e: any) => e.eventType === 'CLOSE');
+        const isDateChanged = action === 'CREATED' || !existingClose || !existingClose.eventDate || new Date(existingClose.eventDate).getTime() !== closeDate.getTime();
+        if (isDateChanged) {
+          await tx.ipoLifecycleEvent.upsert({
+            where: { ipoId_eventType: { ipoId, eventType: 'CLOSE' } },
+            update: { eventDate: closeDate, sourceId },
+            create: { ipoId, eventType: 'CLOSE', eventDate: closeDate, sourceId },
+          });
+          updatedFields.push('closeDate');
+        } else {
+          skippedFields.push({ field: 'closeDate', reason: 'Value unchanged' });
+        }
       } else {
         skippedFields.push({ field: 'closeDate', reason: 'Not provided in payload' });
       }
 
       if (allotmentDate) {
-        await tx.ipoLifecycleEvent.upsert({
-          where: { ipoId_eventType: { ipoId, eventType: 'BASIS_OF_ALLOTMENT' } },
-          update: { eventDate: allotmentDate, sourceId },
-          create: { ipoId, eventType: 'BASIS_OF_ALLOTMENT', eventDate: allotmentDate, sourceId },
-        });
-        updatedFields.push('allotmentDate');
+        const existingAllotment = (match.matchedIpo as any)?.lifecycleEvents?.find((e: any) => e.eventType === 'BASIS_OF_ALLOTMENT');
+        const isDateChanged = action === 'CREATED' || !existingAllotment || !existingAllotment.eventDate || new Date(existingAllotment.eventDate).getTime() !== allotmentDate.getTime();
+        if (isDateChanged) {
+          await tx.ipoLifecycleEvent.upsert({
+            where: { ipoId_eventType: { ipoId, eventType: 'BASIS_OF_ALLOTMENT' } },
+            update: { eventDate: allotmentDate, sourceId },
+            create: { ipoId, eventType: 'BASIS_OF_ALLOTMENT', eventDate: allotmentDate, sourceId },
+          });
+          updatedFields.push('allotmentDate');
+        } else {
+          skippedFields.push({ field: 'allotmentDate', reason: 'Value unchanged' });
+        }
       } else {
         skippedFields.push({ field: 'allotmentDate', reason: 'Not provided in payload' });
       }
 
       if (refundDate) {
-        await tx.ipoLifecycleEvent.upsert({
-          where: { ipoId_eventType: { ipoId, eventType: 'REFUND_INITIATION' } },
-          update: { eventDate: refundDate, sourceId },
-          create: { ipoId, eventType: 'REFUND_INITIATION', eventDate: refundDate, sourceId },
-        });
-        updatedFields.push('refundDate');
+        const existingRefund = (match.matchedIpo as any)?.lifecycleEvents?.find((e: any) => e.eventType === 'REFUND_INITIATION');
+        const isDateChanged = action === 'CREATED' || !existingRefund || !existingRefund.eventDate || new Date(existingRefund.eventDate).getTime() !== refundDate.getTime();
+        if (isDateChanged) {
+          await tx.ipoLifecycleEvent.upsert({
+            where: { ipoId_eventType: { ipoId, eventType: 'REFUND_INITIATION' } },
+            update: { eventDate: refundDate, sourceId },
+            create: { ipoId, eventType: 'REFUND_INITIATION', eventDate: refundDate, sourceId },
+          });
+          updatedFields.push('refundDate');
+        } else {
+          skippedFields.push({ field: 'refundDate', reason: 'Value unchanged' });
+        }
       } else {
         skippedFields.push({ field: 'refundDate', reason: 'Not provided in payload' });
       }
 
       if (listingDate) {
-        await tx.ipoLifecycleEvent.upsert({
-          where: { ipoId_eventType: { ipoId, eventType: 'LISTING' } },
-          update: { eventDate: listingDate, sourceId },
-          create: { ipoId, eventType: 'LISTING', eventDate: listingDate, sourceId },
-        });
-        updatedFields.push('listingDate');
+        const existingListing = (match.matchedIpo as any)?.lifecycleEvents?.find((e: any) => e.eventType === 'LISTING');
+        const isDateChanged = action === 'CREATED' || !existingListing || !existingListing.eventDate || new Date(existingListing.eventDate).getTime() !== listingDate.getTime();
+        if (isDateChanged) {
+          await tx.ipoLifecycleEvent.upsert({
+            where: { ipoId_eventType: { ipoId, eventType: 'LISTING' } },
+            update: { eventDate: listingDate, sourceId },
+            create: { ipoId, eventType: 'LISTING', eventDate: listingDate, sourceId },
+          });
+          updatedFields.push('listingDate');
+        } else {
+          skippedFields.push({ field: 'listingDate', reason: 'Value unchanged' });
+        }
       } else {
         skippedFields.push({ field: 'listingDate', reason: 'Not provided in payload' });
       }
@@ -1300,39 +1365,52 @@ export class IpoGuruService {
       // --- 4. ALLOTMENT CONFIG & REGISTRAR PARTICIPANT ---
       const registrar = (rawItem.registrar || '').trim();
       if (registrar) {
-        await tx.ipoAllotmentConfig.upsert({
-          where: { ipoId },
-          update: {
-            registrar,
-            expectedAllotmentDate: allotmentDate || undefined,
-          },
-          create: {
-            ipoId,
-            registrar,
-            expectedAllotmentDate: allotmentDate,
-            enabled: true,
-          },
-        });
+        const existingCfg = (match.matchedIpo as any)?.allotmentConfig;
+        const isRegistrarChanged =
+          action === 'CREATED' ||
+          !existingCfg ||
+          existingCfg.registrar !== registrar ||
+          (allotmentDate && (!existingCfg.expectedAllotmentDate || new Date(existingCfg.expectedAllotmentDate).getTime() !== allotmentDate.getTime()));
 
-        // Ensure registrar participant exists
-        const existingParticipant = await tx.ipoParticipant.findFirst({
-          where: { ipoId, role: ParticipantRole.REGISTRAR },
-        });
-        if (existingParticipant) {
-          await tx.ipoParticipant.update({
-            where: { id: existingParticipant.id },
-            data: { name: registrar },
-          });
-        } else {
-          await tx.ipoParticipant.create({
-            data: {
+        if (isRegistrarChanged) {
+          await tx.ipoAllotmentConfig.upsert({
+            where: { ipoId },
+            update: {
+              registrar,
+              expectedAllotmentDate: allotmentDate || undefined,
+            },
+            create: {
               ipoId,
-              role: ParticipantRole.REGISTRAR,
-              name: registrar,
+              registrar,
+              expectedAllotmentDate: allotmentDate,
+              enabled: true,
             },
           });
+
+          // Ensure registrar participant exists
+          const existingParticipant = await tx.ipoParticipant.findFirst({
+            where: { ipoId, role: ParticipantRole.REGISTRAR },
+          });
+          if (existingParticipant) {
+            if (existingParticipant.name !== registrar) {
+              await tx.ipoParticipant.update({
+                where: { id: existingParticipant.id },
+                data: { name: registrar },
+              });
+            }
+          } else {
+            await tx.ipoParticipant.create({
+              data: {
+                ipoId,
+                role: ParticipantRole.REGISTRAR,
+                name: registrar,
+              },
+            });
+          }
+          updatedFields.push('registrar');
+        } else {
+          skippedFields.push({ field: 'registrar', reason: 'Value unchanged' });
         }
-        updatedFields.push('registrar');
       } else {
         skippedFields.push({ field: 'registrar', reason: 'Not provided in payload' });
       }
@@ -1418,45 +1496,49 @@ export class IpoGuruService {
         ? `https://www.ipoguru.in/api/v2/ipos/${externalId}`
         : 'https://www.ipoguru.in/api/v2';
 
-      await this.recordIpoGuruFieldProvenances(
-        tx,
-        ipoId,
-        companyId,
-        sourceId,
-        sourceRef,
-        {
-          legalName: guruName || null,
-          displayName: guruName || null,
-          marketSegment: marketSegment || null,
-          exchange: exchange || null,
-          status: action === 'CREATED' ? (status || IpoStatus.UPCOMING) : null,
-          symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
-          isin: rawItem.isin ? rawItem.isin.trim().toUpperCase() : null,
-          priceBandLow: priceBand.low,
-          priceBandHigh: priceBand.high,
-          lotSize: lotSize,
-          faceValue: faceValue,
-          issueSize: issueSize,
-          freshIssueSize: freshIssueSize,
-          ofsSize: ofsSize,
-          listingPrice:
-            (action === 'CREATED' && (status || IpoStatus.UPCOMING) === IpoStatus.LISTED) ||
-            (action === 'UPDATED' && match.matchedIpo?.status === IpoStatus.LISTED)
-              ? listingPrice
-              : null,
-          openDate: openDate || null,
-          closeDate: closeDate || null,
-          allotmentDate: allotmentDate || null,
-          refundDate: refundDate || null,
-          listingDate: listingDate || null,
-          registrarName: registrar || null,
-        },
-      );
+      if (action === 'CREATED' || updatedFields.length > 0) {
+        await this.recordIpoGuruFieldProvenances(
+          tx,
+          ipoId,
+          companyId,
+          sourceId,
+          sourceRef,
+          {
+            legalName: guruName || null,
+            displayName: guruName || null,
+            marketSegment: marketSegment || null,
+            exchange: exchange || null,
+            status: action === 'CREATED' ? (status || IpoStatus.UPCOMING) : null,
+            symbol: rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null,
+            isin: rawItem.isin ? rawItem.isin.trim().toUpperCase() : null,
+            priceBandLow: priceBand.low,
+            priceBandHigh: priceBand.high,
+            lotSize: lotSize,
+            faceValue: faceValue,
+            issueSize: issueSize,
+            freshIssueSize: freshIssueSize,
+            ofsSize: ofsSize,
+            listingPrice:
+              (action === 'CREATED' && (status || IpoStatus.UPCOMING) === IpoStatus.LISTED) ||
+              (action === 'UPDATED' && match.matchedIpo?.status === IpoStatus.LISTED)
+                ? listingPrice
+                : null,
+            openDate: openDate || null,
+            closeDate: closeDate || null,
+            allotmentDate: allotmentDate || null,
+            refundDate: refundDate || null,
+            listingDate: listingDate || null,
+            registrarName: registrar || null,
+          },
+        );
+      }
 
       return {
         guruName,
         action,
         ipoId,
+        companyId,
+        targetStatus: targetStatusResult,
         companyName: match.matchedIpo ? match.matchedIpo.company.displayName : guruName,
         matchedBy: match.matchedBy,
         updatedFields,
@@ -1537,13 +1619,30 @@ export class IpoGuruService {
 
     // 2. Match by exact normalized legal/display name
     if (rawNormName) {
-      const nameMatches: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>> = [];
+      let nameMatches: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>> = [];
       for (const ipo of existingIpos) {
         const legalNorm = ipo.company?.legalName ? this.normalizeCompanyName(ipo.company.legalName) : '';
         const displayNorm = ipo.company?.displayName ? this.normalizeCompanyName(ipo.company.displayName) : '';
         if (legalNorm === rawNormName || displayNorm === rawNormName) {
           nameMatches.push(ipo);
         }
+      }
+
+      // Date-proximity guard: if rawItem has open or listing dates and candidates have dates, filter out those >180 days apart
+      const rawDate = this.parseDate(
+        rawItem.open_date || rawItem.timeline?.open_date || rawItem.listing_date || rawItem.timeline?.listing_date,
+      );
+      if (rawDate && nameMatches.length > 0) {
+        const MAX_DIFF_MS = 180 * 24 * 60 * 60 * 1000;
+        nameMatches = nameMatches.filter((cand) => {
+          const candEvents = (cand as any).lifecycleEvents as Array<{ eventType: string; eventDate: Date }> | undefined;
+          if (!candEvents || candEvents.length === 0) return true;
+          const candDates = candEvents
+            .filter((e) => (e.eventType === 'OPEN' || e.eventType === 'LISTING') && e.eventDate)
+            .map((e) => new Date(e.eventDate).getTime());
+          if (candDates.length === 0) return true;
+          return candDates.some((cd) => Math.abs(cd - rawDate.getTime()) <= MAX_DIFF_MS);
+        });
       }
 
       if (nameMatches.length === 1) {
@@ -1555,32 +1654,6 @@ export class IpoGuruService {
           ambiguousCandidates: nameMatches.map((m) => `${m.company?.displayName || m.company?.legalName || m.id} (ID: ${m.id})`),
           ambiguousCandidateObjects: nameMatches,
         };
-      }
-
-      // 3. Match by token containment if normalized name length >= 4
-      if (rawNormName.length >= 4) {
-        const tokenMatches: Array<Prisma.IpoGetPayload<{ include: { company: true; sourceIdentities: true } }>> = [];
-        for (const ipo of existingIpos) {
-          const legalNorm = ipo.company?.legalName ? this.normalizeCompanyName(ipo.company.legalName) : '';
-          const displayNorm = ipo.company?.displayName ? this.normalizeCompanyName(ipo.company.displayName) : '';
-          if (
-            (legalNorm.length >= 4 && (legalNorm.includes(rawNormName) || rawNormName.includes(legalNorm))) ||
-            (displayNorm.length >= 4 && (displayNorm.includes(rawNormName) || rawNormName.includes(displayNorm)))
-          ) {
-            tokenMatches.push(ipo);
-          }
-        }
-
-        if (tokenMatches.length === 1) {
-          return { matchedIpo: tokenMatches[0], matchedBy: 'NAME' };
-        } else if (tokenMatches.length > 1) {
-          return {
-            matchedIpo: null,
-            matchedBy: 'AMBIGUOUS',
-            ambiguousCandidates: tokenMatches.map((m) => `${m.company?.displayName || m.company?.legalName || m.id} (ID: ${m.id})`),
-            ambiguousCandidateObjects: tokenMatches,
-          };
-        }
       }
     }
 
@@ -1739,28 +1812,42 @@ export class IpoGuruService {
     return isNaN(num) ? null : new Prisma.Decimal(num);
   }
 
-  private parsePriceBand(
+  public parsePriceBand(
     priceBandStr?: string | null,
     lo?: unknown,
     hi?: unknown,
     priceMin?: unknown,
     priceMax?: unknown,
-  ): { low: Prisma.Decimal | null; high: Prisma.Decimal | null } {
+  ): { low: Prisma.Decimal | null; high: Prisma.Decimal | null; wasInverted: boolean } {
+    let low: Prisma.Decimal | null = null;
+    let high: Prisma.Decimal | null = null;
+
     if (priceBandStr && typeof priceBandStr === 'string' && priceBandStr.trim()) {
       const clean = priceBandStr.replace(/₹|,/g, '').trim();
       if (clean.includes('-')) {
         const [lowPart, highPart] = clean.split('-');
-        return {
-          low: this.parseDecimal(lowPart),
-          high: this.parseDecimal(highPart),
-        };
+        low = this.parseDecimal(lowPart);
+        high = this.parseDecimal(highPart);
+      } else {
+        const single = this.parseDecimal(clean);
+        low = single;
+        high = single;
       }
-      const single = this.parseDecimal(clean);
-      return { low: single, high: single };
+    } else {
+      low = this.parseDecimal(lo) ?? this.parseDecimal(priceMin);
+      high = this.parseDecimal(hi) ?? this.parseDecimal(priceMax);
     }
-    const low = this.parseDecimal(lo) ?? this.parseDecimal(priceMin);
-    const high = this.parseDecimal(hi) ?? this.parseDecimal(priceMax);
-    return { low, high };
+
+    let wasInverted = false;
+    // Defensive normalization: if low > high, swap them to prevent database check constraint violations
+    if (low != null && high != null && low.greaterThan(high)) {
+      wasInverted = true;
+      const temp = low;
+      low = high;
+      high = temp;
+    }
+
+    return { low, high, wasInverted };
   }
 
   private parseMarketSegment(typeStr?: string | null): MarketSegment {

@@ -37,6 +37,13 @@ const FIELD_TO_SECTIONS_MAP: Record<EnrichableField, SebiSectionKey[]> = {
 export class EnrichmentOrchestratorService {
   private readonly logger = new Logger(EnrichmentOrchestratorService.name);
   private readonly activeIpoJobs = new Set<string>();
+  private readonly enrichmentQueue: Array<{
+    ipoId: string;
+    options?: { forceRefresh?: boolean };
+  }> = [];
+  private readonly queuedIpoIds = new Set<string>();
+  private activeWorkers = 0;
+  private readonly MAX_CONCURRENCY = 2;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -47,7 +54,8 @@ export class EnrichmentOrchestratorService {
   ) {}
 
   /**
-   * Asynchronously enqueues missing-field enrichment for an IPO with deduplication.
+   * Asynchronously enqueues missing-field enrichment for an IPO with deduplication
+   * and strict concurrency cap (max 2 parallel workers).
    *
    * Never runs on the hot mobile read path.
    */
@@ -55,20 +63,49 @@ export class EnrichmentOrchestratorService {
     ipoId: string,
     options?: { forceRefresh?: boolean },
   ): Promise<void> {
-    if (this.activeIpoJobs.has(ipoId)) {
+    if (this.activeIpoJobs.has(ipoId) || this.queuedIpoIds.has(ipoId)) {
       this.logger.debug(
-        `Enrichment job already in progress for IPO '${ipoId}'. Skipping duplicate enqueue.`,
+        `Enrichment job already in progress or queued for IPO '${ipoId}'. Skipping duplicate enqueue.`,
       );
       return;
     }
 
-    // Fire & forget background execution with error boundary
-    setImmediate(() => {
-      this.processIpoEnrichment(ipoId, options).catch((err) => {
+    this.queuedIpoIds.add(ipoId);
+    this.enrichmentQueue.push({ ipoId, options });
+    this.processNextInQueue();
+  }
+
+  private processNextInQueue(): void {
+    if (this.activeWorkers >= this.MAX_CONCURRENCY || this.enrichmentQueue.length === 0) {
+      return;
+    }
+
+    const next = this.enrichmentQueue.shift();
+    if (!next) return;
+
+    this.activeWorkers++;
+    this.activeIpoJobs.add(next.ipoId);
+    this.queuedIpoIds.delete(next.ipoId);
+
+    setImmediate(async () => {
+      try {
+        await this.processIpoEnrichment(next.ipoId, next.options);
+      } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Background enrichment error for IPO '${ipoId}': ${msg}`);
-      });
+        this.logger.error(`Background enrichment error for IPO '${next.ipoId}': ${msg}`);
+      } finally {
+        this.activeWorkers--;
+        this.processNextInQueue();
+      }
     });
+  }
+
+  public getQueueStats(): { active: number; queued: number; inFlight: number } {
+    return {
+      active: this.activeWorkers,
+      queued: this.enrichmentQueue.length,
+      inFlight: this.activeIpoJobs.size,
+    };
   }
 
   /**

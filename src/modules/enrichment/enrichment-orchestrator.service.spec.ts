@@ -490,4 +490,53 @@ describe('EnrichmentOrchestratorService', () => {
       }),
     );
   });
+
+  it('should enforce concurrency cap of 2 and deduplicate already queued or in-flight jobs', async () => {
+    let unblock1: () => void = () => {};
+    let unblock2: () => void = () => {};
+
+    // Mock processIpoEnrichment behavior by spying on it
+    let activeCount = 0;
+    let maxSeenActive = 0;
+
+    jest.spyOn(orchestrator, 'processIpoEnrichment').mockImplementation(async (ipoId: string) => {
+      activeCount++;
+      if (activeCount > maxSeenActive) maxSeenActive = activeCount;
+      if (ipoId === 'job-1') {
+        await new Promise<void>((resolve) => { unblock1 = resolve; });
+      } else if (ipoId === 'job-2') {
+        await new Promise<void>((resolve) => { unblock2 = resolve; });
+      }
+      activeCount--;
+      return { ipoId, status: 'COMPLETED' } as any;
+    });
+
+    // Enqueue 4 distinct IPOs
+    await orchestrator.enqueueIpoEnrichment('job-1');
+    await orchestrator.enqueueIpoEnrichment('job-2');
+    await orchestrator.enqueueIpoEnrichment('job-3');
+    await orchestrator.enqueueIpoEnrichment('job-4');
+
+    // Enqueue duplicate for job-1 and job-3
+    await orchestrator.enqueueIpoEnrichment('job-1');
+    await orchestrator.enqueueIpoEnrichment('job-3');
+
+    // Wait a tick for setImmediate
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const stats = orchestrator.getQueueStats();
+    expect(stats.active).toBeLessThanOrEqual(2);
+    expect(maxSeenActive).toBeLessThanOrEqual(2);
+    expect(stats.queued).toBe(2); // job-3 and job-4 waiting
+
+    // Unblock job-1 and job-2
+    unblock1();
+    unblock2();
+
+    // Wait ticks for queue drain
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(maxSeenActive).toBeLessThanOrEqual(2);
+  });
 });

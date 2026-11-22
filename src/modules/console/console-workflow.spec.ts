@@ -236,9 +236,10 @@ describe('Phase 34.3A — Manual IPO Console Workflow & Reset Safety', () => {
       const html = renderConsoleHtml();
       expect(html).toContain('id="ai-enrichment-modal-overlay"');
       expect(html).toContain('id="ai-enrich-modal-body"');
-      expect(html).toContain('Not Enriched (Document Discovery Blocked)');
-      expect(html).toContain('Protected Fields (Existing Verified Data Preserved)');
-      expect(html).toContain('Unavailable ([●] / NIL in Filing)');
+      expect(html).toContain('Field-Level Reconciliation Audit Report:');
+      expect(html).toContain('Verified Applied');
+      expect(html).toContain('Protected');
+      expect(html).toContain('Unverifiable / Skipped');
     });
 
     it('correctly classifies State 1 (DOCUMENT_UNRESOLVED): missing fields in Not Enriched, NOT Protected Fields', () => {

@@ -158,12 +158,14 @@ export interface IpoGuruSyncItemDetail {
   guruName: string;
   action: IpoGuruSyncAction;
   ipoId?: string;
+  companyId?: string;
   companyName?: string;
   matchedBy?: 'SYMBOL' | 'NAME' | 'DISAMBIGUATED' | 'AMBIGUOUS' | 'NONE';
   reason?: string;
   updatedFields?: string[];
   skippedFields?: IpoGuruSkippedField[];
   publicationStatus?: string;
+  targetStatus?: string;
   error?: string;
 }
 

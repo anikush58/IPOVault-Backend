@@ -1942,5 +1942,191 @@ describe('IpoGuruService', () => {
       expect(result.items[1].guruName).toBe('Succeeding IPO Ltd');
       expect(result.items[1].action).toBe('CREATED');
     });
+
+    it('should defensively normalize inverted price bands so low <= high', () => {
+      const res1 = service.parsePriceBand('144-120');
+      expect(res1.low).not.toBeNull();
+      expect(res1.high).not.toBeNull();
+      expect(res1.low!.toNumber()).toBe(120);
+      expect(res1.high!.toNumber()).toBe(144);
+
+      const res2 = service.parsePriceBand(null, null, null, 754, 718);
+      expect(res2.low!.toNumber()).toBe(718);
+      expect(res2.high!.toNumber()).toBe(754);
+    });
+
+    it('should NOT collide "Atlanta" (2006) with "Atlanta Electricals" or "Sakuma Exports" with "Uma Exports"', () => {
+      const atlantaElectricals = {
+        id: 'ipo-atlanta-elec',
+        companyId: 'comp-atlanta-elec',
+        symbol: null,
+        company: { legalName: 'Atlanta Electricals', displayName: 'Atlanta Electricals' },
+        sourceIdentities: [{ sourceId: 'src-1', externalId: 'atlanta-electricals-ipo', symbol: null }],
+        lifecycleEvents: [{ eventType: 'OPEN', eventDate: new Date('2025-09-22') }],
+      } as any;
+
+      const umaExports = {
+        id: 'ipo-uma-exp',
+        companyId: 'comp-uma-exp',
+        symbol: null,
+        company: { legalName: 'Uma Exports', displayName: 'Uma Exports' },
+        sourceIdentities: [{ sourceId: 'src-1', externalId: 'uma-exports-ipo', symbol: null }],
+        lifecycleEvents: [{ eventType: 'OPEN', eventDate: new Date('2022-03-28') }],
+      } as any;
+
+      const existingIpos = [atlantaElectricals, umaExports];
+
+      // 1. "Atlanta" (2006) must not match "Atlanta Electricals"
+      const matchAtlanta = service.matchIpo(
+        { name: 'Atlanta', slug: 'atlanta-ipo', open_date: '2006-09-01' } as any,
+        existingIpos,
+      );
+      expect(matchAtlanta.matchedIpo).toBeNull();
+      expect(matchAtlanta.matchedBy).toBe('NONE');
+
+      // 2. "Sakuma Exports" (2006) must not match "Uma Exports"
+      const matchSakuma = service.matchIpo(
+        { name: 'Sakuma Exports', slug: 'sakuma-exports-ipo', open_date: '2006-02-08' } as any,
+        existingIpos,
+      );
+      expect(matchSakuma.matchedIpo).toBeNull();
+      expect(matchSakuma.matchedBy).toBe('NONE');
+    });
+
+    it('should reject exact name matches when open/listing dates are > 180 days apart', () => {
+      const historicalIpo = {
+        id: 'ipo-phoenix-2005',
+        companyId: 'comp-phoenix',
+        symbol: null,
+        company: { legalName: 'Phoenix Technologies', displayName: 'Phoenix Technologies' },
+        sourceIdentities: [],
+        lifecycleEvents: [{ eventType: 'OPEN', eventDate: new Date('2005-01-01') }],
+      } as any;
+
+      const match = service.matchIpo(
+        { name: 'Phoenix Technologies', open_date: '2026-01-01' } as any,
+        [historicalIpo],
+      );
+      expect(match.matchedIpo).toBeNull();
+      expect(match.matchedBy).toBe('NONE');
+    });
+
+    it('should be strictly idempotent and return unchangedCount > 0 and updatedCount = 0 when data matches DB', async () => {
+      const openDate = new Date('2026-01-10T00:00:00.000Z');
+      const closeDate = new Date('2026-01-12T00:00:00.000Z');
+      const allotmentDate = new Date('2026-01-15T00:00:00.000Z');
+
+      const existingIpo = {
+        id: 'ipo-idem-1',
+        companyId: 'comp-idem-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.BOTH,
+        status: IpoStatus.OPEN,
+        publicationStatus: PublicationStatus.PUBLISHED,
+        symbol: 'IDEMCORP',
+        priceBandLow: new Prisma.Decimal(100),
+        priceBandHigh: new Prisma.Decimal(110),
+        lotSize: 50,
+        faceValue: new Prisma.Decimal(10),
+        issueSize: new Prisma.Decimal(500),
+        freshIssueSize: null,
+        ofsSize: null,
+        listingPrice: null,
+        company: {
+          id: 'comp-idem-1',
+          legalName: 'Idempotent Corp',
+          displayName: 'Idempotent Corp',
+          logoUrl: 'https://example.com/logo.png',
+        },
+        sourceIdentities: [
+          {
+            sourceId: 'source-ipoguru',
+            externalId: 'idempotent-corp-ipo',
+            symbol: 'IDEMCORP',
+            source: { code: 'IPOGURU' },
+          },
+        ],
+        lifecycleEvents: [
+          { eventType: 'OPEN', eventDate: openDate },
+          { eventType: 'CLOSE', eventDate: closeDate },
+          { eventType: 'BASIS_OF_ALLOTMENT', eventDate: allotmentDate },
+        ],
+        allotmentConfig: {
+          registrar: 'Link Intime',
+          expectedAllotmentDate: allotmentDate,
+        },
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingIpo]);
+
+      const rawIpoPayload = [
+        {
+          name: 'Idempotent Corp',
+          slug: 'idempotent-corp-ipo',
+          symbol: 'IDEMCORP',
+          logo: 'https://example.com/logo.png',
+          type: 'Mainboard',
+          price_band: '100-110',
+          lot_size: '50',
+          face_value: '10',
+          issue_size: '500',
+          open_date: '2026-01-10',
+          close_date: '2026-01-12',
+          allotment_date: '2026-01-15',
+          registrar: 'Link Intime',
+        },
+      ];
+
+      const result = await service.syncIpos('MANUAL', undefined, rawIpoPayload as any);
+
+      expect(result.totalFetchedFromApi).toBe(1);
+      expect(result.insertedCount).toBe(0);
+      expect(result.updatedCount).toBe(0);
+      expect(result.unchangedCount).toBe(1);
+      expect(result.matchedUpdated).toBe(1);
+
+      // Verify zero sub-table upserts and zero main table update
+      expect(mockPrisma._txMock.ipo.update).not.toHaveBeenCalled();
+      expect(mockPrisma._txMock.ipoLifecycleEvent.upsert).not.toHaveBeenCalled();
+      expect(mockPrisma._txMock.ipoAllotmentConfig.upsert).not.toHaveBeenCalled();
+    });
+
+    it('should only enqueue enrichment for active IPOs (UPCOMING/OPEN) and ignore closed/listed IPOs', async () => {
+      const mockEnrichment = {
+        enqueueIpoEnrichment: jest.fn(),
+      };
+
+      const serviceWithEnrichment = new IpoGuruService(
+        { get: configGet } as any,
+        mockPrisma,
+        mockEnrichment as any,
+      );
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([]);
+
+      const rawIpos = [
+        // 1. Historical listed IPO
+        {
+          name: 'Old Listed Co',
+          slug: 'old-listed-co',
+          status: 'Closed',
+          is_listed: true,
+        },
+        // 2. Active open IPO
+        {
+          name: 'Active Open Co',
+          slug: 'active-open-co',
+          status: 'Active',
+          open_date: '2026-11-20',
+          close_date: '2026-11-25',
+        },
+      ];
+
+      await serviceWithEnrichment.syncIpos('MANUAL', undefined, rawIpos as any);
+
+      // Only the active/open IPO should be enqueued for enrichment
+      expect(mockEnrichment.enqueueIpoEnrichment).toHaveBeenCalledTimes(1);
+      expect(mockEnrichment.enqueueIpoEnrichment).toHaveBeenCalledWith('new-ipo-id');
+    });
   });
 });
