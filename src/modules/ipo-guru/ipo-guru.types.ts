@@ -41,6 +41,8 @@ export interface IpoGuruV2Ipo {
   company_name?: string;
   symbol?: string;
   isin?: string;
+  logo?: string | null;
+  logo_url?: string | null;
 
   // Type & status
   type?: string; // 'Mainboard' | 'SME'
@@ -72,6 +74,8 @@ export interface IpoGuruV2Ipo {
   price_band?: string | null; // e.g. "1700-1785"
   price_band_min?: number | string | null;
   price_band_max?: number | string | null;
+  price_min?: number | string | null;
+  price_max?: number | string | null;
   issue_price?: number | string | null;
   listing_price?: number | string | null;
   face_value?: number | string | null; // Optional in v2 list response
@@ -155,12 +159,18 @@ export interface IpoGuruSyncItemDetail {
   action: IpoGuruSyncAction;
   ipoId?: string;
   companyName?: string;
-  matchedBy?: 'SYMBOL' | 'NAME' | 'AMBIGUOUS' | 'NONE';
+  matchedBy?: 'SYMBOL' | 'NAME' | 'DISAMBIGUATED' | 'AMBIGUOUS' | 'NONE';
   reason?: string;
   updatedFields?: string[];
   skippedFields?: IpoGuruSkippedField[];
   publicationStatus?: string;
   error?: string;
+}
+
+export interface IpoGuruSyncFailure {
+  identifier: string;
+  error: string;
+  stage?: string;
 }
 
 export interface IpoGuruSyncResult {
@@ -171,6 +181,13 @@ export interface IpoGuruSyncResult {
   errorCount: number;
   syncedAt: string;
   items: IpoGuruSyncItemDetail[];
+  // Phase 3 structured observability fields
+  totalFetchedFromApi: number;
+  insertedCount: number;
+  updatedCount: number;
+  unchangedCount: number;
+  failedCount: number;
+  failures: IpoGuruSyncFailure[];
 }
 
 // ==========================================

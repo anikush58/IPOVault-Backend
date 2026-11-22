@@ -688,6 +688,11 @@ export class IpoTimelineSchedulerService
       }
       this.lastListingPriceCheckAt.set(ipo.id, now.getTime());
 
+      // If IPO already has a valid listing price stored, use it directly without querying external providers
+      if (ipo.listingPrice && Number(ipo.listingPrice) > 0) {
+        return false;
+      }
+
       // If IPO Guru service is available, query/sync IPO data
       let detectedListingPrice: number | null = null;
 

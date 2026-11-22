@@ -1,6 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import {
+  ExchangeListing,
+  IpoStatus,
+  MarketSegment,
+  Prisma,
+  PublicationStatus,
+} from '@prisma/client';
 import { IpoGuruService } from './ipo-guru.service';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -26,6 +32,7 @@ describe('IpoGuruService', () => {
       },
       company: {
         create: jest.fn().mockResolvedValue({ id: 'new-company-id' }),
+        update: jest.fn().mockResolvedValue({ id: 'comp-1' }),
       },
       ipoSourceIdentity: {
         upsert: jest.fn().mockResolvedValue({ id: 'isi-1' }),
@@ -1781,6 +1788,159 @@ describe('IpoGuruService', () => {
           }),
         }),
       );
+    });
+  });
+
+  // ── Test 9: Robust Data-Sync Enhancements & Observability ──────────────
+
+  describe('Data-Sync Enhancements & Observability (Phases 2 & 3)', () => {
+    it('should deterministically disambiguate candidates preferring PUBLISHED/LISTED over DRAFT stub', async () => {
+      const draftStub = {
+        id: 'stub-1',
+        status: IpoStatus.DRAFT,
+        publicationStatus: PublicationStatus.DRAFT,
+        company: { displayName: 'Swastika Infra Ltd.', legalName: 'Swastika Infra Ltd.' },
+        sourceIdentities: [{ source: { code: 'sebi' }, externalId: '104573' }],
+      } as any;
+      const publishedCanonical = {
+        id: 'canonical-2',
+        status: IpoStatus.LISTED,
+        publicationStatus: PublicationStatus.PUBLISHED,
+        company: { displayName: 'Swastika Infra Limited', legalName: 'Swastika Infra Limited' },
+        sourceIdentities: [{ source: { code: 'ADMIN' }, externalId: 'canonical-2' }],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([draftStub, publishedCanonical]);
+
+      const rawIpo = {
+        name: 'Swastika Infra',
+        slug: 'swastika-infra-ipo',
+        price_band: '80-85',
+        type: 'SME',
+      };
+
+      const result = await service.syncIpos('MANUAL', undefined, [rawIpo]);
+
+      expect(result.matchedUpdated).toBe(1);
+      expect(result.skipped).toBe(0);
+      expect(result.items[0].action).toBe('UPDATED');
+      expect(result.items[0].matchedBy).toBe('DISAMBIGUATED');
+      expect(result.items[0].ipoId).toBe('canonical-2');
+    });
+
+    it('should parse price_min and price_max when price_band string is null/undefined', async () => {
+      const rawIpo = {
+        name: 'Newly Filed Energy Ltd',
+        slug: 'newly-filed-energy',
+        price_min: 150,
+        price_max: 160,
+      };
+
+      const result = await service.syncIpos('MANUAL', undefined, [rawIpo]);
+      expect(result.newlyCreated).toBe(1);
+
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            priceBandLow: new Prisma.Decimal('150'),
+            priceBandHigh: new Prisma.Decimal('160'),
+          }),
+        }),
+      );
+    });
+
+    it('should populate company.logoUrl from API logo when present', async () => {
+      const existingIpo = {
+        id: 'ipo-logo-test',
+        companyId: 'comp-logo-test',
+        marketSegment: MarketSegment.MAINBOARD,
+        status: IpoStatus.OPEN,
+        publicationStatus: PublicationStatus.PUBLISHED,
+        company: {
+          id: 'comp-logo-test',
+          legalName: 'Logo Tech Ltd',
+          displayName: 'Logo Tech Ltd',
+          logoUrl: null,
+        },
+        sourceIdentities: [],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingIpo]);
+
+      const rawIpo = {
+        name: 'Logo Tech Ltd',
+        logo: 'https://www.ipoguru.in/storage/logos/logo-tech.png',
+      };
+
+      const result = await service.syncIpos('MANUAL', undefined, [rawIpo]);
+      expect(result.matchedUpdated).toBe(1);
+
+      const tx = mockPrisma._txMock;
+      expect(tx.company.update).toHaveBeenCalledWith({
+        where: { id: 'comp-logo-test' },
+        data: { logoUrl: 'https://www.ipoguru.in/storage/logos/logo-tech.png' },
+      });
+      expect(result.items[0].updatedFields).toContain('logoUrl');
+    });
+
+    it('should output structured Phase 3 observability counters (totalFetchedFromApi, insertedCount, updatedCount, unchangedCount, failedCount)', async () => {
+      const existingIpo = {
+        id: 'ipo-obs-1',
+        companyId: 'comp-obs-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.BOTH,
+        status: IpoStatus.OPEN,
+        publicationStatus: PublicationStatus.PUBLISHED,
+        company: { id: 'comp-obs-1', legalName: 'Alpha Corp', displayName: 'Alpha Corp' },
+        sourceIdentities: [],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingIpo]);
+
+      const rawIpos = [
+        // 1. Existing IPO with updates
+        { name: 'Alpha Corp', price_band: '200-210' },
+        // 2. New IPO (inserted)
+        { name: 'Beta Innovations Ltd', slug: 'beta-innovations' },
+        // 3. Invalid IPO (empty name -> skipped/unchanged)
+        { name: '' },
+      ];
+
+      const result = await service.syncIpos('MANUAL', undefined, rawIpos as any);
+
+      expect(result.totalFetchedFromApi).toBe(3);
+      expect(result.insertedCount).toBe(1);
+      expect(result.updatedCount).toBe(1);
+      expect(result.unchangedCount).toBe(1);
+      expect(result.failedCount).toBe(0);
+      expect(result.failures).toHaveLength(0);
+    });
+
+    it('should isolate per-record failures so one failing transaction does not abort the rest of the batch', async () => {
+      const rawIpos = [
+        { name: 'Failing IPO Ltd', slug: 'failing-ipo' },
+        { name: 'Succeeding IPO Ltd', slug: 'succeeding-ipo' },
+      ];
+
+      let callCount = 0;
+      mockPrisma.$transaction.mockImplementation(async (callback: any) => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('Database deadlock on Failing IPO');
+        }
+        return callback(mockPrisma._txMock);
+      });
+
+      const result = await service.syncIpos('MANUAL', undefined, rawIpos as any);
+
+      expect(result.totalFetchedFromApi).toBe(2);
+      expect(result.insertedCount).toBe(1);
+      expect(result.failedCount).toBe(1);
+      expect(result.failures[0].identifier).toBe('Failing IPO Ltd');
+      expect(result.failures[0].error).toContain('Database deadlock');
+      expect(result.items[1].guruName).toBe('Succeeding IPO Ltd');
+      expect(result.items[1].action).toBe('CREATED');
     });
   });
 });
