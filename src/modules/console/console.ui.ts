@@ -1450,6 +1450,10 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <i data-feather="database"></i>
           <span>IPO Guru</span>
         </button>
+        <button class="nav-item" id="nav-btn-sync-logs" title="Sync Activity Logs" onclick="switchTab('sync-logs')">
+          <i data-feather="activity"></i>
+          <span>Sync Logs</span>
+        </button>
         <button class="nav-item" id="nav-btn-users" title="User Management" onclick="switchTab('users')">
           <i data-feather="users"></i>
           <span>User Management</span>
@@ -2559,6 +2563,104 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           <div id="ipo-guru-empty" style="text-align:center; padding:48px 16px; color:var(--text-muted);">
             <div style="font-size:32px; margin-bottom:12px;">&#128202;</div>
             <div style="font-weight:600; margin-bottom:6px;">No data fetched yet</div>
+          </div>
+        </div>
+
+        <!-- 9B. SYNC ACTIVITY LOGS TAB -->
+        <div id="tab-sync-logs" class="section-view">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+            <div>
+              <div style="font-weight:700; font-size:17px; color:var(--text-main); margin-bottom:4px;">IPO Guru Sync Activity Logs</div>
+              <div style="font-size:12px; color:var(--text-muted);">
+                Audit log of scheduled and manual IPO Guru data synchronizations, field-level before &rarr; after diffs, and failures.
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-shrink:0; flex-wrap:wrap;">
+              <div class="filter-group" style="display:flex; gap:6px;">
+                <button type="button" class="btn-secondary active" id="sync-filter-all" onclick="filterSyncRuns('ALL')" style="padding:6px 12px; font-size:12px;">All Runs</button>
+                <button type="button" class="btn-secondary" id="sync-filter-auto" onclick="filterSyncRuns('AUTO')" style="padding:6px 12px; font-size:12px;">Auto Only</button>
+                <button type="button" class="btn-secondary" id="sync-filter-manual" onclick="filterSyncRuns('MANUAL')" style="padding:6px 12px; font-size:12px;">Manual Only</button>
+              </div>
+              <button class="btn-primary" onclick="loadSyncLogs(1)" style="padding:6px 14px; font-size:12px;">
+                <i data-feather="refresh-cw"></i>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Sync Runs Table -->
+          <div class="grid-table-box" style="margin-bottom:16px;">
+            <div style="padding:14px 18px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-weight:600; font-size:14px;">Recent Sync Executions</span>
+              <span id="sync-runs-count-badge" style="font-size:12px; color:var(--text-muted);"></span>
+            </div>
+            <div style="overflow-x:auto;">
+              <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                  <tr>
+                    <th style="padding:10px 14px; text-align:left; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Started (IST)</th>
+                    <th style="padding:10px 14px; text-align:left; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Trigger / Slot</th>
+                    <th style="padding:10px 14px; text-align:left; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Status</th>
+                    <th style="padding:10px 14px; text-align:right; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Duration</th>
+                    <th style="padding:10px 14px; text-align:right; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Fetched</th>
+                    <th style="padding:10px 14px; text-align:right; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Added</th>
+                    <th style="padding:10px 14px; text-align:right; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Updated</th>
+                    <th style="padding:10px 14px; text-align:right; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Unchanged</th>
+                    <th style="padding:10px 14px; text-align:right; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Failed</th>
+                    <th style="padding:10px 14px; text-align:center; font-size:11px; text-transform:uppercase; color:var(--text-muted); border-bottom:1px solid var(--border-color);">Details</th>
+                  </tr>
+                </thead>
+                <tbody id="sync-runs-table-body">
+                  <tr><td colspan="10" style="text-align:center; padding:32px; color:var(--text-muted);">Loading sync runs...</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="sync-runs-pagination" style="display:none; padding:12px 18px; border-top:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+              <button class="btn-secondary" id="sync-prev-btn" onclick="prevSyncPage()" style="padding:4px 10px; font-size:12px;">&larr; Previous</button>
+              <span id="sync-page-info" style="font-size:12px; color:var(--text-muted);">Page 1 of 1</span>
+              <button class="btn-secondary" id="sync-next-btn" onclick="nextSyncPage()" style="padding:4px 10px; font-size:12px;">Next &rarr;</button>
+            </div>
+          </div>
+
+          <!-- Sync Run Detail Modal Overlay -->
+          <div id="sync-run-detail-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.75); backdrop-filter:blur(6px); z-index:10000; align-items:center; justify-content:center; padding:20px;">
+            <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; width:100%; max-width:1050px; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3);">
+              <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-card);">
+                <div>
+                  <div style="font-weight:700; font-size:16px; color:var(--text-main); display:flex; align-items:center; gap:10px;">
+                    <span id="sync-detail-title">Sync Run Details</span>
+                    <span id="sync-detail-status-badge"></span>
+                  </div>
+                  <div id="sync-detail-meta" style="font-size:12px; color:var(--text-muted); margin-top:3px;"></div>
+                </div>
+                <button type="button" onclick="closeSyncDetailModal()" style="background:transparent; border:none; cursor:pointer; color:var(--text-muted); font-size:22px; line-height:1;">&times;</button>
+              </div>
+
+              <!-- Filter Pills & Search in Detail Modal -->
+              <div style="padding:12px 20px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; background:var(--bg-surface);">
+                <div style="display:flex; gap:6px;" id="sync-item-action-filters">
+                  <button type="button" class="btn-secondary active" id="sync-item-filter-all" onclick="filterSyncItems('ALL')" style="padding:4px 10px; font-size:11px;">All</button>
+                  <button type="button" class="btn-secondary" id="sync-item-filter-added" onclick="filterSyncItems('ADDED')" style="padding:4px 10px; font-size:11px; color:#10B981;">Added</button>
+                  <button type="button" class="btn-secondary" id="sync-item-filter-updated" onclick="filterSyncItems('UPDATED')" style="padding:4px 10px; font-size:11px; color:#3B82F6;">Updated</button>
+                  <button type="button" class="btn-secondary" id="sync-item-filter-failed" onclick="filterSyncItems('FAILED')" style="padding:4px 10px; font-size:11px; color:#EF4444;">Failed</button>
+                </div>
+                <div style="position:relative; min-width:240px;">
+                  <input type="text" id="sync-detail-search" placeholder="Search by IPO name..." oninput="debounceSyncDetailSearch()" style="width:100%; padding:6px 12px; font-size:12px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-input); color:var(--text-main);" />
+                </div>
+              </div>
+
+              <!-- Detail Modal Body / Scrollable Table -->
+              <div id="sync-detail-items-container" style="padding:16px 20px; overflow-y:auto; flex:1;">
+                <div style="text-align:center; padding:32px; color:var(--text-muted);">Loading items...</div>
+              </div>
+
+              <!-- Detail Modal Footer Pagination -->
+              <div id="sync-detail-pagination" style="padding:10px 20px; border-top:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-card);">
+                <button class="btn-secondary" id="sync-item-prev-btn" onclick="prevSyncItemPage()" style="padding:4px 10px; font-size:12px;">&larr; Previous</button>
+                <span id="sync-item-page-info" style="font-size:12px; color:var(--text-muted);">Page 1 of 1</span>
+                <button class="btn-secondary" id="sync-item-next-btn" onclick="nextSyncItemPage()" style="padding:4px 10px; font-size:12px;">Next &rarr;</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3749,6 +3851,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
         'notifications': 'Notification Delivery Ops',
         'allotment': 'Allotment Check Ops',
         'ipo-guru': 'IPO Guru v2 Inspector',
+        'sync-logs': 'IPO Guru Sync Activity Logs',
         'users': 'User Management',
         'pro-plans': 'Pro Plan Management'
       };
@@ -3763,6 +3866,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       if (tabId === 'notifications') loadNotifications();
       if (tabId === 'allotment') loadAllotment();
       if (tabId === 'ipo-guru') fetchIpoGuruStatus();
+      if (tabId === 'sync-logs') loadSyncLogs(1);
       if (tabId === 'users') loadUsers(1);
       if (tabId === 'pro-plans') loadProPlans();
 
@@ -8733,6 +8837,354 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       }
       var modal = document.getElementById('ai-enrichment-modal-overlay');
       if (modal) modal.style.display = 'none';
+    }
+
+    // ==========================================
+    // SYNC ACTIVITY LOGS SCRIPT
+    // ==========================================
+    var syncCurrentPage = 1;
+    var syncCurrentTrigger = 'ALL';
+    var syncCurrentLimit = 20;
+
+    var syncDetailRunId = null;
+    var syncDetailCurrentAction = 'ALL';
+    var syncDetailSearchQuery = '';
+    var syncDetailCurrentPage = 1;
+    var syncDetailLimit = 50;
+    var syncDetailSearchTimer = null;
+
+    function filterSyncRuns(trigger) {
+      syncCurrentTrigger = trigger;
+      syncCurrentPage = 1;
+      var filterButtons = ['sync-filter-all', 'sync-filter-auto', 'sync-filter-manual'];
+      for (var f = 0; f < filterButtons.length; f++) {
+        var b = document.getElementById(filterButtons[f]);
+        if (b) b.classList.remove('active');
+      }
+      var activeBtn = document.getElementById('sync-filter-' + trigger.toLowerCase());
+      if (activeBtn) activeBtn.classList.add('active');
+      loadSyncLogs(1);
+    }
+
+    async function loadSyncLogs(page) {
+      if (page) syncCurrentPage = page;
+      var tbody = document.getElementById('sync-runs-table-body');
+      var badge = document.getElementById('sync-runs-count-badge');
+      var pagination = document.getElementById('sync-runs-pagination');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:32px; color:var(--text-muted);"><i data-feather="loader" class="spin"></i> Loading sync runs...</td></tr>';
+        if (window.feather) feather.replace();
+      }
+
+      try {
+        var url = API_BASE + '/sync-logs?page=' + syncCurrentPage + '&limit=' + syncCurrentLimit;
+        if (syncCurrentTrigger !== 'ALL') {
+          url += '&trigger=' + encodeURIComponent(syncCurrentTrigger);
+        }
+        var res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var json = await res.json();
+        var runs = json.data || [];
+        var total = json.pagination ? json.pagination.total : runs.length;
+        var totalPages = json.pagination ? json.pagination.totalPages : 1;
+
+        if (badge) badge.textContent = total + ' run(s) logged';
+
+        if (!runs.length) {
+          if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:32px; color:var(--text-muted);">No sync runs recorded yet.</td></tr>';
+          if (pagination) pagination.style.display = 'none';
+          return;
+        }
+
+        var html = '';
+        for (var i = 0; i < runs.length; i++) {
+          var r = runs[i];
+          var d = new Date(r.startedAt);
+          var datePart = !isNaN(d.getTime())
+            ? d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
+            : '-';
+          var timePart = !isNaN(d.getTime())
+            ? d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
+            : '-';
+
+          var triggerBadge = r.trigger === 'AUTO'
+            ? '<span style="display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(79,70,229,0.12); color:#4F46E5; font-weight:600;">AUTO' + (r.slot ? ' (' + escapeHtml(r.slot) + ')' : '') + '</span>'
+            : '<span style="display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(107,114,128,0.15); color:var(--text-main); font-weight:600;">MANUAL</span>';
+
+          var statusBadge = '';
+          if (r.status === 'SUCCESS') {
+            statusBadge = '<span style="display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(16,185,129,0.12); color:#10B981; font-weight:600;">SUCCESS</span>';
+          } else if (r.status === 'PARTIAL_FAILURE') {
+            statusBadge = '<span style="display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(245,158,11,0.12); color:#F59E0B; font-weight:600;">PARTIAL</span>';
+          } else {
+            statusBadge = '<span style="display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(239,68,68,0.12); color:#EF4444; font-weight:600;">FAILED</span>';
+          }
+
+          var durationSec = (r.durationMs / 1000).toFixed(1) + 's';
+
+          var addedDisplay = r.insertedCount > 0
+            ? '<span style="font-weight:700; color:#10B981;">+' + r.insertedCount + '</span>'
+            : '<span style="color:var(--text-muted);">0</span>';
+          var updatedDisplay = r.updatedCount > 0
+            ? '<span style="font-weight:700; color:#3B82F6;">~' + r.updatedCount + '</span>'
+            : '<span style="color:var(--text-muted);">0</span>';
+          var unchangedDisplay = '<span style="color:var(--text-muted);">' + (r.unchangedCount || 0) + '</span>';
+          var failedDisplay = r.failedCount > 0
+            ? '<span style="font-weight:700; color:#EF4444;">!' + r.failedCount + '</span>'
+            : '<span style="color:var(--text-muted);">0</span>';
+
+          html += '<tr style="border-bottom:1px solid var(--border-color);">'
+            + '<td style="padding:10px 14px;"><div style="font-weight:600; font-size:12px; color:var(--text-main);">' + datePart + '</div><div style="font-size:11px; color:var(--text-muted); font-family:monospace;">' + timePart + '</div></td>'
+            + '<td style="padding:10px 14px;">' + triggerBadge + '</td>'
+            + '<td style="padding:10px 14px;">' + statusBadge + '</td>'
+            + '<td style="padding:10px 14px; text-align:right; font-size:12px; font-family:monospace;">' + durationSec + '</td>'
+            + '<td style="padding:10px 14px; text-align:right; font-size:12px; font-weight:600;">' + (r.totalFetched || 0) + '</td>'
+            + '<td style="padding:10px 14px; text-align:right; font-size:12px;">' + addedDisplay + '</td>'
+            + '<td style="padding:10px 14px; text-align:right; font-size:12px;">' + updatedDisplay + '</td>'
+            + '<td style="padding:10px 14px; text-align:right; font-size:12px;">' + unchangedDisplay + '</td>'
+            + '<td style="padding:10px 14px; text-align:right; font-size:12px;">' + failedDisplay + '</td>'
+            + '<td style="padding:10px 14px; text-align:center;">'
+            + '<button class="btn-secondary" style="font-size:11px; padding:4px 9px;" data-run-id="' + escapeHtml(r.id) + '" onclick="viewSyncRunDetails(this.dataset.runId)">View Details</button>'
+            + '</td>'
+            + '</tr>';
+        }
+        if (tbody) tbody.innerHTML = html;
+
+        if (pagination) {
+          pagination.style.display = totalPages > 1 ? 'flex' : 'none';
+          var pageInfo = document.getElementById('sync-page-info');
+          if (pageInfo) pageInfo.textContent = 'Page ' + syncCurrentPage + ' of ' + totalPages;
+          var prevBtn = document.getElementById('sync-prev-btn');
+          if (prevBtn) prevBtn.disabled = syncCurrentPage <= 1;
+          var nextBtn = document.getElementById('sync-next-btn');
+          if (nextBtn) nextBtn.disabled = syncCurrentPage >= totalPages;
+        }
+
+        if (window.feather) feather.replace();
+      } catch (err) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:32px; color:#EF4444;">Failed to load sync activity logs: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
+      }
+    }
+
+    function prevSyncPage() {
+      if (syncCurrentPage > 1) loadSyncLogs(syncCurrentPage - 1);
+    }
+    function nextSyncPage() {
+      loadSyncLogs(syncCurrentPage + 1);
+    }
+
+    async function viewSyncRunDetails(runId) {
+      syncDetailRunId = runId;
+      syncDetailCurrentAction = 'ALL';
+      syncDetailSearchQuery = '';
+      syncDetailCurrentPage = 1;
+
+      var overlay = document.getElementById('sync-run-detail-overlay');
+      var searchInput = document.getElementById('sync-detail-search');
+      if (searchInput) searchInput.value = '';
+
+      var actionFilters = ['sync-item-filter-all', 'sync-item-filter-added', 'sync-item-filter-updated', 'sync-item-filter-failed'];
+      for (var af = 0; af < actionFilters.length; af++) {
+        var b = document.getElementById(actionFilters[af]);
+        if (b) b.classList.remove('active');
+      }
+      var allBtn = document.getElementById('sync-item-filter-all');
+      if (allBtn) allBtn.classList.add('active');
+
+      if (overlay) overlay.style.display = 'flex';
+      await loadSyncRunItems();
+    }
+
+    function closeSyncDetailModal() {
+      var overlay = document.getElementById('sync-run-detail-overlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+
+    function filterSyncItems(action) {
+      syncDetailCurrentAction = action;
+      syncDetailCurrentPage = 1;
+      var actionFilters = ['sync-item-filter-all', 'sync-item-filter-added', 'sync-item-filter-updated', 'sync-item-filter-failed'];
+      for (var af = 0; af < actionFilters.length; af++) {
+        var b = document.getElementById(actionFilters[af]);
+        if (b) b.classList.remove('active');
+      }
+      var btn = document.getElementById('sync-item-filter-' + action.toLowerCase());
+      if (btn) btn.classList.add('active');
+      loadSyncRunItems();
+    }
+
+    function debounceSyncDetailSearch() {
+      if (syncDetailSearchTimer) clearTimeout(syncDetailSearchTimer);
+      syncDetailSearchTimer = setTimeout(function() {
+        var input = document.getElementById('sync-detail-search');
+        syncDetailSearchQuery = input ? input.value.trim() : '';
+        syncDetailCurrentPage = 1;
+        loadSyncRunItems();
+      }, 300);
+    }
+
+    function prevSyncItemPage() {
+      if (syncDetailCurrentPage > 1) {
+        syncDetailCurrentPage--;
+        loadSyncRunItems();
+      }
+    }
+    function nextSyncItemPage() {
+      syncDetailCurrentPage++;
+      loadSyncRunItems();
+    }
+
+    async function loadSyncRunItems() {
+      if (!syncDetailRunId) return;
+      var container = document.getElementById('sync-detail-items-container');
+      if (container) {
+        container.innerHTML = '<div style="text-align:center; padding:32px; color:var(--text-muted);"><i data-feather="loader" class="spin"></i> Loading item diffs...</div>';
+        if (window.feather) feather.replace();
+      }
+
+      try {
+        var url = API_BASE + '/sync-logs/' + encodeURIComponent(syncDetailRunId) + '?page=' + syncDetailCurrentPage + '&limit=' + syncDetailLimit;
+        if (syncDetailCurrentAction !== 'ALL') {
+          url += '&action=' + encodeURIComponent(syncDetailCurrentAction);
+        }
+        if (syncDetailSearchQuery) {
+          url += '&q=' + encodeURIComponent(syncDetailSearchQuery);
+        }
+
+        var res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var json = await res.json();
+        var run = json.run;
+        var items = json.data || [];
+        var total = json.pagination ? json.pagination.total : items.length;
+        var totalPages = json.pagination ? json.pagination.totalPages : 1;
+
+        // Render run header
+        if (run) {
+          var titleEl = document.getElementById('sync-detail-title');
+          var statusBadgeEl = document.getElementById('sync-detail-status-badge');
+          var metaEl = document.getElementById('sync-detail-meta');
+
+          var d = new Date(run.startedAt);
+          var dtStr = !isNaN(d.getTime())
+            ? d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) + ', ' + d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
+            : '-';
+
+          if (titleEl) titleEl.textContent = 'Sync Run: ' + dtStr + ' IST';
+          if (statusBadgeEl) {
+            var color = run.status === 'SUCCESS' ? '#10B981' : run.status === 'PARTIAL_FAILURE' ? '#F59E0B' : '#EF4444';
+            var bg = run.status === 'SUCCESS' ? 'rgba(16,185,129,0.12)' : run.status === 'PARTIAL_FAILURE' ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
+            statusBadgeEl.innerHTML = '<span style="font-size:11px; padding:2px 8px; border-radius:10px; background:' + bg + '; color:' + color + '; font-weight:700;">' + escapeHtml(run.status) + '</span>';
+          }
+          if (metaEl) {
+            metaEl.innerHTML = 'Trigger: <strong>' + escapeHtml(run.trigger) + (run.slot ? ' (' + escapeHtml(run.slot) + ')' : '') + '</strong> &middot; '
+              + 'Duration: <strong>' + (run.durationMs / 1000).toFixed(1) + 's</strong> &middot; '
+              + 'Total Fetched: <strong>' + run.totalFetched + '</strong> &middot; '
+              + '<span style="color:#10B981; font-weight:600;">Added: ' + run.insertedCount + '</span> &middot; '
+              + '<span style="color:#3B82F6; font-weight:600;">Updated: ' + run.updatedCount + '</span> &middot; '
+              + '<span style="color:var(--text-muted);">Unchanged: ' + run.unchangedCount + '</span> &middot; '
+              + '<span style="color:#EF4444; font-weight:600;">Failed: ' + run.failedCount + '</span>';
+          }
+
+          // Update action filter counts
+          var addedBtn = document.getElementById('sync-item-filter-added');
+          if (addedBtn) addedBtn.textContent = 'Added (' + run.insertedCount + ')';
+          var updatedBtn = document.getElementById('sync-item-filter-updated');
+          if (updatedBtn) updatedBtn.textContent = 'Updated (' + run.updatedCount + ')';
+          var failedBtn = document.getElementById('sync-item-filter-failed');
+          if (failedBtn) failedBtn.textContent = 'Failed (' + run.failedCount + ')';
+        }
+
+        if (!items.length) {
+          if (container) {
+            container.innerHTML = '<div style="text-align:center; padding:36px; color:var(--text-muted);">'
+              + (syncDetailCurrentAction === 'ALL' && !syncDetailSearchQuery
+                ? 'All IPOs in this run were identical and unchanged (0 mutations recorded).'
+                : 'No items match the selected filter.')
+              + '</div>';
+          }
+          var pagEl = document.getElementById('sync-detail-pagination');
+          if (pagEl) pagEl.style.display = 'none';
+          return;
+        }
+
+        var html = '<div style="display:flex; flex-direction:column; gap:12px;">';
+        for (var i = 0; i < items.length; i++) {
+          var item = items[i];
+          var actColor = item.action === 'ADDED' ? '#10B981' : item.action === 'UPDATED' ? '#3B82F6' : '#EF4444';
+          var actBg = item.action === 'ADDED' ? 'rgba(16,185,129,0.1)' : item.action === 'UPDATED' ? 'rgba(59,130,246,0.1)' : 'rgba(239,68,68,0.1)';
+
+          html += '<div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:10px; padding:14px 16px;">';
+          // Item Header
+          html += '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">';
+          html += '<div style="display:flex; align-items:center; gap:8px;">';
+          html += '<span style="font-weight:700; font-size:14px; color:var(--text-main);">' + escapeHtml(item.ipoName) + '</span>';
+          if (item.externalSlug) {
+            html += '<span style="font-size:11px; font-family:monospace; background:var(--bg-hover); padding:1px 6px; border-radius:4px; color:var(--text-muted);">' + escapeHtml(item.externalSlug) + '</span>';
+          }
+          html += '</div>';
+          html += '<span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; background:' + actBg + '; color:' + actColor + ';">' + escapeHtml(item.action) + '</span>';
+          html += '</div>';
+
+          // Item Body: Diffs or Error Reason
+          if (item.action === 'FAILED') {
+            html += '<div style="padding:10px 12px; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:8px; color:#DC2626; font-size:12px;">'
+              + '<strong>Error:</strong> ' + escapeHtml(item.errorReason || 'Unknown error during sync')
+              + '</div>';
+          } else if (item.action === 'UPDATED' && item.changes && Array.isArray(item.changes) && item.changes.length > 0) {
+            html += '<div style="overflow-x:auto;">'
+              + '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
+              + '<thead><tr style="border-bottom:1px solid var(--border-color); text-align:left; color:var(--text-muted); font-size:11px; text-transform:uppercase;">'
+              + '<th style="padding:6px 10px; width:220px;">Field</th>'
+              + '<th style="padding:6px 10px;">Previous Value (Before)</th>'
+              + '<th style="padding:6px 10px;">New Value (After)</th>'
+              + '</tr></thead><tbody>';
+            for (var c = 0; c < item.changes.length; c++) {
+              var ch = item.changes[c];
+              var beforeVal = ch.before == null ? '<span style="color:var(--text-muted); font-style:italic;">null</span>' : escapeHtml(String(ch.before));
+              var afterVal = ch.after == null ? '<span style="color:var(--text-muted); font-style:italic;">null</span>' : escapeHtml(String(ch.after));
+              html += '<tr style="border-bottom:1px solid var(--border-color);">'
+                + '<td style="padding:6px 10px; font-weight:600; color:var(--text-main); font-family:monospace;">' + escapeHtml(ch.field) + '</td>'
+                + '<td style="padding:6px 10px; color:#EF4444; font-family:monospace;">' + beforeVal + '</td>'
+                + '<td style="padding:6px 10px; color:#10B981; font-family:monospace; font-weight:600;">' + afterVal + '</td>'
+                + '</tr>';
+            }
+            html += '</tbody></table></div>';
+          } else if (item.action === 'ADDED' && item.changes && Array.isArray(item.changes) && item.changes.length > 0) {
+            html += '<div style="display:flex; flex-wrap:wrap; gap:8px;">';
+            for (var a = 0; a < item.changes.length; a++) {
+              var initField = item.changes[a];
+              html += '<div style="font-size:11px; padding:4px 8px; border-radius:6px; background:var(--bg-hover); border:1px solid var(--border-color);">'
+                + '<span style="color:var(--text-muted);">' + escapeHtml(initField.field) + ':</span> '
+                + '<strong style="color:var(--text-main); font-family:monospace;">' + escapeHtml(String(initField.after != null ? initField.after : '—')) + '</strong>'
+                + '</div>';
+            }
+            html += '</div>';
+          } else {
+            html += '<div style="font-size:12px; color:var(--text-muted); font-style:italic;">No recorded field modifications.</div>';
+          }
+
+          html += '</div>'; // End item box
+        }
+        html += '</div>'; // End items list
+
+        if (container) container.innerHTML = html;
+
+        var detailPagination = document.getElementById('sync-detail-pagination');
+        if (detailPagination) {
+          detailPagination.style.display = totalPages > 1 ? 'flex' : 'none';
+          var detailPageInfo = document.getElementById('sync-item-page-info');
+          if (detailPageInfo) detailPageInfo.textContent = 'Page ' + syncDetailCurrentPage + ' of ' + totalPages + ' (' + total + ' items)';
+          var detailPrevBtn = document.getElementById('sync-item-prev-btn');
+          if (detailPrevBtn) detailPrevBtn.disabled = syncDetailCurrentPage <= 1;
+          var detailNextBtn = document.getElementById('sync-item-next-btn');
+          if (detailNextBtn) detailNextBtn.disabled = syncDetailCurrentPage >= totalPages;
+        }
+
+        if (window.feather) feather.replace();
+      } catch (err) {
+        if (container) container.innerHTML = '<div style="text-align:center; padding:32px; color:#EF4444;">Failed to load sync run items: ' + escapeHtml(err.message || String(err)) + '</div>';
+      }
     }
 
     // Init handled by readyState check

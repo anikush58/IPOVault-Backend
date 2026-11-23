@@ -108,6 +108,17 @@ enum IpoChangeType {
   FIELD_CHANGED
 }
 
+enum SyncTriggerType {
+  AUTO
+  MANUAL
+}
+
+enum SyncItemAction {
+  ADDED
+  UPDATED
+  FAILED
+}
+
 model Company {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   legalName        String   @map("legal_name")
@@ -131,36 +142,36 @@ model Company {
 }
 
 model Ipo {
-  id                     String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId              String            @map("company_id") @db.Uuid
-  marketSegment          MarketSegment     @map("market_segment")
-  exchange               ExchangeListing
-  status                 IpoStatus         @default(DRAFT)
-  publicationStatus      PublicationStatus @default(DRAFT) @map("publication_status")
-  symbol                 String?
-  isin                   String?
-  nseSymbol              String?           @map("nse_symbol")
-  bseSymbol              String?           @map("bse_symbol")
-  issueSize              Decimal?          @map("issue_size") @db.Decimal(20, 2)
-  freshIssueSize         Decimal?          @map("fresh_issue_size") @db.Decimal(20, 2)
-  ofsSize                Decimal?          @map("ofs_size") @db.Decimal(20, 2)
-  issueShareCount        Decimal?          @map("issue_share_count") @db.Decimal(20, 0)
-  freshIssueShareCount   Decimal?          @map("fresh_issue_share_count") @db.Decimal(20, 0)
-  ofsShareCount          Decimal?          @map("ofs_share_count") @db.Decimal(20, 0)
-  faceValue              Decimal?          @map("face_value") @db.Decimal(20, 2)
-  priceBandLow           Decimal?          @map("price_band_low") @db.Decimal(20, 2)
-  priceBandHigh          Decimal?          @map("price_band_high") @db.Decimal(20, 2)
-  lotSize                Int?              @map("lot_size")
-  minimumLots            Int?              @map("minimum_lots")
-  listingPrice           Decimal?          @map("listing_price") @db.Decimal(20, 2)
-  listingGainPct         Decimal?          @map("listing_gain_pct") @db.Decimal(6, 2)
-  profitAmount           Decimal?          @map("profit_amount") @db.Decimal(20, 2)
-  profitPercentage       Decimal?          @map("profit_percentage") @db.Decimal(6, 2)
-  preIpoEps              Decimal?          @map("pre_ipo_eps") @db.Decimal(10, 2)
-  postIpoEps             Decimal?          @map("post_ipo_eps") @db.Decimal(10, 2)
-  preIpoPe               Decimal?          @map("pre_ipo_pe") @db.Decimal(10, 2)
-  postIpoPe              Decimal?          @map("post_ipo_pe") @db.Decimal(10, 2)
-  preIpoPromoterHolding  Decimal?          @map("pre_ipo_promoter_holding") @db.Decimal(6, 2)
+  id                         String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId                  String            @map("company_id") @db.Uuid
+  marketSegment              MarketSegment     @map("market_segment")
+  exchange                   ExchangeListing
+  status                     IpoStatus         @default(DRAFT)
+  publicationStatus          PublicationStatus @default(DRAFT) @map("publication_status")
+  symbol                     String?
+  isin                       String?
+  nseSymbol                  String?           @map("nse_symbol")
+  bseSymbol                  String?           @map("bse_symbol")
+  issueSize                  Decimal?          @map("issue_size") @db.Decimal(20, 2)
+  freshIssueSize             Decimal?          @map("fresh_issue_size") @db.Decimal(20, 2)
+  ofsSize                    Decimal?          @map("ofs_size") @db.Decimal(20, 2)
+  issueShareCount            Decimal?          @map("issue_share_count") @db.Decimal(20, 0)
+  freshIssueShareCount       Decimal?          @map("fresh_issue_share_count") @db.Decimal(20, 0)
+  ofsShareCount              Decimal?          @map("ofs_share_count") @db.Decimal(20, 0)
+  faceValue                  Decimal?          @map("face_value") @db.Decimal(20, 2)
+  priceBandLow               Decimal?          @map("price_band_low") @db.Decimal(20, 2)
+  priceBandHigh              Decimal?          @map("price_band_high") @db.Decimal(20, 2)
+  lotSize                    Int?              @map("lot_size")
+  minimumLots                Int?              @map("minimum_lots")
+  listingPrice               Decimal?          @map("listing_price") @db.Decimal(20, 2)
+  listingGainPct             Decimal?          @map("listing_gain_pct") @db.Decimal(6, 2)
+  profitAmount               Decimal?          @map("profit_amount") @db.Decimal(20, 2)
+  profitPercentage           Decimal?          @map("profit_percentage") @db.Decimal(6, 2)
+  preIpoEps                  Decimal?          @map("pre_ipo_eps") @db.Decimal(10, 2)
+  postIpoEps                 Decimal?          @map("post_ipo_eps") @db.Decimal(10, 2)
+  preIpoPe                   Decimal?          @map("pre_ipo_pe") @db.Decimal(10, 2)
+  postIpoPe                  Decimal?          @map("post_ipo_pe") @db.Decimal(10, 2)
+  preIpoPromoterHolding      Decimal?          @map("pre_ipo_promoter_holding") @db.Decimal(6, 2)
   postIpoPromoterHolding     Decimal?          @map("post_ipo_promoter_holding") @db.Decimal(6, 2)
   preIpoMarketCap            Decimal?          @map("pre_ipo_market_cap") @db.Decimal(20, 2)
   postIpoMarketCap           Decimal?          @map("post_ipo_market_cap") @db.Decimal(20, 2)
@@ -357,6 +368,50 @@ model IpoChangeEvent {
 
   @@index([ipoId, detectedAt])
   @@map("ipo_change_events")
+}
+
+model IpoSyncRun {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source         String          @default("IPOGURU")
+  trigger        SyncTriggerType
+  slot           String?
+  startedAt      DateTime        @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime        @map("completed_at") @db.Timestamptz(6)
+  durationMs     Int             @map("duration_ms")
+  totalFetched   Int             @map("total_fetched")
+  insertedCount  Int             @map("inserted_count")
+  updatedCount   Int             @map("updated_count")
+  unchangedCount Int             @map("unchanged_count")
+  failedCount    Int             @map("failed_count")
+  status         String          @default("SUCCESS")
+  errorMessage   String?         @map("error_message")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  items IpoSyncLogItem[]
+
+  @@index([source, startedAt(sort: Desc)])
+  @@index([trigger, startedAt(sort: Desc)])
+  @@index([startedAt(sort: Desc)])
+  @@map("ipo_sync_runs")
+}
+
+model IpoSyncLogItem {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId        String         @map("run_id") @db.Uuid
+  ipoId        String?        @map("ipo_id") @db.Uuid
+  ipoName      String         @map("ipo_name")
+  externalSlug String?        @map("external_slug")
+  action       SyncItemAction
+  changes      Json?          @db.JsonB
+  errorReason  String?        @map("error_reason")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  run IpoSyncRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, action])
+  @@index([ipoName])
+  @@index([ipoId])
+  @@map("ipo_sync_log_items")
 }
 
 enum AllotmentIdentifierType {
@@ -908,17 +963,17 @@ model UserEntitlement {
 }
 
 model UserEntitlementAuditLog {
-  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  entitlementId String?         @map("entitlement_id") @db.Uuid
-  userId        String          @map("user_id")
-  previousTier  UserAccessTier  @map("previous_tier")
-  newTier       UserAccessTier  @map("new_tier")
-  changedBy     String          @map("changed_by")
-  reason        String?         @db.Text
-  ipAddress     String?         @map("ip_address")
-  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entitlementId String?        @map("entitlement_id") @db.Uuid
+  userId        String         @map("user_id")
+  previousTier  UserAccessTier @map("previous_tier")
+  newTier       UserAccessTier @map("new_tier")
+  changedBy     String         @map("changed_by")
+  reason        String?        @db.Text
+  ipAddress     String?        @map("ip_address")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  entitlement   UserEntitlement? @relation(fields: [entitlementId], references: [id], onDelete: SetNull)
+  entitlement UserEntitlement? @relation(fields: [entitlementId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([createdAt])
@@ -936,6 +991,7 @@ model ConsumedDeletionToken {
   expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
   @@index([expiresAt])
   @@index([status])
   @@map("consumed_deletion_tokens")
@@ -959,7 +1015,7 @@ model ProPlan {
   updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   archivedAt         DateTime?         @map("archived_at") @db.Timestamptz(6)
 
-  benefits           ProPlanBenefit[]
+  benefits ProPlanBenefit[]
 
   @@index([status])
   @@index([displayOrder])
@@ -976,11 +1032,8 @@ model ProPlanBenefit {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  plan         ProPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan ProPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   @@index([planId, displayOrder])
   @@map("pro_plan_benefits")
 }
-
-
-

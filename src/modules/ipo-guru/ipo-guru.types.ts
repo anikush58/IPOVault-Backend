@@ -149,6 +149,12 @@ export interface IpoGuruFetchResult {
 
 export type IpoGuruSyncAction = 'UPDATED' | 'CREATED' | 'SKIPPED' | 'ERROR';
 
+export interface IpoFieldDiff {
+  field: string;
+  before: unknown;
+  after: unknown;
+}
+
 export interface IpoGuruSkippedField {
   field: string;
   reason: string;
@@ -160,9 +166,11 @@ export interface IpoGuruSyncItemDetail {
   ipoId?: string;
   companyId?: string;
   companyName?: string;
+  externalSlug?: string;
   matchedBy?: 'SYMBOL' | 'NAME' | 'DISAMBIGUATED' | 'AMBIGUOUS' | 'NONE';
   reason?: string;
   updatedFields?: string[];
+  diffs?: IpoFieldDiff[];
   skippedFields?: IpoGuruSkippedField[];
   publicationStatus?: string;
   targetStatus?: string;
@@ -190,6 +198,7 @@ export interface IpoGuruSyncResult {
   unchangedCount: number;
   failedCount: number;
   failures: IpoGuruSyncFailure[];
+  runId?: string;
 }
 
 // ==========================================

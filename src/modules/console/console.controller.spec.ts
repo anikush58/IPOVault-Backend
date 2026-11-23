@@ -59,6 +59,8 @@ describe('ConsoleController', () => {
         .fn()
         .mockResolvedValue({ totalDeliveries: 10 }),
       getAllotmentOpsSummary: jest.fn().mockResolvedValue({ totalJobs: 2 }),
+      getSyncRuns: jest.fn().mockResolvedValue({ data: [], pagination: { total: 0 } }),
+      getSyncRunDetails: jest.fn().mockResolvedValue({ run: { id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' }, data: [], pagination: { total: 0 } }),
     };
 
     ipoGuruService = {
@@ -415,6 +417,56 @@ describe('ConsoleController', () => {
       expect(userEntitlementService.updateUserEntitlement).toHaveBeenCalled();
       expect(response.body.data.success).toBe(true);
       expect(response.body.data.tier).toBe('PRO');
+    });
+  });
+
+  describe('Sync Activity Logs Endpoints', () => {
+    it('should delegate listSyncRuns to service.getSyncRuns with pagination and trigger filter', async () => {
+      await controller.listSyncRuns('AUTO', '2', '15');
+      expect(service.getSyncRuns).toHaveBeenCalledWith('AUTO', 2, 15);
+    });
+
+    it('should fallback to safe defaults for listSyncRuns params', async () => {
+      await controller.listSyncRuns(undefined, '-5', 'invalid');
+      expect(service.getSyncRuns).toHaveBeenCalledWith(undefined, 1, 20);
+    });
+
+    it('GET /api/v1/console/api/sync-logs should return HTTP 200 with runs', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/console/api/sync-logs?trigger=MANUAL&page=1&limit=20')
+        .expect(200);
+
+      expect(service.getSyncRuns).toHaveBeenCalledWith('MANUAL', 1, 20);
+      expect(response.body.data).toBeDefined();
+    });
+
+    it('should delegate getSyncRunDetails to service.getSyncRunDetails with filters and UUID validation', async () => {
+      const runUuid = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      await controller.getSyncRunDetails(runUuid, 'UPDATED', 'Tata', '1', '50');
+      expect(service.getSyncRunDetails).toHaveBeenCalledWith(runUuid, 'UPDATED', 'Tata', 1, 50);
+    });
+
+    it('GET /api/v1/console/api/sync-logs/:runId should return HTTP 200 with details', async () => {
+      const runUuid = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/console/api/sync-logs/${runUuid}?action=ADDED`)
+        .expect(200);
+
+      expect(service.getSyncRunDetails).toHaveBeenCalledWith(runUuid, 'ADDED', undefined, 1, 50);
+      expect(response.body.data).toBeDefined();
+    });
+
+    it('should serve Sync Logs navigation item and section view in HTML console UI', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/console')
+        .expect(200);
+
+      expect(response.text).toContain('id="nav-btn-sync-logs"');
+      expect(response.text).toContain("switchTab('sync-logs')");
+      expect(response.text).toContain('id="tab-sync-logs"');
+      expect(response.text).toContain('id="sync-runs-table-body"');
+      expect(response.text).toContain('id="sync-run-detail-overlay"');
+      expect(response.text).toContain('IPO Guru Sync Activity Logs');
     });
   });
 });

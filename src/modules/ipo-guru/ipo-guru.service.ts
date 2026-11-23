@@ -13,12 +13,15 @@ import {
   ParticipantRole,
   Prisma,
   PublicationStatus,
+  SyncItemAction,
+  SyncTriggerType,
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { Env } from '../../config/env';
 import { AdminValidationService } from '../admin/admin-validation.service';
 import { EnrichmentOrchestratorService } from '../enrichment/enrichment-orchestrator.service';
 import {
+  IpoFieldDiff,
   IpoGuruFetchResult,
   IpoGuruSkippedField,
   IpoGuruStatusResponse,
@@ -497,6 +500,7 @@ export class IpoGuruService {
     providedIpos?: IpoGuruV2Ipo[],
     fetchParams?: { months?: number; status?: string; type?: string; limit?: number },
   ): Promise<IpoGuruSyncResult> {
+    const startedAt = new Date();
     let rawIpos: IpoGuruV2Ipo[];
     if (providedIpos && Array.isArray(providedIpos)) {
       rawIpos = providedIpos;
@@ -533,6 +537,30 @@ export class IpoGuruService {
     };
 
     if (rawIpos.length === 0) {
+      try {
+        const completedAt = new Date();
+        const syncRun = await this.prisma.ipoSyncRun.create({
+          data: {
+            source: 'IPOGURU',
+            trigger: mode === 'AUTO' ? SyncTriggerType.AUTO : SyncTriggerType.MANUAL,
+            slot: slot || null,
+            startedAt,
+            completedAt,
+            durationMs: completedAt.getTime() - startedAt.getTime(),
+            totalFetched: 0,
+            insertedCount: 0,
+            updatedCount: 0,
+            unchangedCount: 0,
+            failedCount: 0,
+            status: 'SUCCESS',
+          },
+        });
+        summary.runId = syncRun.id;
+      } catch (logErr: unknown) {
+        this.logger.error(
+          `Failed to persist empty IPO sync run: ${logErr instanceof Error ? logErr.message : String(logErr)}`,
+        );
+      }
       return summary;
     }
 
@@ -661,6 +689,7 @@ export class IpoGuruService {
           guruName,
           action: 'ERROR',
           error: errMsg,
+          externalSlug: (rawItem.slug || (rawItem.id ? String(rawItem.id) : guruName)).trim(),
         });
       }
     }
@@ -675,6 +704,109 @@ export class IpoGuruService {
     this.logger.log(
       `IPO Guru sync finished: ${summary.matchedUpdated} updated, ${summary.newlyCreated} created, ${summary.skipped} skipped, ${summary.errorCount} errors`,
     );
+
+    // Persist Sync Activity Run & Log Items
+    const completedAt = new Date();
+    const durationMs = completedAt.getTime() - startedAt.getTime();
+    const runStatus =
+      summary.failedCount === 0
+        ? 'SUCCESS'
+        : summary.insertedCount > 0 || summary.updatedCount > 0
+          ? 'PARTIAL_FAILURE'
+          : 'FAILED';
+
+    const itemsToPersist: Array<{
+      ipoId?: string | null;
+      guruName: string;
+      externalSlug?: string | null;
+      action: 'ADDED' | 'UPDATED' | 'FAILED';
+      changes?: IpoFieldDiff[] | null;
+      errorReason?: string | null;
+    }> = [];
+
+    for (const item of summary.items) {
+      if (item.action === 'CREATED') {
+        itemsToPersist.push({
+          ipoId: item.ipoId,
+          guruName: item.guruName,
+          externalSlug: item.externalSlug,
+          action: 'ADDED',
+          changes: item.diffs && item.diffs.length > 0 ? item.diffs : null,
+          errorReason: null,
+        });
+      } else if (item.action === 'UPDATED' && item.updatedFields && item.updatedFields.length > 0) {
+        itemsToPersist.push({
+          ipoId: item.ipoId,
+          guruName: item.guruName,
+          externalSlug: item.externalSlug,
+          action: 'UPDATED',
+          changes: item.diffs && item.diffs.length > 0 ? item.diffs : null,
+          errorReason: null,
+        });
+      } else if (item.action === 'ERROR') {
+        itemsToPersist.push({
+          ipoId: item.ipoId,
+          guruName: item.guruName,
+          externalSlug: item.externalSlug,
+          action: 'FAILED',
+          changes: null,
+          errorReason: item.error || item.reason || 'Unknown error',
+        });
+      }
+    }
+
+    try {
+      const syncRun = await this.prisma.ipoSyncRun.create({
+        data: {
+          source: 'IPOGURU',
+          trigger: mode === 'AUTO' ? SyncTriggerType.AUTO : SyncTriggerType.MANUAL,
+          slot: slot || null,
+          startedAt,
+          completedAt,
+          durationMs,
+          totalFetched: summary.totalFetchedFromApi,
+          insertedCount: summary.insertedCount,
+          updatedCount: summary.updatedCount,
+          unchangedCount: summary.unchangedCount,
+          failedCount: summary.failedCount,
+          status: runStatus,
+          errorMessage:
+            summary.failures.length > 0
+              ? summary.failures.map((f) => `${f.identifier}: ${f.error}`).join('; ')
+              : null,
+          items: {
+            createMany: {
+              data: itemsToPersist.map((item) => ({
+                ipoId: item.ipoId || null,
+                ipoName: item.guruName,
+                externalSlug: item.externalSlug || null,
+                action:
+                  item.action === 'ADDED'
+                    ? SyncItemAction.ADDED
+                    : item.action === 'UPDATED'
+                      ? SyncItemAction.UPDATED
+                      : SyncItemAction.FAILED,
+                changes:
+                  item.changes && item.changes.length > 0
+                    ? (item.changes as unknown as Prisma.InputJsonValue)
+                    : Prisma.DbNull,
+                errorReason: item.errorReason || null,
+              })),
+            },
+          },
+        },
+      });
+      summary.runId = syncRun.id;
+
+      // Prune sync runs older than 30 days
+      const retentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      await this.prisma.ipoSyncRun.deleteMany({
+        where: { startedAt: { lt: retentionCutoff } },
+      });
+    } catch (logErr: unknown) {
+      const logErrMsg = logErr instanceof Error ? logErr.message : String(logErr);
+      this.logger.error(`Failed to persist IPO sync run activity log: ${logErrMsg}`);
+    }
 
     return summary;
   }
@@ -827,6 +959,7 @@ export class IpoGuruService {
       async (tx) => {
         const updatedFields: string[] = [];
         const skippedFields: IpoGuruSkippedField[] = [];
+        const diffs: IpoFieldDiff[] = [];
 
         // Parsed fields
         const rawLogo = (rawItem.logo || (rawItem as any).logo_url || '').trim();
@@ -904,6 +1037,7 @@ export class IpoGuruService {
               data: { logoUrl: rawLogo },
             });
             updatedFields.push('logoUrl');
+            diffs.push({ field: 'logoUrl', before: null, after: rawLogo });
           } else {
             skippedFields.push({ field: 'logoUrl', reason: 'Value unchanged' });
           }
@@ -915,6 +1049,7 @@ export class IpoGuruService {
           if (marketSegment !== existingIpo.marketSegment) {
             updateData.marketSegment = marketSegment;
             updatedFields.push('marketSegment');
+            diffs.push({ field: 'marketSegment', before: existingIpo.marketSegment, after: marketSegment });
           } else {
             skippedFields.push({ field: 'marketSegment', reason: 'Value unchanged' });
           }
@@ -1001,6 +1136,11 @@ export class IpoGuruService {
           } else {
             updateData.publicationStatus = PublicationStatus.PUBLISHED;
             updatedFields.push('publicationStatus');
+            diffs.push({
+              field: 'publicationStatus',
+              before: existingIpo.publicationStatus,
+              after: PublicationStatus.PUBLISHED,
+            });
             publicationStatusResult = PublicationStatus.PUBLISHED;
           }
         } else {
@@ -1017,6 +1157,7 @@ export class IpoGuruService {
               : IpoStatus.UPCOMING);
           updateData.status = derivedStatus;
           updatedFields.push('status');
+          diffs.push({ field: 'status', before: existingIpo.status, after: derivedStatus });
         } else {
           // NOTE: Canonical active IPO lifecycle status is authoritative and MUST NEVER be overwritten by IPO Guru.
           skippedFields.push({
@@ -1029,6 +1170,7 @@ export class IpoGuruService {
           if (exchange !== existingIpo.exchange) {
             updateData.exchange = exchange;
             updatedFields.push('exchange');
+            diffs.push({ field: 'exchange', before: existingIpo.exchange, after: exchange });
           } else {
             skippedFields.push({ field: 'exchange', reason: 'Value unchanged' });
           }
@@ -1040,6 +1182,11 @@ export class IpoGuruService {
           if (!existingIpo.priceBandLow || !existingIpo.priceBandLow.equals(priceBand.low)) {
             updateData.priceBandLow = priceBand.low;
             updatedFields.push('priceBandLow');
+            diffs.push({
+              field: 'priceBandLow',
+              before: existingIpo.priceBandLow ? Number(existingIpo.priceBandLow) : null,
+              after: Number(priceBand.low),
+            });
           } else {
             skippedFields.push({ field: 'priceBandLow', reason: 'Value unchanged' });
           }
@@ -1051,6 +1198,11 @@ export class IpoGuruService {
           if (!existingIpo.priceBandHigh || !existingIpo.priceBandHigh.equals(priceBand.high)) {
             updateData.priceBandHigh = priceBand.high;
             updatedFields.push('priceBandHigh');
+            diffs.push({
+              field: 'priceBandHigh',
+              before: existingIpo.priceBandHigh ? Number(existingIpo.priceBandHigh) : null,
+              after: Number(priceBand.high),
+            });
           } else {
             skippedFields.push({ field: 'priceBandHigh', reason: 'Value unchanged' });
           }
@@ -1062,6 +1214,7 @@ export class IpoGuruService {
           if (lotSize !== existingIpo.lotSize) {
             updateData.lotSize = lotSize;
             updatedFields.push('lotSize');
+            diffs.push({ field: 'lotSize', before: existingIpo.lotSize, after: lotSize });
           } else {
             skippedFields.push({ field: 'lotSize', reason: 'Value unchanged' });
           }
@@ -1073,6 +1226,11 @@ export class IpoGuruService {
           if (!existingIpo.faceValue || !existingIpo.faceValue.equals(faceValue)) {
             updateData.faceValue = faceValue;
             updatedFields.push('faceValue');
+            diffs.push({
+              field: 'faceValue',
+              before: existingIpo.faceValue ? Number(existingIpo.faceValue) : null,
+              after: Number(faceValue),
+            });
           } else {
             skippedFields.push({ field: 'faceValue', reason: 'Value unchanged' });
           }
@@ -1084,6 +1242,11 @@ export class IpoGuruService {
           if (!existingIpo.issueSize || !existingIpo.issueSize.equals(issueSize)) {
             updateData.issueSize = issueSize;
             updatedFields.push('issueSize');
+            diffs.push({
+              field: 'issueSize',
+              before: existingIpo.issueSize ? Number(existingIpo.issueSize) : null,
+              after: Number(issueSize),
+            });
           } else {
             skippedFields.push({ field: 'issueSize', reason: 'Value unchanged' });
           }
@@ -1095,6 +1258,11 @@ export class IpoGuruService {
           if (!existingIpo.freshIssueSize || !existingIpo.freshIssueSize.equals(freshIssueSize)) {
             updateData.freshIssueSize = freshIssueSize;
             updatedFields.push('freshIssueSize');
+            diffs.push({
+              field: 'freshIssueSize',
+              before: existingIpo.freshIssueSize ? Number(existingIpo.freshIssueSize) : null,
+              after: Number(freshIssueSize),
+            });
           } else {
             skippedFields.push({ field: 'freshIssueSize', reason: 'Value unchanged' });
           }
@@ -1106,6 +1274,11 @@ export class IpoGuruService {
           if (!existingIpo.ofsSize || !existingIpo.ofsSize.equals(ofsSize)) {
             updateData.ofsSize = ofsSize;
             updatedFields.push('ofsSize');
+            diffs.push({
+              field: 'ofsSize',
+              before: existingIpo.ofsSize ? Number(existingIpo.ofsSize) : null,
+              after: Number(ofsSize),
+            });
           } else {
             skippedFields.push({ field: 'ofsSize', reason: 'Value unchanged' });
           }
@@ -1148,6 +1321,11 @@ export class IpoGuruService {
             updateData.profitAmount = new Prisma.Decimal(profit);
           }
           updatedFields.push('listingPrice');
+          diffs.push({
+            field: 'listingPrice',
+            before: existingIpo.listingPrice ? Number(existingIpo.listingPrice) : null,
+            after: Number(listingPrice),
+          });
         }
 
         const cleanSymbol = rawItem.symbol ? rawItem.symbol.trim().toUpperCase() : null;
@@ -1162,6 +1340,11 @@ export class IpoGuruService {
             );
           if (!hasMatchingSymbol) {
             updatedFields.push('sourceIdentitySymbol');
+            diffs.push({
+              field: 'symbol',
+              before: existingIpo.symbol || null,
+              after: cleanSymbol,
+            });
           } else {
             skippedFields.push({ field: 'symbol', reason: 'Value unchanged' });
           }
@@ -1257,6 +1440,31 @@ export class IpoGuruService {
         ipoId = newIpo.id;
         updatedFields.push('company', 'ipo');
         if (rawItem.symbol) updatedFields.push('sourceIdentitySymbol');
+
+        diffs.push({ field: 'status', before: null, after: targetStatusResult });
+        diffs.push({ field: 'publicationStatus', before: null, after: publicationStatusResult });
+        if (priceBand.low != null || priceBand.high != null) {
+          diffs.push({
+            field: 'priceBand',
+            before: null,
+            after: `${priceBand.low ?? '—'} - ${priceBand.high ?? '—'}`,
+          });
+        }
+        if (lotSize != null) {
+          diffs.push({ field: 'lotSize', before: null, after: lotSize });
+        }
+        if (openDate) {
+          diffs.push({ field: 'openDate', before: null, after: openDate.toISOString().slice(0, 10) });
+        }
+        if (closeDate) {
+          diffs.push({ field: 'closeDate', before: null, after: closeDate.toISOString().slice(0, 10) });
+        }
+        if (listingDate) {
+          diffs.push({ field: 'listingDate', before: null, after: listingDate.toISOString().slice(0, 10) });
+        }
+        if (rawItem.registrar) {
+          diffs.push({ field: 'registrar', before: null, after: rawItem.registrar.trim() });
+        }
 
         if (!priceBand.low) skippedFields.push({ field: 'priceBandLow', reason: 'Not provided in payload' });
         if (!priceBand.high) skippedFields.push({ field: 'priceBandHigh', reason: 'Not provided in payload' });
@@ -1358,6 +1566,13 @@ export class IpoGuruService {
             create: { ipoId, eventType: 'OPEN', eventDate: openDate, sourceId },
           });
           updatedFields.push('openDate');
+          if (action === 'UPDATED') {
+            diffs.push({
+              field: 'openDate',
+              before: existingOpen?.eventDate ? new Date(existingOpen.eventDate).toISOString().slice(0, 10) : null,
+              after: openDate.toISOString().slice(0, 10),
+            });
+          }
         } else {
           skippedFields.push({ field: 'openDate', reason: 'Value unchanged' });
         }
@@ -1375,6 +1590,13 @@ export class IpoGuruService {
             create: { ipoId, eventType: 'CLOSE', eventDate: closeDate, sourceId },
           });
           updatedFields.push('closeDate');
+          if (action === 'UPDATED') {
+            diffs.push({
+              field: 'closeDate',
+              before: existingClose?.eventDate ? new Date(existingClose.eventDate).toISOString().slice(0, 10) : null,
+              after: closeDate.toISOString().slice(0, 10),
+            });
+          }
         } else {
           skippedFields.push({ field: 'closeDate', reason: 'Value unchanged' });
         }
@@ -1392,6 +1614,13 @@ export class IpoGuruService {
             create: { ipoId, eventType: 'BASIS_OF_ALLOTMENT', eventDate: allotmentDate, sourceId },
           });
           updatedFields.push('allotmentDate');
+          if (action === 'UPDATED') {
+            diffs.push({
+              field: 'allotmentDate',
+              before: existingAllotment?.eventDate ? new Date(existingAllotment.eventDate).toISOString().slice(0, 10) : null,
+              after: allotmentDate.toISOString().slice(0, 10),
+            });
+          }
         } else {
           skippedFields.push({ field: 'allotmentDate', reason: 'Value unchanged' });
         }
@@ -1409,6 +1638,13 @@ export class IpoGuruService {
             create: { ipoId, eventType: 'REFUND_INITIATION', eventDate: refundDate, sourceId },
           });
           updatedFields.push('refundDate');
+          if (action === 'UPDATED') {
+            diffs.push({
+              field: 'refundDate',
+              before: existingRefund?.eventDate ? new Date(existingRefund.eventDate).toISOString().slice(0, 10) : null,
+              after: refundDate.toISOString().slice(0, 10),
+            });
+          }
         } else {
           skippedFields.push({ field: 'refundDate', reason: 'Value unchanged' });
         }
@@ -1426,6 +1662,13 @@ export class IpoGuruService {
             create: { ipoId, eventType: 'LISTING', eventDate: listingDate, sourceId },
           });
           updatedFields.push('listingDate');
+          if (action === 'UPDATED') {
+            diffs.push({
+              field: 'listingDate',
+              before: existingListing?.eventDate ? new Date(existingListing.eventDate).toISOString().slice(0, 10) : null,
+              after: listingDate.toISOString().slice(0, 10),
+            });
+          }
         } else {
           skippedFields.push({ field: 'listingDate', reason: 'Value unchanged' });
         }
@@ -1479,6 +1722,13 @@ export class IpoGuruService {
             });
           }
           updatedFields.push('registrar');
+          if (action === 'UPDATED') {
+            diffs.push({
+              field: 'registrar',
+              before: existingCfg?.registrar || null,
+              after: registrar,
+            });
+          }
         } else {
           skippedFields.push({ field: 'registrar', reason: 'Value unchanged' });
         }
@@ -1611,8 +1861,10 @@ export class IpoGuruService {
         companyId,
         targetStatus: targetStatusResult,
         companyName: match.matchedIpo ? match.matchedIpo.company.displayName : guruName,
+        externalSlug: (rawItem.slug || (rawItem.id ? String(rawItem.id) : guruName)).trim(),
         matchedBy: match.matchedBy,
         updatedFields,
+        diffs,
         skippedFields,
         publicationStatus: publicationStatusResult,
       };

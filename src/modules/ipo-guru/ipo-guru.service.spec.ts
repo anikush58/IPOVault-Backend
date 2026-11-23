@@ -77,6 +77,10 @@ describe('IpoGuruService', () => {
       discoveryRecord: {
         create: jest.fn().mockResolvedValue({ id: 'dr-1' }),
       },
+      ipoSyncRun: {
+        create: jest.fn().mockImplementation((args) => Promise.resolve({ id: 'mock-sync-run-uuid', ...args.data })),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       $transaction: jest.fn((callback) => callback(txMock)),
       _txMock: txMock,
     };
@@ -2268,6 +2272,189 @@ describe('IpoGuruService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('Sync Activity Run & Field-Level Diff Logging', () => {
+    it('should persist IpoSyncRun and IpoSyncLogItems with field diffs on mutations', async () => {
+      const existingIpo = {
+        id: 'ipo-existing-1',
+        companyId: 'comp-1',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.BOTH,
+        status: IpoStatus.UPCOMING,
+        publicationStatus: PublicationStatus.PUBLISHED,
+        symbol: 'OLD',
+        priceBandLow: new Prisma.Decimal('100.00'),
+        priceBandHigh: new Prisma.Decimal('120.00'),
+        lotSize: 100,
+        company: { displayName: 'Existing Co', legalName: 'Existing Company Ltd' },
+        sourceIdentities: [],
+        lifecycleEvents: [],
+        allotmentConfig: { registrar: 'Old Registrar' },
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingIpo]);
+
+      const rawIpos = [
+        // 1. Updated IPO
+        {
+          name: 'Existing Co',
+          slug: 'existing-co',
+          symbol: 'NEW',
+          price_band: '110-130',
+          price_band_min: '110',
+          price_band_max: '130',
+          lot_size: 150,
+          registrar: 'New Registrar',
+          status: 'upcoming',
+        },
+        // 2. Newly Created IPO
+        {
+          name: 'Brand New IPO Ltd',
+          slug: 'brand-new-ipo',
+          symbol: 'NEWIPO',
+          price_band: '200-220',
+          lot_size: 50,
+          open_date: '2026-12-01',
+          close_date: '2026-12-03',
+          registrar: 'Link Intime',
+          status: 'upcoming',
+        },
+      ];
+
+      const result = await service.syncIpos('AUTO', '10:00', rawIpos as any);
+
+      expect(result.runId).toBe('mock-sync-run-uuid');
+      expect(result.insertedCount).toBe(1);
+      expect(result.updatedCount).toBe(1);
+      expect(result.failedCount).toBe(0);
+
+      // Verify IpoSyncRun was created
+      expect(mockPrisma.ipoSyncRun.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            source: 'IPOGURU',
+            trigger: 'AUTO',
+            slot: '10:00',
+            totalFetched: 2,
+            insertedCount: 1,
+            updatedCount: 1,
+            unchangedCount: 0,
+            failedCount: 0,
+            status: 'SUCCESS',
+            items: {
+              createMany: {
+                data: expect.arrayContaining([
+                  expect.objectContaining({
+                    ipoName: 'Existing Co',
+                    externalSlug: 'existing-co',
+                    action: 'UPDATED',
+                    changes: expect.arrayContaining([
+                      expect.objectContaining({ field: 'priceBandLow', before: 100, after: 110 }),
+                      expect.objectContaining({ field: 'priceBandHigh', before: 120, after: 130 }),
+                      expect.objectContaining({ field: 'lotSize', before: 100, after: 150 }),
+                      expect.objectContaining({ field: 'registrar', before: 'Old Registrar', after: 'New Registrar' }),
+                    ]),
+                  }),
+                  expect.objectContaining({
+                    ipoName: 'Brand New IPO Ltd',
+                    externalSlug: 'brand-new-ipo',
+                    action: 'ADDED',
+                    changes: expect.arrayContaining([
+                      expect.objectContaining({ field: 'status', after: 'UPCOMING' }),
+                      expect.objectContaining({ field: 'priceBand', after: '200 - 220' }),
+                      expect.objectContaining({ field: 'lotSize', after: 50 }),
+                      expect.objectContaining({ field: 'registrar', after: 'Link Intime' }),
+                    ]),
+                  }),
+                ]),
+              },
+            },
+          }),
+        }),
+      );
+
+      // Verify retention cleanup was executed
+      expect(mockPrisma.ipoSyncRun.deleteMany).toHaveBeenCalledWith({
+        where: { startedAt: { lt: expect.any(Date) } },
+      });
+    });
+
+    it('should exclude UNCHANGED IPOs from persisted items list', async () => {
+      const existingIpo = {
+        id: 'ipo-existing-unchanged',
+        companyId: 'comp-unchanged',
+        marketSegment: MarketSegment.MAINBOARD,
+        exchange: ExchangeListing.BOTH,
+        status: IpoStatus.UPCOMING,
+        publicationStatus: PublicationStatus.PUBLISHED,
+        symbol: 'SAME',
+        priceBandLow: new Prisma.Decimal('100.00'),
+        priceBandHigh: new Prisma.Decimal('100.00'),
+        lotSize: 100,
+        company: { displayName: 'Unchanged Co', legalName: 'Unchanged Co' },
+        sourceIdentities: [{ sourceId: 'source-ipoguru', externalId: 'unchanged-co', symbol: 'SAME' }],
+        lifecycleEvents: [],
+        allotmentConfig: { registrar: 'Same Registrar' },
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingIpo]);
+
+      const rawIpos = [
+        {
+          name: 'Unchanged Co',
+          slug: 'unchanged-co',
+          symbol: 'SAME',
+          price_band: '100',
+          lot_size: 100,
+          registrar: 'Same Registrar',
+          status: 'upcoming',
+        },
+      ];
+
+      const result = await service.syncIpos('MANUAL', undefined, rawIpos as any);
+
+      expect(result.unchangedCount).toBe(1);
+      expect(result.updatedCount).toBe(0);
+      expect(result.insertedCount).toBe(0);
+
+      // Verify IpoSyncRun was created with 0 log items (unchanged excluded)
+      expect(mockPrisma.ipoSyncRun.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            totalFetched: 1,
+            unchangedCount: 1,
+            insertedCount: 0,
+            updatedCount: 0,
+            failedCount: 0,
+            items: {
+              createMany: {
+                data: [],
+              },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('should capture failed IPO items and not roll back the sync if log persistence fails', async () => {
+      // Mock log persistence failure
+      mockPrisma.ipoSyncRun.create.mockRejectedValueOnce(new Error('DB storage quota exceeded on logs'));
+
+      const rawIpos = [
+        {
+          name: 'Some IPO',
+          slug: 'some-ipo',
+          status: 'upcoming',
+        },
+      ];
+
+      // Should complete gracefully without throwing error
+      const result = await service.syncIpos('MANUAL', undefined, rawIpos as any);
+
+      expect(result.totalFetched).toBe(1);
+      expect(result.insertedCount).toBe(1);
     });
   });
 });

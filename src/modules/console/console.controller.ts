@@ -501,6 +501,42 @@ export class ConsoleController {
   }
 
   /**
+   * Paginated list of recent IPO sync runs for the Sync Activity Logs tab.
+   */
+  @Get('api/sync-logs')
+  async listSyncRuns(
+    @Query('trigger') trigger?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedPage = parseInt(page || '', 10);
+    const parsedLimit = parseInt(limit || '', 10);
+    const safePage = isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+    const safeLimit = isNaN(parsedLimit) || parsedLimit < 1 ? 20 : Math.min(parsedLimit, 100);
+
+    return this.consoleService.getSyncRuns(trigger, safePage, safeLimit);
+  }
+
+  /**
+   * Detailed IPO items with field-level diffs for a specific sync run.
+   */
+  @Get('api/sync-logs/:runId')
+  async getSyncRunDetails(
+    @Param('runId', new ParseUUIDPipe({ version: '4' })) runId: string,
+    @Query('action') action?: string,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedPage = parseInt(page || '', 10);
+    const parsedLimit = parseInt(limit || '', 10);
+    const safePage = isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+    const safeLimit = isNaN(parsedLimit) || parsedLimit < 1 ? 50 : Math.min(parsedLimit, 200);
+
+    return this.consoleService.getSyncRunDetails(runId, action, q, safePage, safeLimit);
+  }
+
+  /**
    * Manually checks all IPOs in ALLOTMENT_PENDING status with official registrar lookup
    * and automatically transitions confirmed IPOs to ALLOTMENT_COMPLETED (Allotment Out).
    */

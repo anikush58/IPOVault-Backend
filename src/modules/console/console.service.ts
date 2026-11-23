@@ -1,9 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { IpoService } from '../ipos/ipo.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { NotificationDeliveryOperationsService } from '../notifications/notification-delivery-operations.service';
-import { ExchangeListing, IpoStatus, MarketSegment, Prisma, SourceType } from '@prisma/client';
+import {
+  ExchangeListing,
+  IpoStatus,
+  MarketSegment,
+  Prisma,
+  SourceType,
+  SyncItemAction,
+  SyncTriggerType,
+} from '@prisma/client';
 import {
   ConsoleDashboardSummaryDto,
   ConsoleDataQualitySummaryDto,
@@ -394,6 +402,78 @@ export class ConsoleService {
         (obsCounts['ALLOTTED'] || 0) + (obsCounts['PARTIALLY_ALLOTTED'] || 0),
       jobStatusBreakdown: jobCounts,
       observationOutcomeBreakdown: obsCounts,
+    };
+  }
+
+  /**
+   * Paginated list of IPO sync runs for the Sync Activity Logs tab.
+   */
+  async getSyncRuns(trigger?: string, page = 1, limit = 20) {
+    const where: Prisma.IpoSyncRunWhereInput = {};
+    if (trigger && (trigger === 'AUTO' || trigger === 'MANUAL')) {
+      where.trigger = trigger as SyncTriggerType;
+    }
+    const [total, runs] = await Promise.all([
+      this.prisma.ipoSyncRun.count({ where }),
+      this.prisma.ipoSyncRun.findMany({
+        where,
+        orderBy: { startedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+    return {
+      data: runs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
+  /**
+   * Detailed IPO items with field-level diffs for a specific sync run.
+   */
+  async getSyncRunDetails(runId: string, action?: string, q?: string, page = 1, limit = 50) {
+    const run = await this.prisma.ipoSyncRun.findUnique({
+      where: { id: runId },
+    });
+    if (!run) {
+      throw new NotFoundException(`Sync run with ID ${runId} not found`);
+    }
+
+    const where: Prisma.IpoSyncLogItemWhereInput = { runId };
+    if (action && (action === 'ADDED' || action === 'UPDATED' || action === 'FAILED')) {
+      where.action = action as SyncItemAction;
+    }
+    if (q && q.trim()) {
+      where.OR = [
+        { ipoName: { contains: q.trim(), mode: 'insensitive' } },
+        { externalSlug: { contains: q.trim(), mode: 'insensitive' } },
+      ];
+    }
+
+    const [total, items] = await Promise.all([
+      this.prisma.ipoSyncLogItem.count({ where }),
+      this.prisma.ipoSyncLogItem.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      run,
+      data: items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
     };
   }
 }
