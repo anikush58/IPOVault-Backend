@@ -74,6 +74,14 @@ export class IpoGuruService {
     this.validationService = adminValidationService ?? new AdminValidationService();
   }
 
+  public clearCache(): void {
+    this.lastFetchResult = null;
+  }
+
+  public getLastFetchResult(): { result: IpoGuruFetchResult; fetchedAt: number } | null {
+    return this.lastFetchResult;
+  }
+
   /**
    * Retrieves or initializes persistent daily usage state from PostgreSQL `sources.rate_limit_policy`.
    * Automatically resets counter at the start of each IST calendar day.
@@ -325,17 +333,28 @@ export class IpoGuruService {
       );
     }
 
-    // Protect scheduled auto slots: serve cached response for incidental unslotted AUTO calls if available
+    // Strictly protect scheduled auto quota: AUTO requests must be slotted scheduled runs.
+    // Incidental unslotted AUTO calls are strictly cache-only and never trigger live network fetches or increment quota.
     if (
       mode === 'AUTO' &&
-      !slot &&
-      this.lastFetchResult &&
-      Date.now() - this.lastFetchResult.fetchedAt < 3600_000
+      (!slot || !(IPOGURU_SCHEDULED_SLOTS as readonly string[]).includes(slot))
     ) {
+      if (this.lastFetchResult) {
+        this.logger.debug(
+          `IPO Guru AUTO fetch (unslotted): serving cached response (${this.lastFetchResult.result.ipos.length} IPOs) to protect scheduled auto quota`,
+        );
+        return this.lastFetchResult.result;
+      }
       this.logger.debug(
-        `IPO Guru AUTO fetch (unslotted): serving cached response (${this.lastFetchResult.result.ipos.length} IPOs) to protect scheduled auto quota`,
+        'IPO Guru AUTO fetch (unslotted): cache is cold, returning empty response without making live external API request',
       );
-      return this.lastFetchResult.result;
+      return {
+        httpStatus: 200,
+        ipos: [],
+        total: 0,
+        fetchedAt: new Date().toISOString(),
+        responseKeys: ['cache_cold_skipped'],
+      };
     }
 
     // Check budget guard
@@ -1095,17 +1114,39 @@ export class IpoGuruService {
         }
 
         // Listing price sync rule:
-        // - If canonical IPO status is LISTED, allow IPO Guru's listing price to update listingPrice.
+        // - If canonical IPO status is LISTED (or transitioned to LISTED), allow IPO Guru's listing price to update listingPrice.
         // - If canonical IPO status is anything other than LISTED, do NOT update listingPrice.
         // - Never overwrite an existing valid listing price with null/undefined/missing IPO Guru data.
-        if (existingIpo.status !== IpoStatus.LISTED) {
+        const isListed =
+          existingIpo.status === IpoStatus.LISTED ||
+          updateData.status === IpoStatus.LISTED;
+
+        if (!isListed) {
           skippedFields.push({ field: 'listingPrice', reason: 'IPO status is not LISTED' });
-        } else if (listingPrice == null) {
+        } else if (listingPrice == null || listingPrice.lessThanOrEqualTo(0)) {
           skippedFields.push({ field: 'listingPrice', reason: 'Not provided in payload' });
         } else if (existingIpo.listingPrice && existingIpo.listingPrice.equals(listingPrice)) {
           skippedFields.push({ field: 'listingPrice', reason: 'Value unchanged' });
         } else {
           updateData.listingPrice = listingPrice;
+          const effIssuePrice = existingIpo.priceBandHigh
+            ? Number(existingIpo.priceBandHigh)
+            : existingIpo.priceBandLow
+            ? Number(existingIpo.priceBandLow)
+            : priceBand.high
+            ? Number(priceBand.high)
+            : priceBand.low
+            ? Number(priceBand.low)
+            : null;
+          if (effIssuePrice && effIssuePrice > 0) {
+            const numListingPrice = Number(listingPrice);
+            const gain = Number((((numListingPrice - effIssuePrice) / effIssuePrice) * 100).toFixed(2));
+            updateData.listingGainPct = new Prisma.Decimal(gain);
+            updateData.profitPercentage = new Prisma.Decimal(gain);
+            const lot = existingIpo.lotSize || lotSize || 1;
+            const profit = Number(((numListingPrice - effIssuePrice) * lot).toFixed(2));
+            updateData.profitAmount = new Prisma.Decimal(profit);
+          }
           updatedFields.push('listingPrice');
         }
 
@@ -1164,6 +1205,33 @@ export class IpoGuruService {
           publicationStatusResult = PublicationStatus.PUBLISHED;
         }
 
+        let createListingGainPct: Prisma.Decimal | null = null;
+        let createProfitAmount: Prisma.Decimal | null = null;
+        let createProfitPercentage: Prisma.Decimal | null = null;
+        const validCreateListingPrice =
+          initialStatus === IpoStatus.LISTED &&
+          listingPrice &&
+          listingPrice.greaterThan(0)
+            ? listingPrice
+            : null;
+
+        if (validCreateListingPrice) {
+          const effIssuePrice = priceBand.high
+            ? Number(priceBand.high)
+            : priceBand.low
+            ? Number(priceBand.low)
+            : null;
+          if (effIssuePrice && effIssuePrice > 0) {
+            const numListingPrice = Number(validCreateListingPrice);
+            const gain = Number((((numListingPrice - effIssuePrice) / effIssuePrice) * 100).toFixed(2));
+            createListingGainPct = new Prisma.Decimal(gain);
+            createProfitPercentage = new Prisma.Decimal(gain);
+            const lot = lotSize || 1;
+            const profit = Number(((numListingPrice - effIssuePrice) * lot).toFixed(2));
+            createProfitAmount = new Prisma.Decimal(profit);
+          }
+        }
+
         const newIpo = await tx.ipo.create({
           data: {
             companyId: company.id,
@@ -1180,7 +1248,10 @@ export class IpoGuruService {
             issueSize: issueSize,
             freshIssueSize: freshIssueSize,
             ofsSize: ofsSize,
-            listingPrice: initialStatus === IpoStatus.LISTED ? listingPrice : null,
+            listingPrice: validCreateListingPrice,
+            listingGainPct: createListingGainPct,
+            profitAmount: createProfitAmount,
+            profitPercentage: createProfitPercentage,
           },
         });
         ipoId = newIpo.id;

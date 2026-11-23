@@ -2129,4 +2129,145 @@ describe('IpoGuruService', () => {
       expect(mockEnrichment.enqueueIpoEnrichment).toHaveBeenCalledWith('new-ipo-id');
     });
   });
+
+  describe('Daily Auto Quota Protection & Listing Price Persistence', () => {
+    it('should return cold cache fallback for unslotted AUTO fetch without making any HTTP request or incrementing quota', async () => {
+      service.clearCache();
+      mockFetch.mockClear();
+      mockPrisma.source.update.mockClear();
+
+      const result = await service.fetchIpos('AUTO');
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockPrisma.source.update).not.toHaveBeenCalled();
+      expect(result.httpStatus).toBe(200);
+      expect(result.ipos).toEqual([]);
+      expect(result.total).toBe(0);
+      expect(result.responseKeys).toContain('cache_cold_skipped');
+    });
+
+    it('should return cached response for unslotted AUTO fetch when cache is warm without making any HTTP request', async () => {
+      // 1. Populate cache via MANUAL fetch
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          status: 'success',
+          data: [
+            { id: 1, name: 'Warm Cache IPO', slug: 'warm-cache-ipo', status: 'open' },
+          ],
+        }),
+      });
+
+      await service.fetchIpos('MANUAL');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      // 2. Unslotted AUTO call should reuse cache without making any HTTP call or DB write
+      mockFetch.mockClear();
+      mockPrisma.source.update.mockClear();
+
+      const autoResult = await service.fetchIpos('AUTO');
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockPrisma.source.update).not.toHaveBeenCalled();
+      expect(autoResult.ipos).toHaveLength(1);
+      expect(autoResult.ipos[0].name).toBe('Warm Cache IPO');
+    });
+
+    it('should allow slotted scheduled AUTO syncs (10:00, 13:00, 15:00, 17:30) to execute live and increment autoRequestsToday', async () => {
+      service.clearCache();
+      mockFetch.mockClear();
+      mockPrisma.source.update.mockClear();
+
+      mockPrisma.source.upsert.mockResolvedValueOnce({
+        id: 'source-ipoguru',
+        rateLimitPolicy: {
+          istDate: '2026-11-23',
+          totalRequestsToday: 0,
+          autoRequestsToday: 0,
+          manualRequestsToday: 0,
+          lastRequestAt: null,
+          completedSlots: [],
+        },
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          status: 'success',
+          data: [
+            { id: 10, name: 'Slotted Scheduled IPO', slug: 'slotted-ipo', status: 'open' },
+          ],
+        }),
+      });
+
+      const result = await service.fetchIpos('AUTO', '10:00');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(result.ipos).toHaveLength(1);
+      expect(result.ipos[0].name).toBe('Slotted Scheduled IPO');
+
+      // Verify budget counter incremented for scheduled AUTO slot
+      expect(mockPrisma.source.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            rateLimitPolicy: expect.objectContaining({
+              autoRequestsToday: 1,
+              totalRequestsToday: 1,
+              completedSlots: expect.arrayContaining(['10:00']),
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should persist listingPrice and calculate listing gain/profit for listed IPOs during syncIpos', async () => {
+      const existingListedIpo = {
+        id: 'ipo-listed-xyz',
+        companyId: 'company-xyz',
+        status: IpoStatus.LISTED,
+        symbol: 'XYZCORP',
+        priceBandLow: new Prisma.Decimal('100.00'),
+        priceBandHigh: new Prisma.Decimal('100.00'),
+        lotSize: 50,
+        listingPrice: null,
+        company: { displayName: 'XYZ Corp', legalName: 'XYZ Corporation Limited' },
+        sourceIdentities: [],
+        lifecycleEvents: [],
+        allotmentConfig: null,
+      };
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([existingListedIpo]);
+
+      const rawIpos = [
+        {
+          name: 'XYZ Corp',
+          slug: 'xyz-corp',
+          symbol: 'XYZCORP',
+          status: 'listed',
+          is_listed: true,
+          price_band: '100',
+          lot_size: 50,
+          listing_price: 150.0,
+        },
+      ];
+
+      const syncResult = await service.syncIpos('MANUAL', undefined, rawIpos as any);
+
+      expect(syncResult.matchedUpdated).toBe(1);
+      expect(syncResult.updatedCount).toBe(1);
+      expect(mockPrisma._txMock.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ipo-listed-xyz' },
+          data: expect.objectContaining({
+            listingPrice: new Prisma.Decimal(150),
+            listingGainPct: new Prisma.Decimal(50),
+            profitPercentage: new Prisma.Decimal(50),
+            profitAmount: new Prisma.Decimal(2500),
+          }),
+        }),
+      );
+    });
+  });
 });

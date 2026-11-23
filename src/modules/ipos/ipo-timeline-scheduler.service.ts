@@ -667,6 +667,22 @@ export class IpoTimelineSchedulerService
   }
 
   /**
+   * Alias for checkAndPersistListingPrice: scopes checks to listed IPOs within 14 days of listing.
+   */
+  public async checkAndApplyListingPrice(
+    ipo: Prisma.IpoGetPayload<{
+      include: {
+        company: true;
+        lifecycleEvents: true;
+        allotmentConfig: true;
+      };
+    }>,
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    return this.checkAndPersistListingPrice(ipo, now);
+  }
+
+  /**
    * Checks and persists listing price and calculates listing gain / profit metrics.
    * Never overwrites an existing valid listing price.
    */
@@ -690,6 +706,22 @@ export class IpoTimelineSchedulerService
 
       // If IPO already has a valid listing price stored, use it directly without querying external providers
       if (ipo.listingPrice && Number(ipo.listingPrice) > 0) {
+        return false;
+      }
+
+      // Stop scanning historical listed IPOs indefinitely.
+      // Only check IPOs whose listingDate is within the last 14 days (and still missing listingPrice).
+      const listingEvent = ipo.lifecycleEvents?.find(
+        (e) => e.eventType === LifecycleEventType.LISTING,
+      );
+      if (!listingEvent?.eventDate) {
+        return false;
+      }
+      const listingDateTime = new Date(listingEvent.eventDate).getTime();
+      const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+      const elapsedMs = now.getTime() - listingDateTime;
+      // Allow window from listing day (with 1 day buffer for timezone offsets) up to 14 days post-listing
+      if (elapsedMs < -86_400_000 || elapsedMs > fourteenDaysMs) {
         return false;
       }
 

@@ -428,7 +428,17 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         lotSize: 100,
         listingPrice: null,
         company: { displayName: 'Delta Ltd', legalName: 'Delta Limited' },
-        lifecycleEvents: [],
+        lifecycleEvents: [
+          {
+            id: 'event-listing-1',
+            ipoId: 'ipo-listed-1',
+            eventType: LifecycleEventType.LISTING,
+            eventDate: new Date('2026-09-28T05:00:00.000Z'),
+            sourceId: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
       };
 
       prismaMock.ipo.findMany.mockResolvedValue([sampleListedIpo]);
@@ -464,13 +474,56 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         symbol: 'DELTA',
         listingPrice: new Prisma.Decimal('150.00'),
         company: { displayName: 'Delta Ltd', legalName: 'Delta Limited' },
-        lifecycleEvents: [],
+        lifecycleEvents: [
+          {
+            id: 'event-listing-1',
+            ipoId: 'ipo-listed-1',
+            eventType: LifecycleEventType.LISTING,
+            eventDate: new Date('2026-09-28T05:00:00.000Z'),
+            sourceId: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
       };
 
       prismaMock.ipo.findMany.mockResolvedValue([sampleListedIpoWithPrice]);
 
       const result = await service.processTimelineTransitions(now);
       expect(result.listingPriceCount).toBe(0);
+      expect(prismaMock.ipo.update).not.toHaveBeenCalled();
+    });
+
+    it('13b. should ignore historical listed IPOs whose listing date is older than 14 days and avoid querying IPO Guru', async () => {
+      const now = new Date('2026-09-30T05:00:00.000Z');
+      const historicalListedIpo = {
+        id: 'ipo-historical-dlf',
+        status: IpoStatus.LISTED,
+        symbol: 'DLF',
+        priceBandHigh: new Prisma.Decimal('525.00'),
+        priceBandLow: new Prisma.Decimal('500.00'),
+        lotSize: 20,
+        listingPrice: null,
+        company: { displayName: 'DLF Limited', legalName: 'DLF Limited' },
+        lifecycleEvents: [
+          {
+            id: 'event-listing-hist',
+            ipoId: 'ipo-historical-dlf',
+            eventType: LifecycleEventType.LISTING,
+            eventDate: new Date('2007-07-05T00:00:00.000Z'), // 19 years ago
+            sourceId: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      };
+
+      prismaMock.ipo.findMany.mockResolvedValue([historicalListedIpo]);
+      ipoGuruServiceMock.fetchIpos.mockClear();
+
+      const result = await service.processTimelineTransitions(now);
+      expect(result.listingPriceCount).toBe(0);
+      expect(ipoGuruServiceMock.fetchIpos).not.toHaveBeenCalled();
       expect(prismaMock.ipo.update).not.toHaveBeenCalled();
     });
   });
