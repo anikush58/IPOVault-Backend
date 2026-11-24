@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   ExchangeListing,
   IpoStatus,
+  LifecycleEventType,
   MarketSegment,
   OfferCategoryType,
   ParticipantRole,
@@ -83,6 +84,16 @@ export class IpoGuruService {
 
   public getLastFetchResult(): { result: IpoGuruFetchResult; fetchedAt: number } | null {
     return this.lastFetchResult;
+  }
+
+  /**
+   * Evaluates whether an openDate is on or before the current calendar day in IST.
+   */
+  public isOpeningDayOrPastIST(openDate: Date, now: Date = new Date()): boolean {
+    const istFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' });
+    const openDayStr = istFmt.format(openDate);
+    const nowDayStr = istFmt.format(now);
+    return openDayStr <= nowDayStr;
   }
 
   /**
@@ -342,14 +353,19 @@ export class IpoGuruService {
       mode === 'AUTO' &&
       (!slot || !(IPOGURU_SCHEDULED_SLOTS as readonly string[]).includes(slot))
     ) {
-      if (this.lastFetchResult) {
+      const CACHE_TTL_MS = 5 * 60 * 1000;
+      const isFresh =
+        this.lastFetchResult &&
+        Date.now() - this.lastFetchResult.fetchedAt < CACHE_TTL_MS;
+
+      if (isFresh && this.lastFetchResult) {
         this.logger.debug(
           `IPO Guru AUTO fetch (unslotted): serving cached response (${this.lastFetchResult.result.ipos.length} IPOs) to protect scheduled auto quota`,
         );
         return this.lastFetchResult.result;
       }
       this.logger.debug(
-        'IPO Guru AUTO fetch (unslotted): cache is cold, returning empty response without making live external API request',
+        'IPO Guru AUTO fetch (unslotted): cache is cold or expired, returning empty response without making live external API request',
       );
       return {
         httpStatus: 200,
@@ -415,6 +431,7 @@ export class IpoGuruService {
           Accept: 'application/json',
           'User-Agent': 'IPOVault-AdminConsole/1.0',
         },
+        signal: AbortSignal.timeout(15000),
       });
 
       httpStatus = response.status;
@@ -642,6 +659,19 @@ export class IpoGuruService {
               PublicationStatus.DRAFT;
             const createdCompanyId = itemResult.companyId || itemResult.ipoId;
             const createdStatus = (itemResult.targetStatus as IpoStatus) || IpoStatus.UPCOMING;
+            const createdEvents: any[] = [];
+            const cOpen = this.parseDate(rawItem.open_date || rawItem.timeline?.open_date);
+            const cClose = this.parseDate(rawItem.close_date || rawItem.timeline?.close_date);
+            const cAllot = this.parseDate(rawItem.allotment_date || rawItem.timeline?.allotment_date);
+            const rawRefund = typeof rawItem.refunds_date === 'string' ? rawItem.refunds_date : typeof rawItem.timeline?.refund_date === 'string' ? rawItem.timeline.refund_date : undefined;
+            const cRefund = this.parseDate(rawRefund);
+            const cListing = this.parseDate(rawItem.listing_date || rawItem.timeline?.listing_date);
+            if (cOpen) createdEvents.push({ eventType: LifecycleEventType.OPEN, eventDate: cOpen });
+            if (cClose) createdEvents.push({ eventType: LifecycleEventType.CLOSE, eventDate: cClose });
+            if (cAllot) createdEvents.push({ eventType: LifecycleEventType.BASIS_OF_ALLOTMENT, eventDate: cAllot });
+            if (cRefund) createdEvents.push({ eventType: LifecycleEventType.REFUND_INITIATION, eventDate: cRefund });
+            if (cListing) createdEvents.push({ eventType: LifecycleEventType.LISTING, eventDate: cListing });
+
             existingIpos.push({
               id: itemResult.ipoId,
               companyId: createdCompanyId,
@@ -655,8 +685,13 @@ export class IpoGuruService {
                 { sourceId, externalId: extId, symbol: rawItem.symbol || null, source: { code: 'IPOGURU' } },
                 { sourceId: adminSourceId, externalId: itemResult.ipoId, symbol: rawItem.symbol || null, source: { code: 'ADMIN' } },
               ] as any,
-              lifecycleEvents: [],
-              allotmentConfig: rawItem.registrar ? ({ registrar: rawItem.registrar.trim() } as any) : null,
+              lifecycleEvents: createdEvents,
+              allotmentConfig: (rawItem.registrar || cAllot)
+                ? ({
+                    registrar: rawItem.registrar ? rawItem.registrar.trim() : undefined,
+                    expectedAllotmentDate: cAllot || undefined,
+                  } as any)
+                : null,
             } as any);
             const isActive = createdStatus === IpoStatus.UPCOMING || createdStatus === IpoStatus.OPEN;
             if (this.enrichmentOrchestrator && isActive) {
@@ -1164,9 +1199,9 @@ export class IpoGuruService {
           const derivedStatus =
             status ||
             (openDate
-              ? openDate > new Date()
-                ? IpoStatus.UPCOMING
-                : IpoStatus.OPEN
+              ? this.isOpeningDayOrPastIST(openDate)
+                ? IpoStatus.OPEN
+                : IpoStatus.UPCOMING
               : IpoStatus.UPCOMING);
           updateData.status = derivedStatus;
           updatedFields.push('status');
@@ -1389,7 +1424,13 @@ export class IpoGuruService {
         companyId = company.id;
         if (rawLogo) updatedFields.push('logoUrl');
 
-        const initialStatus = status || IpoStatus.UPCOMING;
+        const initialStatus =
+          status ||
+          (openDate
+            ? this.isOpeningDayOrPastIST(openDate)
+              ? IpoStatus.OPEN
+              : IpoStatus.UPCOMING
+            : IpoStatus.UPCOMING);
         targetStatusResult = initialStatus;
 
         if (!pubEligibility.eligible) {
@@ -1871,6 +1912,45 @@ export class IpoGuruService {
             registrarName: registrar || null,
           },
         );
+      }
+
+      // Update matched entry in existingIpos in memory so subsequent records in the batch see up-to-date state
+      if (action === 'UPDATED' && match.matchedIpo) {
+        const existingEntry = match.matchedIpo as any;
+        if (publicationStatusResult) {
+          existingEntry.publicationStatus = publicationStatusResult;
+        }
+        if (targetStatusResult) {
+          existingEntry.status = targetStatusResult;
+        }
+        if (rawItem.symbol) {
+          existingEntry.symbol = rawItem.symbol.trim().toUpperCase();
+        }
+        existingEntry.lifecycleEvents = existingEntry.lifecycleEvents || [];
+        const upsertMemEvent = (eventType: LifecycleEventType, date: Date | null) => {
+          if (!date) return;
+          const idx = existingEntry.lifecycleEvents.findIndex((ev: any) => ev.eventType === eventType);
+          if (idx >= 0) {
+            existingEntry.lifecycleEvents[idx].eventDate = date;
+          } else {
+            existingEntry.lifecycleEvents.push({ eventType, eventDate: date });
+          }
+        };
+        upsertMemEvent(LifecycleEventType.OPEN, openDate);
+        upsertMemEvent(LifecycleEventType.CLOSE, closeDate);
+        upsertMemEvent(LifecycleEventType.BASIS_OF_ALLOTMENT, allotmentDate);
+        upsertMemEvent(LifecycleEventType.REFUND_INITIATION, refundDate);
+        upsertMemEvent(LifecycleEventType.LISTING, listingDate);
+
+        if (registrar || allotmentDate) {
+          existingEntry.allotmentConfig = existingEntry.allotmentConfig || {};
+          if (registrar) {
+            existingEntry.allotmentConfig.registrar = registrar;
+          }
+          if (allotmentDate) {
+            existingEntry.allotmentConfig.expectedAllotmentDate = allotmentDate;
+          }
+        }
       }
 
       return {

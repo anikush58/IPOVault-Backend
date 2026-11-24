@@ -667,17 +667,17 @@ export class RegistrarResolver {
     ipoId: string,
     registrarCode: string,
     externalId: string,
-  ): Promise<void> {
+  ): Promise<boolean | void> {
     if (
       typeof this.prisma.source?.findUnique !== 'function' ||
       typeof this.prisma.ipoSourceIdentity?.upsert !== 'function'
     ) {
-      return;
+      return false;
     }
     const source = await this.prisma.source.findUnique({
       where: { code: registrarCode },
     });
-    if (!source) return;
+    if (!source) return false;
 
     await this.prisma.ipoSourceIdentity.upsert({
       where: {
@@ -716,5 +716,107 @@ export class RegistrarResolver {
         // Non-blocking
       }
     }
+    return true;
   }
+}
+
+export interface PersistRegistrarCodeOptions {
+  prisma: {
+    source?: { findUnique?: (args: any) => Promise<any> };
+    ipoSourceIdentity?: { upsert?: (args: any) => Promise<any> };
+    ipoAllotmentConfig?: {
+      upsert?: (args: any) => Promise<any>;
+    };
+  };
+  resolver?: {
+    persistDiscoveredRegistrarIdentity?: (
+      ipoId: string,
+      registrarCode: string,
+      externalId: string,
+    ) => Promise<boolean | void>;
+  };
+  ipoId: string;
+  registrarCode: string;
+  discoveredCode: string;
+  context?: string;
+  logger?: Logger;
+}
+
+/**
+ * Deduplicated helper to persist verified registrar code and identity across modules.
+ * Attempts persistence via RegistrarResolver first; falls back to direct ipoAllotmentConfig upsert.
+ * Removes redundant updateMany calls and logs persistence warnings properly.
+ */
+export async function persistRegistrarCode(
+  options: PersistRegistrarCodeOptions,
+): Promise<boolean> {
+  const {
+    prisma,
+    resolver,
+    ipoId,
+    registrarCode,
+    discoveredCode,
+    context = 'registrar code persistence',
+    logger,
+  } = options;
+
+  const cleanCode = sanitizeRegistrarIpoCode(discoveredCode);
+  if (!cleanCode) {
+    return false;
+  }
+
+  const cleanRegistrar = registrarCode?.trim();
+  if (!cleanRegistrar) {
+    logger?.warn(
+      `Cannot persist registrar code '${cleanCode}' for IPO ${ipoId} (${context}): registrar code is empty`,
+    );
+    return false;
+  }
+
+  let persistedByResolver = false;
+  if (typeof resolver?.persistDiscoveredRegistrarIdentity === 'function') {
+    try {
+      const res = await resolver.persistDiscoveredRegistrarIdentity(
+        ipoId,
+        cleanRegistrar,
+        cleanCode,
+      );
+      if (res !== false) {
+        persistedByResolver = true;
+      }
+    } catch (persistErr: unknown) {
+      logger?.warn(
+        `Failed to persist registrar identity via resolver for IPO ${ipoId} (${context}): ${(persistErr as Error)?.message || persistErr}`,
+      );
+    }
+  }
+
+  if (
+    !persistedByResolver &&
+    typeof prisma?.ipoAllotmentConfig?.upsert === 'function'
+  ) {
+    try {
+      await prisma.ipoAllotmentConfig.upsert({
+        where: { ipoId },
+        create: {
+          ipoId,
+          registrar: cleanRegistrar,
+          registrarIpoCode: cleanCode,
+          enabled: true,
+        },
+        update: {
+          registrar: cleanRegistrar,
+          registrarIpoCode: cleanCode,
+          enabled: true,
+        },
+      });
+    } catch (upsertErr: unknown) {
+      logger?.warn(
+        `Failed to upsert ipoAllotmentConfig for IPO ${ipoId} (${context}): ${(upsertErr as Error)?.message || upsertErr}`,
+      );
+      return false;
+    }
+  }
+
+  return true;
 }

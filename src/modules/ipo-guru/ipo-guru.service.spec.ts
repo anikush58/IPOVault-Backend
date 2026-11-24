@@ -2247,6 +2247,78 @@ describe('IpoGuruService', () => {
       expect(autoResult.ipos[0].name).toBe('Warm Cache IPO');
     });
 
+    it('should return cold cache fallback for unslotted AUTO fetch when warm cache is older than 5 minutes', async () => {
+      // 1. Populate cache via MANUAL fetch
+      mockFetch.mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          status: 'success',
+          data: [{ id: 1, name: 'Stale Cache IPO', slug: 'stale-cache-ipo', status: 'open' }],
+        }),
+      });
+
+      await service.fetchIpos('MANUAL');
+      const cached = service.getLastFetchResult();
+      expect(cached).not.toBeNull();
+
+      // Backdate cached timestamp by 6 minutes (360,000 ms)
+      if (cached) {
+        cached.fetchedAt = Date.now() - 6 * 60 * 1000;
+      }
+
+      mockFetch.mockClear();
+      mockPrisma.source.update.mockClear();
+
+      const autoResult = await service.fetchIpos('AUTO');
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockPrisma.source.update).not.toHaveBeenCalled();
+      expect(autoResult.httpStatus).toBe(200);
+      expect(autoResult.ipos).toEqual([]);
+      expect(autoResult.responseKeys).toContain('cache_cold_skipped');
+    });
+
+    it('isOpeningDayOrPastIST should classify opening day IPOs as open even around midnight/IST boundaries', () => {
+      // At 02:00 AM IST on Nov 24, 2026 (Nov 23 20:30 UTC), open date Nov 24 at 10:00 AM IST (04:30 UTC)
+      const nowEarlyMorning = new Date('2026-11-23T20:30:00.000Z'); // 2:00 AM IST Nov 24
+      const openDateLaterToday = new Date('2026-11-24T04:30:00.000Z'); // 10:00 AM IST Nov 24
+      const openDateTomorrow = new Date('2026-11-25T04:30:00.000Z');
+
+      expect(service.isOpeningDayOrPastIST(openDateLaterToday, nowEarlyMorning)).toBe(true);
+      expect(service.isOpeningDayOrPastIST(openDateTomorrow, nowEarlyMorning)).toBe(false);
+    });
+
+    it('should keep existingIpos in sync during batch runs so subsequent items see updated state', async () => {
+      const rawIpos = [
+        {
+          id: 101,
+          name: 'Batch Test IPO',
+          slug: 'batch-test-ipo',
+          symbol: 'BATCHCO',
+          status: 'Upcoming',
+          open_date: '2026-12-01',
+          close_date: '2026-12-05',
+          allotment_date: '2026-12-08',
+          registrar: 'Link Intime',
+        },
+        {
+          id: 101,
+          name: 'Batch Test IPO',
+          slug: 'batch-test-ipo',
+          symbol: 'BATCHCO',
+          status: 'Upcoming',
+          open_date: '2026-12-01',
+          close_date: '2026-12-05',
+          allotment_date: '2026-12-08',
+          registrar: 'Link Intime',
+        },
+      ];
+
+      const res = await service.syncIpos('MANUAL', undefined, rawIpos as any);
+      expect(res.newlyCreated).toBe(1);
+      expect(res.matchedUpdated).toBe(1);
+    });
+
     it('should allow slotted scheduled AUTO syncs (10:00, 13:00, 15:00, 17:30) to execute live and increment autoRequestsToday', async () => {
       service.clearCache();
       mockFetch.mockClear();

@@ -17,7 +17,11 @@ describe('AllotmentService & Resolver Integration', () => {
   let resolver: RegistrarResolver;
   let prismaMock: {
     ipo: { findUnique: jest.Mock; findFirst: jest.Mock; updateMany: jest.Mock };
-    ipoAllotmentConfig: { findUnique: jest.Mock; updateMany: jest.Mock };
+    ipoAllotmentConfig: {
+      findUnique: jest.Mock;
+      updateMany: jest.Mock;
+      upsert: jest.Mock;
+    };
     ipoSourceIdentity: {
       findFirst: jest.Mock;
       findMany: jest.Mock;
@@ -37,6 +41,7 @@ describe('AllotmentService & Resolver Integration', () => {
       ipoAllotmentConfig: {
         findUnique: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        upsert: jest.fn().mockResolvedValue({}),
       },
       ipoSourceIdentity: {
         findFirst: jest.fn(),
@@ -303,10 +308,12 @@ describe('AllotmentService & Resolver Integration', () => {
           }),
         }),
       );
-      expect(prismaMock.ipoAllotmentConfig.updateMany).toHaveBeenCalledWith({
-        where: { ipoId: 'ipo-awaiting-1' },
-        data: { registrarIpoCode: '606' },
-      });
+      expect(prismaMock.ipoAllotmentConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ipoId: 'ipo-awaiting-1' },
+          update: expect.objectContaining({ registrarIpoCode: '606' }),
+        }),
+      );
     });
 
     it('22. should return available: false when registrar has not yet released the allotment', async () => {
@@ -468,7 +475,7 @@ describe('AllotmentService & Resolver Integration', () => {
         });
       const persistSpy = jest
         .spyOn(resolver, 'persistDiscoveredRegistrarIdentity')
-        .mockResolvedValue(undefined);
+        .mockResolvedValue(true);
 
       try {
         const res = await service.checkIpoAllotmentAvailability(
@@ -485,10 +492,6 @@ describe('AllotmentService & Resolver Integration', () => {
           'KFINTECH',
           '88356314970',
         );
-        expect(prismaMock.ipoAllotmentConfig.updateMany).toHaveBeenCalledWith({
-          where: { ipoId: 'ipo-maxwell-listed-avail' },
-          data: { registrarIpoCode: '88356314970' },
-        });
         expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
           where: {
             id: 'ipo-maxwell-listed-avail',
@@ -1513,10 +1516,14 @@ describe('AllotmentService & Resolver Integration', () => {
             allotmentResultAvailableAt: expect.any(Date),
           },
         });
-        expect(prismaMock.ipoAllotmentConfig.updateMany).toHaveBeenCalledWith({
-          where: { ipoId },
-          data: { registrarIpoCode: '88356314970' },
-        });
+        expect(prismaMock.ipoAllotmentConfig.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { ipoId },
+            update: expect.objectContaining({
+              registrarIpoCode: '88356314970',
+            }),
+          }),
+        );
       } finally {
         fetchSpy.mockRestore();
         resolveCodeSpy.mockRestore();
@@ -2069,7 +2076,7 @@ describe('AllotmentService & Resolver Integration', () => {
       }
     });
 
-    it('48. should keep previously confirmed allotmentResultAvailableAt fast path intact even with conflicting sourceIdentities', async () => {
+    it('48. should fail closed on fast path when stored registrar metadata has conflicting entries', async () => {
       prismaMock.ipo.findUnique.mockResolvedValue({
         id: 'ipo-confirmed-fast-with-conflict',
         status: 'LISTED',
@@ -2112,9 +2119,8 @@ describe('AllotmentService & Resolver Integration', () => {
           'ipo-confirmed-fast-with-conflict',
         );
         expect(res).toEqual({
-          available: true,
+          available: false,
           status: 'LISTED',
-          registrarCode: '88356314970',
         });
         expect(resolveSpy).not.toHaveBeenCalled();
         expect(prismaMock.ipo.updateMany).not.toHaveBeenCalled();
@@ -2512,11 +2518,11 @@ describe('AllotmentService & Resolver Integration', () => {
           registrarCode: '88356314970',
         });
         expect(
-          prismaMock.ipoAllotmentConfig.updateMany,
+          prismaMock.ipoAllotmentConfig.upsert,
         ).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { ipoId: '11111111-1111-4111-8111-111111111151' },
-            data: expect.objectContaining({
+            update: expect.objectContaining({
               registrarIpoCode: '88356314970',
             }),
           }),
@@ -2584,11 +2590,11 @@ describe('AllotmentService & Resolver Integration', () => {
           registrarCode: '12345',
         });
         expect(
-          prismaMock.ipoAllotmentConfig.updateMany,
+          prismaMock.ipoAllotmentConfig.upsert,
         ).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { ipoId: '22222222-2222-4222-8222-222222222251' },
-            data: expect.objectContaining({
+            update: expect.objectContaining({
               registrarIpoCode: '12345',
             }),
           }),
@@ -2803,11 +2809,11 @@ describe('AllotmentService & Resolver Integration', () => {
           registrarCode: '88356314970',
         });
         expect(
-          prismaMock.ipoAllotmentConfig.updateMany,
+          prismaMock.ipoAllotmentConfig.upsert,
         ).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { ipoId: '22222222-2222-4222-8222-222222222252' },
-            data: expect.objectContaining({
+            update: expect.objectContaining({
               registrarIpoCode: '88356314970',
             }),
           }),

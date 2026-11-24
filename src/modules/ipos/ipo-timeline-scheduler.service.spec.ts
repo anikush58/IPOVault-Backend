@@ -768,6 +768,101 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       });
     });
 
+    it('18b. should persist discovered registrar code during checkAllotmentForAwaitedIpos when allotment is confirmed', async () => {
+      const persistMock = jest.fn().mockResolvedValue(true);
+      (
+        resolverMock as unknown as {
+          persistDiscoveredRegistrarIdentity: jest.Mock;
+        }
+      ).persistDiscoveredRegistrarIdentity = persistMock;
+
+      const sampleAwaitedIpo = {
+        id: 'ipo-awaited-unmapped-code',
+        status: IpoStatus.ALLOTMENT_PENDING,
+        company: { displayName: 'Zenith Infra', legalName: 'Zenith Infra Limited' },
+        lifecycleEvents: [],
+        allotmentConfig: { registrar: 'KFin Technologies Limited', registrarIpoCode: null },
+      };
+
+      prismaMock.ipo.findMany.mockResolvedValue([sampleAwaitedIpo]);
+      resolverMock.resolveAdapter.mockResolvedValue({
+        adapter: {
+          code: 'KFINTECH',
+          resolveRegistrarIpoCode: jest.fn().mockResolvedValue('88356314970'),
+        },
+        registrarIpoCode: undefined,
+      });
+
+      const res = await service.checkAllotmentForAwaitedIpos();
+      expect(res.totalChecked).toBe(1);
+      expect(res.totalUpdated).toBe(1);
+      expect(persistMock).toHaveBeenCalledWith(
+        'ipo-awaited-unmapped-code',
+        'KFINTECH',
+        '88356314970',
+      );
+    });
+
+    it('18c. should evict entries in lastAllotmentPollingAt, lastListingPriceCheckAt, and lastAllotmentCheckReason when listing date exceeds 14 days or IPO is terminal/absent', () => {
+      const now = createISTDateTime('2026-11-15', 12, 0);
+
+      (service as any).lastAllotmentPollingAt.set('ipo-active', Date.now());
+      (service as any).lastAllotmentPollingAt.set('ipo-old', Date.now());
+      (service as any).lastAllotmentPollingAt.set('ipo-withdrawn', Date.now());
+      (service as any).lastAllotmentPollingAt.set('ipo-deleted', Date.now());
+
+      (service as any).lastListingPriceCheckAt.set('ipo-active', Date.now());
+      (service as any).lastListingPriceCheckAt.set('ipo-old', Date.now());
+      (service as any).lastListingPriceCheckAt.set('ipo-deleted', Date.now());
+
+      (service as any).lastAllotmentCheckReason.set('ipo-active', 'not_in_dropdown');
+      (service as any).lastAllotmentCheckReason.set('ipo-old', 'confirmed');
+      (service as any).lastAllotmentCheckReason.set('ipo-deleted', 'error');
+
+      const ipos = [
+        {
+          id: 'ipo-active',
+          status: IpoStatus.LISTED,
+          lifecycleEvents: [
+            {
+              eventType: LifecycleEventType.LISTING,
+              eventDate: createISTDateTime('2026-11-10', 10, 0), // 5 days old <= 14 days
+            },
+          ],
+        },
+        {
+          id: 'ipo-old',
+          status: IpoStatus.LISTED,
+          lifecycleEvents: [
+            {
+              eventType: LifecycleEventType.LISTING,
+              eventDate: createISTDateTime('2026-10-25', 10, 0), // 21 days old > 14 days
+            },
+          ],
+        },
+        {
+          id: 'ipo-withdrawn',
+          status: IpoStatus.WITHDRAWN,
+          lifecycleEvents: [],
+        },
+      ];
+
+      service.pruneTrackingMaps(ipos as any, now);
+
+      expect((service as any).lastAllotmentPollingAt.has('ipo-active')).toBe(true);
+      expect((service as any).lastAllotmentPollingAt.has('ipo-old')).toBe(false);
+      expect((service as any).lastAllotmentPollingAt.has('ipo-withdrawn')).toBe(false);
+      expect((service as any).lastAllotmentPollingAt.has('ipo-deleted')).toBe(false);
+
+      expect((service as any).lastListingPriceCheckAt.has('ipo-active')).toBe(true);
+      expect((service as any).lastListingPriceCheckAt.has('ipo-old')).toBe(false);
+      expect((service as any).lastListingPriceCheckAt.has('ipo-deleted')).toBe(false);
+
+      expect((service as any).lastAllotmentCheckReason.has('ipo-active')).toBe(true);
+      expect((service as any).lastAllotmentCheckReason.has('ipo-old')).toBe(false);
+      expect((service as any).lastAllotmentCheckReason.has('ipo-deleted')).toBe(false);
+    });
+
     it('19. should persist discovered KFintech clientId during confirmActualAllotmentAvailability even when IPO is already LISTED', async () => {
       const persistMock = jest.fn().mockResolvedValue(undefined);
       (
@@ -815,10 +910,6 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         'KFINTECH',
         '88356314970',
       );
-      expect(prismaMock.ipoAllotmentConfig.updateMany).toHaveBeenCalledWith({
-        where: { ipoId: 'ipo-maxwell-listed-1' },
-        data: { registrarIpoCode: '88356314970' },
-      });
     });
 
     it('20. should backfill allotmentResultAvailableAt and registrarIpoCode for already-LISTED IPOs during processTimelineTransitions without altering LISTED status', async () => {
@@ -884,10 +975,6 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         'KFINTECH',
         '88356314970',
       );
-      expect(prismaMock.ipoAllotmentConfig.updateMany).toHaveBeenCalledWith({
-        where: { ipoId: 'ipo-maxwell-listed-2' },
-        data: { registrarIpoCode: '88356314970' },
-      });
       expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
         where: {
           id: 'ipo-maxwell-listed-2',
@@ -902,10 +989,10 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('21. should skip automatic backfill for historical LISTED IPOs older than 30 days and legacy LISTED IPOs without recent dates', async () => {
+    it('21. should skip automatic backfill for historical LISTED IPOs older than 14 days and legacy LISTED IPOs without recent dates', async () => {
       const now = createISTDateTime('2026-11-11', 12, 0);
       const oldListedIpo = {
-        id: 'ipo-old-listed-31d',
+        id: 'ipo-old-listed-15d',
         status: IpoStatus.LISTED,
         symbol: 'OLDIPO',
         listingPrice: 110,
@@ -918,7 +1005,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         lifecycleEvents: [
           {
             eventType: LifecycleEventType.LISTING,
-            eventDate: createISTDateTime('2026-10-11', 10, 0), // 31 days before 2026-11-11
+            eventDate: createISTDateTime('2026-10-27', 10, 0), // 15 days before 2026-11-11
           },
         ],
         allotmentConfig: {
@@ -961,7 +1048,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('22. should preserve automatic backfill for recent ALLOTMENT_COMPLETED, LISTING_PENDING, and within-30-day LISTED IPOs without sending notifications', async () => {
+    it('22. should preserve automatic backfill for recent ALLOTMENT_COMPLETED, LISTING_PENDING, and within-14-day LISTED IPOs without sending notifications', async () => {
       const now = createISTDateTime('2026-11-11', 12, 0);
       prismaMock.ipoAllotmentConfig = {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -1013,21 +1100,21 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         },
       };
 
-      const thirtyDayListedIpo = {
-        id: 'ipo-listed-day-30',
+      const fourteenDayListedIpo = {
+        id: 'ipo-listed-day-14',
         status: IpoStatus.LISTED,
-        symbol: 'THIRTYIPO',
+        symbol: 'FOURTEENIPO',
         listingPrice: 130,
         allotmentResultAvailableAt: null,
-        createdAt: createISTDateTime('2026-10-05', 10, 0),
+        createdAt: createISTDateTime('2026-10-20', 10, 0),
         company: {
-          displayName: 'Thirty Day Co',
-          legalName: 'Thirty Day Company Limited',
+          displayName: 'Fourteen Day Co',
+          legalName: 'Fourteen Day Company Limited',
         },
         lifecycleEvents: [
           {
             eventType: LifecycleEventType.LISTING,
-            eventDate: createISTDateTime('2026-10-12', 10, 0), // Exact 30th day on 2026-11-11
+            eventDate: createISTDateTime('2026-10-28', 10, 0), // Exact 14th day on 2026-11-11
           },
         ],
         allotmentConfig: {
@@ -1040,7 +1127,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       prismaMock.ipo.findMany.mockResolvedValue([
         completedIpo,
         listingPendingIpo,
-        thirtyDayListedIpo,
+        fourteenDayListedIpo,
       ]);
 
       resolverMock.resolveAdapter
@@ -1061,7 +1148,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
         .mockResolvedValueOnce({
           adapter: {
             code: 'MAASHITLA',
-            resolveRegistrarIpoCode: jest.fn().mockResolvedValue('thirty-day'),
+            resolveRegistrarIpoCode: jest.fn().mockResolvedValue('fourteen-day'),
           },
           registrarIpoCode: undefined,
         });
@@ -1071,7 +1158,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       for (const ipoId of [
         'ipo-recent-completed',
         'ipo-recent-listing-pending',
-        'ipo-listed-day-30',
+        'ipo-listed-day-14',
       ]) {
         expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
           where: { id: ipoId, allotmentResultAvailableAt: null },
@@ -2505,10 +2592,6 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
           'KFINTECH',
           '88356314970',
         );
-        expect(prismaMock.ipoAllotmentConfig.updateMany).toHaveBeenCalledWith({
-          where: { ipoId: 'ipo-kfin-consistent-listed' },
-          data: { registrarIpoCode: '88356314970' },
-        });
         expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
           where: {
             id: 'ipo-kfin-consistent-listed',
@@ -2723,7 +2806,6 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
           'source.findUnique',
           'ipoSourceIdentity.upsert',
           'ipoAllotmentConfig.upsert',
-          'ipoAllotmentConfig.updateMany',
         ]);
       } finally {
         integratedService.onModuleDestroy();

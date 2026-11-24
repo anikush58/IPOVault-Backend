@@ -8,6 +8,7 @@ import {
   extractMeaningfulTokens,
   isTokenMatchSafely,
   levenshteinDistance,
+  matchAllRegistrarCompanyCodes,
   matchRegistrarCompany,
   normalizeName,
   stripOfferingAndCorporateSuffixes,
@@ -326,6 +327,47 @@ describe('Allotment Matching Pure Utility Tests', () => {
         const req = dummyRequest('Sollfege Smart Electronics Limited', 'Sollfege');
         const res = matchRegistrarCompany(list, req, 'KFINTECH', 'KFin Technologies');
         expect(res).toBe('47651989560');
+      });
+
+      it('15. must NOT match Atlanta against Atlanta Electricals in Tier 4 prefix matching', () => {
+        const list = [
+          { code: 'ATLANTA_ELEC', name: 'ATLANTA ELECTRICALS LIMITED' },
+        ];
+        const req = dummyRequest('Atlanta Limited', 'Atlanta');
+        const res = matchRegistrarCompany(list, req, 'MUFG_INTIME', 'Link Intime');
+        expect(typeof res).not.toBe('string');
+        expect((res as any).status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+
+        const list2 = [
+          { code: 'ATLANTA_OLD', name: 'ATLANTA LIMITED' },
+        ];
+        const req2 = dummyRequest('Atlanta Electricals Limited', 'Atlanta Electricals');
+        const res2 = matchRegistrarCompany(list2, req2, 'MUFG_INTIME', 'Link Intime');
+        expect(typeof res2).not.toBe('string');
+        expect((res2 as any).status).toBe(AllotmentStatus.NOT_YET_AVAILABLE);
+      });
+
+      it('16. matchAllRegistrarCompanyCodes ignores UUID registrarIpoCode in Step 0', () => {
+        const list = [
+          { code: '4001', name: 'REAL COMPANY LIMITED' },
+        ];
+        const uuidCode = '550e8400-e29b-41d4-a716-446655440000';
+        const req: any = {
+          ...dummyRequest('Real Company Limited', 'Real Company'),
+          registrarIpoCode: uuidCode,
+        };
+        const res = matchAllRegistrarCompanyCodes(list, req, 'BIGSHARE', 'Bigshare Services');
+        // Matches by exact company name in Step 2, returning code 4001 rather than matching UUID
+        expect(res).toEqual(['4001']);
+      });
+
+      it('17. Tier 4 containment allows pairwise aligned token prefix when token counts match', () => {
+        const list = [
+          { code: 'ABC_TECH', name: 'ABC TECHNO LIMITED' },
+        ];
+        const req = dummyRequest('ABC Technologies Limited', 'ABC Technologies');
+        const res = matchRegistrarCompany(list, req, 'BIGSHARE', 'Bigshare Services');
+        expect(res).toBe('ABC_TECH');
       });
     });
   });

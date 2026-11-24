@@ -2,6 +2,7 @@ import {
   AllotmentStatus,
   CheckAllotmentRequest,
   NormalizedAllotmentResult,
+  sanitizeRegistrarIpoCode,
 } from './allotment.types';
 
 export interface CleanCompanyCandidate {
@@ -206,6 +207,101 @@ export function isTokenMatchSafely(
 }
 
 /**
+ * Evaluates whether a target company name and candidate company name match under
+ * Tier 4 containment rules with strict token overlap/alignment protection.
+ *
+ * Requirements:
+ * 1. Both clean keys must have length >= 4.
+ * 2. Prefix relationship on clean keys: candidateKey.startsWith(targetKey) || targetKey.startsWith(candidateKey).
+ * 3. Both must have meaningful tokens.
+ * 4. Lead tokens must align (exact match or near-match).
+ * 5. Reject false matches where a company name with extra distinguishing words is matched
+ *    against a shorter candidate via startsWith alone (e.g. 'Atlanta Electricals' vs 'Atlanta').
+ *    Every token in both sequences must align pairwise.
+ */
+export function isContainmentMatchSafely(
+  targetTokens: string[],
+  targetKey: string,
+  candidateTokens: string[],
+  candidateKey: string,
+): boolean {
+  if (
+    !targetKey ||
+    !candidateKey ||
+    targetKey.length < 4 ||
+    candidateKey.length < 4 ||
+    !targetTokens ||
+    !candidateTokens ||
+    targetTokens.length === 0 ||
+    candidateTokens.length === 0
+  ) {
+    return false;
+  }
+
+  // Must have a prefix/containment relationship between clean keys
+  const hasPrefixRelation =
+    candidateKey.startsWith(targetKey) || targetKey.startsWith(candidateKey);
+  if (!hasPrefixRelation) {
+    return false;
+  }
+
+  // Lead token alignment guard
+  const leadTarget = targetTokens[0];
+  const leadCandidate = candidateTokens[0];
+  const leadAligns =
+    leadTarget === leadCandidate ||
+    (leadTarget.length >= 4 &&
+      leadCandidate.length >= 4 &&
+      (leadTarget.startsWith(leadCandidate) ||
+        leadCandidate.startsWith(leadTarget))) ||
+    (leadTarget.length >= 5 &&
+      leadCandidate.length >= 5 &&
+      levenshteinDistance(leadTarget, leadCandidate) <= 1);
+
+  if (!leadAligns) {
+    return false;
+  }
+
+  // Token count alignment:
+  // If one side has extra distinguishing tokens (e.g. ['atlanta', 'electricals'] vs ['atlanta']),
+  // reject to prevent false matches between distinct corporate entities.
+  if (targetTokens.length !== candidateTokens.length) {
+    const isTruncation =
+      candidateKey.length >= 20 &&
+      targetKey.startsWith(candidateKey) &&
+      candidateTokens.every((cTok, i) => {
+        if (i < candidateTokens.length - 1) {
+          return cTok === targetTokens[i];
+        }
+        return targetTokens[i]?.startsWith(cTok) && cTok.length >= 4;
+      });
+
+    if (!isTruncation) {
+      return false;
+    }
+  } else {
+    // Both sides have the same token count: verify pairwise token alignment
+    for (let i = 0; i < targetTokens.length; i++) {
+      const t = targetTokens[i];
+      const c = candidateTokens[i];
+      if (t === c) continue;
+
+      const pairwiseAligns =
+        (t.length >= 4 &&
+          c.length >= 4 &&
+          (t.startsWith(c) || c.startsWith(t))) ||
+        (t.length >= 5 && c.length >= 5 && levenshteinDistance(t, c) <= 1);
+
+      if (!pairwiseAligns) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+/**
  * Normalizes raw discovery items into structured CleanCompanyCandidate objects.
  */
 export function parseCompanyCandidates(
@@ -314,13 +410,9 @@ export function matchRegistrarCompany(
   // If the IPO already has a non-UUID registrarIpoCode configured, and that
   // exact code exists in the registrar's live candidate list, accept it immediately.
   // ============================================================
-  if (
-    request.registrarIpoCode &&
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      request.registrarIpoCode.trim(),
-    )
-  ) {
-    const rawReqCode = request.registrarIpoCode.trim().toLowerCase();
+  const cleanReqCode = sanitizeRegistrarIpoCode(request.registrarIpoCode);
+  if (cleanReqCode) {
+    const rawReqCode = cleanReqCode.toLowerCase();
     const codeMatch = candidates.find(
       (c) => c.code.toLowerCase() === rawReqCode,
     );
@@ -460,13 +552,21 @@ export function matchRegistrarCompany(
   // STEP 4B: Tier 4 Single Candidate Isolation Prefix / Containment Match
   // ============================================================
   const containmentMatches = candidates.filter((c) => {
-    const dKey = targetDisplayKey;
-    const lKey = targetLegalKey;
     return (
-      (dKey.length >= 4 &&
-        (c.cleanKey.startsWith(dKey) || dKey.startsWith(c.cleanKey))) ||
-      (lKey.length >= 4 &&
-        (c.cleanKey.startsWith(lKey) || lKey.startsWith(c.cleanKey)))
+      (targetDisplayTokens.length > 0 &&
+        isContainmentMatchSafely(
+          targetDisplayTokens,
+          targetDisplayKey,
+          c.tokens,
+          c.cleanKey,
+        )) ||
+      (targetLegalTokens.length > 0 &&
+        isContainmentMatchSafely(
+          targetLegalTokens,
+          targetLegalKey,
+          c.tokens,
+          c.cleanKey,
+        ))
     );
   });
 
@@ -514,13 +614,9 @@ export function matchAllRegistrarCompanyCodes(
   const targetDisplayKey = normalizeName(targetDisplayName);
 
   // STEP 0: Pre-configured Registrar IPO Code Match
-  if (
-    request.registrarIpoCode &&
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      request.registrarIpoCode.trim(),
-    )
-  ) {
-    const rawReqCode = request.registrarIpoCode.trim().toLowerCase();
+  const cleanReqCode = sanitizeRegistrarIpoCode(request.registrarIpoCode);
+  if (cleanReqCode) {
+    const rawReqCode = cleanReqCode.toLowerCase();
     const codeMatch = candidates.find(
       (c) => c.code.toLowerCase() === rawReqCode,
     );

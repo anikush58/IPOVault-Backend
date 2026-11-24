@@ -14,7 +14,6 @@ import {
   AllotmentIdentifierType,
   AllotmentStatus,
   CheckAllotmentRequest,
-  isValidRegistrarIpoCode,
   NormalizedAllotmentResult,
   sanitizeRegistrarIpoCode,
 } from './allotment.types';
@@ -22,6 +21,7 @@ import { maskIdentifier } from './allotment.utils';
 import { AllotmentRepository } from './allotment.repository';
 import {
   inspectStoredRegistrarMetadata,
+  persistRegistrarCode,
   reconcileStoredRegistrarMetadata,
   RegistrarMetadataIpoRecord,
   RegistrarResolver,
@@ -295,6 +295,22 @@ export class AllotmentService {
       const needsTimestampBackfill = !ipo.allotmentResultAvailableAt;
 
       if (registrarCode && !needsTimestampBackfill) {
+        const storedMetadata = await this.inspectStoredRegistrarMetadata(ipo);
+        if (
+          storedMetadata.disabledByConfig ||
+          storedMetadata.hasUnrecognizedEntry ||
+          storedMetadata.recognizedCodes.size > 1 ||
+          storedMetadata.lookupFailed
+        ) {
+          this.logger.warn(
+            `[Allotment Availability Probe] Failing closed on fast-path for post-allotment IPO ${ipo.id} due to conflicting, disabled, or failed stored registrar metadata`,
+          );
+          return {
+            available: false,
+            status: ipo.status,
+          };
+        }
+
         return {
           available: true,
           status: ipo.status,
@@ -529,54 +545,15 @@ export class AllotmentService {
     registrarCode: string,
     context: string,
   ): Promise<void> {
-    if (!isValidRegistrarIpoCode(registrarCode)) {
-      return;
-    }
-
-    let persistedByResolver = false;
-    if (
-      typeof this.resolver.persistDiscoveredRegistrarIdentity === 'function'
-    ) {
-      try {
-        await this.resolver.persistDiscoveredRegistrarIdentity(
-          ipoId,
-          adapterCode,
-          registrarCode,
-        );
-        persistedByResolver = true;
-      } catch (persistErr: unknown) {
-        this.logger.debug(
-          `Failed to persist registrar identity during ${context} for ${ipoId}: ${(persistErr as Error)?.message || persistErr}`,
-        );
-      }
-    }
-
-    if (
-      !persistedByResolver &&
-      typeof this.prisma.ipoAllotmentConfig?.upsert === 'function'
-    ) {
-      await this.prisma.ipoAllotmentConfig.upsert({
-        where: { ipoId },
-        create: {
-          ipoId,
-          registrar: adapterCode,
-          registrarIpoCode: registrarCode,
-          enabled: true,
-        },
-        update: {
-          registrar: adapterCode,
-          registrarIpoCode: registrarCode,
-          enabled: true,
-        },
-      });
-    }
-
-    if (this.prisma.ipoAllotmentConfig?.updateMany) {
-      await this.prisma.ipoAllotmentConfig.updateMany({
-        where: { ipoId },
-        data: { registrarIpoCode: registrarCode },
-      });
-    }
+    await persistRegistrarCode({
+      prisma: this.prisma,
+      resolver: this.resolver,
+      ipoId,
+      registrarCode: adapterCode,
+      discoveredCode: registrarCode,
+      context,
+      logger: this.logger,
+    });
   }
 
   private inspectStoredRegistrarMetadata(
