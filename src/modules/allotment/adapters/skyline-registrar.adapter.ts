@@ -151,7 +151,7 @@ export class SkylineRegistrarAdapter extends BaseRegistrarAdapter {
 
     if (companies.length > 0) {
       this.cachedCompanies = companies;
-      this.cacheExpiry = now + 10 * 60 * 1000; // 10 minutes TTL
+      this.cacheExpiry = now + 210_000; // 3.5 minutes TTL (3-4 min window to prevent per-IPO HTTP flood)
     }
 
     return companies;

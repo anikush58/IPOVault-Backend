@@ -42,7 +42,7 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
     AllotmentIdentifierType.DP_CLIENT_ID,
   ]);
 
-  private static readonly DEFAULT_COMPANY_LIST_CACHE_TTL_MS = 15 * 60 * 1000;
+  private static readonly DEFAULT_COMPANY_LIST_CACHE_TTL_MS = 210_000; // 3.5 minutes TTL (3-4 min window to prevent per-IPO HTTP flood)
 
   private readonly logger = new Logger(MufgIntimeRegistrarAdapter.name);
   private cachedCompanyList: {

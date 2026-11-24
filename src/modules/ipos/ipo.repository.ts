@@ -167,7 +167,51 @@ export class IpoRepository {
       where.publicationStatus = 'PUBLISHED';
     }
 
-    if (query.status) {
+    const isAllotmentOutQuery =
+      query.status === 'ALLOTMENT_COMPLETED' ||
+      query.status === 'ALLOTMENT_OUT';
+
+    if (isAllotmentOutQuery) {
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const statusCondition: Prisma.IpoWhereInput = {
+        OR: [
+          { status: IpoStatus.ALLOTMENT_COMPLETED },
+          {
+            status: IpoStatus.LISTED,
+            OR: [
+              { allotmentResultAvailableAt: { gte: fourteenDaysAgo } },
+              {
+                lifecycleEvents: {
+                  some: {
+                    eventType: 'LISTING',
+                    eventDate: { gte: fourteenDaysAgo },
+                  },
+                },
+              },
+            ],
+            AND: [
+              {
+                OR: [
+                  { allotmentResultAvailableAt: { not: null } },
+                  {
+                    allotmentConfig: {
+                      enabled: true,
+                      registrar: { not: '' },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      const existingAnd = Array.isArray(where.AND)
+        ? where.AND
+        : where.AND
+        ? [where.AND]
+        : [];
+      where.AND = [...existingAnd, statusCondition];
+    } else if (query.status) {
       if (Array.isArray(query.status)) {
         const statuses = query.status.map((s) =>
           s === 'ALLOTMENT_OUT' ? ('ALLOTMENT_COMPLETED' as IpoStatus) : (s as IpoStatus),
@@ -262,9 +306,17 @@ export class IpoRepository {
     }
 
     if (lifecycleConditions.length > 0) {
-      where.AND = lifecycleConditions.map((cond) => ({
-        lifecycleEvents: { some: cond },
-      }));
+      const existingAnd = Array.isArray(where.AND)
+        ? where.AND
+        : where.AND
+        ? [where.AND]
+        : [];
+      where.AND = [
+        ...existingAnd,
+        ...lifecycleConditions.map((cond) => ({
+          lifecycleEvents: { some: cond },
+        })),
+      ];
     }
 
     return where;

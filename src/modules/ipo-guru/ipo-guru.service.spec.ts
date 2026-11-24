@@ -597,6 +597,75 @@ describe('IpoGuruService', () => {
       expect(tx.subscriptionObservation.create).toHaveBeenCalled();
     });
 
+    it('should NEVER downgrade ALLOTMENT_COMPLETED or LISTING_PENDING to CLOSED when syncing with IPO Guru', async () => {
+      const allotmentOutIpo = {
+        id: 'ipo-allotment-out-1',
+        symbol: 'ALLOTOUT',
+        status: 'ALLOTMENT_COMPLETED',
+        allotmentResultAvailableAt: new Date('2024-11-10T12:00:00.000Z'),
+        faceValue: new Prisma.Decimal('1'),
+        priceBandLow: new Prisma.Decimal('100'),
+        priceBandHigh: new Prisma.Decimal('110'),
+        lotSize: 50,
+        company: {
+          id: 'comp-allot-1',
+          legalName: 'Allotment Out Limited',
+          displayName: 'Allotment Out',
+        },
+        allotmentConfig: {
+          registrar: 'MUFG_INTIME',
+          registrarIpoCode: '11972',
+          enabled: true,
+        },
+        sourceIdentities: [],
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValueOnce([allotmentOutIpo]);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValueOnce({
+          data: [
+            {
+              slug: 'allotment-out-limited',
+              name: 'Allotment Out Limited',
+              symbol: 'ALLOTOUT',
+              type: 'Mainboard',
+              status: 'Closed',
+              price_band: '100-110',
+              lot_size: 50,
+              open_date: '2024-11-06',
+              close_date: '2024-11-08',
+              allotment_date: '2024-11-10',
+              registrar: 'Link Intime',
+            },
+          ],
+        }),
+      });
+
+      const result = await service.syncIpos();
+      expect(result.matchedUpdated).toBe(1);
+
+      const tx = mockPrisma._txMock;
+      expect(tx.ipo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ipo-allotment-out-1' },
+          data: expect.not.objectContaining({ status: expect.anything() }),
+        }),
+      );
+      expect(tx.ipoAllotmentConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ipoId: 'ipo-allotment-out-1' },
+          update: expect.objectContaining({
+            registrar: 'MUFG_INTIME',
+            registrarIpoCode: '11972',
+            enabled: true,
+          }),
+        }),
+      );
+    });
+
     it('LISTED + IPO Guru listing price -> listing price syncs', async () => {
       const listedIpo = {
         id: 'ipo-listed-lp-1',

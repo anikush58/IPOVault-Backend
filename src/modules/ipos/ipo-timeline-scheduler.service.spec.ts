@@ -278,6 +278,123 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
       expect(resolverMock.resolveAdapter).not.toHaveBeenCalled();
     });
 
+    it('8b. should start registrar polling immediately at closeDate 17:00:00 IST even when allotmentDate is days away', async () => {
+      const closeDateStr = '2026-09-27';
+      const allotmentDateStr = '2026-09-29';
+      const nowAtClosePost1700 = createISTDateTime(closeDateStr, 17, 5, 0);
+
+      prismaMock.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-early-close',
+          status: IpoStatus.CLOSED,
+          allotmentResultAvailableAt: null,
+          company: { displayName: 'Early Close Ltd', legalName: 'Early Close Limited' },
+          lifecycleEvents: [
+            { eventType: LifecycleEventType.CLOSE, eventDate: createISTDateTime(closeDateStr, 0, 0) },
+            { eventType: LifecycleEventType.BASIS_OF_ALLOTMENT, eventDate: createISTDateTime(allotmentDateStr, 0, 0) },
+          ],
+        },
+      ]);
+
+      const mockAdapter = {
+        code: 'MUFG_INTIME',
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue('11972'),
+      };
+      resolverMock.resolveAdapter.mockResolvedValue({
+        adapter: mockAdapter,
+        registrarIpoCode: '11972',
+      });
+
+      const result = await service.processTimelineTransitions(nowAtClosePost1700);
+      expect(result.allotmentConfirmedCount).toBe(1);
+      expect(mockAdapter.resolveRegistrarIpoCode).toHaveBeenCalled();
+    });
+
+    it('8c. checkAllotmentAvailabilityDetailed returns structured reasons', async () => {
+      const testIpo: any = {
+        id: 'ipo-detail-test',
+        status: IpoStatus.CLOSED,
+        allotmentResultAvailableAt: null,
+        company: { displayName: 'Detail Ltd', legalName: 'Detail Limited' },
+        allotmentConfig: { enabled: true, registrar: 'MUFG_INTIME' },
+        lifecycleEvents: [],
+      };
+
+      // 1. not_in_dropdown
+      const mockAdapterDropdown = {
+        code: 'MUFG_INTIME',
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue(null),
+      };
+      resolverMock.resolveAdapter.mockResolvedValue({
+        adapter: mockAdapterDropdown,
+        registrarIpoCode: undefined,
+      });
+
+      const detailNot = await service.checkAllotmentAvailabilityDetailed(testIpo);
+      expect(detailNot.confirmed).toBe(false);
+      expect(detailNot.reason).toBe('not_in_dropdown');
+
+      // 2. confirmed
+      mockAdapterDropdown.resolveRegistrarIpoCode.mockResolvedValue('11972');
+      const detailConf = await service.checkAllotmentAvailabilityDetailed(testIpo);
+      expect(detailConf.confirmed).toBe(true);
+      expect(detailConf.reason).toBe('confirmed');
+      expect(detailConf.discoveredCode).toBe('11972');
+
+      // 3. disabled_by_config
+      const disabledIpo: any = { ...testIpo, allotmentConfig: { enabled: false } };
+      const detailDis = await service.checkAllotmentAvailabilityDetailed(disabledIpo);
+      expect(detailDis.confirmed).toBe(false);
+      expect(detailDis.reason).toBe('disabled_by_config');
+
+      // 4. probe_timeout
+      mockAdapterDropdown.resolveRegistrarIpoCode.mockRejectedValue(new Error('Gateway timeout'));
+      const detailTimeout = await service.checkAllotmentAvailabilityDetailed(testIpo);
+      expect(detailTimeout.confirmed).toBe(false);
+      expect(detailTimeout.reason).toBe('probe_timeout');
+    });
+
+    it('8d. repeated not_in_dropdown checks log at debug and do not emit repeat info logs', async () => {
+      const logSpy = jest.spyOn((service as any).logger, 'log');
+      const debugSpy = jest.spyOn((service as any).logger, 'debug');
+
+      const testIpo: any = {
+        id: 'ipo-log-test',
+        status: IpoStatus.CLOSED,
+        allotmentResultAvailableAt: null,
+        company: { displayName: 'Log Test Ltd', legalName: 'Log Test Limited' },
+        lifecycleEvents: [
+          { eventType: LifecycleEventType.CLOSE, eventDate: createISTDateTime('2026-09-27', 0, 0) },
+        ],
+      };
+
+      prismaMock.ipo.findMany.mockResolvedValue([testIpo]);
+      const mockAdapter = {
+        code: 'MUFG_INTIME',
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue(null),
+      };
+      resolverMock.resolveAdapter.mockResolvedValue({
+        adapter: mockAdapter,
+        registrarIpoCode: undefined,
+      });
+
+      const t1 = createISTDateTime('2026-09-27', 17, 5, 0);
+      const t2 = createISTDateTime('2026-09-27', 17, 11, 0); // 6 mins later
+
+      await service.processTimelineTransitions(t1);
+      const initialLogCount = logSpy.mock.calls.filter((c) => String(c[0]).includes('not_in_dropdown')).length;
+      expect(initialLogCount).toBe(1);
+
+      await service.processTimelineTransitions(t2);
+      const secondLogCount = logSpy.mock.calls.filter((c) => String(c[0]).includes('not_in_dropdown')).length;
+      const secondDebugCount = debugSpy.mock.calls.filter((c) => String(c[0]).includes('not_in_dropdown')).length;
+      expect(secondLogCount).toBe(1); // Did not increment log (info)
+      expect(secondDebugCount).toBeGreaterThanOrEqual(1); // Logged at debug
+
+      logSpy.mockRestore();
+      debugSpy.mockRestore();
+    });
+
     it('9. should poll registrar on allotment date and transition to ALLOTMENT_COMPLETED when allotment is out', async () => {
       const allotmentDate = new Date('2026-09-28T00:00:00.000Z');
       const nowOnAllotmentDate = new Date('2026-09-28T04:30:00.000Z'); // 10:00:00 IST morning

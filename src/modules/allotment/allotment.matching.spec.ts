@@ -5,6 +5,7 @@ import {
 } from './allotment.types';
 import {
   applyRegistrarSpellingAliases,
+  extractMeaningfulTokens,
   isTokenMatchSafely,
   levenshteinDistance,
   matchRegistrarCompany,
@@ -67,12 +68,35 @@ describe('Allotment Matching Pure Utility Tests', () => {
       expect(
         stripOfferingAndCorporateSuffixes('SBI FUNDS MANAGMENT LIMITED IPO'),
       ).toBe('sbi funds managment');
+      expect(
+        stripOfferingAndCorporateSuffixes('Crystal Crop Protection Ltd (Equity Shares)'),
+      ).toBe('crystal crop protection');
+      expect(
+        stripOfferingAndCorporateSuffixes('Acme Solar Holdings [SME IPO] (Rights Issue)'),
+      ).toBe('acme solar holdings');
       expect(normalizeName('Molbio Diagnostics Limited')).toBe(
         'molbiodiagnostics',
       );
       expect(normalizeName('SBI FUNDS MANAGMENT LIMITED IPO')).toBe(
         'sbifundsmanagment',
       );
+    });
+
+    it('strictly preserves "India" while stripping corporate and offering noise tokens', () => {
+      const tokens = extractMeaningfulTokens('India Shelter Finance Corporation Ltd');
+      expect(tokens).toContain('india');
+      expect(tokens).toContain('shelter');
+      expect(tokens).toContain('finance');
+      expect(tokens).toContain('corporation');
+      expect(tokens).not.toContain('ltd');
+
+      const indiaPvtTokens = extractMeaningfulTokens('Link Intime India Private Limited (IPO)');
+      expect(indiaPvtTokens).toContain('link');
+      expect(indiaPvtTokens).toContain('intime');
+      expect(indiaPvtTokens).toContain('india');
+      expect(indiaPvtTokens).not.toContain('private');
+      expect(indiaPvtTokens).not.toContain('limited');
+      expect(indiaPvtTokens).not.toContain('ipo');
     });
 
     it('applies registrar spelling aliases deterministically', () => {

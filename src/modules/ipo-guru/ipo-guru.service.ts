@@ -1146,8 +1146,21 @@ export class IpoGuruService {
         } else {
           skippedFields.push({ field: 'publicationStatus', reason: 'Already PUBLISHED' });
         }
-        // When existing IPO is still in pre-issue DRAFT state, initialize its lifecycle status
-        if (existingIpo.status === IpoStatus.DRAFT) {
+        // Monotonic Status Protection: Never allow IPO Guru to downgrade active or terminal lifecycle statuses
+        const protectedStatuses = new Set<IpoStatus>([
+          IpoStatus.ALLOTMENT_COMPLETED,
+          IpoStatus.LISTING_PENDING,
+          IpoStatus.LISTED,
+          IpoStatus.WITHDRAWN,
+          IpoStatus.CANCELLED,
+        ]);
+
+        if (protectedStatuses.has(existingIpo.status)) {
+          skippedFields.push({
+            field: 'status',
+            reason: `Monotonic guard: IPO is in protected ${existingIpo.status} status`,
+          });
+        } else if (existingIpo.status === IpoStatus.DRAFT) {
           const derivedStatus =
             status ||
             (openDate
@@ -1680,18 +1693,24 @@ export class IpoGuruService {
       const registrar = (rawItem.registrar || '').trim();
       if (registrar) {
         const existingCfg = (match.matchedIpo as any)?.allotmentConfig;
+        const hasVerifiedCode = Boolean(existingCfg?.registrarIpoCode?.trim());
         const isRegistrarChanged =
           action === 'CREATED' ||
           !existingCfg ||
-          existingCfg.registrar !== registrar ||
+          (!hasVerifiedCode && existingCfg.registrar !== registrar) ||
           (allotmentDate && (!existingCfg.expectedAllotmentDate || new Date(existingCfg.expectedAllotmentDate).getTime() !== allotmentDate.getTime()));
 
         if (isRegistrarChanged) {
+          const preservedCode = existingCfg?.registrarIpoCode?.trim() || undefined;
+          const registrarToSet = hasVerifiedCode && existingCfg.registrar ? existingCfg.registrar : registrar;
+
           await tx.ipoAllotmentConfig.upsert({
             where: { ipoId },
             update: {
-              registrar,
+              registrar: registrarToSet,
               expectedAllotmentDate: allotmentDate || undefined,
+              enabled: true,
+              ...(preservedCode ? { registrarIpoCode: preservedCode } : {}),
             },
             create: {
               ipoId,

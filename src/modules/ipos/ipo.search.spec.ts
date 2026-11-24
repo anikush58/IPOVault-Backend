@@ -180,5 +180,77 @@ describe('Phase 25 — Smart IPO Search & Filtering Unit Tests', () => {
         }),
       );
     });
+
+    it('builds query condition for ALLOTMENT_COMPLETED including recent checkable LISTED IPOs within 14 days', async () => {
+      const query = ipoListQuerySchema.parse({
+        status: 'ALLOTMENT_COMPLETED' as any,
+      });
+
+      await repository.findMany(query, 0);
+
+      expect(findManySpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            publicationStatus: 'PUBLISHED',
+            AND: expect.arrayContaining([
+              expect.objectContaining({
+                OR: [
+                  { status: 'ALLOTMENT_COMPLETED' },
+                  expect.objectContaining({
+                    status: 'LISTED',
+                    OR: [
+                      expect.objectContaining({ allotmentResultAvailableAt: expect.any(Object) }),
+                      expect.objectContaining({ lifecycleEvents: expect.any(Object) }),
+                    ],
+                    AND: [
+                      expect.objectContaining({
+                        OR: [
+                          { allotmentResultAvailableAt: { not: null } },
+                          {
+                            allotmentConfig: {
+                              enabled: true,
+                              registrar: { not: '' },
+                            },
+                          },
+                        ],
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('preserves text search q condition and ALLOTMENT_OUT filter simultaneously without overwriting where.OR', async () => {
+      const query = ipoListQuerySchema.parse({
+        q: 'ACME',
+        status: 'ALLOTMENT_OUT' as any,
+      });
+
+      await repository.findMany(query, 0);
+
+      expect(findManySpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              { company: { legalName: { contains: 'ACME', mode: 'insensitive' } } },
+              { company: { displayName: { contains: 'ACME', mode: 'insensitive' } } },
+              { company: { cin: { contains: 'ACME', mode: 'insensitive' } } },
+              { symbol: { contains: 'ACME', mode: 'insensitive' } },
+            ],
+            AND: expect.arrayContaining([
+              expect.objectContaining({
+                OR: expect.arrayContaining([
+                  { status: 'ALLOTMENT_COMPLETED' },
+                ]),
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
   });
 });

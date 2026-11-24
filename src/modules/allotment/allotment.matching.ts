@@ -48,8 +48,28 @@ export function levenshteinDistance(a: string, b: string): number {
   return matrix[b.length][a.length];
 }
 
+export const LEGAL_ISSUE_NOISE_TOKENS = new Set<string>([
+  'limited',
+  'ltd',
+  'private',
+  'pvt',
+  'ipo',
+  'sme',
+  'mainboard',
+  'equity',
+  'shares',
+  'rights',
+  'issue',
+  'fpo',
+  'reit',
+  'invit',
+  'buyback',
+]);
+
 /**
  * Repeatedly strips trailing offering and corporate suffixes from a raw company name.
+ * Strips both trailing and bracketed/parenthesized noise (e.g. '(IPO)', '[SME]', '- Equity Shares').
+ * Note: Does NOT strip "India" as per strict domain matching requirements.
  */
 export function stripOfferingAndCorporateSuffixes(name: string): string {
   let clean = name.toLowerCase().trim();
@@ -61,8 +81,18 @@ export function stripOfferingAndCorporateSuffixes(name: string): string {
   while (changed) {
     const prev = clean;
     clean = clean
+      // Strip trailing bracketed/parenthesized offering & corporate terms
       .replace(
-        /[\s\-_,.]+(ipo|sme\s+ipo|sme|rights\s+issue|buyback|fpo|reit|invit)$/i,
+        /[\s\-_,.]*[\(\[\{]\s*(ipo|sme\s+ipo|sme|mainboard|equity(\s+shares)?|rights(\s+issue)?|buyback|fpo|reit|invit|issue)\s*[\)\]\}]$/i,
+        '',
+      )
+      .replace(
+        /[\s\-_,.]*[\(\[\{]\s*(private\s+limited|pvt\s*\.?\s*ltd\.?|limited|ltd\.?)\s*[\)\]\}]$/i,
+        '',
+      )
+      // Strip trailing non-bracketed offering & corporate terms
+      .replace(
+        /[\s\-_,.]+(ipo|sme\s+ipo|sme|mainboard|equity(\s+shares)?|rights(\s+issue)?|buyback|fpo|reit|invit|issue)$/i,
         '',
       )
       .replace(
@@ -85,12 +115,15 @@ export function normalizeName(name: string): string {
 }
 
 /**
- * Extracts meaningful individual lowercase tokens from a company name after stripping suffixes.
+ * Extracts meaningful individual lowercase tokens from a company name after stripping suffixes
+ * and filtering out corporate/offering noise tokens while strictly preserving identifiers like 'india'.
  */
 export function extractMeaningfulTokens(name: string): string[] {
   const stripped = stripOfferingAndCorporateSuffixes(name);
   const rawTokens = stripped.split(/[^a-z0-9]+/i);
-  return rawTokens.filter((tok) => tok.length > 0);
+  return rawTokens
+    .map((tok) => tok.toLowerCase().trim())
+    .filter((tok) => tok.length > 0 && !LEGAL_ISSUE_NOISE_TOKENS.has(tok));
 }
 
 /**

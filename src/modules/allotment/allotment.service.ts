@@ -533,17 +533,43 @@ export class AllotmentService {
       return;
     }
 
-    await Promise.resolve(
-      this.resolver.persistDiscoveredRegistrarIdentity?.(
-        ipoId,
-        adapterCode,
-        registrarCode,
-      ),
-    ).catch((persistErr: unknown) => {
-      this.logger.debug(
-        `Failed to persist registrar identity during ${context} for ${ipoId}: ${(persistErr as Error)?.message || persistErr}`,
-      );
-    });
+    let persistedByResolver = false;
+    if (
+      typeof this.resolver.persistDiscoveredRegistrarIdentity === 'function'
+    ) {
+      try {
+        await this.resolver.persistDiscoveredRegistrarIdentity(
+          ipoId,
+          adapterCode,
+          registrarCode,
+        );
+        persistedByResolver = true;
+      } catch (persistErr: unknown) {
+        this.logger.debug(
+          `Failed to persist registrar identity during ${context} for ${ipoId}: ${(persistErr as Error)?.message || persistErr}`,
+        );
+      }
+    }
+
+    if (
+      !persistedByResolver &&
+      typeof this.prisma.ipoAllotmentConfig?.upsert === 'function'
+    ) {
+      await this.prisma.ipoAllotmentConfig.upsert({
+        where: { ipoId },
+        create: {
+          ipoId,
+          registrar: adapterCode,
+          registrarIpoCode: registrarCode,
+          enabled: true,
+        },
+        update: {
+          registrar: adapterCode,
+          registrarIpoCode: registrarCode,
+          enabled: true,
+        },
+      });
+    }
 
     if (this.prisma.ipoAllotmentConfig?.updateMany) {
       await this.prisma.ipoAllotmentConfig.updateMany({

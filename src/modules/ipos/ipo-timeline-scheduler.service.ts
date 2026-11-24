@@ -31,6 +31,7 @@ import { AllotmentJobService } from '../allotment/allotment-job.service';
 import {
   AllotmentIdentifierType,
   CheckAllotmentRequest,
+  NormalizedAllotmentResult,
   sanitizeRegistrarIpoCode,
 } from '../allotment/allotment.types';
 
@@ -121,6 +122,33 @@ export function createISTDateTime(
   return new Date(`${dateStr}T${h}:${m}:${s}+05:30`);
 }
 
+/**
+ * Computes a new date string (YYYY-MM-DD) offset by a given number of days in UTC.
+ */
+export function addDaysToDateStr(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + days));
+  return date.toISOString().slice(0, 10);
+}
+
+export type AllotmentCheckReason =
+  | 'confirmed'
+  | 'not_in_dropdown'
+  | 'registrar_unmapped'
+  | 'probe_timeout'
+  | 'conflicting_metadata'
+  | 'disabled_by_config'
+  | 'probe_error'
+  | 'already_out';
+
+export interface AllotmentAvailabilityDetail {
+  confirmed: boolean;
+  reason: AllotmentCheckReason;
+  adapterCode?: string;
+  discoveredCode?: string;
+  details?: string;
+}
+
 @Injectable()
 export class IpoTimelineSchedulerService
   implements OnModuleInit, OnModuleDestroy
@@ -129,9 +157,10 @@ export class IpoTimelineSchedulerService
   private timer: NodeJS.Timeout | null = null;
   private isProcessing = false;
 
-  // In-memory throttling maps for 5-min allotment polling, bounded backfill retries, and listing price checks
+  // In-memory throttling maps for 5-min allotment polling, bounded backfill retries, listing price checks, and reason tracking
   private readonly lastAllotmentPollingAt = new Map<string, number>();
   private readonly lastListingPriceCheckAt = new Map<string, number>();
+  private readonly lastAllotmentCheckReason = new Map<string, string>();
   private readonly backfillRetryState = new Map<
     string,
     AllotmentBackfillRetryEntry
@@ -490,7 +519,7 @@ export class IpoTimelineSchedulerService
       }
 
       // =========================================================================
-      // 5. Allotment Polling (from 12:00 AM / 00:00:00 IST on allotment date, every 5 mins)
+      // 5. Allotment Polling (from closeDate 17:00 IST through allotmentDate + 1 day 23:59 IST, every 5 mins)
       // -> ALLOTMENT_COMPLETED / ALLOTMENT_OUT when found
       // =========================================================================
       if (
@@ -498,75 +527,102 @@ export class IpoTimelineSchedulerService
         currentStatus === IpoStatus.ALLOTMENT_PENDING
       ) {
         let pollingStartThreshold: Date | null = null;
-        if (allotmentDateStr) {
+        if (closeDateStr) {
+          pollingStartThreshold = createISTDateTime(closeDateStr, 17, 0, 0);
+        } else if (allotmentDateStr) {
           pollingStartThreshold = createISTDateTime(allotmentDateStr, 0, 0, 0);
-        } else if (closeDateStr) {
-          pollingStartThreshold = createISTDateTime(closeDateStr, 20, 0, 0);
+        }
+
+        let pollingEndThreshold: Date | null = null;
+        if (allotmentDateStr) {
+          const endDayStr = addDaysToDateStr(allotmentDateStr, 1);
+          pollingEndThreshold = createISTDateTime(endDayStr, 23, 59, 59);
+        } else if (listingDateStr) {
+          pollingEndThreshold = createISTDateTime(listingDateStr, 23, 59, 59);
         }
 
         if (pollingStartThreshold && now >= pollingStartThreshold) {
-            // Check 5-minute per-IPO polling throttle (300,000 ms)
-            const lastPoll = this.lastAllotmentPollingAt.get(ipo.id) ?? 0;
-            const elapsed = now.getTime() - lastPoll;
+          // Check 5-minute per-IPO polling throttle (300,000 ms) within standard window,
+          // or 60-minute throttle if past scheduled window but still awaiting allotment
+          const isPastWindow = pollingEndThreshold ? now > pollingEndThreshold : false;
+          const throttleMs = isPastWindow ? 3_600_000 : 300_000;
+          const lastPoll = this.lastAllotmentPollingAt.get(ipo.id) ?? 0;
+          const elapsed = now.getTime() - lastPoll;
 
-            if (elapsed >= 300_000 || lastPoll === 0) {
-              this.lastAllotmentPollingAt.set(ipo.id, now.getTime());
+          if (elapsed >= throttleMs || lastPoll === 0) {
+            this.lastAllotmentPollingAt.set(ipo.id, now.getTime());
 
-              const isConfirmed =
-                await this.confirmActualAllotmentAvailability(ipo);
+            const checkDetail =
+              await this.checkAllotmentAvailabilityDetailed(ipo);
+            const prevReason = this.lastAllotmentCheckReason.get(ipo.id);
+            this.lastAllotmentCheckReason.set(ipo.id, checkDetail.reason);
 
-              if (isConfirmed) {
-                const updatePayload: Prisma.IpoUpdateManyMutationInput = {
-                  status: IpoStatus.ALLOTMENT_COMPLETED,
-                };
+            if (checkDetail.confirmed) {
+              const updatePayload: Prisma.IpoUpdateManyMutationInput = {
+                status: IpoStatus.ALLOTMENT_COMPLETED,
+              };
 
-                // Preserve first detection timestamp; never overwrite if already present
-                if (!ipo.allotmentResultAvailableAt) {
-                  updatePayload.allotmentResultAvailableAt = now;
-                }
+              // Preserve first detection timestamp; never overwrite if already present
+              if (!ipo.allotmentResultAvailableAt) {
+                updatePayload.allotmentResultAvailableAt = now;
+              }
 
-                const updated = await this.prisma.ipo.updateMany({
-                  where: {
-                    id: ipo.id,
-                    status: {
-                      in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING],
-                    },
+              const updated = await this.prisma.ipo.updateMany({
+                where: {
+                  id: ipo.id,
+                  status: {
+                    in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING],
                   },
-                  data: updatePayload,
-                });
+                },
+                data: updatePayload,
+              });
 
-                if (updated.count > 0) {
-                  currentStatus = IpoStatus.ALLOTMENT_COMPLETED;
-                  summary.allotmentConfirmedCount += updated.count;
-                  this.lastAllotmentPollingAt.delete(ipo.id); // Stop polling immediately
+              if (updated.count > 0) {
+                currentStatus = IpoStatus.ALLOTMENT_COMPLETED;
+                summary.allotmentConfirmedCount += updated.count;
+                this.lastAllotmentPollingAt.delete(ipo.id); // Stop polling immediately
 
-                  this.logger.log(
-                    `[Timeline] Confirmed allotment results live for IPO '${ipo.company.displayName}' (${ipo.id}). Transitioned to ALLOTMENT_COMPLETED (ALLOTMENT_OUT)`,
-                  );
+                this.logger.log(
+                  `[Timeline Allotment Check] Confirmed allotment results live for IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}' (code: '${checkDetail.discoveredCode}'). Transitioned to ALLOTMENT_COMPLETED (ALLOTMENT_OUT)`,
+                );
 
-                  // EVENT A: IPO Allotment Out notification (exactly once)
-                  if (this.notificationOrchestrator) {
-                    this.notificationOrchestrator
-                      .processAllotmentOutEvent(ipo.id)
-                      .catch((notifErr: unknown) => {
-                        this.logger.error(
-                          `Failed to orchestrate allotment out notification for IPO ${ipo.id} (isolated): ${(notifErr as Error)?.message || notifErr}`,
-                        );
-                      });
-                  }
-
-                  // AUTOMATIC USER ALLOTMENT CHECKS & EVENT B
-                  this.triggerAutomaticUserAllotmentChecks(ipo.id)
-                    .catch((checkErr: unknown) => {
+                // EVENT A: IPO Allotment Out notification (exactly once)
+                if (this.notificationOrchestrator) {
+                  this.notificationOrchestrator
+                    .processAllotmentOutEvent(ipo.id)
+                    .catch((notifErr: unknown) => {
                       this.logger.error(
-                        `Failed to trigger automatic user allotment checks for IPO ${ipo.id} (isolated): ${(checkErr as Error)?.message || checkErr}`,
+                        `Failed to orchestrate allotment out notification for IPO ${ipo.id} (isolated): ${(notifErr as Error)?.message || notifErr}`,
                       );
                     });
                 }
+
+                // AUTOMATIC USER ALLOTMENT CHECKS & EVENT B
+                this.triggerAutomaticUserAllotmentChecks(ipo.id)
+                  .catch((checkErr: unknown) => {
+                    this.logger.error(
+                      `Failed to trigger automatic user allotment checks for IPO ${ipo.id} (isolated): ${(checkErr as Error)?.message || checkErr}`,
+                    );
+                  });
               }
+            } else if (checkDetail.reason === 'not_in_dropdown') {
+              if (prevReason !== 'not_in_dropdown') {
+                this.logger.log(
+                  `[Timeline Allotment Check] Checked IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': not_in_dropdown`,
+                );
+              } else {
+                this.logger.debug(
+                  `[Timeline Allotment Check] Checked IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': not_in_dropdown`,
+                );
+              }
+            } else {
+              this.logger.warn(
+                `[Timeline Allotment Check] Checked IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNMAPPED'}': ${checkDetail.reason}${checkDetail.details ? ` (${checkDetail.details})` : ''}`,
+              );
             }
           }
         }
+      }
 
       // =========================================================================
       // 6. ALLOTMENT_COMPLETED / LISTING_PENDING -> LISTED (at listing date 10:00:00 IST)
@@ -615,7 +671,15 @@ export class IpoTimelineSchedulerService
           currentStatus === IpoStatus.LISTING_PENDING ||
           currentStatus === IpoStatus.LISTED) &&
         ipo.allotmentConfig?.enabled !== false &&
-        Boolean(ipo.allotmentConfig?.registrar) &&
+        Boolean(
+          ipo.allotmentConfig?.registrar ||
+            ipo.participants?.some(
+              (p) => p.role === ParticipantRole.REGISTRAR,
+            ) ||
+            ipo.sourceIdentities?.some(
+              (s) => s.source?.sourceType === 'REGISTRAR',
+            ),
+        ) &&
         (!ipo.allotmentResultAvailableAt ||
           !this.extractValidRegistrarCode(
             ipo.allotmentConfig?.registrarIpoCode,
@@ -631,12 +695,17 @@ export class IpoTimelineSchedulerService
         this.canAttemptBackfill(ipo.id, now.getTime())
       ) {
         try {
-          const confirmed = await this.confirmActualAllotmentAvailability(ipo, {
-            skipForceRefresh: true,
-          });
-          if (confirmed) {
+          const checkDetail =
+            await this.checkAllotmentAvailabilityDetailed(ipo, {
+              skipForceRefresh: true,
+            });
+          const prevReason = this.lastAllotmentCheckReason.get(ipo.id);
+          this.lastAllotmentCheckReason.set(ipo.id, checkDetail.reason);
+
+          if (checkDetail.confirmed) {
             this.clearBackfillRetryState(ipo.id, now.getTime());
-            this.lastAllotmentPollingAt.delete(ipo.id);
+            this.lastAllotmentPollingAt.delete(ipo.id); // Stop polling immediately
+
             if (!ipo.allotmentResultAvailableAt) {
               const backfilled = await this.prisma.ipo.updateMany({
                 where: {
@@ -647,12 +716,28 @@ export class IpoTimelineSchedulerService
               });
               if (backfilled?.count > 0) {
                 this.logger.log(
-                  `[Timeline] Backfilled allotmentResultAvailableAt for ${currentStatus} IPO '${ipo.company.displayName}' (${ipo.id})`,
+                  `[Timeline Allotment Check] Backfilled allotmentResultAvailableAt for ${currentStatus} IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}' (code: '${checkDetail.discoveredCode}')`,
                 );
               }
             }
           } else {
             this.recordBackfillFailure(ipo.id, now.getTime());
+
+            if (checkDetail.reason === 'not_in_dropdown') {
+              if (prevReason !== 'not_in_dropdown') {
+                this.logger.log(
+                  `[Timeline Allotment Check] Checked ${currentStatus} IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': not_in_dropdown`,
+                );
+              } else {
+                this.logger.debug(
+                  `[Timeline Allotment Check] Checked ${currentStatus} IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': not_in_dropdown`,
+                );
+              }
+            } else {
+              this.logger.warn(
+                `[Timeline Allotment Check] Checked ${currentStatus} IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNMAPPED'}': ${checkDetail.reason}${checkDetail.details ? ` (${checkDetail.details})` : ''}`,
+              );
+            }
           }
         } catch (backfillErr: unknown) {
           this.recordBackfillFailure(ipo.id, now.getTime());
@@ -1004,43 +1089,245 @@ export class IpoTimelineSchedulerService
       return false;
     }
 
-    const existingConfigCode = this.extractValidRegistrarCode(
-      ipo.allotmentConfig?.registrarIpoCode,
-    );
+    const registrarToPersist = adapterCode?.trim() || reconciledRegistrar;
 
-    if (!existingConfigCode || existingConfigCode !== cleanDiscoveredCode) {
-      try {
-        const registrarToPersist = adapterCode?.trim() || reconciledRegistrar;
-        if (
-          registrarToPersist &&
-          typeof this.resolver.persistDiscoveredRegistrarIdentity === 'function'
-        ) {
+    try {
+      let persistedByResolver = false;
+      if (
+        registrarToPersist &&
+        typeof this.resolver.persistDiscoveredRegistrarIdentity === 'function'
+      ) {
+        try {
           await this.resolver.persistDiscoveredRegistrarIdentity(
             ipo.id,
             registrarToPersist,
             cleanDiscoveredCode,
           );
+          persistedByResolver = true;
+        } catch (persistErr: unknown) {
+          this.logger.debug(
+            `Failed to persist dynamic registrar identity for IPO ${ipo.id}: ${(persistErr as Error)?.message || persistErr}`,
+          );
         }
-        if (this.prisma?.ipoAllotmentConfig?.updateMany) {
-          await this.prisma.ipoAllotmentConfig.updateMany({
-            where: { ipoId: ipo.id },
-            data: { registrarIpoCode: cleanDiscoveredCode },
-          });
-        }
-      } catch (persistErr: unknown) {
-        this.logger.debug(
-          `Failed to persist discovered registrar code '${cleanDiscoveredCode}' for IPO ${ipo.id}: ${(persistErr as Error)?.message || persistErr}`,
-        );
       }
+
+      if (
+        !persistedByResolver &&
+        typeof this.prisma?.ipoAllotmentConfig?.upsert === 'function'
+      ) {
+        await this.prisma.ipoAllotmentConfig.upsert({
+          where: { ipoId: ipo.id },
+          create: {
+            ipoId: ipo.id,
+            registrar: registrarToPersist,
+            registrarIpoCode: cleanDiscoveredCode,
+            enabled: true,
+          },
+          update: {
+            registrar: registrarToPersist,
+            registrarIpoCode: cleanDiscoveredCode,
+            enabled: true,
+          },
+        });
+      }
+
+      if (this.prisma?.ipoAllotmentConfig?.updateMany) {
+        await this.prisma.ipoAllotmentConfig.updateMany({
+          where: { ipoId: ipo.id },
+          data: {
+            registrarIpoCode: cleanDiscoveredCode,
+          },
+        });
+      }
+    } catch (persistErr: unknown) {
+      this.logger.debug(
+        `Failed to persist discovered registrar code '${cleanDiscoveredCode}' for IPO ${ipo.id}: ${(persistErr as Error)?.message || persistErr}`,
+      );
     }
 
     return true;
   }
 
   /**
+   * Performs detailed allotment-result availability check from the registrar's official lookup service.
+   * Returns structured reason: confirmed | not_in_dropdown | registrar_unmapped | probe_timeout |
+   * conflicting_metadata | disabled_by_config | probe_error | already_out.
+   */
+  public async checkAllotmentAvailabilityDetailed(
+    ipo: Prisma.IpoGetPayload<{
+      include: {
+        company: true;
+        lifecycleEvents: true;
+        allotmentConfig: true;
+      };
+    }> &
+      Pick<RegistrarMetadataIpoRecord, 'sourceIdentities' | 'participants'>,
+    options: AllotmentAvailabilityCheckOptions = {},
+  ): Promise<AllotmentAvailabilityDetail> {
+    try {
+      if (ipo.allotmentConfig?.enabled === false) {
+        return {
+          confirmed: false,
+          reason: 'disabled_by_config',
+          adapterCode: ipo.allotmentConfig?.registrar || undefined,
+        };
+      }
+
+      const storedMetadata = await inspectStoredRegistrarMetadata(
+        ipo,
+        this.prisma,
+        this.registry,
+        this.logger,
+      );
+
+      if (storedMetadata.disabledByConfig) {
+        return {
+          confirmed: false,
+          reason: 'disabled_by_config',
+          adapterCode: ipo.allotmentConfig?.registrar || undefined,
+        };
+      }
+
+      if (
+        storedMetadata.hasUnrecognizedEntry ||
+        storedMetadata.recognizedCodes.size > 1
+      ) {
+        return {
+          confirmed: false,
+          reason: 'conflicting_metadata',
+          details: 'Unrecognized or conflicting registrar entries',
+        };
+      }
+
+      if (storedMetadata.lookupFailed) {
+        return {
+          confirmed: false,
+          reason: 'probe_error',
+          details: 'Failed to inspect stored registrar metadata',
+        };
+      }
+
+      const probeOptions = {
+        requireLiveActiveList: true,
+        skipIdentityPersistence: true,
+        ...(options.skipForceRefresh ? { skipForceRefresh: true } : {}),
+      };
+
+      const resolved = await this.resolver.resolveAdapter(
+        ipo.id,
+        undefined,
+        probeOptions,
+      );
+
+      if (!resolved || !resolved.adapter) {
+        return {
+          confirmed: false,
+          reason: 'registrar_unmapped',
+          details: 'Unable to resolve registrar adapter',
+        };
+      }
+
+      const { adapter, registrarIpoCode } = resolved;
+      const reconciledBeforeProbe = reconcileStoredRegistrarMetadata(
+        storedMetadata,
+        adapter.code,
+        this.registry,
+      );
+
+      if (!reconciledBeforeProbe) {
+        return {
+          confirmed: false,
+          reason: 'conflicting_metadata',
+          adapterCode: adapter.code,
+          details:
+            'Resolved adapter conflicts with stored registrar metadata',
+        };
+      }
+
+      const sanitizedCode = sanitizeRegistrarIpoCode(registrarIpoCode);
+
+      if (typeof adapter.resolveRegistrarIpoCode !== 'function') {
+        return {
+          confirmed: false,
+          reason: 'probe_error',
+          adapterCode: adapter.code,
+          details: 'Adapter does not support live code resolution',
+        };
+      }
+
+      const checkRequest: CheckAllotmentRequest = {
+        ipoId: ipo.id,
+        registrarIpoCode: sanitizedCode,
+        identifierType: AllotmentIdentifierType.PAN,
+        identifierValue: '', // No fake applicant PAN or identifier sent
+        companyName: ipo.company.displayName,
+        companyLegalName: ipo.company.legalName,
+        symbol: ipo.symbol || undefined,
+        requireLiveActiveList: true,
+        ...(options.skipForceRefresh ? { skipForceRefresh: true } : {}),
+      };
+
+      let result: string | NormalizedAllotmentResult | null | undefined = null;
+      try {
+        result = await adapter.resolveRegistrarIpoCode(checkRequest);
+      } catch (probeErr: unknown) {
+        const errMsg = (probeErr as Error)?.message || String(probeErr);
+        if (
+          errMsg.toLowerCase().includes('timeout') ||
+          errMsg.toLowerCase().includes('timed out')
+        ) {
+          return {
+            confirmed: false,
+            reason: 'probe_timeout',
+            adapterCode: adapter.code,
+            details: errMsg,
+          };
+        }
+        return {
+          confirmed: false,
+          reason: 'probe_error',
+          adapterCode: adapter.code,
+          details: errMsg,
+        };
+      }
+
+      const discoveredCode =
+        typeof result === 'string'
+          ? this.extractValidRegistrarCode(result)
+          : null;
+
+      if (discoveredCode) {
+        await this.persistDiscoveredCode(
+          ipo,
+          adapter.code,
+          discoveredCode,
+          storedMetadata,
+        );
+        return {
+          confirmed: true,
+          reason: 'confirmed',
+          adapterCode: adapter.code,
+          discoveredCode,
+        };
+      }
+
+      return {
+        confirmed: false,
+        reason: 'not_in_dropdown',
+        adapterCode: adapter.code,
+      };
+    } catch (err: unknown) {
+      return {
+        confirmed: false,
+        reason: 'probe_error',
+        details: (err as Error)?.message || String(err),
+      };
+    }
+  }
+
+  /**
    * Confirms actual allotment-result availability from the registrar's official lookup service.
-   * Leverages the registrar adapter's authoritative active-issue resolution mechanism (KFin React bundle,
-   * MUFG GetDetails XML, or Maashitla companies endpoint) without sending any fake applicant identifiers.
+   * Delegates to checkAllotmentAvailabilityDetailed.
    */
   public async confirmActualAllotmentAvailability(
     ipo: Prisma.IpoGetPayload<{
@@ -1053,98 +1340,8 @@ export class IpoTimelineSchedulerService
       Pick<RegistrarMetadataIpoRecord, 'sourceIdentities' | 'participants'>,
     options: AllotmentAvailabilityCheckOptions = {},
   ): Promise<boolean> {
-    try {
-      if (ipo.allotmentConfig?.enabled === false) {
-        return false;
-      }
-
-      const storedMetadata = await inspectStoredRegistrarMetadata(
-        ipo,
-        this.prisma,
-        this.registry,
-        this.logger,
-      );
-      if (
-        storedMetadata.disabledByConfig ||
-        storedMetadata.lookupFailed ||
-        storedMetadata.hasUnrecognizedEntry ||
-        storedMetadata.recognizedCodes.size > 1
-      ) {
-        this.logger.warn(
-          `Rejected allotment availability check for IPO ${ipo.id}: conflicting, disabled, unknown, or unreadable registrar metadata`,
-        );
-        return false;
-      }
-
-      const probeOptions = {
-        requireLiveActiveList: true,
-        skipIdentityPersistence: true,
-        ...(options.skipForceRefresh ? { skipForceRefresh: true } : {}),
-      };
-      const resolved = await this.resolver.resolveAdapter(
-        ipo.id,
-        undefined,
-        probeOptions,
-      );
-      if (!resolved || !resolved.adapter) {
-        return false;
-      }
-
-      const { adapter, registrarIpoCode } = resolved;
-      const reconciledBeforeProbe = reconcileStoredRegistrarMetadata(
-        storedMetadata,
-        adapter.code,
-        this.registry,
-      );
-      if (!reconciledBeforeProbe) {
-        this.logger.warn(
-          `Rejected allotment availability probe for IPO ${ipo.id}: resolved adapter '${adapter.code}' conflicts with or cannot be reconciled against stored registrar metadata`,
-        );
-        return false;
-      }
-
-      const sanitizedCode = sanitizeRegistrarIpoCode(registrarIpoCode);
-
-      if (typeof adapter.resolveRegistrarIpoCode === 'function') {
-        const checkRequest: CheckAllotmentRequest = {
-          ipoId: ipo.id,
-          registrarIpoCode: sanitizedCode,
-          identifierType: AllotmentIdentifierType.PAN,
-          identifierValue: '', // No fake applicant PAN or identifier sent
-          companyName: ipo.company.displayName,
-          companyLegalName: ipo.company.legalName,
-          symbol: ipo.symbol || undefined,
-          requireLiveActiveList: true,
-          ...(options.skipForceRefresh ? { skipForceRefresh: true } : {}),
-        };
-
-        const result = await adapter.resolveRegistrarIpoCode(checkRequest);
-
-        // A valid resolved string code (non-empty and not a UUID fallback) indicates
-        // that the IPO is actively published and available in the registrar's allotment dataset.
-        const discoveredCode =
-          typeof result === 'string'
-            ? this.extractValidRegistrarCode(result)
-            : null;
-        if (discoveredCode) {
-          return await this.persistDiscoveredCode(
-            ipo,
-            adapter.code,
-            discoveredCode,
-            storedMetadata,
-          );
-        }
-
-        return false;
-      }
-
-      return false;
-    } catch (err: unknown) {
-      this.logger.debug(
-        `Registrar allotment availability check failed for IPO ${ipo.id}: ${(err as Error)?.message || err}`,
-      );
-      return false;
-    }
+    const detail = await this.checkAllotmentAvailabilityDetailed(ipo, options);
+    return detail.confirmed;
   }
 
   /**

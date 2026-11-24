@@ -85,8 +85,23 @@ export class RegistrarAdapterRegistry {
       this.adapters.set('MUFG INTIME INDIA', adapter);
       this.adapters.set('MUFG INTIME INDIA (FORMERLY LINK INTIME)', adapter);
       this.adapters.set('MUFG INTIME INDIA PRIVATE LIMITED', adapter);
+      this.adapters.set('MUFG INTIME INDIA PVT LTD', adapter);
+      this.adapters.set('MUFG INTIME INDIA PVT. LTD.', adapter);
+      this.adapters.set('MUFG INTIME INDIA LTD', adapter);
+      this.adapters.set('MUFG INTIME INDIA LTD.', adapter);
+      this.adapters.set('MUFG INTIME INDIA LIMITED', adapter);
       this.adapters.set('LINK INTIME INDIA PRIVATE LIMITED', adapter);
+      this.adapters.set('LINK INTIME INDIA PVT LTD', adapter);
+      this.adapters.set('LINK INTIME INDIA PVT. LTD.', adapter);
+      this.adapters.set('LINK INTIME INDIA LTD', adapter);
+      this.adapters.set('LINK INTIME INDIA LTD.', adapter);
+      this.adapters.set('LINK INTIME INDIA LIMITED', adapter);
+      this.adapters.set('LINK INTIME (INDIA) PVT LTD', adapter);
+      this.adapters.set('LINK INTIME (INDIA) PVT. LTD.', adapter);
+      this.adapters.set('LINK INTIME (INDIA) PRIVATE LIMITED', adapter);
       this.adapters.set('INTIME', adapter);
+      this.adapters.set('IN.MPMS.MUFG.COM', adapter);
+      this.adapters.set('LINKINTIME.CO.IN', adapter);
     }
     if (code === 'MAASHITLA' || code === 'MAASHITLA_SECURITIES') {
       this.adapters.set('MAASHITLA', adapter);

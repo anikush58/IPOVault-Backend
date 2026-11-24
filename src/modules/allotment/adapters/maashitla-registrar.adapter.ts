@@ -581,7 +581,7 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
     };
   }
 
-  private readonly CACHE_TTL_MS = 3600 * 1000; // 1 hour
+  private readonly CACHE_TTL_MS = 210_000; // 3.5 min TTL (3-4 min window to prevent per-IPO HTTP flood)
   private cachedCompanyList: {
     items: Array<{ code: string; name: string }>;
     fetchedAt: number;
