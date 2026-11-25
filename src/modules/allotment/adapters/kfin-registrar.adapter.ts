@@ -651,9 +651,15 @@ export class KfinRegistrarAdapter extends BaseRegistrarAdapter {
       sinceLastForceMs >= 0 &&
       sinceLastForceMs < KfinRegistrarAdapter.ON_DEMAND_REFRESH_COOLDOWN_MS;
 
-    if (isRecentLiveSnapshot || isWithinForceCooldown) {
+    const storeInStaleBackoff =
+      snapshot.metadata.isStale &&
+      typeof (this.store as { isInStaleBackoff?: (now?: number) => boolean })
+        .isInStaleBackoff === 'function' &&
+      this.store.isInStaleBackoff(nowMs);
+
+    if (isRecentLiveSnapshot || isWithinForceCooldown || storeInStaleBackoff) {
       this.logger.debug(
-        `IPO '${identifier}' not found in cached KFin registry (${snapshot.items.length} items); reusing recent live registry within cooldown`,
+        `IPO '${identifier}' not found in cached KFin registry (${snapshot.items.length} items); reusing ${storeInStaleBackoff ? 'stale fallback registry within backoff window' : 'recent live registry within cooldown'}`,
       );
       return null;
     }

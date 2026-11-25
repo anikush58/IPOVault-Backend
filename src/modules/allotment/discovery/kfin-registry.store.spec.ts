@@ -739,5 +739,133 @@ describe('KfinRegistryStore — Permanent Registrar Reliability & Anti-Corruptio
       ) as KfinRegistrySnapshot;
       expect(persistedOnDisk.items.length).toBe(2);
     });
+
+    it('honors 5-minute stale backoff on MALFORMED_RESPONSE SPA fallback and skips redundant ?cb= retries', async () => {
+      const spaFallbackHtml =
+        '<!doctype html><html lang="en"><head><script defer="defer" src="./static/js/main.3d909f65.js"></script></head><body><div id="root"></div></body></html>';
+
+      const defaultOutageStore = new KfinRegistryStore({
+        storagePath: path.join(tempStorageDir, 'default-outage.json'),
+        minItemsThreshold: 1,
+      });
+
+      const requestedUrls: string[] = [];
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        requestedUrls.push(urlStr);
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'content-type': 'text/html',
+            'x-cache': 'Error from cloudfront',
+          }),
+          text: async () => spaFallbackHtml,
+        } as unknown as Response);
+      });
+
+      const origNow = Date.now;
+      let fakeNow = origNow();
+      Date.now = () => fakeNow;
+
+      try {
+        // 1st call hits upstream once per path (root HTML, asset-manifest, main JS),
+        // skips ?cb= retry on identical SPA fallback shell, and backs off for 5 minutes.
+        const first = await defaultOutageStore.getActiveRegistry(false);
+        expect(first.metadata.isStale).toBe(true);
+        expect(defaultOutageStore.isInStaleBackoff(fakeNow)).toBe(true);
+        expect(requestedUrls.some((u) => u.includes('cb='))).toBe(false);
+        const initialFetchCount = requestedUrls.length;
+
+        // Subsequent non-forced calls within 4m59s must serve cached stale snapshot without hitting fetch
+        fakeNow += 4 * 60 * 1000;
+        const second = await defaultOutageStore.getActiveRegistry(false);
+        expect(second.metadata.isStale).toBe(true);
+        expect(requestedUrls.length).toBe(initialFetchCount);
+
+        // Once 5m MALFORMED_RESPONSE backoff expires, non-forced call retries upstream
+        fakeNow += 61 * 1000;
+        expect(defaultOutageStore.isInStaleBackoff(fakeNow)).toBe(false);
+        await defaultOutageStore.getActiveRegistry(false);
+        expect(requestedUrls.length).toBeGreaterThan(initialFetchCount);
+      } finally {
+        Date.now = origNow;
+      }
+    });
+
+    it('falls back to configured KFINTECH_PORTAL_MIRROR_URLS when primary portal serves CloudFront text/html error fallback', async () => {
+      const spaFallbackHtml =
+        '<!doctype html><html lang="en"><head><script defer="defer" src="./static/js/main.3d909f65.js"></script></head><body><div id="root"></div></body></html>';
+
+      const prevMirrors = process.env.KFINTECH_PORTAL_MIRROR_URLS;
+      process.env.KFINTECH_PORTAL_MIRROR_URLS =
+        'https://kosmic.kfintech.com/ipostatus/';
+
+      try {
+        const mirrorStore = new KfinRegistryStore({
+          storagePath: path.join(tempStorageDir, 'mirror-fallback.json'),
+          minItemsThreshold: 1,
+        });
+
+        jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+          const urlStr = String(url);
+          if (urlStr.startsWith('https://ipostatus.kfintech.com/')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers({
+                'content-type': 'text/html',
+                'x-cache': 'Error from cloudfront',
+              }),
+              text: async () => spaFallbackHtml,
+            } as unknown as Response);
+          }
+          if (urlStr === 'https://kosmic.kfintech.com/ipostatus/') {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers({ 'content-type': 'text/html' }),
+              text: async () =>
+                '<!doctype html><html><head><script src="./static/js/main.mirror99.js"></script></head><body></body></html>',
+            } as unknown as Response);
+          }
+          if (urlStr.includes('kosmic.kfintech.com/ipostatus/asset-manifest.json')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers({ 'content-type': 'application/json' }),
+              json: async () => ({
+                files: { 'main.js': './static/js/main.mirror99.js' },
+              }),
+            } as unknown as Response);
+          }
+          if (urlStr.includes('kosmic.kfintech.com/ipostatus/static/js/main.mirror99.js')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers({ 'content-type': 'text/javascript' }),
+              text: async () => freshMaxwellBundleJs,
+            } as unknown as Response);
+          }
+          return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+        });
+
+        const snapshot = await mirrorStore.getActiveRegistry(true);
+        expect(snapshot.metadata.isStale).toBe(false);
+        expect(snapshot.metadata.sourceType).toBe('PORTAL_SPA_BUNDLE');
+        expect(snapshot.metadata.sourceUrl).toBe(
+          'https://kosmic.kfintech.com/ipostatus/static/js/main.mirror99.js',
+        );
+        expect(
+          snapshot.items.find((i) => i.clientId === '88356314970'),
+        ).toBeDefined();
+      } finally {
+        if (prevMirrors === undefined) {
+          delete process.env.KFINTECH_PORTAL_MIRROR_URLS;
+        } else {
+          process.env.KFINTECH_PORTAL_MIRROR_URLS = prevMirrors;
+        }
+      }
+    });
   });
 });

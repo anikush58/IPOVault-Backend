@@ -1669,6 +1669,10 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
         } as unknown as Response);
       });
 
+      const origNow = Date.now;
+      let fakeNowMs = origNow();
+      Date.now = () => fakeNowMs;
+
       try {
         const staleRes =
           await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
@@ -1677,11 +1681,21 @@ describe('KFin Zero-Touch Allotment Hardening & Regression Suite', () => {
           AllotmentStatus.SOURCE_UNAVAILABLE,
         );
 
+        // Within stale backoff window, immediate retry stays SOURCE_UNAVAILABLE without hammering upstream
         allowLive = true;
+        const withinBackoffRes =
+          await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
+        expect((withinBackoffRes as { status: AllotmentStatus }).status).toBe(
+          AllotmentStatus.SOURCE_UNAVAILABLE,
+        );
+
+        // Advance clock past 30s transient stale backoff -> recovers cleanly from live bundle
+        fakeNowMs += 35_000;
         const freshRes =
           await localAdapter.resolveRegistrarIpoCode(maxwellRequest);
         expect(freshRes).toBe('88356314970');
       } finally {
+        Date.now = origNow;
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
     });

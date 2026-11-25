@@ -44,7 +44,9 @@ export interface KfinRegistryStoreConfig {
   storagePath: string;
   cacheTtlMs: number;
   staleCacheTtlMs: number;
+  malformedStaleCacheTtlMs: number;
   portalUrl: string;
+  portalMirrorUrls: string[];
   officialFeedUrl?: string;
   minItemsThreshold: number;
   maxShrinkRatio: number;
@@ -86,20 +88,54 @@ export class KfinRegistryStore {
       );
     }
 
+    const explicitStaleTtlEnv =
+      process.env.KFIN_REGISTRY_STALE_TTL_MS !== undefined
+        ? Number(process.env.KFIN_REGISTRY_STALE_TTL_MS)
+        : undefined;
+    const explicitStaleTtl =
+      customConfig?.staleCacheTtlMs && customConfig.staleCacheTtlMs > 0
+        ? customConfig.staleCacheTtlMs
+        : explicitStaleTtlEnv && Number.isFinite(explicitStaleTtlEnv) && explicitStaleTtlEnv > 0
+          ? explicitStaleTtlEnv
+          : undefined;
+
+    const explicitMalformedStaleTtlEnv =
+      process.env.KFIN_REGISTRY_MALFORMED_STALE_TTL_MS !== undefined
+        ? Number(process.env.KFIN_REGISTRY_MALFORMED_STALE_TTL_MS)
+        : undefined;
+
+    const portalUrl =
+      customConfig?.portalUrl ||
+      process.env.KFINTECH_PORTAL_URL ||
+      'https://ipostatus.kfintech.com/';
+
+    const rawMirrorList =
+      customConfig?.portalMirrorUrls ??
+      (process.env.KFINTECH_PORTAL_MIRROR_URLS
+        ? process.env.KFINTECH_PORTAL_MIRROR_URLS.split(',')
+        : []);
+    const portalMirrorUrls = rawMirrorList
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0 && /^https?:\/\//i.test(u) && u !== portalUrl);
+
     this.config = {
       storagePath: defaultStoragePath,
       cacheTtlMs:
         customConfig?.cacheTtlMs ||
         Number(process.env.KFIN_REGISTRY_CACHE_TTL_MS) ||
         30 * 60 * 1000, // 30 minutes
-      staleCacheTtlMs:
-        customConfig?.staleCacheTtlMs ||
-        Number(process.env.KFIN_REGISTRY_STALE_TTL_MS) ||
-        30 * 1000, // 30 seconds during degradation
-      portalUrl:
-        customConfig?.portalUrl ||
-        process.env.KFINTECH_PORTAL_URL ||
-        'https://ipostatus.kfintech.com/',
+      staleCacheTtlMs: explicitStaleTtl ?? 30 * 1000, // 30s for transient errors
+      malformedStaleCacheTtlMs:
+        customConfig?.malformedStaleCacheTtlMs ||
+        (explicitMalformedStaleTtlEnv &&
+        Number.isFinite(explicitMalformedStaleTtlEnv) &&
+        explicitMalformedStaleTtlEnv > 0
+          ? explicitMalformedStaleTtlEnv
+          : undefined) ||
+        explicitStaleTtl ||
+        5 * 60 * 1000, // 5 minutes for MALFORMED_RESPONSE / CDN HTML fallback outages
+      portalUrl,
+      portalMirrorUrls: [...new Set(portalMirrorUrls)],
       officialFeedUrl:
         customConfig?.officialFeedUrl ||
         process.env.KFINTECH_MACHINE_READABLE_SOURCE_URL ||
@@ -152,6 +188,15 @@ export class KfinRegistryStore {
   }
 
   /**
+   * Returns true while a stale fallback snapshot is still within its backoff window.
+   */
+  public isInStaleBackoff(nowMs = Date.now()): boolean {
+    return Boolean(
+      this.cachedSnapshot?.metadata?.isStale && nowMs < this.cacheExpiresAt,
+    );
+  }
+
+  /**
    * Retrieves the full active registry snapshot with freshness and validation metadata.
    */
   public async getActiveRegistry(
@@ -159,13 +204,8 @@ export class KfinRegistryStore {
   ): Promise<KfinRegistrySnapshot> {
     const now = Date.now();
 
-    // Serve from fresh in-memory cache if valid and not forced
-    if (
-      !forceRefresh &&
-      this.cachedSnapshot &&
-      now < this.cacheExpiresAt &&
-      !this.cachedSnapshot.metadata.isStale
-    ) {
+    // Serve from in-memory cache (fresh OR within stale backoff window) if not forced
+    if (!forceRefresh && this.cachedSnapshot && now < this.cacheExpiresAt) {
       return this.cachedSnapshot;
     }
 
@@ -224,7 +264,8 @@ export class KfinRegistryStore {
       };
 
       this.cachedSnapshot = snapshot;
-      this.cacheExpiresAt = Date.now() + this.config.staleCacheTtlMs;
+      // Do not suppress the first live refresh after startup hydration; stale backoff activates after an upstream failure.
+      this.cacheExpiresAt = 0;
 
       this.logger.log(
         `Hydrated KFintech registry from disk snapshot (${snapshot.items.length} items, fetchedAt: ${snapshot.metadata.fetchedAt})`,
@@ -488,10 +529,43 @@ export class KfinRegistryStore {
   }
 
   private resolvePortalAssetUrl(assetPath: string, portalUrl: string): string {
-    const normalizedPath = assetPath.startsWith('http')
-      ? assetPath
-      : `/${assetPath.replace(/^\.?\//, '')}`;
-    return new URL(normalizedPath, portalUrl).toString();
+    if (assetPath.startsWith('http')) {
+      return assetPath;
+    }
+    const base =
+      portalUrl.endsWith('/') || assetPath.startsWith('/')
+        ? portalUrl
+        : `${portalUrl}/`;
+    return new URL(assetPath, base).toString();
+  }
+
+  /**
+   * Detects generic SPA root HTML fallback shells or S3/XML origin errors where retrying
+   * with a cache-busting `?cb=` parameter would only serve the same fallback page.
+   */
+  private isGenericSpaOrOriginErrorShell(
+    text: string,
+    portalHtml?: string | null,
+    manifestAlsoReturnedHtml = false,
+  ): boolean {
+    if (!text || !text.trim()) {
+      return false;
+    }
+    const trimmed = text.trim();
+    if (/^\s*(<\?xml\b|<Error\b)/i.test(trimmed)) {
+      return true;
+    }
+    if (portalHtml && trimmed === portalHtml.trim()) {
+      return true;
+    }
+    if (
+      manifestAlsoReturnedHtml &&
+      (/<div\s+id=["']root["']/i.test(trimmed) ||
+        /You need to enable JavaScript to run this app/i.test(trimmed))
+    ) {
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -500,15 +574,15 @@ export class KfinRegistryStore {
   private async parseManifestBundleUrl(
     manifestRes: Response,
     portalUrl: string,
-  ): Promise<string | null> {
+  ): Promise<{ bundleUrl: string | null; returnedHtml: boolean }> {
     if (!manifestRes.ok) {
-      return null;
+      return { bundleUrl: null, returnedHtml: false };
     }
 
     const contentType =
       manifestRes.headers?.get?.('content-type')?.toLowerCase() || '';
     if (contentType.includes('text/html')) {
-      return null;
+      return { bundleUrl: null, returnedHtml: true };
     }
 
     let manifestJson: {
@@ -524,6 +598,9 @@ export class KfinRegistryStore {
         };
       } else if (typeof manifestRes.text === 'function') {
         const manifestText = await manifestRes.text();
+        if (this.isHtmlPayload(manifestText)) {
+          return { bundleUrl: null, returnedHtml: true };
+        }
         if (!this.isInvalidBundlePayload(manifestText)) {
           manifestJson = JSON.parse(manifestText) as {
             files?: Record<string, unknown>;
@@ -532,7 +609,7 @@ export class KfinRegistryStore {
         }
       }
     } catch {
-      return null;
+      return { bundleUrl: null, returnedHtml: false };
     }
 
     const filesMainJs = manifestJson?.files?.['main.js'];
@@ -553,13 +630,17 @@ export class KfinRegistryStore {
         ? filesMainJs
         : jsEntrypoint;
 
-    return mainPath ? this.resolvePortalAssetUrl(mainPath, portalUrl) : null;
+    return {
+      bundleUrl: mainPath ? this.resolvePortalAssetUrl(mainPath, portalUrl) : null,
+      returnedHtml: false,
+    };
   }
 
   private async fetchAndValidateCandidateBundle(
     candidateUrl: string,
     headers: Record<string, string>,
     previousCount: number,
+    context?: { portalHtml?: string | null; manifestReturnedHtml?: boolean },
   ): Promise<ReturnType<KfinRegistryStore['validateRegistry']>> {
     let candidateRes = await this.fetchWithBackoffAndJitter(candidateUrl, {
       headers,
@@ -568,11 +649,17 @@ export class KfinRegistryStore {
     });
     let candidateText = candidateRes.ok ? await candidateRes.text() : '';
 
-    // Retry once with cache-busting query param when CDN returns error, wrong Content-Type, or HTML/XML page
+    // Retry once with cache-busting query param when CDN returns error, wrong Content-Type, or HTML/XML page,
+    // UNLESS the response is already a generic SPA fallback shell or S3 XML origin error.
     if (
-      !candidateRes.ok ||
-      this.isInvalidJsContentType(candidateRes) ||
-      this.isInvalidBundlePayload(candidateText)
+      (!candidateRes.ok ||
+        this.isInvalidJsContentType(candidateRes) ||
+        this.isInvalidBundlePayload(candidateText)) &&
+      !this.isGenericSpaOrOriginErrorShell(
+        candidateText,
+        context?.portalHtml,
+        context?.manifestReturnedHtml,
+      )
     ) {
       try {
         const cbUrl = `${candidateUrl}${candidateUrl.includes('?') ? '&' : '?'}cb=${Date.now()}`;
@@ -629,77 +716,152 @@ export class KfinRegistryStore {
     previousCount: number,
     forceRefresh = false,
   ): Promise<KfinRegistrySnapshot> {
-    const portalUrl = this.config.portalUrl;
-    const noCacheHeaders: Record<string, string> = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      Accept: '*/*',
-      Origin: 'https://ipostatus.kfintech.com',
-      Referer: 'https://ipostatus.kfintech.com/',
-      'Cache-Control': 'no-cache',
-      Pragma: 'no-cache',
-    };
+    const portalUrls = [
+      this.config.portalUrl,
+      ...this.config.portalMirrorUrls,
+    ].filter((u, i, arr) => u && arr.indexOf(u) === i);
 
-    let htmlBundleUrl: string | null = null;
-    let manifestBundleUrl: string | null = null;
+    let targetBundleUrl: string | null = null;
+    let validation: ReturnType<KfinRegistryStore['validateRegistry']> | null =
+      null;
+    let lastError: Error | null = null;
+    const attemptedUrls = new Set<string>();
+    let anyPortalConfirmedSpaFallback = false;
 
-    // Phase 1a: Inspect root HTML for main JS script reference
-    try {
-      const htmlRes = await this.fetchWithBackoffAndJitter(portalUrl, {
-        headers: noCacheHeaders,
-        timeoutMs: 4000,
-        maxRetries: 1,
-      });
+    for (const portalUrl of portalUrls) {
+      const portalOrigin = new URL(portalUrl).origin;
+      const noCacheHeaders: Record<string, string> = {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: '*/*',
+        Origin: portalOrigin,
+        Referer: portalUrl,
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      };
 
-      if (htmlRes.ok) {
-        const html = await htmlRes.text();
-        const scriptMatch = html.match(
-          /src=["']?(\.?\/static\/js\/[^"'\s>]+)/i,
+      let portalHtml: string | null = null;
+      let htmlBundleUrl: string | null = null;
+      let manifestBundleUrl: string | null = null;
+      let manifestReturnedHtml = false;
+      let htmlHadCfErrorHeader = false;
+
+      // Phase 1a: Inspect root HTML for main JS script reference
+      try {
+        const htmlRes = await this.fetchWithBackoffAndJitter(portalUrl, {
+          headers: noCacheHeaders,
+          timeoutMs: 4000,
+          maxRetries: 1,
+        });
+
+        htmlHadCfErrorHeader = Boolean(
+          htmlRes.headers
+            ?.get?.('x-cache')
+            ?.toLowerCase()
+            .includes('error from cloudfront'),
         );
-        if (scriptMatch && scriptMatch[1]) {
-          htmlBundleUrl = this.resolvePortalAssetUrl(scriptMatch[1], portalUrl);
+
+        if (htmlRes.ok) {
+          portalHtml = await htmlRes.text();
+          const scriptMatch = portalHtml.match(
+            /src=["']?(\.?\/static\/js\/[^"'\s>]+)/i,
+          );
+          if (scriptMatch && scriptMatch[1]) {
+            htmlBundleUrl = this.resolvePortalAssetUrl(
+              scriptMatch[1],
+              portalUrl,
+            );
+          }
+        }
+      } catch (htmlErr) {
+        this.logger.debug(
+          `Portal HTML fetch threw (${htmlErr}); checking asset-manifest`,
+        );
+      }
+
+      // Phase 1b: Always check latest asset-manifest.json even when HTML resolved a script hash
+      try {
+        const manifestUrl = this.resolvePortalAssetUrl(
+          'asset-manifest.json',
+          portalUrl,
+        );
+        const manifestRes = await this.fetchWithBackoffAndJitter(manifestUrl, {
+          headers: noCacheHeaders,
+          timeoutMs: 3000,
+          maxRetries: 1,
+        });
+
+        const parsedManifest = await this.parseManifestBundleUrl(
+          manifestRes,
+          portalUrl,
+        );
+        manifestBundleUrl = parsedManifest.bundleUrl;
+        manifestReturnedHtml = parsedManifest.returnedHtml;
+      } catch {
+        // Ignore manifest error
+      }
+
+      // Build deduplicated ordered candidate URLs, prioritizing manifest over HTML so CloudFront
+      // stale index.html cannot pin us to an outdated bundle hash.
+      const portalCandidateUrls: string[] = [];
+      const pushPortalCandidate = (url: string | null | undefined) => {
+        if (url && !portalCandidateUrls.includes(url)) {
+          portalCandidateUrls.push(url);
+        }
+      };
+
+      pushPortalCandidate(manifestBundleUrl);
+      pushPortalCandidate(htmlBundleUrl);
+
+      if (manifestReturnedHtml && (htmlHadCfErrorHeader || portalHtml !== null)) {
+        anyPortalConfirmedSpaFallback = true;
+      }
+
+      for (const candidateUrl of portalCandidateUrls) {
+        attemptedUrls.add(candidateUrl);
+        try {
+          validation = await this.fetchAndValidateCandidateBundle(
+            candidateUrl,
+            noCacheHeaders,
+            previousCount,
+            { portalHtml, manifestReturnedHtml },
+          );
+          targetBundleUrl = candidateUrl;
+          break;
+        } catch (err: unknown) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          this.logger.debug(
+            `KFintech bundle candidate ${candidateUrl} failed: ${lastError.message}`,
+          );
         }
       }
-    } catch (htmlErr) {
-      this.logger.debug(
-        `Portal HTML fetch threw (${htmlErr}); checking asset-manifest`,
-      );
-    }
 
-    // Phase 1b: Always check latest asset-manifest.json even when HTML resolved a script hash
-    try {
-      const manifestUrl = new URL('/asset-manifest.json', portalUrl).toString();
-      const manifestRes = await this.fetchWithBackoffAndJitter(manifestUrl, {
-        headers: noCacheHeaders,
-        timeoutMs: 3000,
-        maxRetries: 1,
-      });
-
-      manifestBundleUrl = await this.parseManifestBundleUrl(
-        manifestRes,
-        portalUrl,
-      );
-    } catch {
-      // Ignore manifest error
-    }
-
-    // Build deduplicated ordered candidate URLs, prioritizing manifest over HTML so CloudFront
-    // stale index.html cannot pin us to an outdated bundle hash.
-    const candidateUrls: string[] = [];
-    const pushCandidate = (url: string | null | undefined) => {
-      if (url && !candidateUrls.includes(url)) {
-        candidateUrls.push(url);
+      if (targetBundleUrl && validation) {
+        break;
       }
-    };
+    }
 
-    pushCandidate(manifestBundleUrl);
-    pushCandidate(htmlBundleUrl);
-
-    if (candidateUrls.length === 0) {
-      const defaultSeedUrl = new URL(
+    // Fallback to seed / last-known bundle URLs only when discovery from HTML & manifest yielded
+    // no usable candidates AND the portal did not already prove an SPA HTML error-fallback outage.
+    if (
+      (!targetBundleUrl || !validation) &&
+      attemptedUrls.size === 0 &&
+      !anyPortalConfirmedSpaFallback
+    ) {
+      const primaryUrl = this.config.portalUrl;
+      const fallbackHeaders: Record<string, string> = {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: '*/*',
+        Origin: new URL(primaryUrl).origin,
+        Referer: primaryUrl,
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      };
+      const defaultSeedUrl = this.resolvePortalAssetUrl(
         '/static/js/main.3d909f65.js',
-        portalUrl,
-      ).toString();
+        primaryUrl,
+      );
       const diskSnapshot = this.readPersistedSnapshotFromDisk();
       const lastKnownBundle =
         this.cachedSnapshot?.metadata?.sourceUrl ||
@@ -709,36 +871,37 @@ export class KfinRegistryStore {
           ? lastKnownBundle
           : null;
 
+      const seedCandidates: string[] = [];
+      const pushSeed = (url: string | null | undefined) => {
+        if (url && !seedCandidates.includes(url) && !attemptedUrls.has(url)) {
+          seedCandidates.push(url);
+        }
+      };
+
       if (forceRefresh) {
         // Never allow stale disk/memory bundle URLs to preempt the verified default seed on force refresh
-        pushCandidate(defaultSeedUrl);
-        pushCandidate(validLastKnown);
+        pushSeed(defaultSeedUrl);
+        pushSeed(validLastKnown);
       } else {
-        pushCandidate(validLastKnown);
-        pushCandidate(defaultSeedUrl);
+        pushSeed(validLastKnown);
+        pushSeed(defaultSeedUrl);
       }
-    }
 
-    // Phase 2 & 3: Fetch, validate Content-Type/payload, and extract companies across candidates
-    let targetBundleUrl: string | null = null;
-    let validation: ReturnType<KfinRegistryStore['validateRegistry']> | null =
-      null;
-    let lastError: Error | null = null;
-
-    for (const candidateUrl of candidateUrls) {
-      try {
-        validation = await this.fetchAndValidateCandidateBundle(
-          candidateUrl,
-          noCacheHeaders,
-          previousCount,
-        );
-        targetBundleUrl = candidateUrl;
-        break;
-      } catch (err: unknown) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-        this.logger.debug(
-          `KFintech bundle candidate ${candidateUrl} failed: ${lastError.message}`,
-        );
+      for (const candidateUrl of seedCandidates) {
+        try {
+          validation = await this.fetchAndValidateCandidateBundle(
+            candidateUrl,
+            fallbackHeaders,
+            previousCount,
+          );
+          targetBundleUrl = candidateUrl;
+          break;
+        } catch (err: unknown) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          this.logger.debug(
+            `KFintech bundle candidate ${candidateUrl} failed: ${lastError.message}`,
+          );
+        }
       }
     }
 
@@ -814,11 +977,26 @@ export class KfinRegistryStore {
     };
   }
 
+  private resolveStaleBackoffMs(failureReason: string): number {
+    const isMalformedOutage =
+      /MALFORMED_RESPONSE|text\/html|HTML error page|invalid Content-Type/i.test(
+        failureReason,
+      );
+    if (isMalformedOutage) {
+      return Math.max(
+        this.config.staleCacheTtlMs,
+        this.config.malformedStaleCacheTtlMs,
+      );
+    }
+    return this.config.staleCacheTtlMs;
+  }
+
   /**
    * Recovers last-known-good registry when upstream refresh fails.
    */
   public recoverStaleSnapshot(failureReason: string): KfinRegistrySnapshot {
     const minRequired = this.config.minItemsThreshold;
+    const backoffTtlMs = this.resolveStaleBackoffMs(failureReason);
 
     // 1. Recover from in-memory cache if it meets minimum threshold
     if (
@@ -834,7 +1012,7 @@ export class KfinRegistryStore {
         },
       };
       this.cachedSnapshot = staleSnapshot;
-      this.cacheExpiresAt = Date.now() + this.config.staleCacheTtlMs;
+      this.cacheExpiresAt = Date.now() + backoffTtlMs;
       this.logger.warn(
         `[REGISTRAR_ALERT:STALE_REGISTRY] Serving stale in-memory KFintech registry (${staleSnapshot.items.length} items, fetchedAt: ${staleSnapshot.metadata.fetchedAt}, reason: ${failureReason})`,
       );
@@ -853,7 +1031,7 @@ export class KfinRegistryStore {
         },
       };
       this.cachedSnapshot = staleSnapshot;
-      this.cacheExpiresAt = Date.now() + this.config.staleCacheTtlMs;
+      this.cacheExpiresAt = Date.now() + backoffTtlMs;
       this.logger.warn(
         `[REGISTRAR_ALERT:STALE_REGISTRY] Recovered stale KFintech registry from disk (${staleSnapshot.items.length} items, fetchedAt: ${staleSnapshot.metadata.fetchedAt}, reason: ${failureReason})`,
       );
@@ -863,7 +1041,7 @@ export class KfinRegistryStore {
     // 3. Fallback to static verified baseline
     const baseline = this.getBaselineSnapshot();
     this.cachedSnapshot = baseline;
-    this.cacheExpiresAt = Date.now() + this.config.staleCacheTtlMs;
+    this.cacheExpiresAt = Date.now() + backoffTtlMs;
     this.logger.warn(
       `[REGISTRAR_ALERT:STALE_REGISTRY] Serving static baseline KFintech registry (${baseline.items.length} items, reason: ${failureReason})`,
     );
