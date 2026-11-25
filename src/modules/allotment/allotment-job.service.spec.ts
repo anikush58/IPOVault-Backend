@@ -24,6 +24,10 @@ describe('AllotmentJobService Bulk Orchestration & Security Tests', () => {
   let resolverMock: { resolveAdapter: jest.Mock };
 
   beforeEach(async () => {
+    process.env.ALLOTMENT_ENCRYPTION_SECRET =
+      '12345678901234567890123456789012';
+    process.env.ALLOTMENT_HASH_SECRET = 'test-hash-secret-12345';
+
     prismaMock = {
       ipo: {
         findUnique: jest.fn(),

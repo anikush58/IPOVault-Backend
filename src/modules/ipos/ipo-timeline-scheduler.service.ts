@@ -31,6 +31,7 @@ import { IpoGuruService } from '../ipo-guru/ipo-guru.service';
 import { AllotmentJobService } from '../allotment/allotment-job.service';
 import {
   AllotmentIdentifierType,
+  AllotmentStatus,
   CheckAllotmentRequest,
   NormalizedAllotmentResult,
   sanitizeRegistrarIpoCode,
@@ -132,6 +133,8 @@ export function addDaysToDateStr(dateStr: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+export const CANARY_DUMMY_PAN = 'ABCDE1234F';
+
 export type AllotmentCheckReason =
   | 'confirmed'
   | 'not_in_dropdown'
@@ -140,7 +143,8 @@ export type AllotmentCheckReason =
   | 'conflicting_metadata'
   | 'disabled_by_config'
   | 'probe_error'
-  | 'already_out';
+  | 'already_out'
+  | 'dropdown_present_allotment_not_live';
 
 export interface AllotmentAvailabilityDetail {
   confirmed: boolean;
@@ -578,6 +582,18 @@ export class IpoTimelineSchedulerService
                   `[Timeline Allotment Check] Checked IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': not_in_dropdown`,
                 );
               }
+            } else if (
+              checkDetail.reason === 'dropdown_present_allotment_not_live'
+            ) {
+              if (prevReason !== 'dropdown_present_allotment_not_live') {
+                this.logger.log(
+                  `[Timeline Allotment Check] Checked IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': dropdown_present_allotment_not_live (${checkDetail.details || 'Allotment under process'})`,
+                );
+              } else {
+                this.logger.debug(
+                  `[Timeline Allotment Check] Checked IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': dropdown_present_allotment_not_live (${checkDetail.details || 'Allotment under process'})`,
+                );
+              }
             } else {
               this.logger.warn(
                 `[Timeline Allotment Check] Checked IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNMAPPED'}': ${checkDetail.reason}${checkDetail.details ? ` (${checkDetail.details})` : ''}`,
@@ -697,6 +713,18 @@ export class IpoTimelineSchedulerService
               } else {
                 this.logger.debug(
                   `[Timeline Allotment Check] Checked ${currentStatus} IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': not_in_dropdown`,
+                );
+              }
+            } else if (
+              checkDetail.reason === 'dropdown_present_allotment_not_live'
+            ) {
+              if (prevReason !== 'dropdown_present_allotment_not_live') {
+                this.logger.log(
+                  `[Timeline Allotment Check] Checked ${currentStatus} IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': dropdown_present_allotment_not_live (${checkDetail.details || 'Allotment under process'})`,
+                );
+              } else {
+                this.logger.debug(
+                  `[Timeline Allotment Check] Checked ${currentStatus} IPO '${ipo.company.displayName}' (${ipo.id}) on registrar '${checkDetail.adapterCode || 'UNKNOWN'}': dropdown_present_allotment_not_live (${checkDetail.details || 'Allotment under process'})`,
                 );
               }
             } else {
@@ -1279,6 +1307,88 @@ export class IpoTimelineSchedulerService
           discoveredCode,
           storedMetadata,
         );
+
+        // Run single canary check via adapter.checkAllotment() with dummy PAN
+        if (typeof adapter.checkAllotment === 'function') {
+          const canaryRequest: CheckAllotmentRequest = {
+            ipoId: ipo.id,
+            registrarIpoCode: discoveredCode,
+            identifierType: AllotmentIdentifierType.PAN,
+            identifierValue: CANARY_DUMMY_PAN,
+            companyName: ipo.company.displayName,
+            companyLegalName: ipo.company.legalName,
+            symbol: ipo.symbol || undefined,
+            requireLiveActiveList: true,
+            ...(options.skipForceRefresh ? { skipForceRefresh: true } : {}),
+          };
+
+          let canaryResult: NormalizedAllotmentResult;
+          try {
+            canaryResult = await adapter.checkAllotment(canaryRequest);
+          } catch (canaryErr: unknown) {
+            const errMsg =
+              (canaryErr as Error)?.message || String(canaryErr);
+            if (
+              errMsg.toLowerCase().includes('timeout') ||
+              errMsg.toLowerCase().includes('timed out')
+            ) {
+              return {
+                confirmed: false,
+                reason: 'probe_timeout',
+                adapterCode: adapter.code,
+                discoveredCode,
+                details: `Canary check timed out: ${errMsg}`,
+              };
+            }
+            return {
+              confirmed: false,
+              reason: 'probe_error',
+              adapterCode: adapter.code,
+              discoveredCode,
+              details: `Canary check error: ${errMsg}`,
+            };
+          }
+
+          if (
+            canaryResult.status === AllotmentStatus.APPLICATION_NOT_FOUND ||
+            canaryResult.status === AllotmentStatus.ALLOTTED ||
+            canaryResult.status === AllotmentStatus.PARTIALLY_ALLOTTED ||
+            canaryResult.status === AllotmentStatus.NOT_ALLOTTED
+          ) {
+            return {
+              confirmed: true,
+              reason: 'confirmed',
+              adapterCode: adapter.code,
+              discoveredCode,
+            };
+          }
+
+          if (canaryResult.status === AllotmentStatus.NOT_YET_AVAILABLE) {
+            this.logger.log(
+              `[Timeline Allotment Check] IPO '${ipo.company.displayName}' (${ipo.id}) present in ${adapter.code} dropdown (code: '${discoveredCode}') but allotment is not live yet (canary returned NOT_YET_AVAILABLE)`,
+            );
+            return {
+              confirmed: false,
+              reason: 'dropdown_present_allotment_not_live',
+              adapterCode: adapter.code,
+              discoveredCode,
+              details:
+                canaryResult.errorMessage ||
+                'Allotment under process on registrar portal',
+            };
+          }
+
+          return {
+            confirmed: false,
+            reason: 'probe_error',
+            adapterCode: adapter.code,
+            discoveredCode,
+            details:
+              canaryResult.errorMessage ||
+              `Canary check returned status ${canaryResult.status}`,
+          };
+        }
+
         return {
           confirmed: true,
           reason: 'confirmed',

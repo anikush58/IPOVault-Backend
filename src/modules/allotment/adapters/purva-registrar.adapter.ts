@@ -97,7 +97,10 @@ export class PurvaRegistrarAdapter extends BaseRegistrarAdapter {
   ): Promise<string | NormalizedAllotmentResult> {
     const checkedAt = new Date();
     try {
-      const companies = await this.fetchCompanyList();
+      const forceRefresh = Boolean(
+        request.requireLiveActiveList && !request.skipForceRefresh,
+      );
+      const companies = await this.fetchCompanyList(forceRefresh);
       if (!companies || companies.length === 0) {
         return this.createErrorResult(
           request,
@@ -126,9 +129,9 @@ export class PurvaRegistrarAdapter extends BaseRegistrarAdapter {
   /**
    * Fetches and parses the list of active companies from Purva's IPO query portal.
    */
-  async fetchCompanyList(): Promise<PurvaCompanyOption[]> {
+  async fetchCompanyList(forceRefresh = false): Promise<PurvaCompanyOption[]> {
     const now = Date.now();
-    if (this.cachedCompanies && this.cacheExpiry > now) {
+    if (!forceRefresh && this.cachedCompanies && this.cacheExpiry > now) {
       return this.cachedCompanies;
     }
 

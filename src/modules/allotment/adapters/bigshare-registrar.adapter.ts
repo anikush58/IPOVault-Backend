@@ -123,7 +123,10 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
   ): Promise<string | NormalizedAllotmentResult> {
     const checkedAt = new Date();
     try {
-      const companies = await this.fetchCompanyList();
+      const forceRefresh = Boolean(
+        request.requireLiveActiveList && !request.skipForceRefresh,
+      );
+      const companies = await this.fetchCompanyList(forceRefresh);
       if (!companies || companies.length === 0) {
         return this.createErrorResult(
           request,
@@ -152,9 +155,9 @@ export class BigshareRegistrarAdapter extends BaseRegistrarAdapter {
   /**
    * Fetches and parses active company lists and detects CAPTCHA state across Bigshare server pool.
    */
-  async fetchCompanyList(): Promise<BigshareCompanyOption[]> {
+  async fetchCompanyList(forceRefresh = false): Promise<BigshareCompanyOption[]> {
     const now = Date.now();
-    if (this.cachedCompanies && this.cacheExpiry > now) {
+    if (!forceRefresh && this.cachedCompanies && this.cacheExpiry > now) {
       return this.cachedCompanies;
     }
 

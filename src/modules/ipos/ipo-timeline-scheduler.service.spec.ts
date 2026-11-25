@@ -14,9 +14,10 @@ import { MufgIntimeRegistrarAdapter } from '../allotment/adapters/mufg-intime-re
 import { RegistrarAdapterRegistry } from '../allotment/adapters/registrar-adapter.registry';
 import { KfinRegistryStore } from '../allotment/discovery/kfin-registry.store';
 import { RegistrarResolver } from '../allotment/registrar.resolver';
-import { AllotmentIdentifierType } from '../allotment/allotment.types';
+import { AllotmentIdentifierType, AllotmentStatus } from '../allotment/allotment.types';
 import {
   BACKFILL_MAX_ATTEMPTS,
+  CANARY_DUMMY_PAN,
   IpoTimelineSchedulerService,
   createISTDateTime,
   getNowInIST,
@@ -27,6 +28,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
   let prismaMock: any;
   let resolverMock: {
     resolveAdapter: jest.Mock;
+    persistDiscoveredRegistrarIdentity: jest.Mock;
   };
   let notificationOrchestratorMock: {
     processAllotmentOutEvent: jest.Mock;
@@ -60,6 +62,7 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
 
     resolverMock = {
       resolveAdapter: jest.fn(),
+      persistDiscoveredRegistrarIdentity: jest.fn().mockResolvedValue(true),
     };
 
     notificationOrchestratorMock = {
@@ -393,6 +396,162 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
 
       logSpy.mockRestore();
       debugSpy.mockRestore();
+    });
+
+    it('8e. dropdown match with canary NOT_YET_AVAILABLE saves registrarIpoCode but does not transition to ALLOTMENT_COMPLETED or send notifications', async () => {
+      const testIpo: any = {
+        id: 'ipo-canary-awaited',
+        status: IpoStatus.ALLOTMENT_PENDING,
+        allotmentResultAvailableAt: null,
+        company: { displayName: 'Canary Test Ltd', legalName: 'Canary Test Limited' },
+        allotmentConfig: { enabled: true, registrar: 'MUFG_INTIME' },
+        lifecycleEvents: [
+          {
+            eventType: LifecycleEventType.CLOSE,
+            eventDate: createISTDateTime('2026-09-27', 0, 0),
+          },
+          {
+            eventType: LifecycleEventType.BASIS_OF_ALLOTMENT,
+            eventDate: createISTDateTime('2026-09-28', 0, 0),
+          },
+        ],
+      };
+
+      prismaMock.ipo.findMany.mockResolvedValue([testIpo]);
+      const mockAdapter = {
+        code: 'MUFG_INTIME',
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue('11972'),
+        checkAllotment: jest.fn().mockResolvedValue({
+          status: AllotmentStatus.NOT_YET_AVAILABLE,
+          errorMessage: 'Allotment under process on registrar portal',
+        }),
+      };
+      resolverMock.resolveAdapter.mockResolvedValue({
+        adapter: mockAdapter,
+        registrarIpoCode: undefined,
+      });
+
+      const now = createISTDateTime('2026-09-28', 10, 0, 0);
+      const summary = await service.processTimelineTransitions(now);
+
+      // Verify code was discovered and persisted immediately
+      expect(mockAdapter.resolveRegistrarIpoCode).toHaveBeenCalled();
+      expect(resolverMock.persistDiscoveredRegistrarIdentity).toHaveBeenCalledWith(
+        'ipo-canary-awaited',
+        'MUFG_INTIME',
+        '11972',
+      );
+
+      // Verify canary probe was executed with dummy PAN
+      expect(mockAdapter.checkAllotment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          identifierValue: CANARY_DUMMY_PAN,
+          registrarIpoCode: '11972',
+        }),
+      );
+
+      // Verify status was NOT transitioned to ALLOTMENT_COMPLETED
+      expect(summary.allotmentConfirmedCount).toBe(0);
+      expect(prismaMock.ipo.updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: IpoStatus.ALLOTMENT_COMPLETED,
+          }),
+        }),
+      );
+
+      // Verify notifications were NOT triggered
+      expect(
+        notificationOrchestratorMock.processAllotmentOutEvent,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('8f. dropdown match with canary APPLICATION_NOT_FOUND confirms allotment, transitions to ALLOTMENT_COMPLETED, and triggers notifications', async () => {
+      const testIpo: any = {
+        id: 'ipo-canary-confirmed',
+        status: IpoStatus.ALLOTMENT_PENDING,
+        allotmentResultAvailableAt: null,
+        company: { displayName: 'Canary Live Ltd', legalName: 'Canary Live Limited' },
+        allotmentConfig: { enabled: true, registrar: 'MUFG_INTIME' },
+        lifecycleEvents: [
+          {
+            eventType: LifecycleEventType.CLOSE,
+            eventDate: createISTDateTime('2026-09-27', 0, 0),
+          },
+          {
+            eventType: LifecycleEventType.BASIS_OF_ALLOTMENT,
+            eventDate: createISTDateTime('2026-09-28', 0, 0),
+          },
+        ],
+      };
+
+      prismaMock.ipo.findMany.mockResolvedValue([testIpo]);
+      const mockAdapter = {
+        code: 'MUFG_INTIME',
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue('11972'),
+        checkAllotment: jest.fn().mockResolvedValue({
+          status: AllotmentStatus.APPLICATION_NOT_FOUND,
+        }),
+      };
+      resolverMock.resolveAdapter.mockResolvedValue({
+        adapter: mockAdapter,
+        registrarIpoCode: undefined,
+      });
+
+      const now = createISTDateTime('2026-09-28', 10, 0, 0);
+      const summary = await service.processTimelineTransitions(now);
+
+      expect(summary.allotmentConfirmedCount).toBe(1);
+      expect(prismaMock.ipo.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'ipo-canary-confirmed',
+          status: { in: [IpoStatus.CLOSED, IpoStatus.ALLOTMENT_PENDING] },
+        },
+        data: {
+          status: IpoStatus.ALLOTMENT_COMPLETED,
+          allotmentResultAvailableAt: now,
+        },
+      });
+      expect(
+        notificationOrchestratorMock.processAllotmentOutEvent,
+      ).toHaveBeenCalledWith('ipo-canary-confirmed');
+    });
+
+    it('8g. dropdown match with canary RATE_LIMITED or SOURCE_UNAVAILABLE fails closed without flipping status', async () => {
+      const testIpo: any = {
+        id: 'ipo-canary-fail-closed',
+        status: IpoStatus.ALLOTMENT_PENDING,
+        allotmentResultAvailableAt: null,
+        company: { displayName: 'Canary Fail Ltd', legalName: 'Canary Fail Limited' },
+        allotmentConfig: { enabled: true, registrar: 'MUFG_INTIME' },
+        lifecycleEvents: [
+          {
+            eventType: LifecycleEventType.CLOSE,
+            eventDate: createISTDateTime('2026-09-27', 0, 0),
+          },
+          {
+            eventType: LifecycleEventType.BASIS_OF_ALLOTMENT,
+            eventDate: createISTDateTime('2026-09-28', 0, 0),
+          },
+        ],
+      };
+
+      const mockAdapter = {
+        code: 'MUFG_INTIME',
+        resolveRegistrarIpoCode: jest.fn().mockResolvedValue('11972'),
+        checkAllotment: jest.fn().mockResolvedValue({
+          status: AllotmentStatus.SOURCE_UNAVAILABLE,
+          errorMessage: 'Registrar gateway down',
+        }),
+      };
+      resolverMock.resolveAdapter.mockResolvedValue({
+        adapter: mockAdapter,
+        registrarIpoCode: undefined,
+      });
+
+      const detail = await service.checkAllotmentAvailabilityDetailed(testIpo);
+      expect(detail.confirmed).toBe(false);
+      expect(detail.reason).toBe('probe_error');
     });
 
     it('9. should poll registrar on allotment date and transition to ALLOTMENT_COMPLETED when allotment is out', async () => {
@@ -1216,6 +1375,13 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
                 `var rf=JSON.parse('[{"clientId":"88356314970","name":"MAXWELL ENGINEERING SOLUTIONS LIMITED"}]');`,
             } as unknown as Response);
           }
+          if (urlStr.includes('/api/query')) {
+            return Promise.resolve({
+              ok: true,
+              status: 404,
+              json: async () => ({ error: 'No record found' }),
+            } as unknown as Response);
+          }
           return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
         });
 
@@ -1329,6 +1495,13 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
               headers: new Headers({ 'content-type': 'text/javascript' }),
               text: async () =>
                 `var rf=JSON.parse('[{"clientId":"88356314970","name":"MAXWELL ENGINEERING SOLUTIONS LIMITED"}]');`,
+            } as unknown as Response);
+          }
+          if (urlStr.includes('/api/query')) {
+            return Promise.resolve({
+              ok: true,
+              status: 404,
+              json: async () => ({ error: 'No record found' }),
             } as unknown as Response);
           }
           return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
@@ -1686,6 +1859,22 @@ describe('IpoTimelineSchedulerService Unit Tests', () => {
               ok: true,
               status: 200,
               json: async () => ({ d: payload }),
+            } as unknown as Response);
+          }
+          if (String(url).includes('generateToken')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({ d: 'dummy-token' }),
+            } as unknown as Response);
+          }
+          if (String(url).includes('SearchOnPan')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              json: async () => ({ d: '<NewDataSet></NewDataSet>' }),
             } as unknown as Response);
           }
           return Promise.reject(

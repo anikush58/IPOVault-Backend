@@ -411,4 +411,89 @@ describe('MaashitlaRegistrarAdapter Production Contract Tests', () => {
     const result = await adapter.checkAllotment(mockRequest);
     expect(result.status).toBe(AllotmentStatus.APPLICATION_NOT_FOUND);
   });
+
+  it('19. should respect 3.5-minute cache TTL (210_000 ms) and reuse cached active companies within window', async () => {
+    let fetchCount = 0;
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      if (String(url).includes('/company-directory')) {
+        fetchCount++;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [
+            { slug: 'company-a', company_name: 'Company A Limited' },
+          ],
+        } as Response);
+      }
+      return Promise.resolve({ ok: false, status: 404 } as Response);
+    });
+
+    const baseTime = 1700000000000;
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(baseTime);
+
+    // Initial fetch
+    const list1 = await adapter.fetchActiveCompanyList();
+    expect(list1).toHaveLength(1);
+    expect(fetchCount).toBe(1);
+
+    // Re-fetch within 3.5 minutes (e.g. 2 minutes later) -> uses cache
+    nowSpy.mockReturnValue(baseTime + 120_000);
+    const list2 = await adapter.fetchActiveCompanyList();
+    expect(list2).toHaveLength(1);
+    expect(fetchCount).toBe(1);
+
+    // Re-fetch past 3.5 minutes (e.g. 3.6 minutes = 216_000 ms) -> triggers fresh fetch
+    nowSpy.mockReturnValue(baseTime + 216_000);
+    const list3 = await adapter.fetchActiveCompanyList();
+    expect(list3).toHaveLength(1);
+    expect(fetchCount).toBe(2);
+
+    nowSpy.mockRestore();
+  });
+
+  it('20. should bypass cache on resolveRegistrarIpoCode when requireLiveActiveList is true and skipForceRefresh is false', async () => {
+    let fetchCount = 0;
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+      if (String(url).includes('/company-directory')) {
+        fetchCount++;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [
+            { slug: 'company-b', company_name: 'Company B Limited' },
+          ],
+        } as Response);
+      }
+      return Promise.resolve({ ok: false, status: 404 } as Response);
+    });
+
+    const baseTime = 1700000000000;
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(baseTime);
+
+    // 1. Initial resolution with skipForceRefresh: false and requireLiveActiveList: true -> fetches fresh
+    const reqForce = {
+      ipoId: 'test-force-refresh',
+      identifierType: AllotmentIdentifierType.PAN,
+      identifierValue: 'ABCDE1234F',
+      companyName: 'Company B',
+      requireLiveActiveList: true,
+      skipForceRefresh: false,
+    };
+    await adapter.resolveRegistrarIpoCode(reqForce);
+    expect(fetchCount).toBe(1);
+
+    // 2. Resolution with skipForceRefresh: true within TTL -> reuses cache
+    const reqSkip = {
+      ...reqForce,
+      skipForceRefresh: true,
+    };
+    await adapter.resolveRegistrarIpoCode(reqSkip);
+    expect(fetchCount).toBe(1);
+
+    // 3. Resolution with requireLiveActiveList: true and skipForceRefresh: false within TTL -> bypasses cache and force refreshes!
+    await adapter.resolveRegistrarIpoCode(reqForce);
+    expect(fetchCount).toBe(2);
+
+    nowSpy.mockRestore();
+  });
 });

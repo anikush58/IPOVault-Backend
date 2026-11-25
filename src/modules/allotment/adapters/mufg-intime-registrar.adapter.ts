@@ -130,7 +130,7 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
   }
 
   public extractSessionId(response: Response): string | undefined {
-    if (typeof (response.headers as any).getSetCookie === 'function') {
+    if (response?.headers && typeof (response.headers as any).getSetCookie === 'function') {
       const cookies = (response.headers as any).getSetCookie();
       if (Array.isArray(cookies) && cookies.length > 0) {
         for (const c of cookies) {
@@ -139,7 +139,7 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
         }
       }
     }
-    const rawCookie = response.headers.get('set-cookie');
+    const rawCookie = response?.headers?.get ? response.headers.get('set-cookie') : undefined;
     if (rawCookie) {
       const match = /ASP\.NET_SessionId=([^;]+)/i.exec(rawCookie);
       if (match) return match[1];
@@ -586,7 +586,10 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
   ): Promise<string | NormalizedAllotmentResult> {
     const checkedAt = new Date();
     try {
-      const list = await this.getActiveCompanyList();
+      const forceRefresh = Boolean(
+        request.requireLiveActiveList && !request.skipForceRefresh,
+      );
+      const list = await this.getActiveCompanyList(forceRefresh);
       return this.matchCompanyInList([...list], request, checkedAt);
     } catch (err: unknown) {
       if (err instanceof MufgCompanyListHttpError) {
@@ -618,17 +621,17 @@ export class MufgIntimeRegistrarAdapter extends BaseRegistrarAdapter {
     return MufgIntimeRegistrarAdapter.DEFAULT_COMPANY_LIST_CACHE_TTL_MS;
   }
 
-  private async getActiveCompanyList(): Promise<MufgCompanyListItem[]> {
+  private async getActiveCompanyList(forceRefresh = false): Promise<MufgCompanyListItem[]> {
     const now = Date.now();
     const ttlMs = this.getCompanyListCacheTtlMs();
-    if (this.cachedCompanyList) {
+    if (!forceRefresh && this.cachedCompanyList) {
       if (now - this.cachedCompanyList.fetchedAt < ttlMs) {
         return [...this.cachedCompanyList.items];
       }
       this.cachedCompanyList = null;
     }
 
-    if (this.inFlightCompanyListPromise) {
+    if (!forceRefresh && this.inFlightCompanyListPromise) {
       return this.inFlightCompanyListPromise;
     }
 

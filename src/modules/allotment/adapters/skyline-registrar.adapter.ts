@@ -98,7 +98,10 @@ export class SkylineRegistrarAdapter extends BaseRegistrarAdapter {
   ): Promise<string | NormalizedAllotmentResult> {
     const checkedAt = new Date();
     try {
-      const companies = await this.fetchCompanyList();
+      const forceRefresh = Boolean(
+        request.requireLiveActiveList && !request.skipForceRefresh,
+      );
+      const companies = await this.fetchCompanyList(forceRefresh);
       if (!companies || companies.length === 0) {
         return this.createErrorResult(
           request,
@@ -127,9 +130,9 @@ export class SkylineRegistrarAdapter extends BaseRegistrarAdapter {
   /**
    * Fetches and parses the list of companies from Skyline's IPO portal.
    */
-  async fetchCompanyList(): Promise<SkylineCompanyOption[]> {
+  async fetchCompanyList(forceRefresh = false): Promise<SkylineCompanyOption[]> {
     const now = Date.now();
-    if (this.cachedCompanies && this.cacheExpiry > now) {
+    if (!forceRefresh && this.cachedCompanies && this.cacheExpiry > now) {
       return this.cachedCompanies;
     }
 

@@ -595,7 +595,10 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
   ): Promise<string | NormalizedAllotmentResult> {
     const checkedAt = new Date();
     try {
-      const list = await this.fetchActiveCompanyList();
+      const forceRefresh = Boolean(
+        request.requireLiveActiveList && !request.skipForceRefresh,
+      );
+      const list = await this.fetchActiveCompanyList(forceRefresh);
       return this.matchCompanyInList(list, request, checkedAt);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -617,21 +620,22 @@ export class MaashitlaRegistrarAdapter extends BaseRegistrarAdapter {
   }
 
   /**
-   * Fetches live active public issues list from Maashitla API, cached for 1 hour.
+   * Fetches live active public issues list from Maashitla API, cached for 3.5 minutes.
    * Endpoints: GET https://api.maashitla.com/api/public-issue/companies & /api/companies
    */
-  public async fetchActiveCompanyList(): Promise<
+  public async fetchActiveCompanyList(forceRefresh = false): Promise<
     Array<{ code: string; name: string }>
   > {
     const now = Date.now();
     if (
+      !forceRefresh &&
       this.cachedCompanyList &&
       now - this.cachedCompanyList.fetchedAt < this.CACHE_TTL_MS
     ) {
       return this.cachedCompanyList.items;
     }
 
-    if (this.inFlightDiscovery) {
+    if (!forceRefresh && this.inFlightDiscovery) {
       return this.inFlightDiscovery;
     }
 
