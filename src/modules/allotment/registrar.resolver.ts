@@ -725,7 +725,12 @@ export interface PersistRegistrarCodeOptions {
     source?: { findUnique?: (args: any) => Promise<any> };
     ipoSourceIdentity?: { upsert?: (args: any) => Promise<any> };
     ipoAllotmentConfig?: {
+      findUnique?: (args: any) => Promise<any>;
       upsert?: (args: any) => Promise<any>;
+    };
+    ipoParticipant?: {
+      findFirst?: (args: any) => Promise<any>;
+      create?: (args: any) => Promise<any>;
     };
   };
   resolver?: {
@@ -737,7 +742,10 @@ export interface PersistRegistrarCodeOptions {
   };
   ipoId: string;
   registrarCode: string;
-  discoveredCode: string;
+  discoveredCode?: string | null;
+  allowRegistrarWithoutCode?: boolean;
+  preserveExistingCode?: boolean;
+  ensureParticipant?: boolean;
   context?: string;
   logger?: Logger;
 }
@@ -745,7 +753,7 @@ export interface PersistRegistrarCodeOptions {
 /**
  * Deduplicated helper to persist verified registrar code and identity across modules.
  * Attempts persistence via RegistrarResolver first; falls back to direct ipoAllotmentConfig upsert.
- * Removes redundant updateMany calls and logs persistence warnings properly.
+ * Supports persisting canonical registrar without a registrarIpoCode when `allowRegistrarWithoutCode` is true.
  */
 export async function persistRegistrarCode(
   options: PersistRegistrarCodeOptions,
@@ -756,30 +764,49 @@ export async function persistRegistrarCode(
     ipoId,
     registrarCode,
     discoveredCode,
+    allowRegistrarWithoutCode = false,
+    preserveExistingCode = false,
+    ensureParticipant = false,
     context = 'registrar code persistence',
     logger,
   } = options;
 
   const cleanCode = sanitizeRegistrarIpoCode(discoveredCode);
-  if (!cleanCode) {
+  if (!cleanCode && !allowRegistrarWithoutCode) {
     return false;
   }
 
-  const cleanRegistrar = registrarCode?.trim();
+  const normalized = normalizeKnownRegistrarCode(registrarCode);
+  const cleanRegistrar = normalized || registrarCode?.trim();
   if (!cleanRegistrar) {
     logger?.warn(
-      `Cannot persist registrar code '${cleanCode}' for IPO ${ipoId} (${context}): registrar code is empty`,
+      `Cannot persist registrar '${cleanCode || 'UNKNOWN'}' for IPO ${ipoId} (${context}): registrar code is empty`,
     );
     return false;
   }
 
+  let effectiveCode = cleanCode;
+  if (preserveExistingCode && typeof prisma?.ipoAllotmentConfig?.findUnique === 'function') {
+    try {
+      const existing = await prisma.ipoAllotmentConfig.findUnique({
+        where: { ipoId },
+      });
+      const existingValidCode = sanitizeRegistrarIpoCode(existing?.registrarIpoCode);
+      if (existingValidCode) {
+        effectiveCode = existingValidCode;
+      }
+    } catch {
+      // Fall through cleanly
+    }
+  }
+
   let persistedByResolver = false;
-  if (typeof resolver?.persistDiscoveredRegistrarIdentity === 'function') {
+  if (effectiveCode && typeof resolver?.persistDiscoveredRegistrarIdentity === 'function') {
     try {
       const res = await resolver.persistDiscoveredRegistrarIdentity(
         ipoId,
         cleanRegistrar,
-        cleanCode,
+        effectiveCode,
       );
       if (res !== false) {
         persistedByResolver = true;
@@ -801,12 +828,12 @@ export async function persistRegistrarCode(
         create: {
           ipoId,
           registrar: cleanRegistrar,
-          registrarIpoCode: cleanCode,
+          ...(effectiveCode ? { registrarIpoCode: effectiveCode } : {}),
           enabled: true,
         },
         update: {
           registrar: cleanRegistrar,
-          registrarIpoCode: cleanCode,
+          ...(effectiveCode ? { registrarIpoCode: effectiveCode } : {}),
           enabled: true,
         },
       });
@@ -818,5 +845,183 @@ export async function persistRegistrarCode(
     }
   }
 
+  if (
+    ensureParticipant &&
+    typeof prisma?.ipoParticipant?.findFirst === 'function' &&
+    typeof prisma?.ipoParticipant?.create === 'function'
+  ) {
+    try {
+      const existingParticipant = await prisma.ipoParticipant.findFirst({
+        where: { ipoId, role: ParticipantRole.REGISTRAR },
+      });
+      if (!existingParticipant) {
+        await prisma.ipoParticipant.create({
+          data: {
+            ipoId,
+            role: ParticipantRole.REGISTRAR,
+            name: cleanRegistrar,
+          },
+        });
+      }
+    } catch (partErr: unknown) {
+      logger?.debug(
+        `Non-blocking participant create skipped for IPO ${ipoId} (${context}): ${(partErr as Error)?.message || partErr}`,
+      );
+    }
+  }
+
   return true;
+}
+
+export interface PartialRegistrarSourceIdentityRecord {
+  externalId?: string | null;
+  source?: {
+    code?: string | null;
+    name?: string | null;
+    sourceType?: string | null;
+  } | null;
+}
+
+export interface PartialRegistrarIpoRecord extends RegistrarMetadataIpoRecord {
+  sourceIdentities?: PartialRegistrarSourceIdentityRecord[];
+}
+
+export interface PartialRegistrarReconcilePlan {
+  ipoId: string;
+  action: 'RECONCILE' | 'SKIP_ALREADY_CONFIGURED' | 'SKIP_DISABLED' | 'SKIP_CONFLICT' | 'SKIP_NO_REGISTRAR';
+  registrar?: string;
+  registrarIpoCode?: string | null;
+  reason?: string;
+}
+
+/**
+ * Computes a safe reconciliation plan for an IPO that has a REGISTRAR IpoSourceIdentity
+ * or REGISTRAR IpoParticipant without a populated IpoAllotmentConfig (or missing registrarIpoCode).
+ * Fails closed on disabled configs or conflicting registrars.
+ */
+export function buildPartialRegistrarReconcilePlan(
+  ipo: PartialRegistrarIpoRecord,
+  registry?: RegistrarAdapterRegistry,
+): PartialRegistrarReconcilePlan {
+  const cfg = ipo.allotmentConfig;
+  if (cfg?.enabled === false) {
+    return {
+      ipoId: ipo.id,
+      action: 'SKIP_DISABLED',
+      reason: 'allotmentConfig.enabled is false',
+    };
+  }
+
+  const rawCfgRegistrar = cfg?.registrar?.trim();
+  const hasUsableCfgRegistrar =
+    Boolean(rawCfgRegistrar) &&
+    rawCfgRegistrar!.toUpperCase() !== 'UNKNOWN' &&
+    Boolean(normalizeKnownRegistrarCode(rawCfgRegistrar, registry) || rawCfgRegistrar!.length >= 2);
+  const existingCfgCode = sanitizeRegistrarIpoCode(cfg?.registrarIpoCode) ?? null;
+
+  const registrarSourceIdentities = (ipo.sourceIdentities || []).filter(
+    (si) => si.source?.sourceType === SourceType.REGISTRAR,
+  );
+  const registrarParticipants = (ipo.participants || []).filter(
+    (p) => !p.role || p.role === ParticipantRole.REGISTRAR,
+  );
+
+  const recognizedCodes = new Set<string>();
+  const rawNames: string[] = [];
+
+  for (const si of registrarSourceIdentities) {
+    const code = normalizeKnownRegistrarCode(
+      si.source?.code || si.source?.name,
+      registry,
+    );
+    if (code) {
+      recognizedCodes.add(code);
+    } else if (si.source?.name?.trim()) {
+      rawNames.push(si.source.name.trim());
+    }
+  }
+
+  for (const p of registrarParticipants) {
+    const raw = (p.name || p.entityName || '').trim();
+    if (!raw || ['tbd', 'tba', 'n/a', 'na', 'none', 'unknown', '-'].includes(raw.toLowerCase())) {
+      continue;
+    }
+    const code = normalizeKnownRegistrarCode(raw, registry);
+    if (code) {
+      recognizedCodes.add(code);
+    } else {
+      rawNames.push(raw);
+    }
+  }
+
+  if (recognizedCodes.size > 1 || (recognizedCodes.size >= 1 && rawNames.length > 0)) {
+    return {
+      ipoId: ipo.id,
+      action: 'SKIP_CONFLICT',
+      reason: 'Conflicting or mixed registrar entries across sources/participants',
+    };
+  }
+
+  const derivedRegistrar =
+    recognizedCodes.size === 1
+      ? Array.from(recognizedCodes)[0]
+      : rawNames.length === 1
+        ? rawNames[0]
+        : undefined;
+
+  if (!derivedRegistrar) {
+    return {
+      ipoId: ipo.id,
+      action: hasUsableCfgRegistrar ? 'SKIP_ALREADY_CONFIGURED' : 'SKIP_NO_REGISTRAR',
+      reason: hasUsableCfgRegistrar
+        ? 'Already configured'
+        : 'No usable registrar in sourceIdentities or participants',
+    };
+  }
+
+  // Extract unambiguous externalId from matching REGISTRAR sourceIdentity if cfg lacks code
+  let derivedCode: string | null = existingCfgCode;
+  if (!derivedCode) {
+    const validIds = Array.from(
+      new Set(
+        registrarSourceIdentities
+          .map((si) => sanitizeRegistrarIpoCode(si.externalId))
+          .filter((c): c is string => Boolean(c)),
+      ),
+    );
+    if (validIds.length === 1) {
+      derivedCode = validIds[0];
+    }
+  }
+
+  if (hasUsableCfgRegistrar) {
+    const cfgNormalized = normalizeKnownRegistrarCode(rawCfgRegistrar, registry);
+    if (
+      cfgNormalized &&
+      recognizedCodes.size === 1 &&
+      cfgNormalized !== derivedRegistrar
+    ) {
+      return {
+        ipoId: ipo.id,
+        action: 'SKIP_CONFLICT',
+        reason: `Existing allotmentConfig registrar '${cfgNormalized}' conflicts with '${derivedRegistrar}'`,
+      };
+    }
+
+    // Only reconcile if allotmentConfig is missing registrarIpoCode while sourceIdentity has one
+    if (existingCfgCode || !derivedCode) {
+      return {
+        ipoId: ipo.id,
+        action: 'SKIP_ALREADY_CONFIGURED',
+        reason: 'Already configured',
+      };
+    }
+  }
+
+  return {
+    ipoId: ipo.id,
+    action: 'RECONCILE',
+    registrar: hasUsableCfgRegistrar ? rawCfgRegistrar! : derivedRegistrar,
+    registrarIpoCode: derivedCode,
+  };
 }

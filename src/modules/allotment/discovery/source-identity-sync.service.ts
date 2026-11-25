@@ -1,6 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  IpoStatus,
+  LifecycleEventType,
+  ParticipantRole,
+  PublicationStatus,
+  SourceType,
+} from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { normalizeRegistrarCode } from '../adapters/registrar-adapter.registry';
+import { sanitizeRegistrarIpoCode } from '../allotment.types';
+import {
+  buildPartialRegistrarReconcilePlan,
+  normalizeKnownRegistrarCode,
+  persistRegistrarCode,
+} from '../registrar.resolver';
 import {
   DiscoveredRegistrarIssue,
   IRegistrarIdentityDiscoveryAdapter,
@@ -8,6 +21,68 @@ import {
   SourceIdentitySyncRecordResult,
   SourceIdentitySyncStatus,
 } from './registrar-identity-discovery.types';
+
+export interface PartialRegistrarReconcileSummary {
+  dryRun: boolean;
+  scannedCount: number;
+  reconciledCount: number;
+  skippedConflictCount: number;
+  skippedDisabledCount: number;
+  skippedAlreadyConfiguredCount: number;
+  items: Array<{
+    ipoId: string;
+    companyName: string;
+    action: string;
+    registrar?: string;
+    registrarIpoCode?: string | null;
+    reason?: string;
+  }>;
+}
+
+export interface RegistrarCoverageAuditReport {
+  generatedAt: string;
+  summary: {
+    totalPublished: number;
+    hasAllotmentConfigRegistrar: number;
+    hasParticipantRegistrar: number;
+    hasSourceIdentityRegistrar: number;
+    hasAnyRegistrar: number;
+    missingAllRegistrars: number;
+    partialRecordsMissingConfig: number;
+  };
+  byStatus: Array<{
+    status: IpoStatus;
+    marketSegment: string;
+    total: number;
+    hasAnyRegistrar: number;
+    missingAllRegistrars: number;
+    activeWindowMissingCount: number;
+  }>;
+  activeMissingRegistrars: Array<{
+    ipoId: string;
+    companyName: string;
+    status: IpoStatus;
+    marketSegment: string;
+    listingDate: string | null;
+    closeDate: string | null;
+    partialSources: string[];
+  }>;
+  duplicatePublishedGroups: Array<{
+    normalizedCompanyName: string;
+    marketSegment: string;
+    count: number;
+    records: Array<{
+      id: string;
+      displayName: string;
+      status: IpoStatus;
+      symbol: string | null;
+      createdAt: string;
+      openDate: string | null;
+      listingDate: string | null;
+      hasRegistrar: boolean;
+    }>;
+  }>;
+}
 
 @Injectable()
 export class SourceIdentitySyncService {
@@ -46,9 +121,23 @@ export class SourceIdentitySyncService {
       `Discovered ${discoveredIssues.length} issues from registrar ${adapter.registrarCode}`,
     );
 
-    const source = await this.prisma.source.findUnique({
+    let source = await this.prisma.source.findUnique({
       where: { code: adapter.registrarCode },
     });
+
+    if (!source && typeof this.prisma.source?.upsert === 'function') {
+      source = await this.prisma.source.upsert({
+        where: { code: adapter.registrarCode },
+        update: {},
+        create: {
+          code: adapter.registrarCode,
+          name: adapter.name || adapter.registrarCode,
+          sourceType: SourceType.REGISTRAR,
+          priority: 80,
+          enabled: true,
+        },
+      });
+    }
 
     if (!source) {
       throw new Error(
@@ -111,6 +200,7 @@ export class SourceIdentitySyncService {
       }
 
       const ipo = matchResult.ipo;
+      const isStale = Boolean(issue.isStale || issue.rawPayload?.isStale);
 
       // Check if externalId is already mapped to any canonical IPO
       const existingMappingByExternalId =
@@ -124,6 +214,14 @@ export class SourceIdentitySyncService {
       if (existingMappingByExternalId) {
         if (existingMappingByExternalId.ipoId === ipo.id) {
           noChangeCount++;
+          if (!isStale) {
+            await this.ensureAllotmentConfigForLiveMatch(
+              ipo,
+              adapter.registrarCode,
+              issue.externalId,
+              false,
+            );
+          }
           syncRecords.push({
             status: SourceIdentitySyncStatus.NO_CHANGE,
             registrarCode: adapter.registrarCode,
@@ -146,7 +244,6 @@ export class SourceIdentitySyncService {
               this.normalizeCompanyName(ipo.company.displayName);
 
           if (isSameCompany) {
-            const isStale = Boolean(issue.isStale || issue.rawPayload?.isStale);
             if (isStale) {
               skippedCount++;
               syncRecords.push({
@@ -168,6 +265,12 @@ export class SourceIdentitySyncService {
               where: { id: existingMappingByExternalId.id },
               data: { ipoId: ipo.id },
             });
+            await this.ensureAllotmentConfigForLiveMatch(
+              ipo,
+              adapter.registrarCode,
+              issue.externalId,
+              false,
+            );
             changedCount++;
             this.logger.log(
               `Relinked externalId '${issue.externalId}' from unconfigured sibling (${existingMappingByExternalId.ipoId}) to configured IPO (${ipo.id})`,
@@ -200,8 +303,6 @@ export class SourceIdentitySyncService {
         (identity) => !identity.sourceId || identity.sourceId === source.id,
       );
 
-      const isStale = Boolean(issue.isStale || issue.rawPayload?.isStale);
-
       if (existingIdentityOnIpo) {
         if (isStale) {
           skippedCount++;
@@ -226,6 +327,12 @@ export class SourceIdentitySyncService {
           where: { id: existingIdentityOnIpo.id },
           data: { externalId: issue.externalId },
         });
+        await this.ensureAllotmentConfigForLiveMatch(
+          ipo,
+          adapter.registrarCode,
+          issue.externalId,
+          true,
+        );
 
         changedCount++;
         this.logger.warn(
@@ -267,6 +374,12 @@ export class SourceIdentitySyncService {
             externalId: issue.externalId,
           },
         });
+        await this.ensureAllotmentConfigForLiveMatch(
+          ipo,
+          adapter.registrarCode,
+          issue.externalId,
+          false,
+        );
 
         discoveredCount++;
         syncRecords.push({
@@ -296,6 +409,354 @@ export class SourceIdentitySyncService {
       isStale: isSummaryStale,
       syncRecords,
       executedAt: startTime,
+    };
+  }
+
+  /**
+   * Ensures ipoAllotmentConfig and REGISTRAR participant exist for a live matched registrar issue,
+   * preserving existing verified registrarIpoCode values (unless explicitly rotated) and respecting disabled/conflicting configs.
+   */
+  private async ensureAllotmentConfigForLiveMatch(
+    ipo: {
+      id: string;
+      allotmentConfig?: {
+        enabled?: boolean | null;
+        registrar?: string | null;
+        registrarIpoCode?: string | null;
+      } | null;
+    },
+    registrarCode: string,
+    externalId: string,
+    allowReplaceExistingCode: boolean,
+  ): Promise<boolean> {
+    if (ipo.allotmentConfig?.enabled === false) {
+      return false;
+    }
+
+    const canonicalTarget =
+      normalizeKnownRegistrarCode(registrarCode) || registrarCode.trim();
+    const existingRawReg = ipo.allotmentConfig?.registrar?.trim();
+    const existingNormalizedReg = existingRawReg
+      ? normalizeKnownRegistrarCode(existingRawReg)
+      : undefined;
+
+    if (
+      existingRawReg &&
+      existingRawReg.toUpperCase() !== 'UNKNOWN' &&
+      existingNormalizedReg &&
+      existingNormalizedReg !== canonicalTarget
+    ) {
+      this.logger.warn(
+        `Skipping allotmentConfig sync for IPO ${ipo.id}: existing registrar '${existingNormalizedReg}' conflicts with '${canonicalTarget}'`,
+      );
+      return false;
+    }
+
+    const cleanExternalId = sanitizeRegistrarIpoCode(externalId);
+    const existingValidCode = sanitizeRegistrarIpoCode(
+      ipo.allotmentConfig?.registrarIpoCode,
+    );
+
+    // Skip DB write if config already has canonical registrar and valid code (and code didn't change)
+    if (
+      existingNormalizedReg === canonicalTarget &&
+      existingValidCode &&
+      (!allowReplaceExistingCode || existingValidCode === cleanExternalId)
+    ) {
+      return false;
+    }
+
+    const persisted = await persistRegistrarCode({
+      prisma: this.prisma,
+      ipoId: ipo.id,
+      registrarCode: canonicalTarget,
+      discoveredCode: cleanExternalId,
+      allowRegistrarWithoutCode: true,
+      preserveExistingCode: !allowReplaceExistingCode,
+      ensureParticipant: true,
+      context: 'SourceIdentitySyncService live match',
+      logger: this.logger,
+    });
+
+    if (persisted) {
+      ipo.allotmentConfig = {
+        enabled: true,
+        registrar: canonicalTarget,
+        registrarIpoCode: allowReplaceExistingCode
+          ? cleanExternalId || existingValidCode || null
+          : existingValidCode || cleanExternalId || null,
+      };
+    }
+
+    return persisted;
+  }
+
+  /**
+   * Reconciles partial IPO records that already have a REGISTRAR IpoSourceIdentity or
+   * REGISTRAR IpoParticipant but lack a populated IpoAllotmentConfig (or lack registrarIpoCode).
+   * Supports dry-run auditing before applying updates.
+   */
+  public async reconcilePartialRegistrarRecords(
+    options: { dryRun?: boolean; ipoId?: string; limit?: number } = {},
+  ): Promise<PartialRegistrarReconcileSummary> {
+    const dryRun = options.dryRun !== false;
+    const ipos = await this.prisma.ipo.findMany({
+      where: {
+        publicationStatus: PublicationStatus.PUBLISHED,
+        ...(options.ipoId ? { id: options.ipoId } : {}),
+        OR: [
+          { allotmentConfig: null },
+          { allotmentConfig: { registrar: '' } },
+          { allotmentConfig: { registrar: 'UNKNOWN' } },
+          { allotmentConfig: { registrarIpoCode: null } },
+        ],
+      },
+      include: {
+        company: true,
+        allotmentConfig: true,
+        participants: {
+          where: { role: ParticipantRole.REGISTRAR },
+        },
+        sourceIdentities: {
+          include: { source: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      ...(options.limit ? { take: options.limit } : {}),
+    });
+
+    const summary: PartialRegistrarReconcileSummary = {
+      dryRun,
+      scannedCount: ipos.length,
+      reconciledCount: 0,
+      skippedConflictCount: 0,
+      skippedDisabledCount: 0,
+      skippedAlreadyConfiguredCount: 0,
+      items: [],
+    };
+
+    for (const ipo of ipos) {
+      const plan = buildPartialRegistrarReconcilePlan(ipo);
+      if (plan.action === 'SKIP_CONFLICT') {
+        summary.skippedConflictCount++;
+      } else if (plan.action === 'SKIP_DISABLED') {
+        summary.skippedDisabledCount++;
+      } else if (plan.action === 'SKIP_ALREADY_CONFIGURED') {
+        summary.skippedAlreadyConfiguredCount++;
+      } else if (plan.action === 'RECONCILE' && plan.registrar) {
+        if (!dryRun) {
+          const ok = await persistRegistrarCode({
+            prisma: this.prisma,
+            ipoId: ipo.id,
+            registrarCode: plan.registrar,
+            discoveredCode: plan.registrarIpoCode,
+            allowRegistrarWithoutCode: true,
+            preserveExistingCode: true,
+            ensureParticipant: true,
+            context: 'reconcilePartialRegistrarRecords',
+            logger: this.logger,
+          });
+          if (!ok) continue;
+        }
+        summary.reconciledCount++;
+      }
+
+      if (plan.action !== 'SKIP_NO_REGISTRAR' && plan.action !== 'SKIP_ALREADY_CONFIGURED') {
+        summary.items.push({
+          ipoId: ipo.id,
+          companyName: ipo.company?.displayName || ipo.company?.legalName || ipo.id,
+          action: plan.action,
+          registrar: plan.registrar,
+          registrarIpoCode: plan.registrarIpoCode,
+          reason: plan.reason,
+        });
+      }
+    }
+
+    return summary;
+  }
+
+  /**
+   * Read-only audit report summarizing registrar coverage across PUBLISHED IPOs by status and active window,
+   * plus duplicate PUBLISHED company groups for manual review without mutating or deleting records.
+   */
+  public async generateRegistrarCoverageAuditReport(
+    now: Date = new Date(),
+  ): Promise<RegistrarCoverageAuditReport> {
+    const publishedIpos = await this.prisma.ipo.findMany({
+      where: { publicationStatus: PublicationStatus.PUBLISHED },
+      include: {
+        company: true,
+        allotmentConfig: true,
+        lifecycleEvents: true,
+        participants: {
+          where: { role: ParticipantRole.REGISTRAR },
+        },
+        sourceIdentities: {
+          include: { source: true },
+        },
+      },
+    });
+
+    const thirtyDaysMs = 30 * 86_400_000;
+    const nowMs = now.getTime();
+    const activeStatuses = new Set<IpoStatus>([
+      IpoStatus.UPCOMING,
+      IpoStatus.OPEN,
+      IpoStatus.CLOSING_TODAY,
+      IpoStatus.CLOSED,
+      IpoStatus.ALLOTMENT_PENDING,
+    ]);
+
+    let hasAllotmentConfigRegistrar = 0;
+    let hasParticipantRegistrar = 0;
+    let hasSourceIdentityRegistrar = 0;
+    let hasAnyRegistrar = 0;
+    let missingAllRegistrars = 0;
+    let partialRecordsMissingConfig = 0;
+
+    const statusBuckets = new Map<
+      string,
+      {
+        status: IpoStatus;
+        marketSegment: string;
+        total: number;
+        hasAnyRegistrar: number;
+        missingAllRegistrars: number;
+        activeWindowMissingCount: number;
+      }
+    >();
+
+    const activeMissingRegistrars: RegistrarCoverageAuditReport['activeMissingRegistrars'] = [];
+    const duplicateGroupsMap = new Map<
+      string,
+      {
+        normalizedCompanyName: string;
+        marketSegment: string;
+        records: RegistrarCoverageAuditReport['duplicatePublishedGroups'][0]['records'];
+      }
+    >();
+
+    for (const ipo of publishedIpos) {
+      const cfgReg = ipo.allotmentConfig?.registrar?.trim();
+      const hasCfg = Boolean(cfgReg && cfgReg.toUpperCase() !== 'UNKNOWN');
+      const hasPart = (ipo.participants || []).some((p) => Boolean(p.name?.trim()));
+      const regSourceIdentities = (ipo.sourceIdentities || []).filter(
+        (si) => si.source?.sourceType === SourceType.REGISTRAR,
+      );
+      const hasSrc = regSourceIdentities.length > 0;
+      const hasAny = hasCfg || hasPart || hasSrc;
+
+      if (hasCfg) hasAllotmentConfigRegistrar++;
+      if (hasPart) hasParticipantRegistrar++;
+      if (hasSrc) hasSourceIdentityRegistrar++;
+      if (hasAny) hasAnyRegistrar++;
+      else missingAllRegistrars++;
+      if (!hasCfg && (hasPart || hasSrc)) partialRecordsMissingConfig++;
+
+      const listingEv = (ipo.lifecycleEvents || []).find(
+        (e) => e.eventType === LifecycleEventType.LISTING,
+      );
+      const closeEv = (ipo.lifecycleEvents || []).find(
+        (e) => e.eventType === LifecycleEventType.CLOSE,
+      );
+      const openEv = (ipo.lifecycleEvents || []).find(
+        (e) => e.eventType === LifecycleEventType.OPEN,
+      );
+
+      const listingDateStr = listingEv?.eventDate
+        ? new Date(listingEv.eventDate).toISOString().slice(0, 10)
+        : null;
+      const closeDateStr = closeEv?.eventDate
+        ? new Date(closeEv.eventDate).toISOString().slice(0, 10)
+        : null;
+      const openDateStr = openEv?.eventDate
+        ? new Date(openEv.eventDate).toISOString().slice(0, 10)
+        : null;
+
+      const isWithin30DaysListed =
+        ipo.status === IpoStatus.LISTED &&
+        Boolean(listingEv?.eventDate) &&
+        nowMs - new Date(listingEv!.eventDate).getTime() <= thirtyDaysMs;
+      const inActiveWindow = activeStatuses.has(ipo.status) || isWithin30DaysListed;
+
+      const bucketKey = `${ipo.status}:${ipo.marketSegment}`;
+      const bucket = statusBuckets.get(bucketKey) || {
+        status: ipo.status,
+        marketSegment: String(ipo.marketSegment),
+        total: 0,
+        hasAnyRegistrar: 0,
+        missingAllRegistrars: 0,
+        activeWindowMissingCount: 0,
+      };
+      bucket.total++;
+      if (hasAny) bucket.hasAnyRegistrar++;
+      else {
+        bucket.missingAllRegistrars++;
+        if (inActiveWindow) bucket.activeWindowMissingCount++;
+      }
+      statusBuckets.set(bucketKey, bucket);
+
+      if (!hasAny && inActiveWindow) {
+        const partialSources = (ipo.sourceIdentities || [])
+          .map((si) => si.source?.code)
+          .filter((c): c is string => Boolean(c));
+        activeMissingRegistrars.push({
+          ipoId: ipo.id,
+          companyName: ipo.company?.displayName || ipo.company?.legalName || ipo.id,
+          status: ipo.status,
+          marketSegment: String(ipo.marketSegment),
+          listingDate: listingDateStr,
+          closeDate: closeDateStr,
+          partialSources,
+        });
+      }
+
+      const normName = this.normalizeCompanyName(
+        ipo.company?.displayName || ipo.company?.legalName || '',
+      );
+      if (normName) {
+        const dupKey = `${normName}:${ipo.marketSegment}`;
+        const group = duplicateGroupsMap.get(dupKey) || {
+          normalizedCompanyName: normName,
+          marketSegment: String(ipo.marketSegment),
+          records: [],
+        };
+        group.records.push({
+          id: ipo.id,
+          displayName: ipo.company?.displayName || ipo.company?.legalName || ipo.id,
+          status: ipo.status,
+          symbol: ipo.symbol || null,
+          createdAt: ipo.createdAt ? new Date(ipo.createdAt).toISOString() : '',
+          openDate: openDateStr,
+          listingDate: listingDateStr,
+          hasRegistrar: hasAny,
+        });
+        duplicateGroupsMap.set(dupKey, group);
+      }
+    }
+
+    const duplicatePublishedGroups = Array.from(duplicateGroupsMap.values())
+      .filter((g) => g.records.length > 1)
+      .map((g) => ({
+        ...g,
+        count: g.records.length,
+      }));
+
+    return {
+      generatedAt: now.toISOString(),
+      summary: {
+        totalPublished: publishedIpos.length,
+        hasAllotmentConfigRegistrar,
+        hasParticipantRegistrar,
+        hasSourceIdentityRegistrar,
+        hasAnyRegistrar,
+        missingAllRegistrars,
+        partialRecordsMissingConfig,
+      },
+      byStatus: Array.from(statusBuckets.values()),
+      activeMissingRegistrars,
+      duplicatePublishedGroups,
     };
   }
 

@@ -3,12 +3,22 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { BigshareRegistrarAdapter } from '../adapters/bigshare-registrar.adapter';
+import { MaashitlaRegistrarAdapter } from '../adapters/maashitla-registrar.adapter';
+import { PurvaRegistrarAdapter } from '../adapters/purva-registrar.adapter';
+import { SkylineRegistrarAdapter } from '../adapters/skyline-registrar.adapter';
+import { sanitizeRegistrarIpoCode } from '../allotment.types';
 import { SourceIdentitySyncService } from './source-identity-sync.service';
 import { KfinIdentityDiscoveryAdapter } from './kfin-identity-discovery.adapter';
 import { MufgIdentityDiscoveryAdapter } from './mufg-identity-discovery.adapter';
-import { IRegistrarIdentityDiscoveryAdapter, RegistrarSourceIdentitySyncSummary } from './registrar-identity-discovery.types';
+import {
+  DiscoveredRegistrarIssue,
+  IRegistrarIdentityDiscoveryAdapter,
+  RegistrarSourceIdentitySyncSummary,
+} from './registrar-identity-discovery.types';
 
 export interface RegistrarIdentitySyncSchedulerConfig {
   enabled: boolean;
@@ -44,7 +54,53 @@ export class RegistrarIdentitySyncSchedulerService
     private readonly syncService: SourceIdentitySyncService,
     private readonly kfinDiscoveryAdapter: KfinIdentityDiscoveryAdapter,
     private readonly mufgDiscoveryAdapter: MufgIdentityDiscoveryAdapter,
+    @Optional() private readonly bigshareAdapter?: BigshareRegistrarAdapter,
+    @Optional() private readonly maashitlaAdapter?: MaashitlaRegistrarAdapter,
+    @Optional() private readonly skylineAdapter?: SkylineRegistrarAdapter,
+    @Optional() private readonly purvaAdapter?: PurvaRegistrarAdapter,
   ) {}
+
+  private buildDropdownDiscoveryAdapter(
+    registrarCode: string,
+    name: string,
+    fetcher: () => Promise<Array<{ code: string; name: string }>>,
+  ): IRegistrarIdentityDiscoveryAdapter {
+    return {
+      registrarCode,
+      name,
+      discoverIssues: async (): Promise<DiscoveredRegistrarIssue[]> => {
+        const items = await fetcher();
+        const discoveredAt = new Date();
+        const seenCodes = new Set<string>();
+        const issues: DiscoveredRegistrarIssue[] = [];
+
+        for (const item of items || []) {
+          const cleanCode = sanitizeRegistrarIpoCode(item?.code);
+          const cleanName = item?.name?.trim();
+          if (
+            !cleanCode ||
+            cleanCode === '0' ||
+            !cleanName ||
+            /^(?:-*\s*select\b|choose\b)/i.test(cleanName) ||
+            seenCodes.has(cleanCode)
+          ) {
+            continue;
+          }
+          seenCodes.add(cleanCode);
+          issues.push({
+            externalId: cleanCode,
+            externalName: cleanName,
+            registrarCode,
+            discoveredAt,
+            isStale: false,
+            rawPayload: item as unknown as Record<string, unknown>,
+          });
+        }
+
+        return issues;
+      },
+    };
+  }
 
   public getConfig(): RegistrarIdentitySyncSchedulerConfig {
     const enabled =
@@ -141,6 +197,42 @@ export class RegistrarIdentitySyncSchedulerService
     const adapters: IRegistrarIdentityDiscoveryAdapter[] = [
       this.kfinDiscoveryAdapter,
       this.mufgDiscoveryAdapter,
+      ...(this.bigshareAdapter
+        ? [
+            this.buildDropdownDiscoveryAdapter(
+              'BIGSHARE',
+              this.bigshareAdapter.name,
+              () => this.bigshareAdapter!.fetchCompanyList(),
+            ),
+          ]
+        : []),
+      ...(this.maashitlaAdapter
+        ? [
+            this.buildDropdownDiscoveryAdapter(
+              'MAASHITLA',
+              this.maashitlaAdapter.name,
+              () => this.maashitlaAdapter!.fetchActiveCompanyList(),
+            ),
+          ]
+        : []),
+      ...(this.skylineAdapter
+        ? [
+            this.buildDropdownDiscoveryAdapter(
+              'SKYLINE',
+              this.skylineAdapter.name,
+              () => this.skylineAdapter!.fetchCompanyList(),
+            ),
+          ]
+        : []),
+      ...(this.purvaAdapter
+        ? [
+            this.buildDropdownDiscoveryAdapter(
+              'PURVA',
+              this.purvaAdapter.name,
+              () => this.purvaAdapter!.fetchCompanyList(),
+            ),
+          ]
+        : []),
     ];
 
     const results: RegistrarSyncCycleResult['results'] = {};

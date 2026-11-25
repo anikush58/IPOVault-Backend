@@ -1,7 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ParticipantRole, ProvenanceEntityType, SourceType } from '@prisma/client';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  IpoStatus,
+  ParticipantRole,
+  ProvenanceEntityType,
+  PublicationStatus,
+  SourceType,
+} from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
+import { persistRegistrarCode } from '../allotment/registrar.resolver';
 import { SebiDocumentRetrievalService } from '../discovery/adapters/sebi/sebi-document-retrieval.service';
 import { SebiSectionKey } from '../discovery/adapters/sebi/sebi-section.types';
 import { AiStructuredExtractorService } from './ai/ai-structured-extractor.service';
@@ -12,6 +19,12 @@ import {
   EnrichableField,
   EnrichmentJobResult,
 } from './enrichment.types';
+import {
+  extractRegistrarFromSections,
+  isWithinActiveRegistrarWindow,
+  sanitizeAndNormalizeRegistrar,
+} from './registrar-extractor.util';
+import { AiResearchOrchestratorService } from './research/ai-research-orchestrator.service';
 
 export const AI_ENRICHMENT_SOURCE_CODE = 'SEBI_RHP_AI';
 
@@ -30,6 +43,7 @@ const FIELD_TO_SECTIONS_MAP: Record<EnrichableField, SebiSectionKey[]> = {
   freshIssueSize: ['CAPITAL_STRUCTURE', 'FRESH_ISSUE_AND_OFS', 'SUMMARY_OF_THE_ISSUE'],
   ofsSize: ['CAPITAL_STRUCTURE', 'FRESH_ISSUE_AND_OFS', 'SUMMARY_OF_THE_ISSUE'],
   leadManagers: ['LEAD_MANAGERS_AND_GENERAL_INFO', 'SUMMARY_OF_THE_ISSUE'],
+  registrar: ['LEAD_MANAGERS_AND_GENERAL_INFO', 'SUMMARY_OF_THE_ISSUE'],
   anchorDetails: ['ANCHOR_INVESTOR_PORTION'],
 };
 
@@ -51,6 +65,8 @@ export class EnrichmentOrchestratorService {
     private readonly sebiRetrievalService: SebiDocumentRetrievalService,
     private readonly aiExtractor: AiStructuredExtractorService,
     private readonly validator: EnrichmentValidatorService,
+    @Optional()
+    private readonly aiResearchOrchestrator?: AiResearchOrchestratorService,
   ) {}
 
   /**
@@ -113,7 +129,11 @@ export class EnrichmentOrchestratorService {
    */
   async processIpoEnrichment(
     ipoId: string,
-    options?: { forceRefresh?: boolean; customFetchImpl?: typeof fetch },
+    options?: {
+      forceRefresh?: boolean;
+      customFetchImpl?: typeof fetch;
+      skipResearchFallback?: boolean;
+    },
   ): Promise<EnrichmentJobResult> {
     const startTime = Date.now();
     const startIso = new Date().toISOString();
@@ -164,6 +184,28 @@ export class EnrichmentOrchestratorService {
       });
 
       if (docResult.status === 'DOCUMENT_UNRESOLVED') {
+        if (
+          report.missingFields.includes('registrar') &&
+          !options?.skipResearchFallback
+        ) {
+          const fallbackRegistrar =
+            await this.resolveRegistrarViaResearchFallback(ipoId, options);
+          if (fallbackRegistrar) {
+            return {
+              ipoId,
+              status: 'COMPLETED',
+              missingFieldsDetected: report.missingFields,
+              enrichedFields: ['registrar'],
+              skippedFields: report.missingFields.filter(
+                (f) => f !== 'registrar',
+              ),
+              startedAt: startIso,
+              completedAt: new Date().toISOString(),
+              durationMs: Date.now() - startTime,
+            };
+          }
+        }
+
         this.logger.log(
           `Official SEBI/Exchange/Issuer filing unresolved for IPO '${ipoId}'. Skipping AI extraction.`,
         );
@@ -219,6 +261,29 @@ export class EnrichmentOrchestratorService {
       }
 
       if (Object.keys(targetedSections).length === 0) {
+        if (
+          report.missingFields.includes('registrar') &&
+          !options?.skipResearchFallback
+        ) {
+          const fallbackRegistrar =
+            await this.resolveRegistrarViaResearchFallback(ipoId, options);
+          if (fallbackRegistrar) {
+            return {
+              ipoId,
+              status: 'COMPLETED',
+              missingFieldsDetected: report.missingFields,
+              enrichedFields: ['registrar'],
+              skippedFields: report.missingFields.filter(
+                (f) => f !== 'registrar',
+              ),
+              documentHash: docResult.documentHash,
+              startedAt: startIso,
+              completedAt: new Date().toISOString(),
+              durationMs: Date.now() - startTime,
+            };
+          }
+        }
+
         this.logger.log(
           `No matching document sections available for missing fields on IPO '${ipoId}'.`,
         );
@@ -235,20 +300,60 @@ export class EnrichmentOrchestratorService {
         };
       }
 
-      // 4. Structured AI extraction
-      const extractionRequest: AiExtractionRequest = {
-        ipoId,
-        companyName: report.companyName,
-        missingFields: report.missingFields,
-        documentSections: targetedSections,
-      };
-
-      const extracted = await this.aiExtractor.extract(
-        extractionRequest,
-        options?.customFetchImpl,
+      // 4. Deterministic registrar extraction + Structured AI extraction
+      const deterministicRegistrar = report.missingFields.includes('registrar')
+        ? extractRegistrarFromSections(availableSections)
+        : null;
+      const onlyMissingRegistrar = report.missingFields.every(
+        (field) => field === 'registrar',
       );
 
+      let extracted =
+        deterministicRegistrar && onlyMissingRegistrar
+          ? { registrar: deterministicRegistrar }
+          : await this.aiExtractor.extract(
+              {
+                ipoId,
+                companyName: report.companyName,
+                missingFields: report.missingFields,
+                documentSections: targetedSections,
+              } satisfies AiExtractionRequest,
+              options?.customFetchImpl,
+            );
+
+      if (!extracted && deterministicRegistrar) {
+        extracted = { registrar: deterministicRegistrar };
+      } else if (extracted && deterministicRegistrar) {
+        extracted = {
+          ...extracted,
+          registrar: deterministicRegistrar,
+        };
+      }
+
       if (!extracted) {
+        if (
+          report.missingFields.includes('registrar') &&
+          !options?.skipResearchFallback
+        ) {
+          const fallbackRegistrar =
+            await this.resolveRegistrarViaResearchFallback(ipoId, options);
+          if (fallbackRegistrar) {
+            return {
+              ipoId,
+              status: 'COMPLETED',
+              missingFieldsDetected: report.missingFields,
+              enrichedFields: ['registrar'],
+              skippedFields: report.missingFields.filter(
+                (f) => f !== 'registrar',
+              ),
+              documentHash: docResult.documentHash,
+              startedAt: startIso,
+              completedAt: new Date().toISOString(),
+              durationMs: Date.now() - startTime,
+            };
+          }
+        }
+
         this.logger.warn(`AI extraction produced no valid output for IPO '${ipoId}'`);
         return {
           ipoId,
@@ -267,7 +372,13 @@ export class EnrichmentOrchestratorService {
       // 5. Deterministic validation & calculations
       const existingIpo = await this.prisma.ipo.findUnique({
         where: { id: ipoId },
-        include: { company: true },
+        include: {
+          company: true,
+          allotmentConfig: true,
+          participants: true,
+          sourceIdentities: { include: { source: true } },
+          lifecycleEvents: true,
+        },
       });
 
       if (!existingIpo) {
@@ -292,6 +403,19 @@ export class EnrichmentOrchestratorService {
         enrichedFields,
         skippedFields,
       );
+
+      if (
+        report.missingFields.includes('registrar') &&
+        !enrichedFields.includes('registrar') &&
+        !skippedFields.includes('registrar') &&
+        !options?.skipResearchFallback
+      ) {
+        const fallbackRegistrar =
+          await this.resolveRegistrarViaResearchFallback(ipoId, options);
+        if (fallbackRegistrar) {
+          enrichedFields.push('registrar');
+        }
+      }
 
       this.logger.log(
         `Enrichment completed for '${report.companyName}': ${enrichedFields.length} enriched, ${skippedFields.length} skipped`,
@@ -507,6 +631,43 @@ export class EnrichmentOrchestratorService {
         }
       }
 
+      // D2. Registrar (Canonical persist via persistRegistrarCode)
+      if (validated.registrar) {
+        if (existingIpo.allotmentConfig?.enabled === false) {
+          skippedFields.push('registrar');
+        } else if (this.hasValidRegistrar(existingIpo)) {
+          skippedFields.push('registrar');
+        } else {
+          const persisted = await persistRegistrarCode({
+            prisma: tx,
+            ipoId,
+            registrarCode: validated.registrar,
+            allowRegistrarWithoutCode: true,
+            preserveExistingCode: true,
+            ensureParticipant: true,
+            context: 'SEBI RHP enrichment',
+            logger: this.logger,
+          });
+
+          if (persisted) {
+            enrichedFields.push('registrar');
+            await tx.fieldProvenance.create({
+              data: {
+                entityType: ProvenanceEntityType.IPO,
+                entityId: ipoId,
+                fieldName: 'registrar_name',
+                value: validated.registrar,
+                sourceId,
+                sourceReference: sourceUrl,
+                retrievedAt: now,
+              },
+            });
+          } else {
+            skippedFields.push('registrar');
+          }
+        }
+      }
+
       // E. Update Document Extraction metadata with Strengths, Risks & Anchor details
       if (
         (validated.strengths && validated.strengths.length > 0) ||
@@ -576,6 +737,178 @@ export class EnrichmentOrchestratorService {
       queuedCount: queuedIpoIds.length,
       ipoIds: queuedIpoIds,
     };
+  }
+
+  /**
+   * Bounded registrar backfill scoped strictly to active or recently listed (<= 30 days)
+   * PUBLISHED IPOs missing a valid registrar across config, participants, and source identities.
+   */
+  async backfillMissingRegistrarsForActiveIpos(options?: {
+    dryRun?: boolean;
+    limit?: number;
+    now?: Date;
+    forceRefresh?: boolean;
+  }): Promise<{
+    dryRun: boolean;
+    candidateCount: number;
+    queuedCount: number;
+    ipoIds: string[];
+  }> {
+    const dryRun = options?.dryRun ?? false;
+    const limit = Math.max(1, Math.min(options?.limit ?? 50, 200));
+    const now = options?.now ?? new Date();
+
+    const ipos = await this.prisma.ipo.findMany({
+      where: {
+        publicationStatus: PublicationStatus.PUBLISHED,
+        status: {
+          in: [
+            IpoStatus.UPCOMING,
+            IpoStatus.OPEN,
+            IpoStatus.CLOSING_TODAY,
+            IpoStatus.CLOSED,
+            IpoStatus.ALLOTMENT_PENDING,
+            IpoStatus.LISTED,
+          ],
+        },
+      },
+      include: {
+        allotmentConfig: true,
+        participants: true,
+        sourceIdentities: { include: { source: true } },
+        lifecycleEvents: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit * 4,
+    });
+
+    const candidateIds: string[] = [];
+    for (const ipo of ipos) {
+      if (!isWithinActiveRegistrarWindow(ipo, now)) continue;
+      if (ipo.allotmentConfig?.enabled === false) continue;
+      if (this.hasValidRegistrar(ipo)) continue;
+      candidateIds.push(ipo.id);
+      if (candidateIds.length >= limit) break;
+    }
+
+    if (!dryRun) {
+      for (const id of candidateIds) {
+        await this.enqueueIpoEnrichment(id, {
+          forceRefresh: options?.forceRefresh,
+        });
+      }
+    }
+
+    return {
+      dryRun,
+      candidateCount: candidateIds.length,
+      queuedCount: dryRun ? 0 : candidateIds.length,
+      ipoIds: candidateIds,
+    };
+  }
+
+  private hasValidRegistrar(ipo: {
+    allotmentConfig?: { registrar?: string | null } | null;
+    participants?: Array<{ role?: string | null; name?: string | null }> | null;
+    sourceIdentities?: Array<{
+      source?: {
+        sourceType?: string | null;
+        code?: string | null;
+        name?: string | null;
+      } | null;
+    }> | null;
+  }): boolean {
+    if (sanitizeAndNormalizeRegistrar(ipo.allotmentConfig?.registrar)) {
+      return true;
+    }
+    if (
+      (ipo.participants ?? []).some(
+        (p) =>
+          p.role === ParticipantRole.REGISTRAR &&
+          Boolean(sanitizeAndNormalizeRegistrar(p.name)),
+      )
+    ) {
+      return true;
+    }
+    return (ipo.sourceIdentities ?? []).some(
+      (si) =>
+        si.source?.sourceType === 'REGISTRAR' &&
+        Boolean(
+          sanitizeAndNormalizeRegistrar(si.source?.code || si.source?.name),
+        ),
+    );
+  }
+
+  private async resolveRegistrarViaResearchFallback(
+    ipoId: string,
+    options?: {
+      forceRefresh?: boolean;
+      customFetchImpl?: typeof fetch;
+    },
+  ): Promise<string | null> {
+    if (!this.aiResearchOrchestrator) {
+      return null;
+    }
+
+    const ipo = await this.prisma.ipo.findUnique({
+      where: { id: ipoId },
+      include: {
+        allotmentConfig: true,
+        participants: true,
+        sourceIdentities: { include: { source: true } },
+        lifecycleEvents: true,
+      },
+    });
+
+    if (!ipo || !isWithinActiveRegistrarWindow(ipo)) {
+      return null;
+    }
+
+    if (ipo.allotmentConfig?.enabled === false || this.hasValidRegistrar(ipo)) {
+      return null;
+    }
+
+    try {
+      await this.aiResearchOrchestrator.executeResearchNow(ipoId, {
+        forceRefresh: options?.forceRefresh,
+        customFetchImpl: options?.customFetchImpl,
+      });
+
+      const refreshedConfig =
+        typeof this.prisma?.ipoAllotmentConfig?.findUnique === 'function'
+          ? await this.prisma.ipoAllotmentConfig.findUnique({
+              where: { ipoId },
+            })
+          : null;
+
+      const normalized = sanitizeAndNormalizeRegistrar(
+        refreshedConfig?.registrar,
+      );
+      if (!normalized) {
+        return null;
+      }
+
+      if (refreshedConfig?.registrar !== normalized) {
+        await persistRegistrarCode({
+          prisma: this.prisma,
+          ipoId,
+          registrarCode: normalized,
+          allowRegistrarWithoutCode: true,
+          preserveExistingCode: true,
+          ensureParticipant: true,
+          context: 'AI web research registrar fallback normalization',
+          logger: this.logger,
+        });
+      }
+
+      return normalized;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Bounded registrar research fallback failed for IPO '${ipoId}': ${msg}`,
+      );
+      return null;
+    }
   }
 
   /**

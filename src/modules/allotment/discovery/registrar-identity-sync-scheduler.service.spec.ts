@@ -141,4 +141,79 @@ describe('RegistrarIdentitySyncSchedulerService', () => {
     jest.advanceTimersByTime(30_000_000);
     expect(tickSpy).not.toHaveBeenCalled();
   });
+
+  it('6. should discover live dropdown items across BIGSHARE, MAASHITLA, SKYLINE, and PURVA alongside KFINTECH and MUFG_INTIME', async () => {
+    const bigshareAdapter = {
+      fetchCompanyList: jest.fn().mockResolvedValue([
+        { code: 'BS-101', name: 'Bigshare Co Limited' },
+        { code: '0', name: '--Select Company--' },
+      ]),
+    };
+    const maashitlaAdapter = {
+      fetchActiveCompanyList: jest.fn().mockResolvedValue([
+        { code: 'MA-202', name: 'Maashitla Co Limited' },
+      ]),
+    };
+    const skylineAdapter = {
+      fetchCompanyList: jest.fn().mockResolvedValue([
+        { code: 'SK-303', name: 'Skyline Co Limited' },
+      ]),
+    };
+    const purvaAdapter = {
+      fetchCompanyList: jest.fn().mockResolvedValue([
+        { code: 'PR-404', name: 'Purva Co Limited' },
+        { code: '', name: 'Select' },
+      ]),
+    };
+
+    const allScheduler = new RegistrarIdentitySyncSchedulerService(
+      syncService,
+      kfinDiscoveryAdapter,
+      mufgDiscoveryAdapter,
+      bigshareAdapter as any,
+      maashitlaAdapter as any,
+      skylineAdapter as any,
+      purvaAdapter as any,
+    );
+
+    const seenAdapterIssues: Record<string, Array<{ externalId: string; isStale?: boolean }>> = {};
+    syncService.syncRegistrarIdentities.mockImplementation(async (adapter) => {
+      const issues = await adapter.discoverIssues();
+      seenAdapterIssues[adapter.registrarCode] = issues.map((i) => ({
+        externalId: i.externalId,
+        isStale: i.isStale,
+      }));
+      return {
+        registrarCode: adapter.registrarCode,
+        totalDiscovered: issues.length,
+        noChangeCount: 0,
+        discoveredCount: issues.length,
+        changedCount: 0,
+        unresolvedCount: 0,
+        syncRecords: [],
+        executedAt: new Date(),
+      };
+    });
+
+    const result = await allScheduler.tick();
+
+    expect(result).toBeDefined();
+    expect(syncService.syncRegistrarIdentities).toHaveBeenCalledTimes(6);
+    expect(Object.keys(result!.results)).toEqual(
+      expect.arrayContaining([
+        'KFINTECH',
+        'MUFG_INTIME',
+        'BIGSHARE',
+        'MAASHITLA',
+        'SKYLINE',
+        'PURVA',
+      ]),
+    );
+    expect(seenAdapterIssues.BIGSHARE).toEqual([{ externalId: 'BS-101', isStale: false }]);
+    expect(seenAdapterIssues.MAASHITLA).toEqual([{ externalId: 'MA-202', isStale: false }]);
+    expect(seenAdapterIssues.SKYLINE).toEqual([{ externalId: 'SK-303', isStale: false }]);
+    expect(seenAdapterIssues.PURVA).toEqual([{ externalId: 'PR-404', isStale: false }]);
+
+    allScheduler.onModuleDestroy();
+  });
 });

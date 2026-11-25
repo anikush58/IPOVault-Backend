@@ -115,6 +115,7 @@ describe('MissingFieldDetectorService', () => {
       },
       participants: [
         { role: 'BRLM', legalName: 'Kotak Mahindra Capital' },
+        { role: 'REGISTRAR', name: 'KFin Technologies Limited' },
       ],
       documents: [
         {
@@ -267,5 +268,92 @@ describe('MissingFieldDetectorService', () => {
     expect(inspection!.missingFields).not.toContain('preIpoPe');
     expect(inspection!.missingFields).toContain('postIpoPromoterHolding');
     expect(inspection!.missingFields).not.toContain('preIpoPromoterHolding');
+  });
+
+  it('should detect missing registrar across allotmentConfig, participants, and sourceIdentities and treat placeholders as missing', async () => {
+    mockPrismaService.ipo.findUnique.mockResolvedValue({
+      id: 'ipo-missing-rta',
+      slug: 'missing-rta',
+      marketSegment: MarketSegment.MAINBOARD,
+      status: IpoStatus.UPCOMING,
+      issueSize: new Prisma.Decimal('100'),
+      preIpoPe: new Prisma.Decimal('15'),
+      postIpoPe: new Prisma.Decimal('18'),
+      preIpoPromoterHolding: new Prisma.Decimal('80'),
+      postIpoPromoterHolding: new Prisma.Decimal('60'),
+      freshIssueShareCount: BigInt(1000000),
+      ofsShareCount: BigInt(0),
+      freshIssueSize: new Prisma.Decimal('100'),
+      ofsSize: new Prisma.Decimal('0'),
+      company: {
+        id: 'comp-rta',
+        legalName: 'No RTA Corp',
+        displayName: 'No RTA Corp',
+        aboutDescription: 'Description present',
+        industry: 'Engineering',
+        sector: 'Industrials',
+        financials: [
+          { fiscalPeriod: 'FY24', periodType: 'ANNUAL', totalRevenue: new Prisma.Decimal(50) },
+          { fiscalPeriod: 'FY23', periodType: 'ANNUAL', totalRevenue: new Prisma.Decimal(40) },
+          { fiscalPeriod: 'FY22', periodType: 'ANNUAL', totalRevenue: new Prisma.Decimal(30) },
+        ],
+      },
+      allotmentConfig: { registrar: 'TBD', enabled: true },
+      participants: [
+        { role: 'BRLM', name: 'Lead Bank' },
+        { role: 'REGISTRAR', name: 'N/A' },
+      ],
+      sourceIdentities: [],
+      documents: [
+        { documentType: 'RHP', extractionData: { strengths: ['S1'], risks: ['R1'] } },
+        { documentType: 'ANCHOR_LIST', extractionData: { portion: 25 } },
+      ],
+    });
+
+    const inspection = await service.detect('ipo-missing-rta');
+    expect(inspection!.hasMissingFields).toBe(true);
+    expect(inspection!.missingFields).toEqual(['registrar']);
+  });
+
+  it('should NOT flag registrar when present via allotmentConfig or REGISTRAR sourceIdentity', async () => {
+    mockPrismaService.ipo.findUnique.mockResolvedValue({
+      id: 'ipo-has-rta-si',
+      slug: 'has-rta-si',
+      marketSegment: MarketSegment.SME,
+      status: IpoStatus.OPEN,
+      issueSize: new Prisma.Decimal('40'),
+      preIpoPe: new Prisma.Decimal('12'),
+      postIpoPe: new Prisma.Decimal('14'),
+      preIpoPromoterHolding: new Prisma.Decimal('75'),
+      postIpoPromoterHolding: new Prisma.Decimal('55'),
+      freshIssueShareCount: BigInt(400000),
+      ofsShareCount: BigInt(0),
+      freshIssueSize: new Prisma.Decimal('40'),
+      ofsSize: new Prisma.Decimal('0'),
+      company: {
+        id: 'comp-has-rta',
+        legalName: 'RTA Source Corp',
+        displayName: 'RTA Source Corp',
+        aboutDescription: 'Description present',
+        industry: 'Logistics',
+        sector: 'Services',
+        financials: [
+          { fiscalPeriod: 'FY24', periodType: 'ANNUAL', totalRevenue: new Prisma.Decimal(20) },
+          { fiscalPeriod: 'FY23', periodType: 'ANNUAL', totalRevenue: new Prisma.Decimal(15) },
+        ],
+      },
+      allotmentConfig: null,
+      participants: [{ role: 'BRLM', name: 'SME Bank' }],
+      sourceIdentities: [
+        { externalId: 'BGS-10', source: { code: 'BIGSHARE', name: 'Bigshare Services', sourceType: 'REGISTRAR' } },
+      ],
+      documents: [
+        { documentType: 'RHP', extractionData: { strengths: ['S1'], risks: ['R1'] } },
+      ],
+    });
+
+    const inspection = await service.detect('ipo-has-rta-si');
+    expect(inspection!.hasMissingFields).toBe(false);
+    expect(inspection!.missingFields).not.toContain('registrar');
   });
 });

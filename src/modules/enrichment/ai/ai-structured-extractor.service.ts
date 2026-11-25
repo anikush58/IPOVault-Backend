@@ -44,6 +44,7 @@ export const aiExtractionSchema = z.object({
   freshIssueSize: z.number().positive().nullable().optional(),
   ofsSize: z.number().min(0).nullable().optional(),
   leadManagers: z.array(z.string()).max(10).nullable().optional(),
+  registrar: z.string().nullable().optional(),
   anchorDetails: z
     .object({
       portion: z.number().positive().nullable().optional(),
@@ -140,6 +141,7 @@ MANDATORY RULES:
    - "industry": Specific primary industry or product category (e.g. "Fashion Accessories", "Imitation Jewellery", "Specialty Chemicals", "Hospitality") from INDUSTRY_OVERVIEW or OUR_BUSINESS. String or null.
    - "freshIssueShareCount": Exact integer number of equity shares offered in the Fresh Issue (e.g. 4267200 for 4,267,200 shares) from CAPITAL_STRUCTURE or FRESH_ISSUE_AND_OFS. Integer number or null.
    - "leadManagers": Array of strings with the official legal names of all Lead Managers / Book Running Lead Managers (BRLMs) from LEAD_MANAGERS_AND_GENERAL_INFO or SUMMARY_OF_THE_ISSUE (e.g. ["Finshore Management Services Limited"]). Array of strings or null.
+   - "registrar": Official name of the Registrar to the Issue / Offer from LEAD_MANAGERS_AND_GENERAL_INFO or SUMMARY_OF_THE_ISSUE (e.g. "KFin Technologies Limited", "MUFG Intime India Private Limited", "Bigshare Services Private Limited"). String or null.
    - "preIpoPromoterHolding": Percentage (0-100) of promoter shareholding before the offer from CAPITAL_STRUCTURE or PROMOTERS_AND_SHAREHOLDING. Number or null.
    - "strengths": Array of key competitive business strengths (from OUR_BUSINESS or SUMMARY_OF_THE_ISSUE). Array of strings or null.
    - "risks": Array of prominent internal/external risk factors from RISK_FACTORS. Array of strings or null.
@@ -161,6 +163,7 @@ MANDATORY RULES:
   "freshIssueSize": number or null,
   "ofsSize": number or null,
   "leadManagers": ["string"] or null,
+  "registrar": "string" or null,
   "anchorDetails": {"portion": number, "bidDate": "string", "details": "string"} or null
 }
 

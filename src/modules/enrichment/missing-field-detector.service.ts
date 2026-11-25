@@ -3,6 +3,7 @@ import { IpoStatus, ParticipantRole } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import { EnrichableField, MissingFieldReport } from './enrichment.types';
+import { sanitizeAndNormalizeRegistrar } from './registrar-extractor.util';
 
 @Injectable()
 export class MissingFieldDetectorService {
@@ -24,6 +25,12 @@ export class MissingFieldDetectorService {
         },
         participants: true,
         documents: true,
+        allotmentConfig: true,
+        sourceIdentities: {
+          include: {
+            source: true,
+          },
+        },
       },
     });
 
@@ -142,6 +149,30 @@ export class MissingFieldDetectorService {
     );
     if (leadManagers.length === 0) {
       missingFields.push('leadManagers');
+    }
+
+    // 9b. Registrar
+    const hasConfigRegistrar = Boolean(
+      sanitizeAndNormalizeRegistrar(ipo.allotmentConfig?.registrar),
+    );
+    const hasParticipantRegistrar = (ipo.participants ?? []).some(
+      (p) =>
+        p.role === ParticipantRole.REGISTRAR &&
+        Boolean(sanitizeAndNormalizeRegistrar(p.name)),
+    );
+    const hasSourceIdentityRegistrar = (ipo.sourceIdentities ?? []).some(
+      (si) =>
+        si.source?.sourceType === 'REGISTRAR' &&
+        Boolean(
+          sanitizeAndNormalizeRegistrar(si.source?.code || si.source?.name),
+        ),
+    );
+    if (
+      !hasConfigRegistrar &&
+      !hasParticipantRegistrar &&
+      !hasSourceIdentityRegistrar
+    ) {
+      missingFields.push('registrar');
     }
 
     // 10. Anchor Information (Mainboard IPOs)

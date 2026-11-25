@@ -1194,5 +1194,247 @@ describe('Registrar Source Identity Discovery & Sync', () => {
         },
       });
     });
+
+    it('creates ipoAllotmentConfig on live match without overwriting verified registrarIpoCode, and skips stale items', async () => {
+      const mockUpsert = jest.fn().mockResolvedValue({});
+      const mockFindConfig = jest.fn().mockResolvedValue(null);
+      const mockSourceUpsert = jest
+        .fn()
+        .mockResolvedValue({ id: 'bigshare-source-id', code: 'BIGSHARE' });
+
+      mockPrisma.ipoAllotmentConfig = {
+        findUnique: mockFindConfig,
+        upsert: mockUpsert,
+      } as any;
+      mockPrisma.ipoParticipant = {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+      } as any;
+      mockPrisma.source.upsert = mockSourceUpsert as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-bs-live',
+          symbol: 'BIGLIVE',
+          company: { displayName: 'Big Live Corp', legalName: 'Big Live Corp Limited' },
+          allotmentConfig: null,
+          sourceIdentities: [],
+        },
+        {
+          id: 'ipo-kf-stale',
+          symbol: 'KFSTALE',
+          company: { displayName: 'KF Stale Corp', legalName: 'KF Stale Corp Limited' },
+          allotmentConfig: null,
+          sourceIdentities: [],
+        },
+      ]);
+
+      const bigshareMockAdapter = {
+        registrarCode: 'BIGSHARE',
+        name: 'Mock Bigshare',
+        discoverIssues: jest.fn().mockResolvedValue([
+          {
+            externalId: 'BS-LIVE-1',
+            externalName: 'BIG LIVE CORP LIMITED',
+            registrarCode: 'BIGSHARE',
+            isStale: false,
+          },
+        ]),
+      };
+
+      await syncService.syncRegistrarIdentities(bigshareMockAdapter);
+
+      expect(mockSourceUpsert).toHaveBeenCalled();
+      expect(mockUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ipoId: 'ipo-bs-live' },
+          create: expect.objectContaining({
+            ipoId: 'ipo-bs-live',
+            registrar: 'BIGSHARE',
+            registrarIpoCode: 'BS-LIVE-1',
+            enabled: true,
+          }),
+        }),
+      );
+
+      mockUpsert.mockClear();
+      const staleKfinAdapter = {
+        registrarCode: 'KFINTECH',
+        name: 'Mock Stale KFin',
+        discoverIssues: jest.fn().mockResolvedValue([
+          {
+            externalId: '9911223344',
+            externalName: 'KF STALE CORP LIMITED',
+            registrarCode: 'KFINTECH',
+            isStale: true,
+          },
+        ]),
+      };
+
+      await syncService.syncRegistrarIdentities(staleKfinAdapter);
+      expect(mockUpsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Partial Registrar Reconciliation & Read-Only Audit Report', () => {
+    it('reconciles partial IpoSourceIdentity/IpoParticipant records in apply mode while respecting dryRun, conflicts, and disabled configs', async () => {
+      const mockConfigUpsert = jest.fn().mockResolvedValue({});
+      const mockParticipantCreate = jest.fn().mockResolvedValue({});
+      mockPrisma.ipoAllotmentConfig = {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: mockConfigUpsert,
+      } as any;
+      mockPrisma.ipoParticipant = {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: mockParticipantCreate,
+      } as any;
+
+      mockPrisma.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-si-only',
+          status: 'OPEN',
+          publicationStatus: 'PUBLISHED',
+          company: { legalName: 'Source Identity Only Ltd' },
+          allotmentConfig: null,
+          participants: [],
+          sourceIdentities: [
+            {
+              externalId: '11999',
+              source: { code: 'MUFG_INTIME', name: 'MUFG Intime', sourceType: 'REGISTRAR' },
+            },
+          ],
+        },
+        {
+          id: 'ipo-participant-only',
+          status: 'UPCOMING',
+          publicationStatus: 'PUBLISHED',
+          company: { legalName: 'Participant Only Ltd' },
+          allotmentConfig: null,
+          participants: [{ role: 'REGISTRAR', name: 'Bigshare Services Pvt. Ltd.' }],
+          sourceIdentities: [],
+        },
+        {
+          id: 'ipo-disabled',
+          status: 'CLOSED',
+          publicationStatus: 'PUBLISHED',
+          company: { legalName: 'Disabled Config Ltd' },
+          allotmentConfig: { registrar: null, registrarIpoCode: null, enabled: false },
+          participants: [{ role: 'REGISTRAR', name: 'KFin Technologies Limited' }],
+          sourceIdentities: [],
+        },
+        {
+          id: 'ipo-conflict',
+          status: 'OPEN',
+          publicationStatus: 'PUBLISHED',
+          company: { legalName: 'Conflict Ltd' },
+          allotmentConfig: null,
+          participants: [{ role: 'REGISTRAR', name: 'Bigshare Services Pvt Ltd' }],
+          sourceIdentities: [
+            {
+              externalId: '9988',
+              source: { code: 'KFINTECH', name: 'KFin', sourceType: 'REGISTRAR' },
+            },
+          ],
+        },
+      ]);
+
+      const dryRunResult = await syncService.reconcilePartialRegistrarRecords({
+        dryRun: true,
+      });
+
+      expect(dryRunResult.dryRun).toBe(true);
+      expect(dryRunResult.reconciledCount).toBe(2);
+      expect(dryRunResult.skippedConflictCount).toBe(1);
+      expect(dryRunResult.skippedDisabledCount).toBe(1);
+      expect(mockConfigUpsert).not.toHaveBeenCalled();
+
+      const applyResult = await syncService.reconcilePartialRegistrarRecords({
+        dryRun: false,
+      });
+
+      expect(applyResult.dryRun).toBe(false);
+      expect(applyResult.reconciledCount).toBe(2);
+      expect(mockConfigUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ipoId: 'ipo-si-only' },
+          create: expect.objectContaining({
+            registrar: 'MUFG_INTIME',
+            registrarIpoCode: '11999',
+            enabled: true,
+          }),
+        }),
+      );
+      expect(mockConfigUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ipoId: 'ipo-participant-only' },
+          create: expect.objectContaining({
+            registrar: 'BIGSHARE',
+            enabled: true,
+          }),
+        }),
+      );
+    });
+
+    it('generates read-only coverage & duplicate PUBLISHED IPO audit report without mutating DB', async () => {
+      const now = new Date('2026-11-25T05:00:00Z');
+      mockPrisma.ipo.findMany.mockResolvedValue([
+        {
+          id: 'ipo-1',
+          slug: 'dhoot-transmission-ipo',
+          symbol: null,
+          status: 'UPCOMING',
+          marketSegment: 'MAINBOARD',
+          publicationStatus: 'PUBLISHED',
+          createdAt: new Date('2026-11-20T00:00:00Z'),
+          company: { legalName: 'Dhoot Transmission Limited', displayName: 'Dhoot Transmission Limited' },
+          allotmentConfig: null,
+          participants: [],
+          sourceIdentities: [],
+          lifecycleEvents: [],
+        },
+        {
+          id: 'ipo-2',
+          slug: 'dhoot-transmission-limited-ipo',
+          symbol: 'DHOOT',
+          status: 'UPCOMING',
+          marketSegment: 'MAINBOARD',
+          publicationStatus: 'PUBLISHED',
+          createdAt: new Date('2026-11-21T00:00:00Z'),
+          company: { legalName: 'Dhoot Transmission Limited', displayName: 'Dhoot Transmission' },
+          allotmentConfig: null,
+          participants: [],
+          sourceIdentities: [],
+          lifecycleEvents: [],
+        },
+        {
+          id: 'ipo-3',
+          slug: 'old-listed-covered',
+          symbol: 'OLDCOV',
+          status: 'LISTED',
+          marketSegment: 'MAINBOARD',
+          publicationStatus: 'PUBLISHED',
+          createdAt: new Date('2025-01-01T00:00:00Z'),
+          company: { legalName: 'Old Covered Limited', displayName: 'Old Covered Limited' },
+          allotmentConfig: { registrar: 'KFINTECH', registrarIpoCode: '12345', enabled: true },
+          participants: [{ role: 'REGISTRAR', name: 'KFINTECH' }],
+          sourceIdentities: [],
+          lifecycleEvents: [{ eventType: 'LISTING', eventDate: new Date('2025-01-10T00:00:00Z') }],
+        },
+      ]);
+
+      const report = await syncService.generateRegistrarCoverageAuditReport(now);
+
+      expect(report.summary.totalPublished).toBe(3);
+      expect(report.summary.missingAllRegistrars).toBe(2);
+      expect(report.activeMissingRegistrars).toHaveLength(2);
+      const upcomingBucket = report.byStatus.find(
+        (b) => b.status === 'UPCOMING' && b.marketSegment === 'MAINBOARD',
+      );
+      expect(upcomingBucket?.missingAllRegistrars).toBe(2);
+      expect(report.duplicatePublishedGroups).toHaveLength(1);
+      expect(report.duplicatePublishedGroups[0]?.normalizedCompanyName).toContain('dhoot transmission');
+      expect(report.duplicatePublishedGroups[0]?.records).toHaveLength(2);
+      expect(mockPrisma.ipo.update).not.toHaveBeenCalled();
+    });
   });
 });

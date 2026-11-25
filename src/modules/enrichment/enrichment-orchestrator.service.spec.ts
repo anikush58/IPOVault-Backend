@@ -4,6 +4,7 @@ import { MissingFieldDetectorService } from './missing-field-detector.service';
 import { SebiDocumentRetrievalService } from '../discovery/adapters/sebi/sebi-document-retrieval.service';
 import { AiStructuredExtractorService } from './ai/ai-structured-extractor.service';
 import { EnrichmentValidatorService } from './enrichment-validator.service';
+import { AiResearchOrchestratorService } from './research/ai-research-orchestrator.service';
 import { PrismaService } from '../../database/prisma.service';
 
 describe('EnrichmentOrchestratorService', () => {
@@ -23,6 +24,7 @@ describe('EnrichmentOrchestratorService', () => {
       update: jest.fn(),
     },
     ipoParticipant: {
+      findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
     },
@@ -538,5 +540,166 @@ describe('EnrichmentOrchestratorService', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(maxSeenActive).toBeLessThanOrEqual(2);
+  });
+
+  describe('Registrar Enrichment & Bounded Fallback', () => {
+    it('deterministically extracts registrar from RHP LEAD_MANAGERS_AND_GENERAL_INFO without invoking AI when only registrar is missing', async () => {
+      const mockConfigUpsert = jest.fn().mockResolvedValue({});
+      (mockPrisma as any).ipoAllotmentConfig = {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: mockConfigUpsert,
+      };
+      mockPrisma.ipoParticipant.findFirst.mockResolvedValue(null);
+
+      mockDetector.detect.mockResolvedValue({
+        ipoId: 'ipo-det-rta',
+        hasMissingFields: true,
+        missingFields: ['registrar'],
+        companyName: 'Deterministic RTA Corp',
+      });
+
+      mockRetrieval.retrieveAndExtractSections.mockResolvedValue({
+        status: 'SUCCESS',
+        documentId: 'doc-det-1',
+        documentHash: 'hash-det',
+        documentType: 'RHP',
+        sourceUrl: 'https://www.sebi.gov.in/filings/det_rhp.pdf',
+        retrievedAt: new Date().toISOString(),
+        sections: {
+          LEAD_MANAGERS_AND_GENERAL_INFO: {
+            sectionKey: 'LEAD_MANAGERS_AND_GENERAL_INFO',
+            sectionTitle: 'General Information',
+            content:
+              'BOOK RUNNING LEAD MANAGER: Axis Capital Limited\nREGISTRAR TO THE OFFER\nKFin Technologies Limited\nSelenium Tower B, Hyderabad\nBANKERS TO THE OFFER\nHDFC Bank Limited',
+            pageRange: { startPage: 10, endPage: 12 },
+            charCount: 160,
+            contentHash: 'sec-det',
+            isTruncated: false,
+          },
+        },
+      });
+
+      mockValidator.validate.mockReturnValue({
+        registrar: 'KFINTECH',
+        validationWarnings: [],
+      });
+
+      mockPrisma.ipo.findUnique.mockResolvedValue({
+        id: 'ipo-det-rta',
+        companyId: 'comp-det',
+        company: { id: 'comp-det' },
+        allotmentConfig: null,
+        participants: [],
+        sourceIdentities: [],
+        lifecycleEvents: [],
+      });
+
+      const result = await orchestrator.processIpoEnrichment('ipo-det-rta');
+
+      expect(result.status).toBe('COMPLETED');
+      expect(result.enrichedFields).toEqual(['registrar']);
+      expect(mockExtractor.extract).not.toHaveBeenCalled();
+      expect(mockConfigUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ipoId: 'ipo-det-rta' },
+          create: expect.objectContaining({
+            registrar: 'KFINTECH',
+            enabled: true,
+          }),
+        }),
+      );
+      expect(mockPrisma.ipoParticipant.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ipoId: 'ipo-det-rta',
+            role: 'REGISTRAR',
+            name: 'KFINTECH',
+          }),
+        }),
+      );
+    });
+
+    it('runs bounded AiResearchOrchestrator fallback for active/within-30d PUBLISHED IPOs when RHP is unresolved, and skips historical LISTED IPOs', async () => {
+      const mockResearch = {
+        executeResearchNow: jest.fn().mockResolvedValue({ fieldsUpdated: 1 }),
+      };
+
+      const moduleWithResearch = await Test.createTestingModule({
+        providers: [
+          EnrichmentOrchestratorService,
+          { provide: MissingFieldDetectorService, useValue: mockDetector },
+          { provide: SebiDocumentRetrievalService, useValue: mockRetrieval },
+          { provide: AiStructuredExtractorService, useValue: mockExtractor },
+          { provide: EnrichmentValidatorService, useValue: mockValidator },
+          { provide: AiResearchOrchestratorService, useValue: mockResearch },
+          { provide: PrismaService, useValue: mockPrisma },
+        ],
+      }).compile();
+
+      const orchWithResearch = moduleWithResearch.get<EnrichmentOrchestratorService>(
+        EnrichmentOrchestratorService,
+      );
+
+      (mockPrisma as any).ipoAllotmentConfig = {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ registrar: 'MUFG Intime India Private Limited', enabled: true }),
+        upsert: jest.fn().mockResolvedValue({}),
+      };
+      mockPrisma.ipoParticipant.findFirst.mockResolvedValue(null);
+
+      mockDetector.detect.mockResolvedValue({
+        ipoId: 'ipo-active-fallback',
+        hasMissingFields: true,
+        missingFields: ['registrar'],
+        companyName: 'Active IPO Corp',
+      });
+      mockRetrieval.retrieveAndExtractSections.mockResolvedValue({
+        status: 'DOCUMENT_UNRESOLVED',
+        error: 'No SEBI RHP yet',
+      });
+      mockPrisma.ipo.findUnique.mockResolvedValue({
+        id: 'ipo-active-fallback',
+        status: 'UPCOMING',
+        publicationStatus: 'PUBLISHED',
+        allotmentConfig: null,
+        participants: [],
+        sourceIdentities: [],
+        lifecycleEvents: [],
+      });
+
+      const activeResult = await orchWithResearch.processIpoEnrichment(
+        'ipo-active-fallback',
+      );
+      expect(activeResult.status).toBe('COMPLETED');
+      expect(activeResult.enrichedFields).toEqual(['registrar']);
+      expect(mockResearch.executeResearchNow).toHaveBeenCalledWith(
+        'ipo-active-fallback',
+        expect.any(Object),
+      );
+
+      mockResearch.executeResearchNow.mockClear();
+      mockDetector.detect.mockResolvedValue({
+        ipoId: 'ipo-old-listed',
+        hasMissingFields: true,
+        missingFields: ['registrar'],
+        companyName: 'Historical Listed Corp',
+      });
+      mockPrisma.ipo.findUnique.mockResolvedValue({
+        id: 'ipo-old-listed',
+        status: 'LISTED',
+        publicationStatus: 'PUBLISHED',
+        allotmentConfig: null,
+        participants: [],
+        sourceIdentities: [],
+        lifecycleEvents: [
+          { eventType: 'LISTING', eventDate: new Date(Date.now() - 90 * 86_400_000) },
+        ],
+      });
+
+      const oldResult = await orchWithResearch.processIpoEnrichment('ipo-old-listed');
+      expect(oldResult.status).toBe('DOCUMENT_UNRESOLVED');
+      expect(mockResearch.executeResearchNow).not.toHaveBeenCalled();
+    });
   });
 });

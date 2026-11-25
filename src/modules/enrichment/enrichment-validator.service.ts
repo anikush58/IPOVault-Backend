@@ -5,6 +5,7 @@ import {
   AiExtractedIpoData,
   ExtractedFinancialPeriod,
 } from './enrichment.types';
+import { sanitizeAndNormalizeRegistrar } from './registrar-extractor.util';
 
 export interface ValidatedEnrichmentPayload {
   aboutDescription?: string | null;
@@ -22,6 +23,7 @@ export interface ValidatedEnrichmentPayload {
   freshIssueSize?: number | null;
   ofsSize?: number | null;
   leadManagers?: string[];
+  registrar?: string | null;
   anchorDetails?: any;
   derivedMetrics?: {
     revenueCagrPct?: number | null;
@@ -237,6 +239,12 @@ export class EnrichmentValidatorService {
         .map((m) => this.sanitizeText(m))
         .filter((m) => m.length > 2)
         .slice(0, 10);
+    }
+
+    // 7b. Registrar
+    const normalizedRegistrar = sanitizeAndNormalizeRegistrar(extracted.registrar);
+    if (normalizedRegistrar) {
+      result.registrar = normalizedRegistrar;
     }
 
     // 8. Anchor Details

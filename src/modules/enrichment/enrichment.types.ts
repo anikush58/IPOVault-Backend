@@ -15,7 +15,8 @@ export type EnrichableField =
   | 'freshIssueSize'
   | 'ofsSize'
   | 'leadManagers'
-  | 'anchorDetails';
+  | 'anchorDetails'
+  | 'registrar';
 
 export interface MissingFieldReport {
   ipoId: string;
@@ -70,6 +71,7 @@ export interface AiExtractedIpoData {
   ofsSize?: number | null;
   leadManagers?: string[];
   anchorDetails?: ExtractedAnchorDetails | null;
+  registrar?: string | null;
   sourceConfidence?: number;
   extractedSectionReferences?: Record<string, string>;
 }
