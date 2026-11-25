@@ -5,6 +5,26 @@ import { PrismaService } from '../../database/prisma.service';
 import { IpoListQuery } from './ipo.dto';
 import { IpoWithRelations } from './ipo.types';
 
+const PLACEHOLDER_REGISTRARS = [
+  '',
+  'UNKNOWN',
+  'unknown',
+  'TBD',
+  'tbd',
+  'TBA',
+  'tba',
+  'N/A',
+  'n/a',
+  'NA',
+  'na',
+  '-',
+  '--',
+  'NONE',
+  'none',
+  'NULL',
+  'null',
+];
+
 const ipoInclude = {
   company: {
     include: {
@@ -196,7 +216,7 @@ export class IpoRepository {
                   {
                     allotmentConfig: {
                       enabled: true,
-                      registrar: { not: '' },
+                      registrar: { notIn: PLACEHOLDER_REGISTRARS },
                     },
                   },
                 ],

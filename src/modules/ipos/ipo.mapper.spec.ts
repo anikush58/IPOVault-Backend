@@ -451,4 +451,83 @@ describe('toIpoResponseDto', () => {
       expect(dto.documents![0].sourceUrl).toBe('https://example.com/rhp.pdf');
     });
   });
+
+  describe('allotment registrar serialization & fallback', () => {
+    it('falls back to REGISTRAR participant when allotmentConfig is absent', () => {
+      const ipo = buildIpo({
+        allotmentConfig: null,
+        participants: [
+          {
+            id: 'part-1',
+            ipoId: '11111111-1111-4111-8111-111111111111',
+            role: 'REGISTRAR',
+            name: 'KFin Technologies Limited',
+            phone: null,
+            email: null,
+            website: null,
+            displayOrder: 1,
+            createdAt: new Date('2026-09-01T12:00:00Z'),
+            updatedAt: new Date('2026-09-01T12:00:00Z'),
+          },
+        ],
+      });
+
+      const dto = toIpoResponseDto(ipo);
+      expect(dto.allotment).toMatchObject({
+        registrar: 'KFin Technologies Limited',
+        enabled: true,
+      });
+    });
+
+    it('normalizes UNKNOWN/placeholder allotmentConfig registrar and falls back to REGISTRAR participant', () => {
+      const ipoWithParticipant = buildIpo({
+        allotmentConfig: {
+          id: 'cfg-1',
+          ipoId: '11111111-1111-4111-8111-111111111111',
+          registrar: 'UNKNOWN',
+          registrarIpoCode: '12345',
+          allotmentSourceUrl: null,
+          expectedAllotmentDate: null,
+          enabled: true,
+          createdAt: new Date('2026-09-01T12:00:00Z'),
+          updatedAt: new Date('2026-09-01T12:00:00Z'),
+        },
+        participants: [
+          {
+            id: 'part-2',
+            ipoId: '11111111-1111-4111-8111-111111111111',
+            role: 'REGISTRAR',
+            name: 'Bigshare Services Pvt. Ltd.',
+            phone: null,
+            email: null,
+            website: null,
+            displayOrder: 1,
+            createdAt: new Date('2026-09-01T12:00:00Z'),
+            updatedAt: new Date('2026-09-01T12:00:00Z'),
+          },
+        ],
+      });
+
+      const dto1 = toIpoResponseDto(ipoWithParticipant);
+      expect(dto1.allotment?.registrar).toBe('Bigshare Services Pvt. Ltd.');
+
+      const ipoPlaceholderOnly = buildIpo({
+        allotmentConfig: {
+          id: 'cfg-2',
+          ipoId: '11111111-1111-4111-8111-111111111111',
+          registrar: 'TBD',
+          registrarIpoCode: null,
+          allotmentSourceUrl: null,
+          expectedAllotmentDate: null,
+          enabled: true,
+          createdAt: new Date('2026-09-01T12:00:00Z'),
+          updatedAt: new Date('2026-09-01T12:00:00Z'),
+        },
+        participants: [],
+      });
+
+      const dto2 = toIpoResponseDto(ipoPlaceholderOnly);
+      expect(dto2.allotment?.registrar).toBe('');
+    });
+  });
 });

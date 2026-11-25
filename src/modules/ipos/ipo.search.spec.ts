@@ -209,7 +209,14 @@ describe('Phase 25 — Smart IPO Search & Filtering Unit Tests', () => {
                           {
                             allotmentConfig: {
                               enabled: true,
-                              registrar: { not: '' },
+                              registrar: {
+                                notIn: expect.arrayContaining([
+                                  '',
+                                  'UNKNOWN',
+                                  'TBD',
+                                  'N/A',
+                                ]),
+                              },
                             },
                           },
                         ],

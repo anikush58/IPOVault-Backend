@@ -67,6 +67,31 @@ export function toClickableUrl(url?: string | null): string | null {
   return `https://${clean}`;
 }
 
+const PLACEHOLDER_REGISTRAR_VALUES = new Set([
+  '',
+  'unknown',
+  'tbd',
+  'tba',
+  'n/a',
+  'na',
+  '-',
+  '--',
+  'none',
+  'null',
+  'undefined',
+  'not available',
+  'not applicable',
+]);
+
+export function normalizeDisplayRegistrar(raw?: string | null): string {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (PLACEHOLDER_REGISTRAR_VALUES.has(trimmed.toLowerCase())) {
+    return '';
+  }
+  return trimmed;
+}
+
 export function emptyLifecycle(): IpoLifecycleDto {
   return {
     drhpDate: null,
@@ -401,9 +426,19 @@ export function toIpoResponseDto(
           uploadedAt: d.uploadedAt.toISOString(),
         };
       }),
-    allotment: ipo.allotmentConfig
-      ? {
-          registrar: ipo.allotmentConfig.registrar,
+    allotment: (() => {
+      const participantRegistrar = (ipo.participants ?? []).find(
+        (p) =>
+          p.role === 'REGISTRAR' &&
+          normalizeDisplayRegistrar(p.name) !== '',
+      );
+      const resolvedRegistrar =
+        normalizeDisplayRegistrar(ipo.allotmentConfig?.registrar) ||
+        normalizeDisplayRegistrar(participantRegistrar?.name);
+
+      if (ipo.allotmentConfig) {
+        return {
+          registrar: resolvedRegistrar,
           registrarIpoCode: ipo.allotmentConfig.registrarIpoCode,
           sourceUrl: ipo.allotmentConfig.allotmentSourceUrl,
           allotmentSourceUrl: ipo.allotmentConfig.allotmentSourceUrl,
@@ -414,18 +449,23 @@ export function toIpoResponseDto(
             ? toDateOnly(ipo.allotmentConfig.expectedAllotmentDate)
             : effectiveAllotmentDate,
           enabled: ipo.allotmentConfig.enabled,
-        }
-      : (effectiveAllotmentDate
-          ? {
-              registrar: '',
-              registrarIpoCode: null,
-              sourceUrl: null,
-              allotmentSourceUrl: null,
-              expectedDate: effectiveAllotmentDate,
-              expectedAllotmentDate: effectiveAllotmentDate,
-              enabled: true,
-            }
-          : null),
+        };
+      }
+
+      if (effectiveAllotmentDate || resolvedRegistrar) {
+        return {
+          registrar: resolvedRegistrar,
+          registrarIpoCode: null,
+          sourceUrl: null,
+          allotmentSourceUrl: null,
+          expectedDate: effectiveAllotmentDate,
+          expectedAllotmentDate: effectiveAllotmentDate,
+          enabled: true,
+        };
+      }
+
+      return null;
+    })(),
     currentGmp,
     currentSubscription,
     ...(dataReadiness ? { dataReadiness } : {}),
