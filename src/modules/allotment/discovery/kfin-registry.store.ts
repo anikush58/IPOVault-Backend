@@ -48,6 +48,7 @@ export interface KfinRegistryStoreConfig {
   portalUrl: string;
   portalMirrorUrls: string[];
   officialFeedUrl?: string;
+  bundleProxyUrl?: string;
   minItemsThreshold: number;
   maxShrinkRatio: number;
 }
@@ -139,6 +140,10 @@ export class KfinRegistryStore {
       officialFeedUrl:
         customConfig?.officialFeedUrl ||
         process.env.KFINTECH_MACHINE_READABLE_SOURCE_URL ||
+        undefined,
+      bundleProxyUrl:
+        customConfig?.bundleProxyUrl ||
+        process.env.KFINTECH_BUNDLE_PROXY_URL ||
         undefined,
       minItemsThreshold:
         customConfig?.minItemsThreshold !== undefined
@@ -636,6 +641,43 @@ export class KfinRegistryStore {
     };
   }
 
+  /**
+   * Resolves a bundle URL through a configured proxy template or base URL.
+   * Supports:
+   * - Templates with `{bundleUrl}` or `{url}` placeholder (replaced with encodeURIComponent(bundleUrl))
+   * - Templates with `{rawUrl}` placeholder (replaced with bundleUrl)
+   * - URLs ending or containing `?url=` or `&url=` (appends encodeURIComponent(bundleUrl))
+   * - Base URLs without parameters (appends ?url= or &url=)
+   */
+  public resolveProxiedBundleUrl(
+    bundleUrl: string,
+    proxyPattern?: string,
+  ): string | null {
+    const pattern = (proxyPattern || this.config.bundleProxyUrl)?.trim();
+    if (!pattern) {
+      return null;
+    }
+
+    if (pattern.includes('{bundleUrl}')) {
+      return pattern.replace(/\{bundleUrl\}/g, encodeURIComponent(bundleUrl));
+    }
+    if (pattern.includes('{url}')) {
+      return pattern.replace(/\{url\}/g, encodeURIComponent(bundleUrl));
+    }
+    if (pattern.includes('{rawUrl}')) {
+      return pattern.replace(/\{rawUrl\}/g, bundleUrl);
+    }
+    if (pattern.includes('?url=') || pattern.includes('&url=')) {
+      return `${pattern}${encodeURIComponent(bundleUrl)}`;
+    }
+    if (pattern.endsWith('?')) {
+      return `${pattern}url=${encodeURIComponent(bundleUrl)}`;
+    }
+    const hasQuery = pattern.includes('?');
+    const separator = hasQuery ? '&' : '?';
+    return `${pattern}${separator}url=${encodeURIComponent(bundleUrl)}`;
+  }
+
   private async fetchAndValidateCandidateBundle(
     candidateUrl: string,
     headers: Record<string, string>,
@@ -677,6 +719,43 @@ export class KfinRegistryStore {
         }
       } catch {
         // Fall through to validation error evaluation below
+      }
+    }
+
+    // Secondary fallback: if direct CloudFront bundle fetch returned an error, wrong Content-Type, or HTML/XML,
+    // and an optional bundleProxyUrl is configured, attempt fetch via proxy.
+    if (
+      (!candidateRes.ok ||
+        this.isInvalidJsContentType(candidateRes) ||
+        this.isInvalidBundlePayload(candidateText)) &&
+      this.config.bundleProxyUrl
+    ) {
+      const proxiedUrl = this.resolveProxiedBundleUrl(
+        candidateUrl,
+        this.config.bundleProxyUrl,
+      );
+      if (proxiedUrl) {
+        try {
+          this.logger.log(
+            `Direct bundle fetch returned invalid payload; attempting proxy fallback via ${proxiedUrl}`,
+          );
+          const proxyRes = await this.fetchWithBackoffAndJitter(proxiedUrl, {
+            headers,
+            timeoutMs: 8000,
+            maxRetries: 1,
+          });
+          if (proxyRes.ok && !this.isInvalidJsContentType(proxyRes)) {
+            const proxyText = await proxyRes.text();
+            if (!this.isInvalidBundlePayload(proxyText)) {
+              candidateRes = proxyRes;
+              candidateText = proxyText;
+            }
+          }
+        } catch (proxyErr) {
+          const msg =
+            proxyErr instanceof Error ? proxyErr.message : String(proxyErr);
+          this.logger.warn(`Proxy fallback attempt failed: ${msg}`);
+        }
       }
     }
 

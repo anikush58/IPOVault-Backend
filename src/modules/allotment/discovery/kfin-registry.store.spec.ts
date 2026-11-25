@@ -868,4 +868,139 @@ describe('KfinRegistryStore — Permanent Registrar Reliability & Anti-Corruptio
       }
     });
   });
+
+  describe('10. Proxy Fallback & Strict Content Validation', () => {
+    it('correctly resolves proxy URL patterns for {bundleUrl}, {url}, {rawUrl}, and query parameters', () => {
+      const store = new KfinRegistryStore();
+      const bundle = 'https://ipostatus.kfintech.com/static/js/main.763554fd.js';
+      const encoded = encodeURIComponent(bundle);
+
+      // Template with {bundleUrl}
+      expect(
+        store.resolveProxiedBundleUrl(bundle, 'https://proxy.example.com/fetch?target={bundleUrl}'),
+      ).toBe(`https://proxy.example.com/fetch?target=${encoded}`);
+
+      // Template with {url}
+      expect(
+        store.resolveProxiedBundleUrl(bundle, 'https://proxy.example.com/api/{url}/raw'),
+      ).toBe(`https://proxy.example.com/api/${encoded}/raw`);
+
+      // Template with {rawUrl}
+      expect(
+        store.resolveProxiedBundleUrl(bundle, 'https://proxy.example.com/get?direct={rawUrl}'),
+      ).toBe(`https://proxy.example.com/get?direct=${bundle}`);
+
+      // Appending to ?url= or &url=
+      expect(
+        store.resolveProxiedBundleUrl(bundle, 'https://proxy.example.com/proxy?key=secret&url='),
+      ).toBe(`https://proxy.example.com/proxy?key=secret&url=${encoded}`);
+
+      // Direct base URL without query parameters
+      expect(
+        store.resolveProxiedBundleUrl(bundle, 'https://proxy.example.com/proxy'),
+      ).toBe(`https://proxy.example.com/proxy?url=${encoded}`);
+    });
+
+    it('falls back to bundleProxyUrl when direct CloudFront bundle fetch returns HTML SPA error fallback', async () => {
+      const proxyStore = new KfinRegistryStore({
+        storagePath: path.join(tempStorageDir, 'proxy-success.json'),
+        bundleProxyUrl: 'https://proxy.example.com/fetch?url={bundleUrl}',
+        minItemsThreshold: 1,
+      });
+
+      const proxyCalledUrls: string[] = [];
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+        proxyCalledUrls.push(urlStr);
+
+        // Root HTML returns script tag pointing to main.763554fd.js
+        if (urlStr === 'https://ipostatus.kfintech.com/') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/html' }),
+            text: async () =>
+              '<!doctype html><html><head><script src="./static/js/main.763554fd.js"></script></head><body></body></html>',
+          } as unknown as Response);
+        }
+
+        // Direct bundle fetch returns CloudFront HTML SPA error fallback
+        if (urlStr.startsWith('https://ipostatus.kfintech.com/static/js/main.763554fd.js')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({
+              'content-type': 'text/html',
+              'x-cache': 'Error from cloudfront',
+            }),
+            text: async () =>
+              '<!doctype html><html><body>Error from cloudfront</body></html>',
+          } as unknown as Response);
+        }
+
+        // Proxy fallback endpoint returns the actual JavaScript bundle
+        if (urlStr.startsWith('https://proxy.example.com/fetch')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/javascript' }),
+            text: async () => validBundleWithNewIpos,
+          } as unknown as Response);
+        }
+
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
+
+      const snapshot = await proxyStore.getActiveRegistry(true);
+      expect(snapshot.metadata.isStale).toBe(false);
+      expect(snapshot.metadata.sourceType).toBe('PORTAL_SPA_BUNDLE');
+      expect(snapshot.metadata.sourceUrl).toBe(
+        'https://ipostatus.kfintech.com/static/js/main.763554fd.js',
+      );
+      expect(
+        snapshot.items.find((i) => i.clientId === '99001122334'),
+      ).toBeDefined();
+
+      const proxiedFetch = proxyCalledUrls.find((u) =>
+        u.includes('proxy.example.com/fetch'),
+      );
+      expect(proxiedFetch).toBeDefined();
+    });
+
+    it('strictly rejects proxy response when proxy also returns HTML or malformed payload, failing closed with isStale: true', async () => {
+      const proxyStore = new KfinRegistryStore({
+        storagePath: path.join(tempStorageDir, 'proxy-reject.json'),
+        bundleProxyUrl: 'https://proxy.example.com/fetch?url={bundleUrl}',
+        minItemsThreshold: 1,
+      });
+
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+
+        if (urlStr === 'https://ipostatus.kfintech.com/') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'text/html' }),
+            text: async () =>
+              '<!doctype html><html><head><script src="./static/js/main.763554fd.js"></script></head><body></body></html>',
+          } as unknown as Response);
+        }
+
+        // Both direct and proxy return HTML
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'text/html' }),
+          text: async () => '<html><body>Blocked or SPA fallback</body></html>',
+        } as unknown as Response);
+      });
+
+      const snapshot = await proxyStore.getActiveRegistry(true);
+      // Fail closed: must serve stale recovery snapshot, never accepting HTML
+      expect(snapshot.metadata.isStale).toBe(true);
+      expect(snapshot.metadata.validationStatus).toBe('STALE');
+      expect(snapshot.items.length).toBeGreaterThan(0);
+    });
+  });
 });
