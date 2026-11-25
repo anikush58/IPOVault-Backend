@@ -1,5 +1,37 @@
 import { FAVICON_DATA_URI } from './console.favicon';
 
+const CONSOLE_REGISTRAR_CHIPS: ReadonlyArray<{ code: string; label: string }> = [
+  { code: 'KFINTECH', label: 'KFin Technologies Limited' },
+  { code: 'MUFG_INTIME', label: 'MUFG Intime India / Link Intime' },
+  { code: 'BIGSHARE', label: 'Bigshare Services Pvt Ltd' },
+  { code: 'MAASHITLA', label: 'Maashitla Securities Pvt Ltd' },
+  { code: 'SKYLINE', label: 'Skyline Financial Services Pvt Ltd' },
+  { code: 'PURVA', label: 'Purva Sharegistry (India) Pvt Ltd' },
+  { code: 'CAMEO', label: 'Cameo Corporate Services Ltd' },
+  { code: 'INTEGRATED', label: 'Integrated Registry Management Services' },
+  { code: 'MAS', label: 'MAS Services Limited' },
+  { code: 'ALANKIT', label: 'Alankit Assignments Limited' },
+  { code: 'BEETAL', label: 'Beetal Financial & Computer Services' },
+  { code: 'MUDRA', label: 'Mudra RTA Private Limited' },
+  { code: 'DATAMATICS', label: 'Datamatics Business Solutions' },
+  { code: 'VCCIPL', label: 'Venture Capital & Corporate Investments' },
+  { code: 'ANKIT', label: 'Ankit Consultancy Private Limited' },
+  { code: 'SK_INFO', label: 'S.K. Info Solutions Private Limited' },
+  { code: 'SHAREX', label: 'Sharex Dynamic (India) Pvt Ltd' },
+  { code: 'MCS', label: 'MCS Share Transfer Agent Limited' },
+  { code: 'NICHE', label: 'Niche Technologies Private Limited' },
+  { code: 'MAHESHWARI', label: 'Maheshwari Datamatics Pvt Ltd' },
+  { code: 'SATELLITE', label: 'Satellite Corporate Services Pvt Ltd' },
+  { code: 'ACCURATE', label: 'Accurate Securities & Registry Pvt Ltd' },
+];
+
+function renderRegistrarChipsHtml(targetField: 'part' | 'allot'): string {
+  return CONSOLE_REGISTRAR_CHIPS.map(
+    (chip) =>
+      `<button type="button" class="registrar-chip" data-reg-chip="${chip.code}" data-reg-target="${targetField}" title="${chip.label}" onclick="selectRegistrarCodeChip('${chip.code}', '${targetField}')">${chip.code}</button>`,
+  ).join('');
+}
+
 export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1172,6 +1204,38 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       display: none;
     }
 
+    /* Quick-Choose Registrar Code Chips */
+    .registrar-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .registrar-chip {
+      padding: 4px 10px;
+      border-radius: 14px;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-hover);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      line-height: 1.3;
+    }
+    .registrar-chip:hover {
+      background-color: var(--bg-active);
+      color: var(--text-main);
+      border-color: var(--primary);
+    }
+    .registrar-chip.active {
+      background-color: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+      box-shadow: 0 1px 4px rgba(79, 70, 229, 0.28);
+    }
+
     /* Field Provenance Visual Coding System */
     .prov-indicator {
       display: flex;
@@ -2081,7 +2145,8 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               <div class="form-grid">
                 <div class="form-group">
                   <label>Registrar Name</label>
-                  <input type="text" id="part-reg-name" placeholder="e.g. MUFG Intime India Pvt Ltd / KFintech" />
+                  <input type="text" id="part-reg-name" placeholder="e.g. MUFG Intime India Pvt Ltd / KFintech" oninput="syncRegistrarChipsFromInput()" />
+                  <div class="registrar-chip-row" id="part-reg-chips">${renderRegistrarChipsHtml('part')}</div>
                   <div class="prov-indicator" id="prov-for-registrarName"></div>
                 </div>
                 <div class="form-group">
@@ -2339,6 +2404,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
               <div class="form-group">
                 <label>Registrar Code *</label>
                 <input type="text" id="allot-registrar-code" placeholder="KFINTECH / MUFG_INTIME / BIGSHARE" oninput="updateAllotmentWarning()" />
+                <div class="registrar-chip-row" id="allot-reg-chips">${renderRegistrarChipsHtml('allot')}</div>
               </div>
               <div class="form-group">
                 <label>Registrar IPO Code</label>
@@ -6408,6 +6474,75 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
       reindexDocumentRows();
     }
 
+    function normalizeRegistrarAliasForChip(rawVal) {
+      if (!rawVal) return '';
+      var upper = String(rawVal).trim().toUpperCase();
+      var clean = upper.replace(/[^A-Z0-9]/g, '');
+      if (!clean) return '';
+      if (clean.indexOf('KFIN') !== -1 || clean.indexOf('KARVY') !== -1) return 'KFINTECH';
+      if (clean.indexOf('MUFG') !== -1 || clean.indexOf('LINKINTIME') !== -1 || (clean.indexOf('LINK') !== -1 && clean.indexOf('INTIME') !== -1)) return 'MUFG_INTIME';
+      if (clean.indexOf('BIGSHARE') !== -1) return 'BIGSHARE';
+      if (clean.indexOf('MAASHITLA') !== -1) return 'MAASHITLA';
+      if (clean.indexOf('SKYLINE') !== -1) return 'SKYLINE';
+      if (clean.indexOf('PURVA') !== -1) return 'PURVA';
+      if (clean.indexOf('CAMEO') !== -1) return 'CAMEO';
+      if (clean.indexOf('INTEGRATED') !== -1) return 'INTEGRATED';
+      if (clean.indexOf('ALANKIT') !== -1) return 'ALANKIT';
+      if (clean.indexOf('BEETAL') !== -1) return 'BEETAL';
+      if (clean.indexOf('MUDRA') !== -1) return 'MUDRA';
+      if (clean.indexOf('MAHESHWARI') !== -1 || clean === 'MDPL') return 'MAHESHWARI';
+      if (clean.indexOf('DATAMATICS') !== -1) return 'DATAMATICS';
+      if (clean.indexOf('VCCIPL') !== -1 || clean.indexOf('VENTURECAPITAL') !== -1) return 'VCCIPL';
+      if (clean.indexOf('ANKIT') !== -1) return 'ANKIT';
+      if (clean.indexOf('SKINFO') !== -1) return 'SK_INFO';
+      if (clean.indexOf('SHAREX') !== -1) return 'SHAREX';
+      if (clean.indexOf('NICHE') !== -1) return 'NICHE';
+      if (clean.indexOf('SATELLITE') !== -1) return 'SATELLITE';
+      if (clean.indexOf('ACCURATE') !== -1) return 'ACCURATE';
+      if (clean.indexOf('MASSERVICES') !== -1 || clean === 'MAS') return 'MAS';
+      if (clean.indexOf('MCSSHARE') !== -1 || clean === 'MCS') return 'MCS';
+      return upper;
+    }
+
+    function syncRegistrarChipsFromInput() {
+      var partVal = document.getElementById('part-reg-name')?.value || '';
+      var allotVal = document.getElementById('allot-registrar-code')?.value || '';
+      var partNorm = normalizeRegistrarAliasForChip(partVal);
+      var allotNorm = normalizeRegistrarAliasForChip(allotVal);
+
+      document.querySelectorAll('#part-reg-chips .registrar-chip').forEach(function(btn) {
+        var chipCode = btn.getAttribute('data-reg-chip');
+        if (partNorm && chipCode === partNorm) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+
+      document.querySelectorAll('#allot-reg-chips .registrar-chip').forEach(function(btn) {
+        var chipCode = btn.getAttribute('data-reg-chip');
+        if (allotNorm && chipCode === allotNorm) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+    }
+
+    function selectRegistrarCodeChip(code, targetField) {
+      var partInput = document.getElementById('part-reg-name');
+      var allotInput = document.getElementById('allot-registrar-code');
+      if (targetField === 'allot') {
+        if (allotInput) allotInput.value = code;
+        if (partInput && !partInput.value.trim()) partInput.value = code;
+      } else {
+        if (partInput) partInput.value = code;
+        if (allotInput && !allotInput.value.trim()) allotInput.value = code;
+      }
+      updateAllotmentWarning();
+      syncRegistrarChipsFromInput();
+    }
+
     function updateAllotmentWarning() {
       const codeVal = document.getElementById('allot-registrar-ipo-code')?.value?.trim();
       const enabledChecked = document.getElementById('allot-enabled')?.checked ?? true;
@@ -6421,6 +6556,7 @@ export function renderConsoleHtml(_baseUrl = '/api/v1/console/api'): string {
           banner.style.display = 'none';
         }
       }
+      syncRegistrarChipsFromInput();
     }
 
     // ==========================================

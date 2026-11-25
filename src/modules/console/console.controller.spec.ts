@@ -468,5 +468,21 @@ describe('ConsoleController', () => {
       expect(response.text).toContain('id="sync-run-detail-overlay"');
       expect(response.text).toContain('IPO Guru Sync Activity Logs');
     });
+
+    it('should render quick-choose registrar code chips for Registrar Name and Registrar Code inputs', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/v1/console')
+        .expect(200);
+
+      expect(response.text).toContain('id="part-reg-chips"');
+      expect(response.text).toContain('id="allot-reg-chips"');
+      expect(response.text).toContain("selectRegistrarCodeChip('KFINTECH', 'part')");
+      expect(response.text).toContain("selectRegistrarCodeChip('MUFG_INTIME', 'allot')");
+      expect(response.text).toContain("selectRegistrarCodeChip('BIGSHARE', 'allot')");
+      expect(response.text).toContain("selectRegistrarCodeChip('MAASHITLA', 'allot')");
+      expect(response.text).toContain("selectRegistrarCodeChip('SKYLINE', 'allot')");
+      expect(response.text).toContain("selectRegistrarCodeChip('PURVA', 'allot')");
+      expect(response.text).toContain("selectRegistrarCodeChip('CAMEO', 'allot')");
+    });
   });
 });
