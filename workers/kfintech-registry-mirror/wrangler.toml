@@ -1,0 +1,8 @@
+name = "kfintech-registry-mirror"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+[vars]
+# Configure MIRROR_SECRET as a secret in Cloudflare Dashboard or via:
+#   npx wrangler secret put MIRROR_SECRET
+# MIRROR_SECRET = "your-secret-token"

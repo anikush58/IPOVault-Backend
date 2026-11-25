@@ -1003,4 +1003,184 @@ describe('KfinRegistryStore — Permanent Registrar Reliability & Anti-Corruptio
       expect(snapshot.items.length).toBeGreaterThan(0);
     });
   });
+
+  describe('11. Machine-Readable Mirror & Bearer Authentication Fallback', () => {
+    it('recovers fresh isStale: false registry from KFINTECH_MACHINE_READABLE_SOURCE_URL with Bearer token when portal discovery fails with CloudFront HTML error fallback', async () => {
+      const mirrorStore = new KfinRegistryStore({
+        storagePath: path.join(tempStorageDir, 'mirror-feed-success.json'),
+        officialFeedUrl: 'https://mirror.example.com/active-registry',
+        officialFeedToken: 'test-secret-token-123',
+        minItemsThreshold: 1,
+      });
+
+      let authHeaderReceived: string | null = null;
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown, init?: RequestInit) => {
+        const urlStr = String(url);
+
+        // Official feed called as primary or fallback
+        if (urlStr === 'https://mirror.example.com/active-registry') {
+          authHeaderReceived = (init?.headers as Record<string, string>)?.[
+            'Authorization'
+          ] || null;
+
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => ({
+              source: 'kfintech-mirror',
+              fetchedAt: new Date().toISOString(),
+              bundleUrl: 'https://ipostatus.kfintech.com/static/js/main.763554fd.js',
+              count: 2,
+              items: [
+                {
+                  clientId: '18068835070',
+                  name: 'MAHANADI COALFIELDS LIMITED',
+                },
+                {
+                  clientId: '39258379240',
+                  name: 'HGS (INDIA) LIMITED',
+                },
+              ],
+            }),
+          } as unknown as Response);
+        }
+
+        // Direct portal fallback returns HTML SPA error page
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'content-type': 'text/html',
+            'x-cache': 'Error from cloudfront',
+          }),
+          text: async () => '<html><body>Error from cloudfront</body></html>',
+        } as unknown as Response);
+      });
+
+      const snapshot = await mirrorStore.getActiveRegistry(true);
+      expect(authHeaderReceived).toBe('Bearer test-secret-token-123');
+      expect(snapshot.metadata.isStale).toBe(false);
+      expect(snapshot.metadata.sourceType).toBe('OFFICIAL_MACHINE_READABLE');
+      expect(snapshot.metadata.validationStatus).toBe('VALID');
+      expect(snapshot.items).toHaveLength(2);
+      expect(
+        snapshot.items.find((i) => i.clientId === '18068835070'),
+      ).toBeDefined();
+
+      // Verify persisted to disk as fresh snapshot
+      const onDiskRaw = fs.readFileSync(
+        path.join(tempStorageDir, 'mirror-feed-success.json'),
+        'utf8',
+      );
+      const onDisk = JSON.parse(onDiskRaw);
+      expect(onDisk.items).toHaveLength(2);
+      expect(onDisk.metadata.isStale).toBe(false);
+    });
+
+    it('falls back to official mirror when primary machine-readable feed threw and portal discovery also failed', async () => {
+      const mirrorStore = new KfinRegistryStore({
+        storagePath: path.join(tempStorageDir, 'secondary-mirror-success.json'),
+        officialFeedUrl: 'https://mirror.example.com/active-registry',
+        officialFeedToken: 'backup-token',
+        minItemsThreshold: 1,
+      });
+
+      let callCount = 0;
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+
+        // Step 1: First call to mirror fails with 500
+        if (urlStr === 'https://mirror.example.com/active-registry' && callCount === 0) {
+          callCount++;
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+          } as unknown as Response);
+        }
+
+        // Step 2: Portal returns CloudFront HTML error fallback
+        if (urlStr === 'https://ipostatus.kfintech.com/') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({
+              'content-type': 'text/html',
+              'x-cache': 'Error from cloudfront',
+            }),
+            text: async () => '<html><body>Error from cloudfront</body></html>',
+          } as unknown as Response);
+        }
+
+        // Step 3: Secondary retry to mirror succeeds
+        if (urlStr === 'https://mirror.example.com/active-registry') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => ({
+              source: 'kfintech-mirror',
+              items: [
+                {
+                  clientId: '18068835070',
+                  name: 'MAHANADI COALFIELDS LIMITED',
+                },
+              ],
+            }),
+          } as unknown as Response);
+        }
+
+        return Promise.reject(new Error(`Unexpected fetch to ${urlStr}`));
+      });
+
+      const snapshot = await mirrorStore.getActiveRegistry(true);
+      expect(snapshot.metadata.isStale).toBe(false);
+      expect(snapshot.metadata.sourceType).toBe('OFFICIAL_MACHINE_READABLE');
+      expect(
+        snapshot.items.find((i) => i.clientId === '18068835070'),
+      ).toBeDefined();
+    });
+
+    it('strictly rejects invalid or empty official mirror payload, failing closed with isStale: true', async () => {
+      const mirrorStore = new KfinRegistryStore({
+        storagePath: path.join(tempStorageDir, 'mirror-feed-reject.json'),
+        officialFeedUrl: 'https://mirror.example.com/active-registry',
+        minItemsThreshold: 1,
+      });
+
+      jest.spyOn(global, 'fetch').mockImplementation((url: unknown) => {
+        const urlStr = String(url);
+
+        // Mirror returns empty items array
+        if (urlStr === 'https://mirror.example.com/active-registry') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => ({
+              source: 'kfintech-mirror',
+              items: [],
+            }),
+          } as unknown as Response);
+        }
+
+        // Portal also returns HTML error fallback
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'content-type': 'text/html',
+            'x-cache': 'Error from cloudfront',
+          }),
+          text: async () => '<html><body>Error from cloudfront</body></html>',
+        } as unknown as Response);
+      });
+
+      const snapshot = await mirrorStore.getActiveRegistry(true);
+      // Fail closed: must serve stale baseline/cache with isStale: true
+      expect(snapshot.metadata.isStale).toBe(true);
+      expect(snapshot.metadata.validationStatus).toBe('STALE');
+    });
+  });
 });

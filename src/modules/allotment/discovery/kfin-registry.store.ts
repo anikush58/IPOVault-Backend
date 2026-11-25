@@ -48,6 +48,7 @@ export interface KfinRegistryStoreConfig {
   portalUrl: string;
   portalMirrorUrls: string[];
   officialFeedUrl?: string;
+  officialFeedToken?: string;
   bundleProxyUrl?: string;
   minItemsThreshold: number;
   maxShrinkRatio: number;
@@ -140,6 +141,10 @@ export class KfinRegistryStore {
       officialFeedUrl:
         customConfig?.officialFeedUrl ||
         process.env.KFINTECH_MACHINE_READABLE_SOURCE_URL ||
+        undefined,
+      officialFeedToken:
+        customConfig?.officialFeedToken ||
+        process.env.KFINTECH_MACHINE_READABLE_SOURCE_TOKEN ||
         undefined,
       bundleProxyUrl:
         customConfig?.bundleProxyUrl ||
@@ -439,13 +444,41 @@ export class KfinRegistryStore {
       this.logger.log(
         `Executing resilient KFintech portal discovery from ${this.config.portalUrl}...`,
       );
-      const portalSnapshot = await this.discoverFromPortalWithRetry(
-        previousCount,
-        forceRefresh,
-      );
+      try {
+        const portalSnapshot = await this.discoverFromPortalWithRetry(
+          previousCount,
+          forceRefresh,
+        );
 
-      this.applySuccessfulRefresh(portalSnapshot);
-      return portalSnapshot;
+        this.applySuccessfulRefresh(portalSnapshot);
+        return portalSnapshot;
+      } catch (portalErr: unknown) {
+        // Fallback: If portal discovery failed (e.g. CloudFront returned HTML error fallback),
+        // attempt fallback to official machine-readable feed if configured:
+        if (this.config.officialFeedUrl) {
+          try {
+            this.logger.log(
+              `Portal discovery failed; attempting fallback to official feed at ${this.config.officialFeedUrl}...`,
+            );
+            const feedSnapshot = await this.fetchFromOfficialFeed(
+              this.config.officialFeedUrl,
+              previousCount,
+            );
+            if (feedSnapshot) {
+              this.applySuccessfulRefresh(feedSnapshot);
+              return feedSnapshot;
+            }
+          } catch (secondaryErr: unknown) {
+            const secondaryMsg =
+              secondaryErr instanceof Error ? secondaryErr.message : String(secondaryErr);
+            this.logger.warn(
+              `Secondary official feed fallback also failed: ${secondaryMsg}`,
+            );
+          }
+        }
+
+        throw portalErr;
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(
@@ -1018,8 +1051,16 @@ export class KfinRegistryStore {
     feedUrl: string,
     previousCount: number,
   ): Promise<KfinRegistrySnapshot | null> {
+    const headers: Record<string, string> = {
+      Accept: 'application/json, text/plain, */*',
+    };
+    if (this.config.officialFeedToken) {
+      headers['Authorization'] = `Bearer ${this.config.officialFeedToken}`;
+    }
+
     const res = await this.fetchWithBackoffAndJitter(feedUrl, {
-      timeoutMs: 5000,
+      headers,
+      timeoutMs: 6000,
       maxRetries: 1,
     });
 
@@ -1030,8 +1071,8 @@ export class KfinRegistryStore {
     const rawJson = (await res.json()) as unknown;
     const rawList = Array.isArray(rawJson)
       ? rawJson
-      : (rawJson as Record<string, unknown>)?.data ||
-        (rawJson as Record<string, unknown>)?.items;
+      : (rawJson as Record<string, unknown>)?.items ||
+        (rawJson as Record<string, unknown>)?.data;
 
     const validation = this.validateRegistry(rawList, previousCount);
     if (!validation.valid) {
