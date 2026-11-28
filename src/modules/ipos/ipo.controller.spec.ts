@@ -595,4 +595,48 @@ describe('IpoController API Endpoints', () => {
     expect(qgSpy).not.toHaveBeenCalled();
     expect(recSpy).not.toHaveBeenCalled();
   });
+
+  it('26. GET /ipos - emits deterministic ETag on 200 and returns 304 Not Modified on matching If-None-Match', async () => {
+    const setHeaders: Record<string, string> = {};
+    let statusCode = 0;
+    let jsonPayload: any = null;
+    const endMock = jest.fn();
+    const resMock: any = {
+      setHeader: (k: string, v: string) => {
+        setHeaders[k] = v;
+      },
+      status: (code: number) => {
+        statusCode = code;
+        return resMock;
+      },
+      json: (body: any) => {
+        jsonPayload = body;
+        return resMock;
+      },
+      end: endMock,
+    };
+
+    await controller.list({ page: 1, limit: 10 }, { headers: {} } as any, resMock);
+
+    expect(statusCode).toBe(200);
+    expect(setHeaders['ETag']).toMatch(/^"[a-f0-9]{64}"$/);
+    expect(setHeaders['Cache-Control']).toBe('no-cache');
+    expect(jsonPayload?.data).toHaveLength(1);
+
+    const firstEtag = setHeaders['ETag'];
+    jsonPayload = null;
+    statusCode = 0;
+
+    await controller.list(
+      { page: 1, limit: 10 },
+      { headers: { 'if-none-match': firstEtag } } as any,
+      resMock,
+    );
+
+    expect(statusCode).toBe(304);
+    expect(setHeaders['ETag']).toBe(firstEtag);
+    expect(setHeaders['Cache-Control']).toBe('no-cache');
+    expect(endMock).toHaveBeenCalledTimes(1);
+    expect(jsonPayload).toBeNull();
+  });
 });

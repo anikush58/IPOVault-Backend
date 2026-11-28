@@ -79,5 +79,6 @@ export function configureApp(app: INestApplication): void {
       return callback(null, origins.length === 1 ? origins[0] : false);
     },
     credentials: true,
+    exposedHeaders: ['ETag', 'Cache-Control'],
   });
 }
