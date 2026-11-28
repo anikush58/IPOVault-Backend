@@ -1,5 +1,7 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 
+import { sendConditionalJson } from '../../common/http/etag.util';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   IpoChangesQuery,
@@ -25,67 +27,118 @@ import { IpoService } from './ipo.service';
 export class IpoController {
   constructor(private readonly ipos: IpoService) {}
 
+  private async respondListWithEtag(
+    query: IpoListQuery,
+    req?: Request,
+    res?: Response,
+  ) {
+    const payload = await this.ipos.list(query);
+    if (req && res) {
+      sendConditionalJson(req, res, payload);
+      return undefined as unknown as typeof payload;
+    }
+    return payload;
+  }
+
   @Get()
-  list(@Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery) {
-    return this.ipos.list(query);
+  list(
+    @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+    @Req() req?: Request,
+    @Res() res?: Response,
+  ) {
+    return this.respondListWithEtag(query, req, res);
   }
 
   @Get('new-ipos')
   newIpos(
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+    @Req() req?: Request,
+    @Res() res?: Response,
   ) {
-    return this.ipos.list({
-      ...query,
-      publicationStatus: 'PUBLISHED',
-      status: ['UPCOMING', 'OPEN', 'CLOSING_TODAY'],
-    });
+    return this.respondListWithEtag(
+      {
+        ...query,
+        publicationStatus: 'PUBLISHED',
+        status: ['UPCOMING', 'OPEN', 'CLOSING_TODAY'],
+      },
+      req,
+      res,
+    );
   }
 
   @Get('upcoming')
   upcoming(
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+    @Req() req?: Request,
+    @Res() res?: Response,
   ) {
-    return this.ipos.list({ ...query, status: 'UPCOMING' });
+    return this.respondListWithEtag({ ...query, status: 'UPCOMING' }, req, res);
   }
 
   @Get('open')
-  open(@Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery) {
-    return this.ipos.list({ ...query, status: 'OPEN' });
+  open(
+    @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+    @Req() req?: Request,
+    @Res() res?: Response,
+  ) {
+    return this.respondListWithEtag({ ...query, status: 'OPEN' }, req, res);
   }
 
   @Get('closing-today')
   closingToday(
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+    @Req() req?: Request,
+    @Res() res?: Response,
   ) {
-    return this.ipos.list({ ...query, status: 'CLOSING_TODAY' });
+    return this.respondListWithEtag(
+      { ...query, status: 'CLOSING_TODAY' },
+      req,
+      res,
+    );
   }
 
   @Get('closed')
   closed(
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+    @Req() req?: Request,
+    @Res() res?: Response,
   ) {
-    return this.ipos.list({ ...query, status: 'CLOSED' });
+    return this.respondListWithEtag({ ...query, status: 'CLOSED' }, req, res);
   }
 
   @Get('allotment-out')
   allotmentOut(
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+    @Req() req?: Request,
+    @Res() res?: Response,
   ) {
-    return this.ipos.list({ ...query, status: 'ALLOTMENT_COMPLETED' });
+    return this.respondListWithEtag(
+      { ...query, status: 'ALLOTMENT_COMPLETED' },
+      req,
+      res,
+    );
   }
 
   @Get('listed')
   listed(
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+    @Req() req?: Request,
+    @Res() res?: Response,
   ) {
-    return this.ipos.list({ ...query, status: 'LISTED' });
+    return this.respondListWithEtag({ ...query, status: 'LISTED' }, req, res);
   }
 
   @Get('listing-soon')
   listingSoon(
     @Query(new ZodValidationPipe(ipoListQuerySchema)) query: IpoListQuery,
+    @Req() req?: Request,
+    @Res() res?: Response,
   ) {
-    return this.ipos.list({ ...query, status: 'LISTING_PENDING' });
+    return this.respondListWithEtag(
+      { ...query, status: 'LISTING_PENDING' },
+      req,
+      res,
+    );
   }
 
   /**

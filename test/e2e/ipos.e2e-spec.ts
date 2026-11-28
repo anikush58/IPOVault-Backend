@@ -664,4 +664,58 @@ describe('IPO read API', () => {
 
     await app.close();
   });
+
+  it('GET /api/v1/ipos & /new-ipos - returns deterministic ETag on 200 and 304 Not Modified on matching If-None-Match (strong & weak)', async () => {
+    const mutableSeed = seed.map((item) => ({ ...item }));
+    const app = await createTestApp([], createIpoPrismaStub(mutableSeed));
+
+    // 1. Initial GET -> 200 OK with SHA-256 ETag and Cache-Control: no-cache
+    const first = await request(app.getHttpServer()).get('/api/v1/ipos');
+    expect(first.status).toBe(200);
+    const etag = first.headers['etag'];
+    expect(etag).toMatch(/^"[a-f0-9]{64}"$/);
+    expect(first.headers['cache-control']).toBe('no-cache');
+    expect(first.body.data).toHaveLength(3);
+
+    // 2. Conditional GET with strong ETag -> 304 Not Modified, empty body
+    const notModifiedStrong = await request(app.getHttpServer())
+      .get('/api/v1/ipos')
+      .set('If-None-Match', etag);
+    expect(notModifiedStrong.status).toBe(304);
+    expect(notModifiedStrong.headers['etag']).toBe(etag);
+    expect(notModifiedStrong.headers['cache-control']).toBe('no-cache');
+    expect(notModifiedStrong.text || '').toBe('');
+    expect(notModifiedStrong.body).toEqual({});
+
+    // 3. Conditional GET with weak ETag W/"..." -> 304 Not Modified
+    const notModifiedWeak = await request(app.getHttpServer())
+      .get('/api/v1/ipos')
+      .set('If-None-Match', `W/${etag}`);
+    expect(notModifiedWeak.status).toBe(304);
+
+    // 4. Payload mutation produces new ETag and 200 OK even when old ETag is sent
+    mutableSeed[0] = {
+      ...mutableSeed[0],
+      lotSize: 25,
+    };
+    const updated = await request(app.getHttpServer())
+      .get('/api/v1/ipos')
+      .set('If-None-Match', etag);
+    expect(updated.status).toBe(200);
+    expect(updated.headers['etag']).toMatch(/^"[a-f0-9]{64}"$/);
+    expect(updated.headers['etag']).not.toBe(etag);
+    expect(updated.body.data.find((x: any) => x.id === mutableSeed[0].id)?.lotSize).toBe(25);
+
+    // 5. Sub-route /api/v1/ipos/new-ipos also supports ETag + 304
+    const newIposRes = await request(app.getHttpServer()).get('/api/v1/ipos/new-ipos');
+    expect(newIposRes.status).toBe(200);
+    const subEtag = newIposRes.headers['etag'];
+    expect(subEtag).toMatch(/^"[a-f0-9]{64}"$/);
+    const subNotMod = await request(app.getHttpServer())
+      .get('/api/v1/ipos/new-ipos')
+      .set('If-None-Match', subEtag);
+    expect(subNotMod.status).toBe(304);
+
+    await app.close();
+  });
 });
